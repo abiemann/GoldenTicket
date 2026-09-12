@@ -67,6 +67,9 @@ earlier; perform final release checks and package refresh after the narrative fe
 - [x] **Runtime packaging checks.** Separate reviewed Windows-runtime lock files preserve the
   development dependency locks. An explicit windowless executable diagnostic checks the loaded
   bundled runtime and native components before the ZIP is created.
+- [x] **First portable package built and checked.** Normal and cache-only offline builds passed;
+  the published executable passed eight component checks and every archived payload hash matched.
+  Source/artifact identities are in [package evidence](docs/evidence/offline-package-2026-09-12/README.md).
 - [ ] Replace companion snapshot polling with WSS/event-cursor synchronization; persist protected
   approved-device registry, implement reconnect/lease recovery without pairing after every reload,
   and add hold-to-peek plus full accessibility/device acceptance. Current plain-JS client is a

@@ -6,8 +6,9 @@ dependency notices, source provenance, and SHA256 checksums. Players extract the
 `GoldenTicket` folder and run `GoldenTicket.exe`; installing .NET or paying for a service is not
 part of that workflow.
 
-The script is implemented. A package build and clean-machine acceptance must be recorded
-separately before calling a particular ZIP validated. This is a portable distribution foundation,
+The first normal and cache-only offline builds passed the builder and executable checks; see
+[the package record](evidence/offline-package-2026-09-12/README.md) for source identity, local ZIP
+and checksums. Clean-machine and physical-device acceptance remain unverified. This is a portable distribution foundation,
 not an installer, signed release, automatic updater, or completed application acceptance.
 
 ## Build from a documented source commit

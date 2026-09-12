@@ -1,0 +1,163 @@
+[
+  {
+    "id": "CommunityToolkit.Mvvm",
+    "version": "8.4.2",
+    "reason": "application dependency",
+    "authors": "Microsoft",
+    "copyright": "(c) .NET Foundation and Contributors. All rights reserved.",
+    "licenseType": "expression",
+    "license": "MIT",
+    "licenseUrl": "https://licenses.nuget.org/MIT",
+    "retainedFiles": [
+      "communitytoolkit.mvvm.nuspec",
+      "License.md",
+      "ThirdPartyNotices.txt"
+    ],
+    "licenseTextInPackage": true
+  },
+  {
+    "id": "Microsoft.Data.Sqlite",
+    "version": "10.0.12",
+    "reason": "application dependency",
+    "authors": "Microsoft",
+    "copyright": "© Microsoft Corporation. All rights reserved.",
+    "licenseType": "expression",
+    "license": "MIT",
+    "licenseUrl": "https://licenses.nuget.org/MIT",
+    "retainedFiles": [
+      "microsoft.data.sqlite.nuspec"
+    ],
+    "licenseTextInPackage": false
+  },
+  {
+    "id": "Microsoft.Data.Sqlite.Core",
+    "version": "10.0.12",
+    "reason": "application dependency",
+    "authors": "Microsoft",
+    "copyright": "© Microsoft Corporation. All rights reserved.",
+    "licenseType": "expression",
+    "license": "MIT",
+    "licenseUrl": "https://licenses.nuget.org/MIT",
+    "retainedFiles": [
+      "microsoft.data.sqlite.core.nuspec"
+    ],
+    "licenseTextInPackage": false
+  },
+  {
+    "id": "SQLitePCLRaw.bundle_e_sqlite3",
+    "version": "2.1.12",
+    "reason": "application dependency",
+    "authors": "Eric Sink",
+    "copyright": "Copyright 2014-2024 SourceGear, LLC",
+    "licenseType": "expression",
+    "license": "Apache-2.0",
+    "licenseUrl": "https://licenses.nuget.org/Apache-2.0",
+    "retainedFiles": [
+      "sqlitepclraw.bundle_e_sqlite3.nuspec"
+    ],
+    "licenseTextInPackage": false
+  },
+  {
+    "id": "SQLitePCLRaw.core",
+    "version": "2.1.12",
+    "reason": "application dependency",
+    "authors": "Eric Sink",
+    "copyright": "Copyright 2014-2024 SourceGear, LLC",
+    "licenseType": "expression",
+    "license": "Apache-2.0",
+    "licenseUrl": "https://licenses.nuget.org/Apache-2.0",
+    "retainedFiles": [
+      "sqlitepclraw.core.nuspec"
+    ],
+    "licenseTextInPackage": false
+  },
+  {
+    "id": "SQLitePCLRaw.lib.e_sqlite3",
+    "version": "2.1.12",
+    "reason": "application dependency",
+    "authors": "Eric Sink",
+    "copyright": "Copyright 2014-2024 SourceGear, LLC",
+    "licenseType": "expression",
+    "license": "Apache-2.0",
+    "licenseUrl": "https://licenses.nuget.org/Apache-2.0",
+    "retainedFiles": [
+      "sqlitepclraw.lib.e_sqlite3.nuspec"
+    ],
+    "licenseTextInPackage": false
+  },
+  {
+    "id": "SQLitePCLRaw.provider.e_sqlite3",
+    "version": "2.1.12",
+    "reason": "application dependency",
+    "authors": "Eric Sink",
+    "copyright": "Copyright 2014-2024 SourceGear, LLC",
+    "licenseType": "expression",
+    "license": "Apache-2.0",
+    "licenseUrl": "https://licenses.nuget.org/Apache-2.0",
+    "retainedFiles": [
+      "sqlitepclraw.provider.e_sqlite3.nuspec"
+    ],
+    "licenseTextInPackage": false
+  },
+  {
+    "id": "Microsoft.AspNetCore.App.Runtime.win-x64",
+    "version": "10.0.12",
+    "reason": "included runtime",
+    "authors": "Microsoft",
+    "copyright": "© Microsoft Corporation. All rights reserved.",
+    "licenseType": "expression",
+    "license": "MIT",
+    "licenseUrl": "https://licenses.nuget.org/MIT",
+    "retainedFiles": [
+      "microsoft.aspnetcore.app.runtime.win-x64.nuspec",
+      "LICENSE.txt",
+      "THIRD-PARTY-NOTICES.TXT"
+    ],
+    "licenseTextInPackage": true
+  },
+  {
+    "id": "Microsoft.NETCore.App.Runtime.win-x64",
+    "version": "10.0.12",
+    "reason": "included runtime",
+    "authors": "Microsoft",
+    "copyright": "© Microsoft Corporation. All rights reserved.",
+    "licenseType": "expression",
+    "license": "MIT",
+    "licenseUrl": "https://licenses.nuget.org/MIT",
+    "retainedFiles": [
+      "microsoft.netcore.app.runtime.win-x64.nuspec",
+      "LICENSE.TXT",
+      "THIRD-PARTY-NOTICES.TXT"
+    ],
+    "licenseTextInPackage": true
+  },
+  {
+    "id": "Microsoft.Windows.SDK.NET.Ref",
+    "version": "10.0.26100.57",
+    "reason": "SDK/runtime dependency",
+    "authors": "Microsoft",
+    "copyright": "© Microsoft Corporation. All rights reserved.",
+    "licenseType": "",
+    "license": "",
+    "licenseUrl": "https://aka.ms/WinSDKLicenseURL",
+    "retainedFiles": [
+      "microsoft.windows.sdk.net.ref.nuspec"
+    ],
+    "licenseTextInPackage": false
+  },
+  {
+    "id": "Microsoft.WindowsDesktop.App.Runtime.win-x64",
+    "version": "10.0.12",
+    "reason": "included runtime",
+    "authors": "Microsoft",
+    "copyright": "© Microsoft Corporation. All rights reserved.",
+    "licenseType": "expression",
+    "license": "MIT",
+    "licenseUrl": "https://licenses.nuget.org/MIT",
+    "retainedFiles": [
+      "microsoft.windowsdesktop.app.runtime.win-x64.nuspec",
+      "LICENSE"
+    ],
+    "licenseTextInPackage": true
+  }
+]

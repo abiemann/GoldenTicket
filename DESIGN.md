@@ -1662,6 +1662,10 @@ tests its loaded bundled runtime and synthetic WPF/SQLite/DPAPI/PNG/ASP.NET/asse
 a visible window, camera, listener or player save. This does not satisfy clean-machine or physical
 device acceptance.
 
+Normal and cache-only offline builds from source `54fd076b5394b896f9332d59a409b1bf5fe2cc22` passed
+the executable checks and archive validation. [Package evidence](docs/evidence/offline-package-2026-09-12/README.md)
+records the local artifact and checksums; installer and clean-machine acceptance remain unfinished.
+
 The [original audit](docs/AUDIT-2026-09-11.md) maps R01–R16 to source evidence; the [follow-up audit](docs/AUDIT-2026-09-12.md) records the reviewed changes, fixes and current validation. [TODO.md](TODO.md) lists the remaining implementation and real-device acceptance work. Passing domain, persistence, view-model or browser-script tests does not satisfy the camera, privacy lifecycle, packaging, or mobile hardware gates.
 
 ## 25. Sources

@@ -103,6 +103,8 @@ validated source commit; clean-machine and installer acceptance remain outstandi
 
 The package builder runs the executable's windowless `--check-package` diagnostics against its
 bundled runtime, WPF, SQLite, DPAPI, Windows PNG encoding, ASP.NET and local assets before archiving.
+Both normal and cache-only offline package builds have passed; the local ZIP, source commit,
+checksums and remaining manual gates are recorded in [package evidence](docs/evidence/offline-package-2026-09-12/README.md).
 
 No paid IDE, account, or internet connection is needed to run the application. Building it the first
 time downloads NuGet packages.

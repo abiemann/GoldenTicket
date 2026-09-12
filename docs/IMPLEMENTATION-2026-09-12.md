@@ -86,7 +86,9 @@ opening a camera, network listener or player save. It also requires CoreCLR to l
 package directory. Before publication, its development-build negative check correctly detected
 the framework-dependent runtime while the other seven component checks passed. The builder runs
 all eight checks against the published executable before archiving. Actual package results are
-recorded separately; a clean-machine/manual walkthrough is still required.
+recorded [in package evidence](evidence/offline-package-2026-09-12/README.md): both normal and
+cache-only builds passed, as did all eight executable checks and every archived payload hash.
+A clean-machine/manual walkthrough is still required.
 
 ## Deliberate implementation limits
 

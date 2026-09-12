@@ -1,0 +1,57 @@
+{
+  "formatVersion": 1,
+  "startedAtUtc": "2026-09-12T18:24:11.6342097+00:00",
+  "completedAtUtc": "2026-09-12T18:24:12.0385331+00:00",
+  "passed": true,
+  "framework": ".NET 10.0.12",
+  "architecture": "X64",
+  "runtimeDirectory": "D:\\Projects\\GoldenTicket\\artifacts\\release\\GoldenTicket-win-x64-20260912-182408-54fd076b-1db8087a\\GoldenTicket\\",
+  "applicationDirectory": "D:\\Projects\\GoldenTicket\\artifacts\\release\\GoldenTicket-win-x64-20260912-182408-54fd076b-1db8087a\\GoldenTicket\\",
+  "visibleWindowOpened": false,
+  "cameraOpened": false,
+  "networkListenerStarted": false,
+  "playerSaveOpened": false,
+  "checks": [
+    {
+      "Name": "Bundled CoreCLR",
+      "Passed": true,
+      "ErrorType": null
+    },
+    {
+      "Name": "Shipped board data checksum",
+      "Passed": true,
+      "ErrorType": null
+    },
+    {
+      "Name": "WPF theme and native rendering",
+      "Passed": true,
+      "ErrorType": null
+    },
+    {
+      "Name": "Native SQLite in memory",
+      "Passed": true,
+      "ErrorType": null
+    },
+    {
+      "Name": "Windows account DPAPI round trip",
+      "Passed": true,
+      "ErrorType": null
+    },
+    {
+      "Name": "Windows PNG encoding and WPF decoding",
+      "Passed": true,
+      "ErrorType": null
+    },
+    {
+      "Name": "ASP.NET host construction without listening",
+      "Passed": true,
+      "ErrorType": null
+    },
+    {
+      "Name": "Bundled companion assets",
+      "Passed": true,
+      "ErrorType": null
+    }
+  ],
+  "manualAcceptance": "Clean machine, disconnected Internet, real camera, real phone and full game walkthrough remain pending."
+}

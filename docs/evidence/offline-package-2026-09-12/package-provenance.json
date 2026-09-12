@@ -1,0 +1,51 @@
+{
+  "formatVersion": 1,
+  "sourceCommit": "54fd076b5394b896f9332d59a409b1bf5fe2cc22",
+  "sdkVersion": "10.0.401",
+  "builtAtUtc": "2026-09-12T18:24:08.5789643+00:00",
+  "target": "Windows 11 x64",
+  "runtimeIdentifier": "win-x64",
+  "selfContained": true,
+  "trimmed": false,
+  "singleFile": false,
+  "readyToRun": false,
+  "frameworkVersions": [
+    {
+      "name": "Microsoft.NETCore.App",
+      "version": "10.0.12"
+    },
+    {
+      "name": "Microsoft.WindowsDesktop.App",
+      "version": "10.0.12"
+    },
+    {
+      "name": "Microsoft.AspNetCore.App",
+      "version": "10.0.12"
+    }
+  ],
+  "lockedRestore": true,
+  "dependencyLockSet": "packages.win-x64.lock.json",
+  "offlineBuild": true,
+  "nugetAuditRequestedDuringRestore": false,
+  "packageType": "portable ZIP",
+  "signed": false,
+  "documentationCommittedWithSource": true,
+  "headlessRuntimeChecksPassed": true,
+  "requiredManualAcceptance": [
+    "Clean Windows 11 x64 without an installed .NET runtime",
+    "Internet-disconnected launch and complete manual game",
+    "Camera permissions and reconnect",
+    "Trusted Private LAN and phone certificate/pairing setup",
+    "Photo save/restart/rebuild",
+    "Notice-text completeness review before wider distribution"
+  ],
+  "noticeTextReview": [
+    "Microsoft.Data.Sqlite/10.0.12",
+    "Microsoft.Data.Sqlite.Core/10.0.12",
+    "SQLitePCLRaw.bundle_e_sqlite3/2.1.12",
+    "SQLitePCLRaw.core/2.1.12",
+    "SQLitePCLRaw.lib.e_sqlite3/2.1.12",
+    "SQLitePCLRaw.provider.e_sqlite3/2.1.12",
+    "Microsoft.Windows.SDK.NET.Ref/10.0.26100.57"
+  ]
+}
