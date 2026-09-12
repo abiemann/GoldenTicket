@@ -28,7 +28,46 @@ public static class StateHash
     /// Strings are JSON escaped and dictionary entries are sorted, avoiding delimiter collisions
     /// and insertion-order differences. This contains referee secrets and must not enter public logs.
     /// </summary>
-    public static string Canonicalize(GameState state) => JsonSerializer.Serialize(new
+    public static string Canonicalize(GameState state) => CanonicalizeCore(state) + PackAwaySuffix(state);
+
+    /// <summary>
+    /// The gameplay fingerprint: the same content, with lifecycle, the transaction counters and the
+    /// pack-away bookkeeping normalised away. DESIGN 19.8 compares a checkpoint's logical-state hash
+    /// with the restored state "excluding lifecycle/version bookkeeping", which is exactly this, and
+    /// invariant 15 uses it to prove that packing away and rebuilding changed nothing about the game.
+    /// </summary>
+    public static string ComputeLogical(GameState state)
+    {
+        var normalised = state.Fork();
+        normalised.StateVersion = 0;
+        normalised.JournalSequence = 0;
+        normalised.Lifecycle = SessionLifecycle.Active;
+        normalised.Checkpoint = null;
+        normalised.PackAwayRequest = null;
+        normalised.RebuildAttested = false;
+        normalised.CheckpointFault = null;
+
+        return "logical-v1:" +
+               Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(CanonicalizeCore(normalised))));
+    }
+
+    /// <summary>
+    /// Appended only when a save is in flight or committed, so a match that has never been packed
+    /// away hashes exactly as it did before this state existed and older saves stay readable.
+    /// </summary>
+    private static string PackAwaySuffix(GameState state) =>
+        state.Checkpoint is null && state.PackAwayRequest is null &&
+        !state.RebuildAttested && state.CheckpointFault is null
+            ? string.Empty
+            : "\n" + JsonSerializer.Serialize(new
+            {
+                state.Checkpoint,
+                state.PackAwayRequest,
+                state.RebuildAttested,
+                state.CheckpointFault,
+            });
+
+    private static string CanonicalizeCore(GameState state) => JsonSerializer.Serialize(new
     {
         FormatVersion = 2,
         state.SessionId,

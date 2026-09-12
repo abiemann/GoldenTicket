@@ -128,6 +128,9 @@ public sealed class ComputerSeatDriver
         if (_coordinator.StorageFaulted || view.Lifecycle == SessionLifecycle.Finished) return null;
         if (view.TurnPhase == TurnPhase.RulesDecisionRequired) return null;
 
+        // DESIGN 9.2: a save in progress, a packed game, or a rebuild disables AI submissions.
+        if (view.IsGameplaySuspended) return null;
+
         if (view.Lifecycle == SessionLifecycle.Setup)
         {
             foreach (var seat in _coordinator.Seats.Where(seat => seat.IsComputer))

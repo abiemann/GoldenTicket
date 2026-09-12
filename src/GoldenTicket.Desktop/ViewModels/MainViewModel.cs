@@ -7,6 +7,7 @@ using GoldenTicket.Domain;
 using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Domain.Model;
+using GoldenTicket.Domain.Projections;
 using GoldenTicket.Domain.Randomness;
 using GoldenTicket.Persistence;
 
@@ -16,6 +17,9 @@ public enum Screen
 {
     Setup,
     Table,
+
+    /// <summary>Guided reconstruction against a saved checkpoint's target (DESIGN 19.8).</summary>
+    Rebuild,
     FinalScore,
 }
 
@@ -153,11 +157,32 @@ public sealed partial class MainViewModel : ObservableObject
                 _coordinator, new HeuristicAiPolicy(), DeterministicRandom.SeedFromOperatingSystem().S0);
 
             Screen = Screen.Table;
-            NeedsBoardReconciliation = _coordinator.Public.Lifecycle != SessionLifecycle.Finished;
+
+            // A packed or half-saved match has no board on the table to reconcile: its own workflow
+            // handles the physical side (DESIGN 19.4, 19.8).
+            var lifecycle = _coordinator.Public.Lifecycle;
+            NeedsBoardReconciliation = lifecycle == SessionLifecycle.Setup || lifecycle == SessionLifecycle.Active;
             BoardReconciliationAcknowledged = false;
-            Status = NeedsBoardReconciliation
-                ? "Saved digital state verified. Check every claimed route before continuing; any pending claim stays uncommitted."
-                : "Saved match restored and verified against its journal.";
+
+            Status = lifecycle switch
+            {
+                SessionLifecycle.PreparingPackAway => "This match was in the middle of being saved. Finish or cancel the save.",
+                SessionLifecycle.PackedAway => "This match is packed away. Rebuild the board to continue it.",
+                SessionLifecycle.Rebuilding => "This match is part way through being rebuilt.",
+                _ when NeedsBoardReconciliation =>
+                    "Saved digital state verified. Check every claimed route before continuing; any pending claim stays uncommitted.",
+                _ => "Saved match restored and verified against its journal.",
+            };
+
+            // DESIGN 19.5: an interrupted save is carried forward against the preserved source state.
+            if (lifecycle == SessionLifecycle.PreparingPackAway)
+            {
+                var continued = await _coordinator.ContinuePackAwayAsync();
+                if (!continued.SafeToPack && continued.Problem is { } problem) Status = problem;
+            }
+
+            if (_coordinator.Public.Lifecycle == SessionLifecycle.Rebuilding) Screen = Screen.Rebuild;
+
             await RefreshAsync();
         }
         catch (Exception exception)
@@ -400,6 +425,128 @@ public sealed partial class MainViewModel : ObservableObject
 
     private bool CanSubmitOperator() => !_operationInProgress && !_mustReload &&
         !NeedsBoardReconciliation && Screen == Screen.Table;
+
+    // ---- Save, pack away and rebuild (DESIGN 4.10, 19.8) --------------------------------------
+
+    /// <summary>
+    /// Runs the whole save. The result is reported exactly as DESIGN 19.8 allows: the pieces may be
+    /// cleared away only once the checkpoint has been read back and validated.
+    /// </summary>
+    [RelayCommand]
+    public async Task SaveAndPackAwayAsync()
+    {
+        if (_coordinator is null || !CanSubmitOperator()) return;
+
+        var name = Table.SaveName?.Trim();
+        if (string.IsNullOrEmpty(name))
+        {
+            Status = "Give the saved game a name first.";
+            return;
+        }
+
+        SetOperationInProgress(true);
+        HidePrivateSeat();
+        try
+        {
+            var outcome = await _coordinator.SaveAndPackAwayAsync(name);
+
+            Status = outcome switch
+            {
+                { SafeToPack: true } => null,
+                { Rejection: { } rejection } => rejection.Message,
+                { AwaitingValidation: true } => "The save is written but still being checked.",
+                _ => outcome.Problem,
+            };
+
+            if (outcome.SafeToPack) Table.SaveName = "";
+            await RefreshAsync();
+        }
+        catch (Exception)
+        {
+            RequireReload();
+        }
+        finally
+        {
+            SetOperationInProgress(false);
+        }
+    }
+
+    [RelayCommand]
+    public async Task CancelSaveAsync()
+    {
+        if (_coordinator is null || _operationInProgress || _mustReload) return;
+
+        await SubmitLifecycleAsync(new CancelPackAwayPreparation(
+            _coordinator.NewEnvelope(), "cancelled by the operator"));
+    }
+
+    [RelayCommand]
+    public async Task BeginRebuildAsync()
+    {
+        if (_coordinator is null || Public?.Checkpoint is not { } checkpoint) return;
+
+        await SubmitLifecycleAsync(new BeginBoardRebuild(_coordinator.NewEnvelope(), checkpoint.CheckpointId));
+        if (_coordinator.Public.Lifecycle == SessionLifecycle.Rebuilding) Screen = Screen.Rebuild;
+    }
+
+    /// <summary>
+    /// DESIGN 19.8: the operator attests to the whole saved target. The echoed target hash means an
+    /// attestation cannot be applied to a different saved arrangement.
+    /// </summary>
+    [RelayCommand]
+    public async Task AttestRebuildAsync()
+    {
+        if (_coordinator is null || Public?.Checkpoint is not { } checkpoint) return;
+        if (!Table.RebuildAcknowledged)
+        {
+            Status = "Tick the confirmation once every saved route is back on the board.";
+            return;
+        }
+
+        await SubmitLifecycleAsync(new AttestBoardRebuild(
+            _coordinator.NewEnvelope(), checkpoint.CheckpointId, checkpoint.PhysicalTargetHash, Environment.UserName));
+    }
+
+    [RelayCommand]
+    public async Task ResumePackedGameAsync()
+    {
+        if (_coordinator is null || Public?.Checkpoint is not { } checkpoint) return;
+
+        await SubmitLifecycleAsync(new ResumePackedGame(_coordinator.NewEnvelope(), checkpoint.CheckpointId));
+        if (_coordinator.Public.Lifecycle == SessionLifecycle.Active) Screen = Screen.Table;
+    }
+
+    /// <summary>The current public projection, or null before a match is open.</summary>
+    private PublicView? Public => _coordinator?.Public;
+
+    private async Task SubmitLifecycleAsync(GameCommand command)
+    {
+        if (_coordinator is null || _operationInProgress || _mustReload) return;
+
+        SetOperationInProgress(true);
+        HidePrivateSeat();
+        try
+        {
+            var outcome = await _coordinator.SubmitAsync(command);
+            Status = outcome.IsAccepted ? null : outcome.Result.Rejection?.Message;
+
+            if (outcome.Result.Rejection?.Code == "StorageFaulted")
+            {
+                RequireReload();
+                return;
+            }
+
+            await RefreshAsync();
+        }
+        catch (Exception)
+        {
+            RequireReload();
+        }
+        finally
+        {
+            SetOperationInProgress(false);
+        }
+    }
 
     [RelayCommand]
     public async Task ConfirmBoardReconciledAsync()

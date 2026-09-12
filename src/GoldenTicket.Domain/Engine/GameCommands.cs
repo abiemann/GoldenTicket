@@ -66,6 +66,66 @@ public sealed record ConfirmBeforeStateRestored(
     CommandEnvelope Envelope,
     OperationId OperationId) : GameCommand(Envelope);
 
+// ---- Save, pack away and rebuild (DESIGN 19.8) -------------------------------------------
+
+/// <summary>
+/// Suspends play and captures one consistent checkpoint. DESIGN 19.8: this is a coordinator
+/// operation around the current foreground action, not another gameplay action, so it may suspend a
+/// partial draw, an open ticket offer or an authorised placement without forcing the turn to finish.
+/// </summary>
+public sealed record SaveAndPackAway(CommandEnvelope Envelope, string Name) : GameCommand(Envelope);
+
+/// <summary>
+/// Abandons a save that has not yet produced a checkpoint. DESIGN 19.8: returning to the suspended
+/// operation requires fresh board reconciliation, which the operator confirms.
+/// </summary>
+public sealed record CancelPackAwayPreparation(
+    CommandEnvelope Envelope,
+    string Reason) : GameCommand(Envelope);
+
+/// <summary>
+/// Writes the checkpoint for an in-flight save request (DESIGN 19.8 step 6, first transaction). It
+/// is a separate durable boundary from the request so a crash between them leaves the match paused
+/// with no safe-to-pack result issued.
+/// </summary>
+public sealed record CommitPackAwayCheckpoint(
+    CommandEnvelope Envelope,
+    CheckpointId CheckpointId) : GameCommand(Envelope);
+
+/// <summary>
+/// Records the outcome of reading the committed checkpoint back (DESIGN 19.8 step 6). The
+/// coordinator performs the read; the rules engine only records what it found, so the engine stays
+/// free of storage concerns.
+/// </summary>
+public sealed record RecordCheckpointReadback(
+    CommandEnvelope Envelope,
+    CheckpointId CheckpointId,
+    bool Succeeded,
+    string? FailureReason) : GameCommand(Envelope);
+
+/// <summary>Starts guided reconstruction against a verified checkpoint's immutable target.</summary>
+public sealed record BeginBoardRebuild(
+    CommandEnvelope Envelope,
+    CheckpointId CheckpointId) : GameCommand(Envelope);
+
+/// <summary>
+/// The operator's attestation that the rebuilt board matches the whole saved target. The target hash
+/// is echoed back so an attestation cannot be applied to a different checkpoint.
+/// </summary>
+public sealed record AttestBoardRebuild(
+    CommandEnvelope Envelope,
+    CheckpointId CheckpointId,
+    string PhysicalTargetHash,
+    string Operator) : GameCommand(Envelope);
+
+/// <summary>
+/// Returns to the saved operation exactly once. DESIGN 19.8: resume does not itself commit a pending
+/// route; the ordinary protocol runs again afterwards.
+/// </summary>
+public sealed record ResumePackedGame(
+    CommandEnvelope Envelope,
+    CheckpointId CheckpointId) : GameCommand(Envelope);
+
 /// <summary>Why a command was refused. Codes are stable; messages are for people.</summary>
 public sealed record CommandRejection(string Code, string Message);
 

@@ -180,6 +180,15 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
 
         await WriteCommandOutcomeAsync(connection, sessionId, outcome, cancellationToken);
 
+        // DESIGN 19.2/19.3: the checkpoint row is written in the same transaction as the event that
+        // created or re-statused it, so a listing can never disagree with the journal.
+        if (state.Checkpoint is { } checkpoint &&
+            transition.Events.Any(e => e is PackAwayCheckpointCommitted or PackAwayCheckpointVerified
+                                            or PackAwayCheckpointFaulted))
+        {
+            await WriteCheckpointAsync(connection, encryption, checkpoint, cancellationToken);
+        }
+
         await ExecuteAsync(connection,
             """
             UPDATE Session SET UpdatedAt = $updatedAt, TurnNumber = $turnNumber, Lifecycle = $lifecycle,
@@ -407,6 +416,22 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
                 PRIMARY KEY (SessionId, Sequence)
             );
 
+            CREATE TABLE IF NOT EXISTS PackAwayCheckpoint (
+                SessionId           TEXT NOT NULL,
+                CheckpointId        TEXT NOT NULL,
+                Name                TEXT NOT NULL,
+                CreatedAt           TEXT NOT NULL,
+                FormatVersion       INTEGER NOT NULL,
+                SourceStateVersion  INTEGER NOT NULL,
+                SourceJournalSeq    INTEGER NOT NULL,
+                TargetProvenance    TEXT NOT NULL,
+                PhotoHash           TEXT NULL,
+                Status              TEXT NOT NULL,
+                Payload             BLOB NOT NULL,
+                Nonce               BLOB NOT NULL,
+                PRIMARY KEY (SessionId, CheckpointId)
+            );
+
             CREATE TABLE IF NOT EXISTS Snapshot (
                 SessionId       TEXT NOT NULL,
                 StateVersion    INTEGER NOT NULL,
@@ -621,6 +646,74 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
         }
 
         return schemaVersion;
+    }
+
+    /// <summary>
+    /// Writes or re-statuses one checkpoint. Only the columns a listing genuinely needs are stored in
+    /// the clear; the record itself is encrypted because DESIGN 19.2 protects referee state, and the
+    /// logical-state fingerprint is derived from hands, deck order and private offers.
+    /// </summary>
+    private static async Task WriteCheckpointAsync(
+        SqliteConnection connection,
+        SessionEncryption encryption,
+        PackAwayCheckpoint checkpoint,
+        CancellationToken cancellationToken)
+    {
+        var plaintext = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+            checkpoint, CheckpointSerializerOptions);
+        var payload = encryption.Encrypt(plaintext, out var nonce);
+
+        await ExecuteAsync(connection, """
+            INSERT OR REPLACE INTO PackAwayCheckpoint (
+                SessionId, CheckpointId, Name, CreatedAt, FormatVersion, SourceStateVersion,
+                SourceJournalSeq, TargetProvenance, PhotoHash, Status, Payload, Nonce)
+            VALUES (
+                $sessionId, $checkpointId, $name, $createdAt, $formatVersion, $sourceStateVersion,
+                $sourceJournalSeq, $targetProvenance, $photoHash, $status, $payload, $nonce);
+            """, cancellationToken,
+            ("$sessionId", checkpoint.SessionId.Value),
+            ("$checkpointId", checkpoint.CheckpointId.Value),
+            ("$name", checkpoint.Name),
+            ("$createdAt", checkpoint.CreatedAt.ToString("O")),
+            ("$formatVersion", checkpoint.FormatVersion),
+            ("$sourceStateVersion", checkpoint.SourceStateVersion),
+            ("$sourceJournalSeq", checkpoint.SourceJournalSequence),
+            ("$targetProvenance", checkpoint.TargetProvenance.ToString()),
+            ("$photoHash", (object?)checkpoint.PhotoHash ?? DBNull.Value),
+            ("$status", checkpoint.Status.ToString()),
+            ("$payload", payload),
+            ("$nonce", nonce));
+    }
+
+    private static readonly System.Text.Json.JsonSerializerOptions CheckpointSerializerOptions = new()
+    {
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+    };
+
+    /// <summary>
+    /// Reads one checkpoint back from storage. DESIGN 19.8 step 6 validates a committed checkpoint by
+    /// reading it again rather than trusting the write that produced it.
+    /// </summary>
+    public async Task<PackAwayCheckpoint?> ReadCheckpointAsync(
+        SessionId sessionId, CheckpointId checkpointId, CancellationToken cancellationToken)
+    {
+        var encryption = await GetEncryptionAsync(sessionId, cancellationToken);
+
+        await using var connection = await OpenAsync(sessionId, cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Payload, Nonce FROM PackAwayCheckpoint
+            WHERE SessionId = $sessionId AND CheckpointId = $checkpointId;
+            """;
+        command.Parameters.AddWithValue("$sessionId", sessionId.Value);
+        command.Parameters.AddWithValue("$checkpointId", checkpointId.Value);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+
+        var plaintext = encryption.Decrypt((byte[])reader["Payload"], (byte[])reader["Nonce"]);
+        return System.Text.Json.JsonSerializer.Deserialize<PackAwayCheckpoint>(
+            plaintext, CheckpointSerializerOptions);
     }
 
     private static Task WriteSnapshotAsync(

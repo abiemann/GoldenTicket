@@ -51,6 +51,54 @@ public enum SessionLifecycle
     Setup = 0,
     Active = 1,
     Finished = 2,
+
+    /// <summary>
+    /// A save is being captured. DESIGN 19.8 step 1: gameplay commands, AI submissions and move
+    /// inference are rejected while the source state is frozen.
+    /// </summary>
+    PreparingPackAway = 3,
+
+    /// <summary>
+    /// The checkpoint is durable and the pieces may be cleared away. Removing trains after this
+    /// point cannot become a game change, even after a crash (DESIGN 19.8 step 7).
+    /// </summary>
+    PackedAway = 4,
+
+    /// <summary>
+    /// The board is being rebuilt against the checkpoint's immutable target. Placing trains here
+    /// cannot enter a claim or scoring path (DESIGN 9.2).
+    /// </summary>
+    Rebuilding = 5,
+}
+
+/// <summary>
+/// DESIGN 19.8: what the saved physical target was derived from. Only
+/// <see cref="LogicalStateOnly"/> is produced in this build, because a verified board photograph
+/// needs the camera milestones; the field exists so a save says honestly which one it is.
+/// </summary>
+public enum TargetProvenance
+{
+    /// <summary>Committed route ownership only. No photograph, no uncommitted physical progress.</summary>
+    LogicalStateOnly = 0,
+
+    /// <summary>A verified board photograph, optionally including a pending placement mask.</summary>
+    VerifiedPhoto = 1,
+}
+
+/// <summary>
+/// DESIGN 19.8 step 6: a checkpoint is committed first and validated second, so a safe-to-pack
+/// result is never reported from an unvalidated write.
+/// </summary>
+public enum CheckpointStatus
+{
+    /// <summary>Durably written; readback has not yet proved it can be restored.</summary>
+    CommittedAwaitingReadback = 0,
+
+    /// <summary>Read back and validated. Only now may the game be reported safe to pack away.</summary>
+    Verified = 1,
+
+    /// <summary>Readback failed. The match stays packed and faulted until it is resolved.</summary>
+    Faulted = 2,
 }
 
 /// <summary>

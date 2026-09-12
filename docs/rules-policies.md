@@ -30,3 +30,22 @@ have been checked against an official ruling yet; that is outstanding work befor
 - **Payment choice.** The engine never picks a payment. Every legal combination is offered and the
   seat chooses, so a locomotive is never spent silently (DESIGN §4.3).
 - **Scoring ladder, hand sizes, stock, market size.** All in the data manifest.
+
+## Save, pack away and rebuild
+
+DESIGN 19.8 defines two save paths. This build implements the **state-only** one, because a verified
+board photograph needs the camera milestones.
+
+| Aspect | This build | Design reference |
+|---|---|---|
+| `targetProvenance` | Always `LogicalStateOnly` | 19.8, state-only fallback |
+| `photoHash` | Always null; the route list is the reconstruction record | 19.8 |
+| Physical target | Committed route ownership only | 19.8 |
+| A partially placed claim | **Not** part of the saved target. Its payment stays reserved and its claim stays uncommitted; after resuming, the trains are placed again and confirmed as usual. | 19.8, "a forward claim needs its trains placed again" |
+| Durable boundaries | Three: request, checkpoint commit, readback verification | 19.8 step 6 |
+| Safe-to-pack result | Only from a `Verified` checkpoint. A restart between commit and readback repeats the validation. | 19.8 step 6 |
+| Resume gate | Operator whole-target attestation, re-checked at the moment Resume is pressed | 19.8, guided reconstruction |
+| Retention | The journal is never pruned, so a checkpoint's source history is pinned by construction | 19.7 |
+
+The camera milestones add the verified photograph, the pending-placement mask and image readback to
+this same protocol; the transaction boundaries and the resume gate do not change.

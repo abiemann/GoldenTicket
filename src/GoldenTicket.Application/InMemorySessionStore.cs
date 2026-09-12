@@ -1,5 +1,6 @@
 using GoldenTicket.Domain;
 using GoldenTicket.Domain.Engine;
+using GoldenTicket.Domain.Events;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Domain.Model;
 
@@ -142,6 +143,35 @@ public sealed class InMemorySessionStore : ISessionStore
         }
 
         return Task.FromResult(new RestoredSession(state, journal));
+    }
+
+    public Task<PackAwayCheckpoint?> ReadCheckpointAsync(
+        SessionId sessionId, CheckpointId checkpointId, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            // The journal is the record here too: the latest event that touched this checkpoint is
+            // what a reader would see, so a readback exercises the same path the SQLite store does.
+            PackAwayCheckpoint? found = null;
+            foreach (var row in Require(sessionId).Journal)
+            {
+                switch (row.Event)
+                {
+                    case PackAwayCheckpointCommitted committed
+                        when committed.Checkpoint.CheckpointId == checkpointId:
+                        found = committed.Checkpoint;
+                        break;
+                    case PackAwayCheckpointVerified verified when verified.CheckpointId == checkpointId:
+                        found = found is null ? null : found with { Status = CheckpointStatus.Verified };
+                        break;
+                    case PackAwayCheckpointFaulted faulted when faulted.CheckpointId == checkpointId:
+                        found = found is null ? null : found with { Status = CheckpointStatus.Faulted };
+                        break;
+                }
+            }
+
+            return Task.FromResult(found);
+        }
     }
 
     public Task<IReadOnlyList<SessionSummary>> ListSessionsAsync(CancellationToken cancellationToken)

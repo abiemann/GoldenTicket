@@ -36,6 +36,9 @@
         <views:TableView
             Visibility="{Binding Screen, Converter={StaticResource ScreenVisibility}, ConverterParameter=Table}" />
 
+        <views:RebuildView
+            Visibility="{Binding Screen, Converter={StaticResource ScreenVisibility}, ConverterParameter=Rebuild}" />
+
         <views:FinalScoreView
             Visibility="{Binding Screen, Converter={StaticResource ScreenVisibility}, ConverterParameter=FinalScore}" />
         </Grid>

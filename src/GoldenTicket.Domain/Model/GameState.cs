@@ -143,6 +143,43 @@ public sealed class GameState
 
     public FinalResult? FinalResult { get; internal set; }
 
+    // ---- Pack away and rebuild (DESIGN 7.1, 19.8) -------------------------------------------
+
+    /// <summary>
+    /// The checkpoint this session is currently packed against, while the lifecycle is
+    /// <see cref="SessionLifecycle.PackedAway"/> or <see cref="SessionLifecycle.Rebuilding"/>. It
+    /// carries the frozen source version, the suspended turn phase and the physical target, so the
+    /// session does not keep a second mutable copy of any of them. Resuming clears this reference;
+    /// the durable checkpoint record itself is retained (DESIGN 19.7).
+    /// </summary>
+    public PackAwayCheckpoint? Checkpoint { get; internal set; }
+
+    /// <summary>
+    /// The save currently being captured. DESIGN 19.8 step 1: a client retry resolves the same
+    /// request instead of opening a second save operation, and a restart mid-capture finds the same
+    /// identity, name and suspended phase waiting.
+    /// </summary>
+    public PackAwayRequest? PackAwayRequest { get; internal set; }
+
+    /// <summary>
+    /// True once the operator has attested that the rebuilt board matches the checkpoint's target.
+    /// DESIGN 19.8 requires a fresh check at the moment Resume is pressed, so this is cleared by any
+    /// event that could invalidate it.
+    /// </summary>
+    public bool RebuildAttested { get; internal set; }
+
+    /// <summary>Set when a committed checkpoint failed readback (DESIGN 19.8 step 6).</summary>
+    public string? CheckpointFault { get; internal set; }
+
+    /// <summary>
+    /// DESIGN 9.2: these lifecycles disable gameplay commands, AI submissions and ordinary move
+    /// inference, allowing only the appropriate save, rebuild and recovery controls.
+    /// </summary>
+    public bool IsGameplaySuspended =>
+        Lifecycle is SessionLifecycle.PreparingPackAway
+            or SessionLifecycle.PackedAway
+            or SessionLifecycle.Rebuilding;
+
     // ---- Derived helpers ------------------------------------------------------------------
 
     public Seat SeatOf(SeatId id) => Seats.First(s => s.SeatId == id);
@@ -212,6 +249,10 @@ public sealed class GameState
             FinalRound = FinalRound,
             RandomState = RandomState,
             FinalResult = FinalResult,
+            Checkpoint = Checkpoint,
+            PackAwayRequest = PackAwayRequest,
+            RebuildAttested = RebuildAttested,
+            CheckpointFault = CheckpointFault,
         };
 
         foreach (var (routeId, seatId) in RouteOwnersInternal) copy.RouteOwnersInternal[routeId] = seatId;

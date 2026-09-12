@@ -79,6 +79,15 @@ public interface ISessionStore
         CardCatalog catalog,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Reads one checkpoint back from durable storage. DESIGN 19.8 step 6 validates a committed
+    /// checkpoint by reading it again rather than trusting the write that produced it.
+    /// </summary>
+    Task<PackAwayCheckpoint?> ReadCheckpointAsync(
+        SessionId sessionId,
+        CheckpointId checkpointId,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<SessionSummary>> ListSessionsAsync(CancellationToken cancellationToken);
 
     Task DeleteSessionAsync(SessionId sessionId, CancellationToken cancellationToken);

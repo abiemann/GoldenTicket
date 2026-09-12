@@ -62,7 +62,21 @@ public static class Projector
             pending,
             finalRound,
             state.FinalResult,
-            state.RulesDecision);
+            state.RulesDecision,
+            state.Checkpoint is { } checkpoint
+                ? new PublicCheckpoint(
+                    checkpoint.CheckpointId,
+                    checkpoint.Name,
+                    checkpoint.CreatedAt,
+                    checkpoint.Status,
+                    checkpoint.TargetProvenance,
+                    checkpoint.SuspendedTurnPhase,
+                    checkpoint.PendingOperationId is not null,
+                    checkpoint.PhysicalTargetHash,
+                    checkpoint.PhysicalTarget)
+                : null,
+            state.RebuildAttested,
+            state.CheckpointFault);
     }
 
     public static SeatView ProjectSeat(GameState state, SeatId seat) =>

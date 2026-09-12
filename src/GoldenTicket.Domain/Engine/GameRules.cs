@@ -151,7 +151,25 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
         if (state.Lifecycle == SessionLifecycle.Finished)
             return CommandResult.Reject("MatchFinished", "The match is over.");
 
-        if (state.TurnPhase == TurnPhase.RulesDecisionRequired)
+        // DESIGN 9.2: while a save is being captured, the game is packed, or the board is being
+        // rebuilt, only the save/rebuild/recovery controls are accepted. Gameplay commands, AI
+        // submissions and ordinary move inference are all refused.
+        var isLifecycleCommand = IsLifecycleCommand(command);
+
+        if (state.IsGameplaySuspended && !isLifecycleCommand)
+        {
+            return CommandResult.Reject("SessionSuspended",
+                state.Lifecycle switch
+                {
+                    SessionLifecycle.PreparingPackAway => "The game is being saved. Play resumes when the save finishes or is cancelled.",
+                    SessionLifecycle.PackedAway => "This game is packed away. Rebuild the board to continue it.",
+                    _ => "The board is being rebuilt. Finish the rebuild before playing on.",
+                });
+        }
+
+        // DESIGN 21.1: a rare unresolved supply state must still be savable, so the lifecycle
+        // controls are allowed through the pause that blocks ordinary play.
+        if (state.TurnPhase == TurnPhase.RulesDecisionRequired && !isLifecycleCommand)
         {
             return CommandResult.Reject("RulesDecisionRequired",
                 state.RulesDecision?.Explanation ?? "The match is paused on an unresolved supply state.");
@@ -161,6 +179,13 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
 
         return command switch
         {
+            SaveAndPackAway c => HandleSaveAndPackAway(context, c),
+            CancelPackAwayPreparation c => HandleCancelPackAway(context, c),
+            CommitPackAwayCheckpoint c => HandleCommitCheckpoint(context, c),
+            RecordCheckpointReadback c => HandleCheckpointReadback(context, c),
+            BeginBoardRebuild c => HandleBeginRebuild(context, c),
+            AttestBoardRebuild c => HandleAttestRebuild(context, c),
+            ResumePackedGame c => HandleResumePackedGame(context, c),
             CommitTicketSelection c => HandleTicketSelection(context, c),
             SelectTrainCard c => HandleSelectTrainCard(context, c),
             RequestTicketOffer c => HandleRequestTicketOffer(context, c),
@@ -170,6 +195,223 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
             ConfirmBeforeStateRestored c => HandleConfirmRestored(context, c),
             _ => CommandResult.Reject("UnknownCommand", $"{command.GetType().Name} is not a supported command."),
         };
+    }
+
+    /// <summary>The save, rebuild and resume controls, which the lifecycle gate lets through.</summary>
+    private static bool IsLifecycleCommand(GameCommand command) => command is
+        SaveAndPackAway or CancelPackAwayPreparation or CommitPackAwayCheckpoint or
+        RecordCheckpointReadback or BeginBoardRebuild or AttestBoardRebuild or ResumePackedGame;
+
+    // ---- Save, pack away and rebuild (DESIGN 19.8) --------------------------------------------
+
+    /// <summary>The longest a save name may be, so a name cannot bloat the journal.</summary>
+    public const int MaximumCheckpointNameLength = 120;
+
+    /// <summary>
+    /// Step 1. Suspends play and records what was interrupted. Reservations and the pending
+    /// operation are deliberately kept: DESIGN 19.8 allows suspending a partial draw, an open ticket
+    /// offer or an authorised placement without forcing the turn to finish.
+    /// </summary>
+    private CommandResult HandleSaveAndPackAway(TransitionContext context, SaveAndPackAway command)
+    {
+        var state = context.State;
+
+        if (state.Lifecycle != SessionLifecycle.Active)
+        {
+            return CommandResult.Reject("CannotPackAwayNow",
+                state.Lifecycle == SessionLifecycle.Setup
+                    ? "Finish choosing opening destination tickets before saving."
+                    : "A save is already in progress for this match.");
+        }
+
+        var name = command.Name?.Trim();
+        if (string.IsNullOrEmpty(name))
+            return CommandResult.Reject("SaveNameMissing", "A saved game needs a name.");
+
+        if (name.Length > MaximumCheckpointNameLength)
+            return CommandResult.Reject("SaveNameTooLong",
+                $"A saved game name is at most {MaximumCheckpointNameLength} characters.");
+
+        context.Emit(new PackAwayRequested(
+            command.Envelope.CommandId,
+            CheckpointId.New(),
+            name,
+            state.TurnPhase,
+            state.PendingClaim?.OperationId));
+
+        return CommandResult.Accept(context.Events);
+    }
+
+    private CommandResult HandleCancelPackAway(TransitionContext context, CancelPackAwayPreparation command)
+    {
+        var state = context.State;
+
+        if (state.Lifecycle != SessionLifecycle.PreparingPackAway || state.PackAwayRequest is not { } request)
+            return CommandResult.Reject("NoSaveInProgress", "No save is being prepared.");
+
+        var reason = string.IsNullOrWhiteSpace(command.Reason) ? "cancelled by the operator" : command.Reason.Trim();
+        context.Emit(new PackAwayPreparationCancelled(request.RequestId, reason));
+        return CommandResult.Accept(context.Events);
+    }
+
+    /// <summary>
+    /// Step 6, first transaction. Freezes the source state into an immutable checkpoint. This build
+    /// records a state-only target: the committed ownership map, with no photograph and no
+    /// uncommitted physical progress, exactly as DESIGN 19.8 specifies for that path.
+    /// </summary>
+    private CommandResult HandleCommitCheckpoint(TransitionContext context, CommitPackAwayCheckpoint command)
+    {
+        var state = context.State;
+
+        if (state.Lifecycle != SessionLifecycle.PreparingPackAway || state.PackAwayRequest is not { } request)
+            return CommandResult.Reject("NoSaveInProgress", "No save is being prepared.");
+
+        if (request.CheckpointId != command.CheckpointId)
+            return CommandResult.Reject("CheckpointMismatch", "That checkpoint belongs to a different save request.");
+
+        var target = PackAwayCheckpoint.TargetFrom(state);
+
+        var checkpoint = new PackAwayCheckpoint(
+            request.CheckpointId,
+            state.SessionId,
+            request.Name,
+            _time.GetUtcNow(),
+            PackAwayCheckpoint.CurrentFormatVersion,
+            SourceStateVersion: command.Envelope.ExpectedStateVersion,
+            SourceJournalSequence: state.JournalSequence,
+            BoardRevision: state.BoardRevision,
+            ProfileId: Manifest.ProfileId,
+            ManifestHash: Manifest.DataHash,
+            LogicalStateHash: StateHash.ComputeLogical(state),
+            SuspendedTurnPhase: request.SuspendedTurnPhase,
+            PendingOperationId: request.PendingOperationId,
+            PhysicalTarget: target,
+            PhysicalTargetHash: PackAwayCheckpoint.HashTarget(target),
+            TargetProvenance: TargetProvenance.LogicalStateOnly,
+            PhotoHash: null,
+            Status: CheckpointStatus.CommittedAwaitingReadback);
+
+        context.Emit(new PackAwayCheckpointCommitted(checkpoint));
+        return CommandResult.Accept(context.Events);
+    }
+
+    /// <summary>
+    /// Step 6, second transaction. DESIGN 19.8: a safe-to-pack result is only issued once the
+    /// committed checkpoint has been read back and validated; a failure leaves the match packed and
+    /// faulted rather than resuming play or reporting success.
+    /// </summary>
+    private CommandResult HandleCheckpointReadback(TransitionContext context, RecordCheckpointReadback command)
+    {
+        var state = context.State;
+
+        if (state.Checkpoint is not { } checkpoint || checkpoint.CheckpointId != command.CheckpointId)
+            return CommandResult.Reject("UnknownCheckpoint", "That checkpoint is not the one being validated.");
+
+        if (checkpoint.Status == CheckpointStatus.Verified)
+            return CommandResult.Reject("AlreadyVerified", "That checkpoint has already been validated.");
+
+        if (command.Succeeded)
+            context.Emit(new PackAwayCheckpointVerified(checkpoint.CheckpointId));
+        else
+            context.Emit(new PackAwayCheckpointFaulted(
+                checkpoint.CheckpointId,
+                string.IsNullOrWhiteSpace(command.FailureReason) ? "readback failed" : command.FailureReason.Trim()));
+
+        return CommandResult.Accept(context.Events);
+    }
+
+    private CommandResult HandleBeginRebuild(TransitionContext context, BeginBoardRebuild command)
+    {
+        var state = context.State;
+
+        if (state.Lifecycle != SessionLifecycle.PackedAway || state.Checkpoint is not { } checkpoint)
+            return CommandResult.Reject("NotPackedAway", "This match is not packed away.");
+
+        if (checkpoint.CheckpointId != command.CheckpointId)
+            return CommandResult.Reject("CheckpointMismatch", "That checkpoint does not belong to this match.");
+
+        if (checkpoint.Status != CheckpointStatus.Verified)
+        {
+            return CommandResult.Reject("CheckpointNotVerified",
+                "That save has not been validated yet, so it cannot be rebuilt from.");
+        }
+
+        context.Emit(new BoardRebuildStarted(checkpoint.CheckpointId));
+        return CommandResult.Accept(context.Events);
+    }
+
+    /// <summary>
+    /// The operator's whole-target attestation. DESIGN 19.8 accepts this in place of camera
+    /// agreement under the existing manual-verification policy; the echoed target hash stops an
+    /// attestation being applied to a different saved arrangement.
+    /// </summary>
+    private CommandResult HandleAttestRebuild(TransitionContext context, AttestBoardRebuild command)
+    {
+        var state = context.State;
+
+        if (state.Lifecycle != SessionLifecycle.Rebuilding || state.Checkpoint is not { } checkpoint)
+            return CommandResult.Reject("NotRebuilding", "No board rebuild is in progress.");
+
+        if (checkpoint.CheckpointId != command.CheckpointId)
+            return CommandResult.Reject("CheckpointMismatch", "That attestation names a different checkpoint.");
+
+        if (state.VerificationMode != VerificationMode.Manual)
+        {
+            return CommandResult.Reject("ManualVerificationNotSelected",
+                "Attesting to a rebuilt board requires an explicitly selected manual verification mode.");
+        }
+
+        if (!string.Equals(checkpoint.PhysicalTargetHash, command.PhysicalTargetHash, StringComparison.Ordinal))
+            return CommandResult.Reject("TargetHashMismatch", "That attestation does not match the saved board.");
+
+        if (string.IsNullOrWhiteSpace(command.Operator))
+            return CommandResult.Reject("AttestationDetailsMissing", "A rebuild attestation must record the operator.");
+
+        context.Emit(new BoardRebuildAttested(
+            checkpoint.CheckpointId, command.Operator.Trim(), checkpoint.PhysicalTargetHash, _time.GetUtcNow()));
+
+        return CommandResult.Accept(context.Events);
+    }
+
+    /// <summary>
+    /// DESIGN 19.8: clicking Resume runs the checks again, so a train moved after the attestation
+    /// blocks a stale confirmation. Resume restores the saved operation exactly once and does not
+    /// itself commit a pending route.
+    /// </summary>
+    private CommandResult HandleResumePackedGame(TransitionContext context, ResumePackedGame command)
+    {
+        var state = context.State;
+
+        if (state.Lifecycle != SessionLifecycle.Rebuilding || state.Checkpoint is not { } checkpoint)
+            return CommandResult.Reject("NotRebuilding", "No board rebuild is in progress.");
+
+        if (checkpoint.CheckpointId != command.CheckpointId)
+            return CommandResult.Reject("CheckpointMismatch", "That resume names a different checkpoint.");
+
+        if (!state.RebuildAttested)
+        {
+            return CommandResult.Reject("BoardNotConfirmed",
+                "Confirm that the rebuilt board matches the saved position before resuming.");
+        }
+
+        // The target is immutable and the board cannot have changed underneath us without an event,
+        // but the comparison is repeated here so Resume is decided on current state, not on the
+        // state that was current when the attestation was given.
+        var current = PackAwayCheckpoint.HashTarget(PackAwayCheckpoint.TargetFrom(state));
+        if (!string.Equals(current, checkpoint.PhysicalTargetHash, StringComparison.Ordinal))
+        {
+            return CommandResult.Reject("TargetChanged",
+                "The saved position no longer matches this match. The rebuild must be checked again.");
+        }
+
+        if (!string.Equals(StateHash.ComputeLogical(state), checkpoint.LogicalStateHash, StringComparison.Ordinal))
+        {
+            return CommandResult.Reject("LogicalStateChanged",
+                "The saved game state does not match this checkpoint. Resuming could corrupt the match.");
+        }
+
+        context.Emit(new PackedGameResumed(checkpoint.CheckpointId, checkpoint.SuspendedTurnPhase));
+        return CommandResult.Accept(context.Events);
     }
 
     // ---- Destination tickets -----------------------------------------------------------------

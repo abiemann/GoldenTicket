@@ -58,9 +58,34 @@ public sealed partial class TableViewModel : ObservableObject
     [ObservableProperty] private PlacementInstruction? _placement;
     [ObservableProperty] private bool _wholeBoardAcknowledged;
 
+    // ---- Save, pack away and rebuild (DESIGN 4.10, 19.8) -------------------------------------
+
+    /// <summary>The name the operator is giving the next save.</summary>
+    [ObservableProperty] private string _saveName = "";
+
+    [ObservableProperty] private bool _isSaving;
+    [ObservableProperty] private bool _isPackedAway;
+    [ObservableProperty] private bool _isRebuilding;
+
+    /// <summary>What the save screen says. Only a validated checkpoint says it is safe to pack.</summary>
+    [ObservableProperty] private string? _saveStatus;
+
+    [ObservableProperty] private string? _saveProblem;
+
+    /// <summary>The saved position, listed the way the rebuild instructions read it.</summary>
+    public ObservableCollection<RebuildRouteRow> RebuildTarget { get; } = [];
+
+    public ObservableCollection<RebuildStockRow> RebuildStock { get; } = [];
+
+    [ObservableProperty] private string? _rebuildHeadline;
+    [ObservableProperty] private string? _rebuildSuspendedAction;
+    [ObservableProperty] private bool _rebuildAttested;
+    [ObservableProperty] private bool _rebuildAcknowledged;
+
     public void Update(PublicView view, IReadOnlyList<PublicEventEntry> history)
     {
         WholeBoardAcknowledged = false;
+        UpdatePackAway(view);
         var active = view.SeatOf(view.ActiveSeatId);
         ActiveSeatName = active.DisplayName;
         ActiveSeatColor = active.Color;
@@ -156,6 +181,92 @@ public sealed partial class TableViewModel : ObservableObject
             pending.AwaitingRestore);
     }
 
+    /// <summary>
+    /// Mirrors the save lifecycle onto the screen. DESIGN 19.8 step 7: only a validated checkpoint
+    /// may say the pieces can be cleared away, so a committed-but-unvalidated one says it is still
+    /// being checked.
+    /// </summary>
+    private void UpdatePackAway(PublicView view)
+    {
+        IsSaving = view.Lifecycle == SessionLifecycle.PreparingPackAway;
+        IsPackedAway = view.Lifecycle == SessionLifecycle.PackedAway;
+        IsRebuilding = view.Lifecycle == SessionLifecycle.Rebuilding;
+        RebuildAttested = view.RebuildAttested;
+        SaveProblem = view.CheckpointFault;
+
+        if (!IsRebuilding) RebuildAcknowledged = false;
+
+        if (view.Checkpoint is not { } checkpoint)
+        {
+            SaveStatus = IsSaving ? "Saving. Clear your hands from the board." : null;
+            RebuildTarget.Clear();
+            RebuildStock.Clear();
+            RebuildHeadline = null;
+            RebuildSuspendedAction = null;
+            return;
+        }
+
+        SaveStatus = checkpoint.Status switch
+        {
+            CheckpointStatus.Verified =>
+                $"Saved as \"{checkpoint.Name}\" at {checkpoint.CreatedAt.ToLocalTime():HH:mm}. " +
+                "You can pack the game away.",
+            CheckpointStatus.CommittedAwaitingReadback =>
+                "The save is written and is being checked. Do not pack the game away yet.",
+            _ => "The save could not be validated. The game stays packed until this is resolved.",
+        };
+
+        RebuildHeadline =
+            $"\"{checkpoint.Name}\" - {checkpoint.RouteCount} route{(checkpoint.RouteCount == 1 ? "" : "s")}, " +
+            $"{checkpoint.TotalTrainsOnBoard} trains on the board" +
+            (checkpoint.Provenance == TargetProvenance.LogicalStateOnly
+                ? ". Saved without a board photograph; the route list below is the record."
+                : ".");
+
+        RebuildSuspendedAction = checkpoint.SuspendedTurnPhase switch
+        {
+            TurnPhase.AwaitingSecondTrainCard =>
+                "When you resume, the active seat still owes the second card of its draw.",
+            TurnPhase.AwaitingTicketKeep =>
+                "When you resume, the active seat is still choosing which destination tickets to keep.",
+            TurnPhase.AwaitingPhysicalPlacement =>
+                "A route claim was waiting for its trains. Those trains are NOT part of the saved board " +
+                "below; after resuming, place them and confirm as usual. Nothing has been spent.",
+            TurnPhase.RestoreBeforeState =>
+                "A cancelled claim was waiting for its trains to come back off. Finish that after resuming.",
+            _ => null,
+        };
+
+        var seatsByName = view.Seats.ToDictionary(seat => seat.SeatId);
+
+        RebuildTarget.Clear();
+        foreach (var route in checkpoint.PhysicalTarget
+                     .OrderBy(route => route.SeatId.Value)
+                     .ThenBy(route => _manifest.Describe(route.RouteId), StringComparer.Ordinal))
+        {
+            var owner = seatsByName[route.SeatId];
+            RebuildTarget.Add(new RebuildRouteRow(
+                owner.DisplayName,
+                owner.Color,
+                owner.Symbol,
+                _manifest.Describe(route.RouteId),
+                _manifest.Route(route.RouteId).DisplayLaneLabel,
+                route.Length));
+        }
+
+        RebuildStock.Clear();
+        var starting = _manifest.RulesConstants.StartingTrainsPerSeat;
+        foreach (var seat in view.Seats)
+        {
+            var onBoard = checkpoint.PhysicalTarget
+                .Where(route => route.SeatId == seat.SeatId)
+                .Sum(route => route.Length);
+
+            RebuildStock.Add(new RebuildStockRow(
+                seat.DisplayName, seat.Color, seat.Symbol, onBoard, starting - onBoard));
+        }
+    }
+
     private static string DescribePhase(PublicView view) => view.TurnPhase switch
     {
         TurnPhase.SetupTicketSelection => "Choosing opening destination tickets",
@@ -219,3 +330,20 @@ public sealed record PlacementInstruction(
           (LaneLabel is null ? "" : $", {LaneLabel}") +
           ". Place them in any order; nothing is spent or scored until the placement is confirmed.";
 }
+
+/// <summary>One route of the saved position, in the words DESIGN 19.8 asks the instructions to use.</summary>
+public sealed record RebuildRouteRow(
+    string OwnerName,
+    PlayerColor OwnerColor,
+    string Symbol,
+    string RouteText,
+    string? LaneLabel,
+    int TrainCount);
+
+/// <summary>How many trains each seat should have left over once the board is rebuilt.</summary>
+public sealed record RebuildStockRow(
+    string SeatName,
+    PlayerColor Color,
+    string Symbol,
+    int OnBoard,
+    int RemainingOffBoard);

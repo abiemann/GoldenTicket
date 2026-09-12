@@ -92,6 +92,15 @@ public static class GameReducer
             case FinalScoringCompleted e: ApplyFinalScoring(state, e); break;
             case RulesDecisionRaised e: ApplyRulesDecision(state, e); break;
 
+            case PackAwayRequested e: ApplyPackAwayRequested(state, e); break;
+            case PackAwayPreparationCancelled: ApplyPackAwayCancelled(state); break;
+            case PackAwayCheckpointCommitted e: ApplyCheckpointCommitted(state, e); break;
+            case PackAwayCheckpointVerified e: ApplyCheckpointStatus(state, e.CheckpointId, CheckpointStatus.Verified, null); break;
+            case PackAwayCheckpointFaulted e: ApplyCheckpointStatus(state, e.CheckpointId, CheckpointStatus.Faulted, e.Reason); break;
+            case BoardRebuildStarted e: ApplyRebuildStarted(state, e); break;
+            case BoardRebuildAttested: state.RebuildAttested = true; break;
+            case PackedGameResumed e: ApplyPackedGameResumed(state, e); break;
+
             default:
                 throw new InvalidOperationException(
                     $"No reducer is defined for {domainEvent.GetType().Name}. " +
@@ -331,6 +340,68 @@ public static class GameReducer
     {
         state.RulesDecision = new RulesDecision(e.Code, e.Explanation);
         state.TurnPhase = TurnPhase.RulesDecisionRequired;
+    }
+
+    // ---- Save, pack away and rebuild (DESIGN 19.8) -------------------------------------------
+
+    /// <summary>
+    /// Step 1. The turn phase is deliberately left alone: the checkpoint records it, and the
+    /// lifecycle gate is what stops play, so there is no second copy of the suspended phase to
+    /// drift out of step.
+    /// </summary>
+    private static void ApplyPackAwayRequested(GameState state, PackAwayRequested e)
+    {
+        state.Lifecycle = SessionLifecycle.PreparingPackAway;
+        state.PackAwayRequest = new PackAwayRequest(
+            e.RequestId, e.CheckpointId, e.Name, e.SuspendedTurnPhase, e.PendingOperationId);
+    }
+
+    private static void ApplyPackAwayCancelled(GameState state)
+    {
+        state.Lifecycle = SessionLifecycle.Active;
+        state.PackAwayRequest = null;
+    }
+
+    private static void ApplyCheckpointCommitted(GameState state, PackAwayCheckpointCommitted e)
+    {
+        state.Checkpoint = e.Checkpoint;
+        state.CheckpointFault = null;
+
+        // DESIGN 19.8 step 7: persisting PackedAway before the success message is what makes
+        // clearing the pieces safe even if the process dies immediately afterwards.
+        state.Lifecycle = SessionLifecycle.PackedAway;
+    }
+
+    private static void ApplyCheckpointStatus(
+        GameState state, CheckpointId checkpointId, CheckpointStatus status, string? fault)
+    {
+        if (state.Checkpoint is not { } checkpoint || checkpoint.CheckpointId != checkpointId)
+        {
+            throw new InvalidDataException(
+                $"Checkpoint {checkpointId} is not the one this session is packed against.");
+        }
+
+        state.Checkpoint = checkpoint with { Status = status };
+        state.CheckpointFault = fault;
+    }
+
+    private static void ApplyRebuildStarted(GameState state, BoardRebuildStarted e)
+    {
+        if (state.Checkpoint is not { } checkpoint || checkpoint.CheckpointId != e.CheckpointId)
+            throw new InvalidDataException($"Checkpoint {e.CheckpointId} is not available to rebuild.");
+
+        state.Lifecycle = SessionLifecycle.Rebuilding;
+        state.RebuildAttested = false;
+    }
+
+    private static void ApplyPackedGameResumed(GameState state, PackedGameResumed e)
+    {
+        state.Lifecycle = SessionLifecycle.Active;
+        state.TurnPhase = e.RestoredTurnPhase;
+        state.Checkpoint = null;
+        state.PackAwayRequest = null;
+        state.RebuildAttested = false;
+        state.CheckpointFault = null;
     }
 
     // ---- Helpers ---------------------------------------------------------------------------

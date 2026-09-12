@@ -39,6 +39,14 @@ public sealed record PublicEventEntry(string Kind, SeatId? Seat, string Text);
 [JsonDerivedType(typeof(FinalRoundStarted), nameof(FinalRoundStarted))]
 [JsonDerivedType(typeof(FinalScoringCompleted), nameof(FinalScoringCompleted))]
 [JsonDerivedType(typeof(RulesDecisionRaised), nameof(RulesDecisionRaised))]
+[JsonDerivedType(typeof(PackAwayRequested), nameof(PackAwayRequested))]
+[JsonDerivedType(typeof(PackAwayPreparationCancelled), nameof(PackAwayPreparationCancelled))]
+[JsonDerivedType(typeof(PackAwayCheckpointCommitted), nameof(PackAwayCheckpointCommitted))]
+[JsonDerivedType(typeof(PackAwayCheckpointVerified), nameof(PackAwayCheckpointVerified))]
+[JsonDerivedType(typeof(PackAwayCheckpointFaulted), nameof(PackAwayCheckpointFaulted))]
+[JsonDerivedType(typeof(BoardRebuildStarted), nameof(BoardRebuildStarted))]
+[JsonDerivedType(typeof(BoardRebuildAttested), nameof(BoardRebuildAttested))]
+[JsonDerivedType(typeof(PackedGameResumed), nameof(PackedGameResumed))]
 public abstract record GameEvent
 {
     /// <summary>Schema version of the event contract, for controlled save upgrades.</summary>
@@ -330,4 +338,111 @@ public sealed record RulesDecisionRaised(string Code, string Explanation) : Game
 
     public override PublicEventEntry ToPublicEntry(BoardManifest manifest) =>
         new("RulesDecisionRaised", null, $"Paused: {Explanation}");
+}
+
+// ---- Save, pack away and rebuild (DESIGN 19.8) -------------------------------------------
+
+/// <summary>
+/// Step 1: the save request is serialised on the writer queue, the suspended phase is recorded and
+/// the lifecycle becomes <see cref="SessionLifecycle.PreparingPackAway"/>. Reservations and the
+/// pending operation are kept exactly as they were.
+/// </summary>
+public sealed record PackAwayRequested(
+    CommandId RequestId,
+    CheckpointId CheckpointId,
+    string Name,
+    TurnPhase SuspendedTurnPhase,
+    OperationId? PendingOperationId) : GameEvent
+{
+    public override EventVisibility Visibility => EventVisibility.Public;
+
+    public override PublicEventEntry ToPublicEntry(BoardManifest manifest) =>
+        new("PackAwayRequested", null,
+            "Saving. Clear your hands from the board; play is paused and nothing will be spent.");
+}
+
+/// <summary>
+/// The save was abandoned before a checkpoint existed. DESIGN 19.8: returning to the suspended
+/// operation requires fresh board reconciliation, not an old accepted result.
+/// </summary>
+public sealed record PackAwayPreparationCancelled(CommandId RequestId, string Reason) : GameEvent
+{
+    public override EventVisibility Visibility => EventVisibility.Public;
+
+    public override PublicEventEntry ToPublicEntry(BoardManifest manifest) =>
+        new("PackAwayPreparationCancelled", null, $"Save cancelled: {Reason}. Check the board before playing on.");
+}
+
+/// <summary>
+/// Step 6, first transaction: the checkpoint is durable and the lifecycle is
+/// <see cref="SessionLifecycle.PackedAway"/>, but readback has not run, so this is not yet a
+/// safe-to-pack result.
+/// </summary>
+public sealed record PackAwayCheckpointCommitted(PackAwayCheckpoint Checkpoint) : GameEvent
+{
+    // The checkpoint carries the logical-state fingerprint, which is derived from hands, deck order
+    // and private offers, so DESIGN 19.2 keeps this payload encrypted. The public history line below
+    // is built from allowlisted fields and is unaffected.
+    public override EventVisibility Visibility => EventVisibility.Referee;
+
+    public override PublicEventEntry ToPublicEntry(BoardManifest manifest) =>
+        new("PackAwayCheckpointCommitted", null, $"Checkpoint '{Checkpoint.Name}' written. Validating it.");
+}
+
+/// <summary>Step 6, second transaction: readback succeeded. Only now is the game safe to pack away.</summary>
+public sealed record PackAwayCheckpointVerified(CheckpointId CheckpointId) : GameEvent
+{
+    public override EventVisibility Visibility => EventVisibility.Public;
+
+    public override PublicEventEntry ToPublicEntry(BoardManifest manifest) =>
+        new("PackAwayCheckpointVerified", null, "Saved. You can pack the game away.");
+}
+
+/// <summary>
+/// Readback failed. DESIGN 19.8: the match stays packed and faulted; play does not resume and no
+/// success is reported.
+/// </summary>
+public sealed record PackAwayCheckpointFaulted(CheckpointId CheckpointId, string Reason) : GameEvent
+{
+    public override EventVisibility Visibility => EventVisibility.Public;
+
+    public override PublicEventEntry ToPublicEntry(BoardManifest manifest) =>
+        new("PackAwayCheckpointFaulted", null, $"The save could not be validated: {Reason}");
+}
+
+/// <summary>Guided reconstruction began against the checkpoint's immutable target.</summary>
+public sealed record BoardRebuildStarted(CheckpointId CheckpointId) : GameEvent
+{
+    public override EventVisibility Visibility => EventVisibility.Public;
+
+    public override PublicEventEntry ToPublicEntry(BoardManifest manifest) =>
+        new("BoardRebuildStarted", null, "Rebuilding the board from the saved position.");
+}
+
+/// <summary>
+/// The operator attested that the rebuilt board matches the whole saved target. DESIGN 19.8 allows
+/// this in place of camera agreement under the existing manual-verification policy.
+/// </summary>
+public sealed record BoardRebuildAttested(
+    CheckpointId CheckpointId,
+    string Operator,
+    string PhysicalTargetHash,
+    DateTimeOffset RecordedAt) : GameEvent
+{
+    public override EventVisibility Visibility => EventVisibility.Public;
+
+    public override PublicEventEntry ToPublicEntry(BoardManifest manifest) =>
+        new("BoardRebuildAttested", null, "The rebuilt board was confirmed against the saved position.");
+}
+
+/// <summary>
+/// The saved operation is restored exactly once, with a new state version. DESIGN 19.8: resume does
+/// not itself commit a pending route; the ordinary protocol runs again against fresh evidence.
+/// </summary>
+public sealed record PackedGameResumed(CheckpointId CheckpointId, TurnPhase RestoredTurnPhase) : GameEvent
+{
+    public override EventVisibility Visibility => EventVisibility.Public;
+
+    public override PublicEventEntry ToPublicEntry(BoardManifest manifest) =>
+        new("PackedGameResumed", null, "The saved game is back on the table.");
 }

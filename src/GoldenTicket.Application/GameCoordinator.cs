@@ -14,6 +14,30 @@ public sealed record SubmitOutcome(CommandResult Result, bool WasDuplicate, long
     public bool IsAccepted => Result.IsAccepted;
 }
 
+/// <summary>
+/// The result of a save. DESIGN 19.8: only <see cref="SafeToPack"/> means the pieces may be cleared
+/// away; a committed but unvalidated checkpoint reports <see cref="AwaitingValidation"/>, and a failed readback
+/// leaves the match packed and faulted.
+/// </summary>
+public sealed record PackAwayOutcome(
+    bool SafeToPack,
+    bool AwaitingValidation,
+    PackAwayCheckpoint? Checkpoint,
+    string? Problem,
+    CommandRejection? Rejection)
+{
+    public static PackAwayOutcome SafeToPackAway(PackAwayCheckpoint checkpoint) =>
+        new(true, false, checkpoint, null, null);
+
+    public static PackAwayOutcome StillValidating() => new(false, true, null, null, null);
+
+    public static PackAwayOutcome Faulted(PackAwayCheckpoint checkpoint, string problem) =>
+        new(false, false, checkpoint, problem, null);
+
+    public static PackAwayOutcome Refused(CommandRejection rejection) =>
+        new(false, false, null, rejection.Message, rejection);
+}
+
 /// <summary>A committed transaction, published to whatever is displaying the match.</summary>
 public sealed record CoordinatorUpdate(PublicView Public, ImmutableArray<PublicEventEntry> NewEntries);
 
@@ -246,6 +270,142 @@ public sealed class GameCoordinator
         finally
         {
             _writer.Release();
+        }
+    }
+
+    // ---- Save, pack away and rebuild (DESIGN 19.8) -------------------------------------------
+
+    /// <summary>
+    /// The checkpoint identity of a save that has been requested but not yet written, so an
+    /// interrupted preparation can be carried forward against the same request.
+    /// </summary>
+    public async Task<CheckpointId?> PendingCheckpointIdAsync(CancellationToken cancellationToken = default)
+    {
+        await _writer.WaitAsync(cancellationToken);
+        try
+        {
+            return _state.PackAwayRequest?.CheckpointId;
+        }
+        finally
+        {
+            _writer.Release();
+        }
+    }
+
+    /// <summary>
+    /// The gameplay fingerprint, with lifecycle and transaction bookkeeping normalised away. Used to
+    /// show that packing away and rebuilding left the match itself untouched (invariant 15).
+    /// </summary>
+    public async Task<string> ComputeLogicalStateHashAsync(CancellationToken cancellationToken = default)
+    {
+        await _writer.WaitAsync(cancellationToken);
+        try
+        {
+            return StateHash.ComputeLogical(_state);
+        }
+        finally
+        {
+            _writer.Release();
+        }
+    }
+
+    /// <summary>
+    /// Runs the three durable boundaries of a save: suspend play, write the checkpoint, then read it
+    /// back. A safe-to-pack result is returned only after the readback succeeds, so a committed but
+    /// unvalidated checkpoint never tells anyone the pieces can be cleared away.
+    /// </summary>
+    public async Task<PackAwayOutcome> SaveAndPackAwayAsync(
+        string name, CancellationToken cancellationToken = default)
+    {
+        var requested = await SubmitAsync(new SaveAndPackAway(NewEnvelope(), name), cancellationToken);
+        if (!requested.IsAccepted) return PackAwayOutcome.Refused(requested.Result.Rejection!);
+
+        return await ContinuePackAwayAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Carries an interrupted save forward. DESIGN 19.5: preparation interrupted stays paused and is
+    /// retried against the preserved source state, and a restart between the checkpoint commit and
+    /// its readback repeats the validation instead of reporting success. Safe to call repeatedly.
+    /// </summary>
+    public async Task<PackAwayOutcome> ContinuePackAwayAsync(CancellationToken cancellationToken = default)
+    {
+        if (_state.Lifecycle == SessionLifecycle.PreparingPackAway && _state.PackAwayRequest is { } request)
+        {
+            var committed = await SubmitAsync(
+                new CommitPackAwayCheckpoint(NewEnvelope(), request.CheckpointId), cancellationToken);
+
+            if (!committed.IsAccepted) return PackAwayOutcome.Refused(committed.Result.Rejection!);
+        }
+
+        if (_state.Checkpoint is { Status: CheckpointStatus.CommittedAwaitingReadback } pending)
+        {
+            var (succeeded, failure) = await ValidateCheckpointAsync(pending, cancellationToken);
+
+            var recorded = await SubmitAsync(
+                new RecordCheckpointReadback(NewEnvelope(), pending.CheckpointId, succeeded, failure),
+                cancellationToken);
+
+            if (!recorded.IsAccepted) return PackAwayOutcome.Refused(recorded.Result.Rejection!);
+        }
+
+        return _state.Checkpoint switch
+        {
+            { Status: CheckpointStatus.Verified } verified => PackAwayOutcome.SafeToPackAway(verified),
+            { Status: CheckpointStatus.Faulted } faulted =>
+                PackAwayOutcome.Faulted(faulted, _state.CheckpointFault ?? "readback failed"),
+            _ => PackAwayOutcome.StillValidating(),
+        };
+    }
+
+    /// <summary>
+    /// DESIGN 19.8 step 6: read the referenced record and hashes back and validate them. The whole
+    /// save is reopened from storage, the journal is replayed to the checkpoint's own source point,
+    /// and both fingerprints must reproduce.
+    /// </summary>
+    private async Task<(bool Succeeded, string? Failure)> ValidateCheckpointAsync(
+        PackAwayCheckpoint checkpoint, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var stored = await _store.ReadCheckpointAsync(
+                _state.SessionId, checkpoint.CheckpointId, cancellationToken);
+
+            if (stored is null) return (false, "the checkpoint could not be read back from storage");
+
+            if (!string.Equals(stored.LogicalStateHash, checkpoint.LogicalStateHash, StringComparison.Ordinal) ||
+                !string.Equals(stored.PhysicalTargetHash, checkpoint.PhysicalTargetHash, StringComparison.Ordinal))
+            {
+                return (false, "the stored checkpoint does not match the one that was committed");
+            }
+
+            var restored = await _store.RestoreAsync(
+                _state.SessionId, _rules.Manifest, _rules.Catalog, cancellationToken);
+
+            var prefix = restored.Journal
+                .Where(row => row.Sequence < checkpoint.SourceJournalSequence)
+                .ToList();
+
+            if (prefix.Count == 0) return (false, "the checkpoint's source history is missing");
+
+            var atCheckpoint = GameReducer.Rebuild(_rules.Manifest, _rules.Catalog, prefix);
+
+            if (!string.Equals(
+                    StateHash.ComputeLogical(atCheckpoint), checkpoint.LogicalStateHash, StringComparison.Ordinal))
+            {
+                return (false, "replaying the save did not reproduce the checkpoint's game state");
+            }
+
+            var target = PackAwayCheckpoint.HashTarget(PackAwayCheckpoint.TargetFrom(atCheckpoint));
+            if (!string.Equals(target, checkpoint.PhysicalTargetHash, StringComparison.Ordinal))
+                return (false, "replaying the save did not reproduce the checkpoint's board");
+
+            return (true, null);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // DESIGN 21.2: report a bounded reason, never an exception payload.
+            return (false, $"the save could not be validated ({exception.GetType().Name})");
         }
     }
 

@@ -209,6 +209,9 @@ public sealed class DesktopAuditTests
 
         public Task CreateAsync(GameState state, CommandId commandId, Transition transition, string stateHash,
             CancellationToken token) => _inner.CreateAsync(state, commandId, transition, stateHash, token);
+        public Task<PackAwayCheckpoint?> ReadCheckpointAsync(SessionId sessionId, CheckpointId checkpointId,
+            CancellationToken cancellationToken) => _inner.ReadCheckpointAsync(sessionId, checkpointId, cancellationToken);
+
         public Task<StoredCommandOutcome?> FindCommandOutcomeAsync(SessionId sessionId, CommandId commandId,
             CancellationToken token) => _inner.FindCommandOutcomeAsync(sessionId, commandId, token);
         public Task RecordRejectionAsync(SessionId sessionId, StoredCommandOutcome outcome, CancellationToken token) =>

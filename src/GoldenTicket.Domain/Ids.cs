@@ -68,6 +68,15 @@ public readonly record struct OperationId(string Value) : IStringId
     public override string ToString() => Value;
 }
 
+/// <summary>Identity of a named pack-away checkpoint (DESIGN 7.1).</summary>
+[JsonConverter(typeof(StringIdConverterFactory))]
+public readonly record struct CheckpointId(string Value) : IStringId
+{
+    public static CheckpointId New() => new(Guid.NewGuid().ToString("n"));
+
+    public override string ToString() => Value;
+}
+
 /// <summary>Identity of a saved match.</summary>
 [JsonConverter(typeof(StringIdConverterFactory))]
 public readonly record struct SessionId(string Value) : IStringId

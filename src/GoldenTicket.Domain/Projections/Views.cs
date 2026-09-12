@@ -52,9 +52,42 @@ public sealed record PublicView(
     PublicPendingClaim? PendingClaim,
     FinalRoundSummary? FinalRound,
     FinalResult? FinalResult,
-    RulesDecision? RulesDecision)
+    RulesDecision? RulesDecision,
+    PublicCheckpoint? Checkpoint,
+    bool RebuildAttested,
+    string? CheckpointFault)
 {
     public PublicSeatSummary SeatOf(SeatId id) => Seats.First(s => s.SeatId == id);
+
+    /// <summary>DESIGN 9.2: gameplay commands and AI submissions are refused in these lifecycles.</summary>
+    public bool IsGameplaySuspended =>
+        Lifecycle is SessionLifecycle.PreparingPackAway
+            or SessionLifecycle.PackedAway
+            or SessionLifecycle.Rebuilding;
+}
+
+/// <summary>
+/// The public face of a saved checkpoint (DESIGN 19.8). The saved board arrangement is public
+/// information - it is what the rebuild instructions show - so the target travels with it. Hands,
+/// tickets, deck order and the logical-state fingerprint deliberately do not.
+/// </summary>
+public sealed record PublicCheckpoint(
+    CheckpointId CheckpointId,
+    string Name,
+    DateTimeOffset CreatedAt,
+    CheckpointStatus Status,
+    TargetProvenance Provenance,
+    TurnPhase SuspendedTurnPhase,
+    bool HasPendingOperation,
+    string PhysicalTargetHash,
+    ImmutableArray<TargetRoute> PhysicalTarget)
+{
+    public int RouteCount => PhysicalTarget.Length;
+
+    public int TotalTrainsOnBoard => PhysicalTarget.Sum(route => route.Length);
+
+    /// <summary>Only a verified checkpoint may be reported as safe to pack away.</summary>
+    public bool IsSafeToPackAway => Status == CheckpointStatus.Verified;
 }
 
 /// <summary>A card instance the owning seat can see.</summary>

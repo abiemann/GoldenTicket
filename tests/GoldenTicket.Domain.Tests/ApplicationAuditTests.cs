@@ -245,6 +245,9 @@ public class ApplicationAuditTests
         public Task CreateAsync(GameState state, CommandId commandId, Transition transition, string stateHash,
             CancellationToken cancellationToken) => _inner.CreateAsync(state, commandId, transition, stateHash, cancellationToken);
 
+        public Task<PackAwayCheckpoint?> ReadCheckpointAsync(SessionId sessionId, CheckpointId checkpointId,
+            CancellationToken cancellationToken) => _inner.ReadCheckpointAsync(sessionId, checkpointId, cancellationToken);
+
         public Task<StoredCommandOutcome?> FindCommandOutcomeAsync(SessionId sessionId, CommandId commandId,
             CancellationToken cancellationToken)
         {

@@ -207,6 +207,47 @@
                     </StackPanel>
                 </Border>
 
+                <!--
+                    Save and pack away (DESIGN 4.10). The success wording appears only once the
+                    checkpoint has been read back and validated; a written-but-unchecked save says so.
+                -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Heading}" Text="Save and pack away" />
+
+                        <StackPanel Visibility="{Binding Table.IsPackedAway,
+                                                Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
+                            <StackPanel Visibility="{Binding Table.IsSaving,
+                                                    Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
+                                <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,6"
+                                           Text="Saves the exact position, including an unfinished turn. Clear your hands from the board first." />
+                                <TextBox Margin="0,0,0,8" Text="{Binding Table.SaveName, UpdateSourceTrigger=PropertyChanged}" />
+                                <Button Style="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"
+                                        Content="Save and pack away"
+                                        Command="{Binding SaveAndPackAwayCommand}" />
+                            </StackPanel>
+
+                            <StackPanel Visibility="{Binding Table.IsSaving, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="{Binding Table.SaveStatus}" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <Button Style="{StaticResource SecondaryButton}" HorizontalAlignment="Stretch"
+                                        Content="Cancel this save" Command="{Binding CancelSaveCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <StackPanel Visibility="{Binding Table.IsPackedAway, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="{Binding Table.SaveStatus}" FontWeight="SemiBold" Margin="0,0,0,6" />
+                            <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8"
+                                       Text="{Binding Table.RebuildHeadline}" />
+                            <TextBlock Foreground="{StaticResource Action.Primary}" FontWeight="SemiBold"
+                                       Margin="0,0,0,8" Text="{Binding Table.SaveProblem}"
+                                       Visibility="{Binding Table.SaveProblem,
+                                                   Converter={StaticResource EmptyStringToVisibility}}" />
+                            <Button Style="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"
+                                    Content="Rebuild the board" Command="{Binding BeginRebuildCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
                         <TextBlock Style="{StaticResource Heading}" Text="Scores" />
