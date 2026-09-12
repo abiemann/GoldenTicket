@@ -79,6 +79,21 @@ async function main() {
     for(const viewport of [{name:'pixel',width:448,height:900},{name:'small-phone',width:320,height:740},{name:'tablet',width:768,height:1024}]) {
       fixture=fixtures.setup; paired=false; pending=false; generation=1; requests=[]; offline=false; delayedReveal=null;
       const context=await browser.newContext({viewport:{width:viewport.width,height:viewport.height},deviceScaleFactor:1,isMobile:viewport.name!=='tablet',hasTouch:true});
+      const outsideLaptop=new Set(), browserRequests=[];
+      // Keep the local host reachable while denying Internet destinations. Full browser offline
+      // mode would also disconnect the LAN, which is a different acceptance condition.
+      context.on('request',request=>{
+        const destination=new URL(request.url());
+        browserRequests.push(destination.pathname);
+        if(['http:','https:'].includes(destination.protocol) && destination.origin!==origin) outsideLaptop.add(destination.href);
+      });
+      await context.route('**/*',async route=>{
+        const destination=new URL(route.request().url());
+        if(destination.origin!==origin) { outsideLaptop.add(destination.href); await route.abort('blockedbyclient'); }
+        else await route.continue();
+      });
+      // An OS Internet probe can fail even while local Wi-Fi and HTTPS remain available.
+      await context.addInitScript(()=>Object.defineProperty(navigator,'onLine',{configurable:true,value:false}));
       const page=await context.newPage(); const errors=[]; page.on('pageerror',error=>errors.push(error.message));
       await record(viewport.name+': offline shell and browser-context pairing',async()=>{
         await page.goto(origin+'/companion/');
@@ -168,6 +183,12 @@ async function main() {
         send(delayedReveal.response,delayedReveal.reply); delayedReveal=null; await oldResponse;
         await waitCovered(page);
       });
+      await record(viewport.name+': WAN unavailable with all gameplay requests confined to the laptop',async()=>{
+        assert.equal(await page.evaluate(()=>navigator.onLine),false);
+        assert.ok(browserRequests.includes('/companion/app.js'));
+        assert.ok(browserRequests.includes('/api/command'));
+        assert.deepEqual([...outsideLaptop],[],'The companion must never request an Internet destination.');
+      });
       await record(viewport.name+': disconnected cover and cached reconnect shell',async()=>{
         await page.waitForResponse(r=>r.url().endsWith('/api/session')); await reveal(page);
         offline=true;
@@ -183,11 +204,12 @@ async function main() {
         });
         assert.equal(caches.some(url=>url.startsWith('/api/')),false); assert.equal(caches.length,7);
         assert.equal(await page.evaluate(()=>localStorage.length+sessionStorage.length),0);
+        assert.deepEqual([...outsideLaptop],[]);
         assert.deepEqual(errors,[]);
       });
       await context.close();
     }
-    fs.writeFileSync(path.join(output,'browser-ui-results.json'),JSON.stringify({browser:'Chromium '+browserVersion,fixtureTransport:'HTTP loopback secure context; synthetic .NET bridge payloads; no certificate bypass',viewports:['448×900','320×740','768×1024'],screenshots:'Synthetic player data only',results},null,2));
+    fs.writeFileSync(path.join(output,'browser-ui-results.json'),JSON.stringify({browser:'Chromium '+browserVersion,fixtureTransport:'HTTP loopback secure context; synthetic .NET bridge payloads; no certificate bypass',internetIsolation:'Page requests outside the laptop fixture origin are blocked and recorded; service-worker requests are also observed; navigator.onLine is false. Browser/OS background traffic is outside this harness.',viewports:['448×900','320×740','768×1024'],screenshots:'Synthetic player data only',results},null,2));
     console.log(`${results.length} browser UI scenarios passed.`);
   } finally { await browser.close(); await new Promise(resolve=>server.close(resolve)); }
 }

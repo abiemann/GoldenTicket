@@ -1,5 +1,9 @@
 # Offline Windows package
 
+This is retained distribution tooling and historical package evidence. The current development
+workflow is [Visual Studio and GitHub CI](build-and-ci.md); routine personal ZIP creation is not
+requested, and CI does not invoke this packaging script.
+
 GoldenTicket's packaging script prepares a self-contained Windows 11 x64 ZIP. It includes the
 application, local companion PWA assets, board data, .NET/WPF/ASP.NET runtimes, documentation,
 dependency notices, source provenance, and SHA256 checksums. Players extract the complete

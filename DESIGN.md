@@ -1632,6 +1632,15 @@ This document specifies the complete intended product. Implemented behavior and 
 
 ### 24.4 Implementation audit and follow-up status, September 12, 2026
 
+The user's current development workflow is Visual Studio plus GitHub Windows CI, which builds/tests
+the solution and retains diagnostic evidence. Routine personal ZIP generation is no longer requested;
+future installer work remains separate. Build-time downloads on GitHub or a developer machine do not
+change the installed-runtime contract: Windows and the companion communicate only over the trusted
+LAN, using bundled assets and local game state, without Internet services or connectivity checks.
+The browser regression harness blocks non-laptop origins while exercising LAN play with an offline
+Internet indication. [Build/CI documentation](docs/build-and-ci.md) distinguishes these checks from
+remaining physical-device installation and disconnected-WAN acceptance.
+
 The repository now contains Domain, Application, AI, Persistence, Desktop, Simulator, and test projects. The implemented desktop uses explicit manual physical verification and a private laptop view. It implements digital dealing/turns, route reservation and confirmation, exact scoring algorithms, heuristic opponents, SQLite event replay, and the box-derived palette. Audit fixes add stale-view protection, physical reconciliation before resumed play, strict save integrity and path checks, concurrent-write protection, bounded AI waiting, and regression tests.
 
 The subsequent work adds state-only named checkpoints, pack-away/rebuild lifecycles, disclosed supply-policy continuations and a standalone local HTTPS/QR/pairing/PWA connectivity spike. The September 12 audit corrects checkpoint verification and restart gates, policy/desktop continuation bugs, network/session/certificate security and browser diagnostic/cache behavior. The spike has no game commands or private-seat views and is not embedded in the desktop app.

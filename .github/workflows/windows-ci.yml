@@ -1,0 +1,97 @@
+name: Windows CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: pwsh
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+  NUGET_XMLDOC_MODE: skip
+  GOLDENTICKET_COMPANION_FIXTURE_DIRECTORY: ${{ github.workspace }}/artifacts/ci/fixtures
+  GOLDENTICKET_COMPANION_FIXTURES: ${{ github.workspace }}/artifacts/ci/fixtures/fixtures.json
+  GOLDENTICKET_BROWSER_EVIDENCE: ${{ github.workspace }}/artifacts/ci/companion-browser
+  NODE_PATH: ${{ github.workspace }}/tools/ci/node_modules
+
+jobs:
+  build-and-test:
+    name: Windows build and tests
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Install Node for development tests
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: tools/ci/package-lock.json
+
+      - name: Check SDK and restore locked dependencies
+        run: |
+          $expected = (Get-Content global.json -Raw | ConvertFrom-Json).sdk.version
+          $actual = dotnet --version
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $expected) { throw "Expected SDK $expected, got $actual" }
+          dotnet restore GoldenTicket.sln --locked-mode --configfile NuGet.config
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm ci --prefix tools/ci --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git diff --exit-code -- '**/packages.lock.json' tools/ci/package-lock.json
+
+      - name: Build Windows application and solution
+        run: dotnet build GoldenTicket.sln --configuration Release --no-restore -p:ContinuousIntegrationBuild=true
+
+      - name: Test rules, desktop, persistence and local HTTPS
+        run: dotnet test GoldenTicket.sln --configuration Release --no-build --no-restore --logger "trx;LogFileName=tests.trx" --results-directory artifacts/ci/tests --blame-hang-timeout 2m
+
+      - name: Test companion privacy and LAN-only behavior
+        run: node --test tests/GoldenTicket.ConnectivitySpike.Tests/shell.test.cjs tests/GoldenTicket.Domain.Tests/CompanionHostClient.test.cjs
+
+      - name: Simulate complete matches and replay saves
+        run: dotnet run --project tools/GoldenTicket.Simulator --configuration Release --no-build --no-restore -- simulate --games 20 --seats 4
+
+      - name: Render Windows UI
+        run: dotnet run --project tools/GoldenTicket.UiSmoke --configuration Release --no-build --no-restore -- artifacts/ci/desktop-ui
+
+      - name: Exercise actual browser UI with Internet requests blocked
+        run: node tests/GoldenTicket.Domain.Tests/CompanionHostBrowserUi.cjs
+
+      - name: Retain test reports and synthetic UI screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-ci-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/ci/tests/**/*.trx
+            artifacts/ci/desktop-ui/*.json
+            artifacts/ci/desktop-ui/*.log
+            artifacts/ci/desktop-ui/*.png
+            artifacts/ci/companion-browser/*.json
+            artifacts/ci/companion-browser/*.png
+          if-no-files-found: warn
+          retention-days: 7

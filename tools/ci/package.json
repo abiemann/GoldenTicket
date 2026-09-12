@@ -1,0 +1,8 @@
+{
+  "name": "goldenticket-ci-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Development-only browser testing; never shipped with GoldenTicket.",
+  "engines": { "node": ">=24 <25" },
+  "devDependencies": { "playwright": "1.63.0" }
+}

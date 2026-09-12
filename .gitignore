@@ -2,6 +2,7 @@
 bin/
 obj/
 artifacts/
+node_modules/
 
 # Visual Studio / Rider
 .vs/

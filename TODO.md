@@ -28,6 +28,11 @@ validation requirements; mark each feature complete only after those checks pass
 The user's requested order puts voice/story/audio last. Keep essential visual guidance available
 earlier; perform final release checks and package refresh after the narrative features are finished.
 
+Development now uses Visual Studio and GitHub [Windows CI](.github/workflows/windows-ci.yml).
+Do not generate a personal app ZIP as a routine handoff. CI builds/tests and keeps diagnostic
+evidence only; future installer/distribution work remains a separate requirement. Installed
+Windows/PWA gameplay must operate on the LAN without Internet access; see [the build/runtime contract](docs/build-and-ci.md).
+
 ## Audit fixes implemented
 
 - [x] Harden the connectivity spike's network boundary, request limits, session lifetime and local
@@ -52,6 +57,12 @@ earlier; perform final release checks and package refresh after the narrative fe
 
 ## Complete the product in dependency order
 
+- [x] **GitHub CI configuration.** Windows build, locked .NET/npm restores, .NET/JavaScript tests,
+  simulation and WPF/browser UI checks run for pushes to `main`, PRs and manual dispatch. Actions
+  have read-only repository access; application archives and releases are not generated.
+- [x] **LAN-only runtime regression gates.** Validate bundled browser resources and local certificates;
+  exercise phone gameplay with Internet-unavailable browser state and block external browser origins.
+  Physical WAN-disconnected phone acceptance remains outstanding.
 - [x] **Embedded companion first slice.** Local HTTPS host, controller approval/CSRF/private grants,
   shared human card/ticket actions, public-only shell cache and privacy/reconnect handling are
   integrated into the Windows shell. Actual device gates and the remaining protocol requirements

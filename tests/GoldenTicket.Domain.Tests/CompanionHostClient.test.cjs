@@ -36,7 +36,7 @@ function page(options = {}) {
     setInterval: (fn, ms) => intervals.push({fn, ms}),
     document: { hidden: false, getElementById: get, createElement: tag => new Node(tag), addEventListener: (name, fn) => listeners['document:' + name] = fn },
     window: { isSecureContext: options.secure !== false, addEventListener: (name, fn) => listeners['window:' + name] = fn },
-    navigator: { serviceWorker: { register: async () => ({}), ready: options.workerPending ? new Promise(() => {}) : Promise.resolve({}) } },
+    navigator: { onLine: options.internetAvailable !== false, serviceWorker: { register: async () => ({}), ready: options.workerPending ? new Promise(() => {}) : Promise.resolve({}) } },
     caches: { open: async () => ({ match: async asset => options.missingAsset === asset ? undefined : {ok:true} }) },
     fetch: async (url, request) => {
       requests.push({url, request});
@@ -62,6 +62,33 @@ test('pairing waits for a fully cached shell and chosen final launch context', a
   const p = page({paired:false}); await flush();
   assert.equal(p.client.state().shellReady, true); assert.equal(p.get('pair-form').hidden, true);
   await p.click('browser-mode'); assert.equal(p.get('pair-form').hidden, false);
+});
+test('LAN gameplay remains available when the browser reports no Internet connection', async () => {
+  // Browser/OS connectivity probes may report offline on a working Wi-Fi LAN without WAN access.
+  // The laptop's successful responses, not navigator.onLine, decide whether gameplay is possible.
+  const p = page({internetAvailable:false}); await flush();
+  assert.equal(p.client.state().shellReady,true);
+  assert.equal(p.get('reveal').disabled,false);
+  await p.client.reveal(); assert.equal(p.get('private').hidden,false);
+  await p.event('window','offline'); assert.equal(p.get('private').hidden,true);
+  await p.client.poll(); assert.equal(p.get('reveal').disabled,false);
+  await p.client.reveal(); await p.client.submit('drawTrain',{slot:null});
+  assert.equal(p.requests.filter(r=>r.url==='/api/command').length,1);
+  assert.match(p.get('notice').textContent,/saved/i);
+  assert.equal(p.client.state().privateData,null);
+});
+test('the complete companion request flow stays on the laptop origin', async () => {
+  const p=page({paired:false,standalone:true}); await flush();
+  p.get('pair-code').value='123456';
+  await p.get('pair-form').events.submit({preventDefault(){}});
+  p.state.paired=true; await p.client.poll(); await p.client.reveal();
+  await p.client.submit('drawTrain',{slot:null}); await p.client.reveal(); await p.click('hide');
+  assert.deepEqual([...new Set(p.requests.map(r=>r.url))].sort(),['/api/command','/api/hide','/api/pair','/api/reveal','/api/session']);
+  for(const {url,request} of p.requests) {
+    const destination=new URL(url,'https://192.168.50.2:8443');
+    assert.equal(destination.origin,'https://192.168.50.2:8443');
+    assert.equal(request.credentials,'same-origin'); assert.equal(request.cache,'no-store');
+  }
 });
 test('missing cached asset and insecure contexts never offer pairing', async () => {
   for (const options of [{missingAsset:'/companion/app.js'}, {secure:false}]) {

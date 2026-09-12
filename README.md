@@ -97,17 +97,33 @@ dotnet run --project tools/GoldenTicket.Simulator -- verify-data
   not been tested by this audit)
 - .NET 10 SDK (pinned to 10.0.401 in `global.json`)
 
-The current desktop build is framework-dependent and needs the .NET 10 Windows Desktop runtime.
-Build the self-contained offline ZIP with the [packaging workflow](docs/offline-package.md) when preparing a
-validated source commit; clean-machine and installer acceptance remain outstanding.
+The preferred development workflow is **Visual Studio**: open `GoldenTicket.sln`, select
+`GoldenTicket.Desktop` as the startup project, and build/run. The .NET SDK supplies the development
+runtimes. A framework-dependent installation on another laptop needs both the .NET 10 Windows
+Desktop and ASP.NET Core runtimes installed; a future installer must supply these prerequisites
+or bundle them. Once installation is complete, the application does not download runtime components.
 
-The package builder runs the executable's windowless `--check-package` diagnostics against its
-bundled runtime, WPF, SQLite, DPAPI, Windows PNG encoding, ASP.NET and local assets before archiving.
-Both normal and cache-only offline package builds have passed; the local ZIP, source commit,
-checksums and remaining manual gates are recorded in [package evidence](docs/evidence/offline-package-2026-09-12/README.md).
+[Windows CI](.github/workflows/windows-ci.yml) builds and tests the solution on pushes to `main`,
+pull requests and manual runs. It retains test reports and synthetic screenshots, with no app ZIP
+or release publication. See [Visual Studio, CI and LAN operation](docs/build-and-ci.md).
+
+The earlier [portable packaging tool](docs/offline-package.md) and its [validation record](docs/evidence/offline-package-2026-09-12/README.md)
+remain available for future distribution work; generating a ZIP is not part of the normal workflow.
 
 No paid IDE, account, or internet connection is needed to run the application. Building it the first
 time downloads NuGet packages.
+
+## Installed operation stays on the LAN
+
+The Windows laptop is the game server. The phone connects directly to its selected trusted Private
+LAN address over local HTTPS. Cards, saves, photos, PWA scripts/styles/icons, pairing and game actions
+stay local. GoldenTicket has no cloud login, telemetry, Internet connectivity gate, remote font/CDN,
+cloud AI, updater or Internet API dependency. The phone needs the laptop and LAN to remain available;
+the router's Internet/WAN connection may be disconnected. Laptop-only play also works without a LAN.
+
+CI and developer restores use the Internet to obtain build tools/dependencies. They are separate
+from installed gameplay. Automated browser tests block non-laptop origins while exercising the game;
+real phone certificate, home-screen installation and WAN-disconnected device acceptance remain open.
 
 ## Build, test, run
 
