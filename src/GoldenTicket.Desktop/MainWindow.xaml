@@ -40,7 +40,8 @@
                 <StackPanel Orientation="Horizontal">
                     <Button Content="Game table" Command="{Binding ShowGameCommand}" Style="{StaticResource SecondaryButton}" />
                     <Button Content="Camera" Command="{Binding ShowCameraCommand}" Style="{StaticResource SecondaryButton}" />
-                    <Button Content="Connect phone" Command="{Binding ShowConnectionCommand}" Style="{StaticResource SecondaryButton}" />
+                    <Button Content="Connect phone" Command="{Binding ShowConnectionCommand}" Style="{StaticResource SecondaryButton}"
+                            Visibility="{Binding CanConnectPhone, Converter={StaticResource BoolToVisibility}}" />
                     <Button Content="Saved board photo" Command="{Binding ShowCheckpointPhotoCommand}" Style="{StaticResource SecondaryButton}" />
                 </StackPanel>
             </DockPanel>

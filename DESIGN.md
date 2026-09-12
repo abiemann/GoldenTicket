@@ -5,7 +5,8 @@
 **Design date:** September 11, 2026.  
 **Working name:** GoldenTicket. This is a project codename, not an approved product name.  
 **Target:** Windows 11 x64; the classic English North America Ticket to Ride board shown in the user's photographs, product DO7201 / 7201.  
-**Companion:** An iOS/iPadOS and Android PWA on a phone or tablet passed between human players.  
+**Companion:** An optional iOS/iPadOS and Android PWA on a phone or tablet passed between multiple human players. A single human uses the laptop display.
+
 **Primary experience:** Physical board and trains, digital cards, human operators, camera verification, and local computer opponents.
 
 ## Contents
@@ -44,7 +45,7 @@ GoldenTicket supplies missing players for a physical game of Ticket to Ride. A l
 
 The board and plastic trains remain physical. Train cards, destination tickets, decks, discards, and card selection are digital for every seat. This eliminates routine card scanning, preserves AI secrets, and makes card-only turns observable through application commands.
 
-The Windows laptop stays beside the board as the public display, camera processor, referee, AI host, and save owner. Humans pass around a phone or tablet running the companion PWA to view their private cards and submit choices. Both devices communicate over a local network without requiring internet access. The earlier shared-laptop private view remains a fallback.
+The Windows laptop stays beside the board as the game display, camera processor, referee, AI host, and save owner. When there is exactly one human, that player's cards and destinations appear directly on the laptop; no phone, pairing or local HTTPS setup is required. Multiple humans may pass around a phone or tablet running the companion PWA to view their private cards and submit choices, or use pass-and-hide on the laptop. Companion devices communicate over a local network without requiring internet access.
 
 The computer is an opponent and a referee. These are separate responsibilities: the referee holds the full game state; each opponent receives only that seat's permitted information.
 
@@ -70,6 +71,7 @@ Ticket to Ride is a route-claiming game. Trains are placed to occupy the spaces 
 | R14 | Use the game's box color scheme for the app | Parchment surfaces, burgundy actions, antique-gold accents, dark-brown text, and muted-blue secondary accents as specified in section 4.8. |
 | R15 | The passed-around phone/tablet app must be a PWA for iOS and Android | Responsive browser client with home-screen launch, local shell caching, secure local pairing, and no native app-store dependency. |
 | R16 | Photograph and save the game so the board can be cleared and rebuilt later | Explicit Save and pack away workflow: version-matched board photo, complete digital checkpoint, cleanup-safe pause, and guided physical restoration. |
+| R17 | A single human uses the main monitor for their cards without connecting a phone | Count human seats in the current match, hide Connect phone for one human, and present that human's card choices on the laptop. Preserve AI secrecy and physical-placement instructions. |
 
 ### 1.3 Explicit design assumptions
 
@@ -79,8 +81,8 @@ These are implementation choices, not additional statements attributed to the us
 - English is the first UI and narration language, matching the supplied edition reference. Text and speech resources remain separable for later translation.
 - Normal matches have at least one human and at least one AI. Local all-human play can reuse the same referee and privacy screens. All-AI play belongs to simulation and testing.
 - The physical board, train molds, and colors must match a validated classic-edition profile. Replacement miniatures and other editions are outside the initial recognition guarantee.
-- Voice means spoken guidance. Free-form speech recognition is not required. Humans select cards on the companion touchscreen; the laptop retains mouse/keyboard access for fallback play.
-- One shared companion device is the first-release controller. Separate simultaneous devices per human are outside the initial scope. No additional device is required for AI seats.
+- Voice means spoken guidance. Free-form speech recognition is not required. A single human selects cards on the laptop; multiple humans choose laptop pass-and-hide or the companion touchscreen.
+- When companion play is selected for multiple humans, one shared companion device is the first-release controller. Separate simultaneous devices per human are outside the initial scope. No additional device is required for a single human or for AI seats.
 - Offline means no internet connection is required. Companion play does require a working local link to the laptop, normally the same private Wi-Fi network. A disconnected PWA cannot take authoritative turns independently.
 - Strictly offline PWA setup uses guided device trust for local HTTPS. This adds a one-time manual step per companion device; trust installation and actual browser behavior must pass M0 before mobile support is claimed.
 - Speech-only **guidance** still needs a screen for private cards and interactive choices. Shared speakers must not read hidden hands aloud. This limitation is explained when selecting the mode.
@@ -153,7 +155,7 @@ Prefer a mat or corner guides that fix the board's relationship to the markers. 
 8. Capture an empty-board reference, with all trains off the mapped routes. This is automatic calibration, not consumer training.
 9. Select seats, human/AI assignments, physical train colors, clockwise order, starting player, and AI difficulty.
 10. Ask players to prepare the correct starting stock of trains. Do not pretend the camera can count an overlapping pile outside its view.
-11. Connect/install and pair the companion as described in section 18.5, or explicitly choose laptop-only fallback. Create the saved match, perform digital setup, and visit each human's private ticket-selection screen on the chosen controller.
+11. With one human, use the laptop automatically and omit Connect phone. With multiple humans, offer laptop pass-and-hide or connect/install and pair the companion as described in section 18.5. Create the saved match, perform digital setup, and visit each human's ticket-selection screen on the chosen controller.
 12. Return to public view and begin the first turn only after the physical board is consistent.
 
 No user has to label a train, photograph one color at a time, install Python, or teach the model their set. If the set falls outside the shipped recognizer's support, offer manual verification or explain the compatibility issue.
@@ -191,7 +193,7 @@ Never place a hidden hand in the public screen's visual tree merely with zero op
 
 ### 4.2 Human card turn
 
-The active human opens their private view on the companion through the pass-and-hide handoff. The screen offers the available action families. Tapping a face-up card or a blind draw submits a command to the laptop, shows its authoritative result privately, and updates the market before a subsequent choice is permitted. Ticket draws open a private selection view with clear keep/return controls. Disable duplicate submissions while a result is unknown; do not locally invent a successful draw.
+With one human, that player's card view opens on the laptop when a human decision becomes available. With multiple humans, the active player explicitly reveals their private view through pass-and-hide on the laptop or companion. The screen offers the available action families. Selecting a face-up card or a blind draw submits a command to the laptop, shows its authoritative result privately, and updates the market before a subsequent choice is permitted. Ticket draws open a private selection view with clear keep/return controls. Disable duplicate submissions while a result is unknown; do not locally invent a successful draw.
 
 The game completes these actions through the rules engine. It does not wait for a nonexistent physical board change to decide that the turn ended. It returns to the privacy curtain before another human's information becomes available.
 
@@ -241,7 +243,9 @@ Select the experience separately from voice/visual output: **Standard** uses ess
 
 ### 4.7 Pass-and-hide
 
-At a human handoff, first show a neutral curtain on the companion: “Pass this device to Alex.” Reveal the active seat's private view only after an explicit action and a fresh laptop-issued private-view grant. The user can hold a touch target to peek at their hand; releasing it returns to the curtain. A persistent reveal option is permitted with a visible Hide control and inactivity timeout. The laptop remains on the public board view. Laptop-only fallback uses the equivalent curtain and keyboard/mouse controls.
+For exactly one human, use **Your cards** on the laptop and **Back to table** instead of pass-the-device wording. Open the human's card or ticket choices when a human decision becomes available, then return to the table for physical placement and AI guidance. A deliberate Back to table, Escape, timeout or deactivation remains respected; refreshing the public state must not reopen a deliberately hidden hand. Normal board-check, pack-away and rebuild gates still apply before card actions. Derive the mode from the actual match roster, including resumed matches; setup edits affect only a future match. Hide **Connect phone** and prevent starting companion gameplay in single-human mode.
+
+With multiple humans, at a human handoff first show a neutral curtain on the companion: “Pass this device to Alex.” Reveal the active seat's private view only after an explicit action and a fresh laptop-issued private-view grant. The user can hold a touch target to peek at their hand; releasing it returns to the curtain. A persistent reveal option is permitted with a visible Hide control and inactivity timeout. The laptop remains on the public board view when using the companion. Laptop-only play uses the equivalent curtain and keyboard/mouse controls.
 
 Hide on seat changes, deactivation, device lock, sleep, connection loss, recovery dialogs that leave the private workflow, and entry into public mode. Clear private DOM/view models, tooltips, search results, accessible labels, and pending narration at the same transition. The public scoreboard cannot acquire focus behind an unhidden private window. Mobile lifecycle and operating-system snapshot limitations are addressed in section 4.9.
 
@@ -1651,6 +1655,33 @@ actions; `GoldenTicket.Vision`, with real Windows capture, manual board cropping
 comparison; and encrypted optional checkpoint-reference photos. The Windows shell now exposes
 camera, connection and photo screens. These changes are described in
 [the implementation record and acceptance checklist](docs/IMPLEMENTATION-2026-09-12.md).
+
+Single-human play now uses the laptop's card view directly for opening destinations and human
+decisions, with **Your cards** and **Back to table** labels and no **Connect phone** navigation.
+Setup changes update the proposed mode; an active or resumed match uses its own human-seat count.
+Multiple-human pass-and-hide and the optional companion remain available. The solo workflow keeps
+the table available for placements and AI instructions, respects explicit covering, and retains
+the physical reconciliation gate before restored gameplay.
+
+The manual photo crop retains four editable numbered handles after selection. Operators can drag
+an existing handle while placing the remaining corners or after the crop is complete; the valid
+crop preview updates immediately. Keyboard users focus the camera preview, choose a handle with
+1–4, then use arrows (Shift for larger steps). During selection, Enter leaves handle editing and
+returns to the next-corner crosshair; arrows and Enter position and place that next corner. Crossed,
+overlapping or undersized crops retain the handles for correction and disable photo capture.
+Every geometry edit invalidates previous photo geometry before notifying the view. A camera-session
+or frame-size change clears the selection; crop editing alone does not reset the scene reference.
+Headless synthetic interaction/rendering checks cover this behavior; real pointer dragging with
+the overhead-camera setup remains a physical acceptance check.
+
+The photo foundation explicitly distinguishes a digital checkpoint, a live unsaved crop and a saved
+photo attachment. Save and pack away does not capture a photo automatically. The photo page shows
+the missing prerequisite (camera, crop, stable reference or operator confirmation), links to camera
+setup and labels its live crop as unsaved. Capture is disabled outside packed/rebuilding sessions
+or while the camera is not ready. Only successful encrypted attachment readback supplies the saved
+image. The rebuild page shows that image above the authoritative route list, and supplies clear
+messages for missing photos and zero-route positions. A checkpoint with no attachment cannot
+recreate a historical board picture after the physical board has been cleared.
 
 Current deviations remain explicit: the PWA uses bundled plain JavaScript and two-second public
 snapshot polling instead of the specified TypeScript/WSS event cursor. Controller sessions are

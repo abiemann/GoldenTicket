@@ -26,13 +26,29 @@
 
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,12">
                     <TextBlock FontSize="20" Text="{Binding Symbol}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                    <TextBlock Style="{StaticResource Heading}" Margin="0" VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource Heading}" Margin="0" VerticalAlignment="Center"
+                               Visibility="{Binding DataContext.IsSingleHumanGame, RelativeSource={RelativeSource AncestorType=UserControl},
+                                                    Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
                         <Run Text="{Binding SeatName, Mode=OneWay}" /><Run Text=" - private view" />
                     </TextBlock>
-                    <Button Style="{StaticResource SecondaryButton}" Content="Hide (pass the laptop on)"
+                    <TextBlock Style="{StaticResource Heading}" Margin="0" VerticalAlignment="Center" Text="Your cards"
+                               Visibility="{Binding DataContext.IsSingleHumanGame, RelativeSource={RelativeSource AncestorType=UserControl},
+                                                    Converter={StaticResource BoolToVisibility}}" />
+                    <Button
                             Margin="24,0,0,0"
                             Command="{Binding DataContext.HidePrivateSeatCommand,
-                                              RelativeSource={RelativeSource AncestorType=UserControl}}" />
+                                              RelativeSource={RelativeSource AncestorType=UserControl}}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+                                <Setter Property="Content" Value="Hide (pass the laptop on)" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding DataContext.IsSingleHumanGame, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                        <Setter Property="Content" Value="Back to table" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
                 </StackPanel>
 
                 <TextBlock DockPanel.Dock="Bottom" Margin="0,10,0,0" FontWeight="SemiBold"

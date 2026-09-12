@@ -59,6 +59,10 @@ public sealed partial class MainViewModel : ObservableObject
         Setup = new SetupViewModel(manifest);
         Table = new TableViewModel(manifest);
         InitializeTools();
+        Setup.PropertyChanged += (_, args) =>
+        {
+            if (_coordinator is null && args.PropertyName == nameof(SetupViewModel.HumanSeatCount)) NotifyHumanPresentation();
+        };
     }
 
     public SetupViewModel Setup { get; }
@@ -85,17 +89,31 @@ public sealed partial class MainViewModel : ObservableObject
 
     public bool IsPrivateVisible => PrivateSeat is not null;
 
+    private int HumanSeatCount => _coordinator?.Public.Seats.Count(seat => seat.Kind == SeatKind.Human) ?? Setup.HumanSeatCount;
+    public bool IsSingleHumanGame => HumanSeatCount == 1;
+    public bool CanConnectPhone => HumanSeatCount > 1;
+
+    private void NotifyHumanPresentation()
+    {
+        OnPropertyChanged(nameof(IsSingleHumanGame));
+        OnPropertyChanged(nameof(CanConnectPhone));
+        OnPropertyChanged(nameof(RevealPrompt));
+        ShowConnectionCommand.NotifyCanExecuteChanged();
+    }
+
     /// <summary>The human seat that currently needs the screen. Recomputed on every refresh.</summary>
     private (SeatId SeatId, string Name)? _revealable;
 
     public bool CanRevealPrivateSeat => _revealable is not null && !_operationInProgress
-        && _windowActive && Screen == Screen.Table && !NeedsBoardReconciliation && !_mustReload
+        && _windowActive && _systemAvailable && !_toolsDisposed && Screen == Screen.Table && !NeedsBoardReconciliation && !_mustReload
         && _coordinator is { StorageFaulted: false }
         && _coordinator.Public.Lifecycle is SessionLifecycle.Setup or SessionLifecycle.Active
         && _coordinator.Public.TurnPhase != TurnPhase.RulesDecisionRequired;
 
     public string RevealPrompt => _revealable is { } seat
-        ? $"Pass the laptop to {seat.Name}, then reveal their private view."
+        ? IsSingleHumanGame
+            ? $"{seat.Name}, your cards are shown on this laptop. Open your cards when you are ready."
+            : $"Pass the laptop to {seat.Name}, then reveal their private view."
         : "No human seat needs the screen right now.";
 
     partial void OnPrivateSeatChanged(PrivateSeatViewModel? value) => OnPropertyChanged(nameof(IsPrivateVisible));
@@ -130,6 +148,7 @@ public sealed partial class MainViewModel : ObservableObject
         SetOperationInProgress(true);
         HidePrivateSeat();
         Busy = "Shuffling and dealing...";
+        var generation = _revealGeneration;
         try
         {
             _coordinator = await GameCoordinator.CreateAsync(
@@ -138,7 +157,10 @@ public sealed partial class MainViewModel : ObservableObject
             _driver = new ComputerSeatDriver(
                 _coordinator, new HeuristicAiPolicy(), DeterministicRandom.SeedFromOperatingSystem().S0);
 
+            var revealUnchanged = generation == _revealGeneration;
             Screen = Screen.Table;
+            if (revealUnchanged) generation = _revealGeneration;
+            NotifyHumanPresentation();
             Status = null;
             await PumpAsync();
         }
@@ -152,6 +174,7 @@ public sealed partial class MainViewModel : ObservableObject
             Busy = null;
             SetOperationInProgress(false);
         }
+        await ShowSingleHumanCardsAsync(generation);
     }
 
     [RelayCommand]
@@ -165,6 +188,7 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             _coordinator = await GameCoordinator.RestoreAsync(_rules, _store, saved.SessionId);
+            NotifyHumanPresentation();
             if (_coordinator.Public.VerificationMode != VerificationMode.Manual)
                 throw new NotSupportedException("This build can only resume matches that use manual verification.");
             _driver = new ComputerSeatDriver(
@@ -263,6 +287,15 @@ public sealed partial class MainViewModel : ObservableObject
         var summary = view.Public.SeatOf(seat.SeatId);
 
         PrivateSeat = new PrivateSeatViewModel(view, legal, _manifest, summary.DisplayName, summary.Symbol);
+    }
+
+    private async Task ShowSingleHumanCardsAsync(long generation)
+    {
+        // Automatic presentation follows a completed game action, never an idle refresh or
+        // window activation. An explicit Hide or deactivation still cancels delayed reveals.
+        if (!IsSingleHumanGame || generation != _revealGeneration || !CanRevealPrivateSeat) return;
+        try { await RevealPrivateSeatAsync(); }
+        catch (Exception) { RequireReload(); }
     }
 
     /// <summary>
@@ -364,9 +397,12 @@ public sealed partial class MainViewModel : ObservableObject
 
         // A delayed save/AI result cannot undo Hide, window deactivation, or a seat handoff.
         if (accepted && generation == _revealGeneration && ReferenceEquals(coordinator, _coordinator) &&
-            coordinator.Public.TurnNumber == turnNumber && coordinator.Public.Lifecycle == lifecycle &&
+            (IsSingleHumanGame || (coordinator.Public.TurnNumber == turnNumber && coordinator.Public.Lifecycle == lifecycle)) &&
             _revealable is { } next && next.SeatId == seat.SeatId)
-            await RevealPrivateSeatAsync();
+        {
+            if (IsSingleHumanGame) await ShowSingleHumanCardsAsync(generation);
+            else await RevealPrivateSeatAsync();
+        }
     }
 
     // ---- Operator actions ------------------------------------------------------------------
@@ -419,6 +455,7 @@ public sealed partial class MainViewModel : ObservableObject
         if (!CanSubmitOperator()) return;
         SetOperationInProgress(true);
         HidePrivateSeat();
+        var generation = _revealGeneration;
         Table.WholeBoardAcknowledged = false;
         try
         {
@@ -439,6 +476,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             SetOperationInProgress(false);
         }
+        await ShowSingleHumanCardsAsync(generation);
     }
 
     private bool CanSubmitOperator() => !_operationInProgress && !_mustReload &&
@@ -555,7 +593,6 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         await SubmitLifecycleAsync(new ResumePackedGame(_coordinator.NewEnvelope(), checkpoint.CheckpointId));
-        if (_coordinator.Public.Lifecycle == SessionLifecycle.Active) Screen = Screen.Table;
     }
 
     /// <summary>The current public projection, or null before a match is open.</summary>
@@ -567,6 +604,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         SetOperationInProgress(true);
         HidePrivateSeat();
+        var generation = _revealGeneration;
         try
         {
             var outcome = await _coordinator.SubmitAsync(command);
@@ -580,7 +618,12 @@ public sealed partial class MainViewModel : ObservableObject
 
             if (outcome.IsAccepted && command is ResolveRulesDecision or CancelPackAwayPreparation or ResumePackedGame)
             {
-                if (_coordinator.Public.Lifecycle == SessionLifecycle.Active) Screen = Screen.Table;
+                if (_coordinator.Public.Lifecycle == SessionLifecycle.Active)
+                {
+                    var revealUnchanged = generation == _revealGeneration;
+                    Screen = Screen.Table;
+                    if (revealUnchanged) generation = _revealGeneration;
+                }
                 await PumpAsync();
             }
             else
@@ -596,6 +639,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             SetOperationInProgress(false);
         }
+        await ShowSingleHumanCardsAsync(generation);
     }
 
     [RelayCommand]
@@ -606,6 +650,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         SetOperationInProgress(true);
         HidePrivateSeat();
+        var generation = _revealGeneration;
         NeedsBoardReconciliation = false;
         BoardReconciliationAcknowledged = false;
         Status = "Board reconciliation confirmed by the operator. Manual verification remains active.";
@@ -623,6 +668,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             SetOperationInProgress(false);
         }
+        await ShowSingleHumanCardsAsync(generation);
     }
 
     private void SetOperationInProgress(bool value)

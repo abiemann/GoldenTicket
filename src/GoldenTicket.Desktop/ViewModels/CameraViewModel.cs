@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Security.Cryptography;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -24,6 +25,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     private readonly SceneReferenceMonitor _monitor = new();
     private readonly CancellationTokenSource _lifetime = new();
     private BoardRegistration? _registration;
+    private (long Epoch, int Width, int Height)? _cornerCapture;
     private long _previewSequence = -1;
     private long _cropRevision;
     private bool _disposed;
@@ -172,6 +174,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         try
         {
             Preview = ToBitmap(frame);
+            if (!CornersMatch(frame)) ClearRegistration();
             if (_registration is { } registration)
             {
                 if (!registration.Matches(frame)) ClearRegistration();
@@ -228,12 +231,10 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         if (IsBusy || _disposed) return;
         try
         {
-            Capture.GetFreshFrame(TimeSpan.FromSeconds(1));
+            var frame = Capture.GetFreshFrame(TimeSpan.FromSeconds(1));
+            InvalidateCrop();
+            _cornerCapture = (frame.Epoch, frame.Width, frame.Height);
             SelectedCorners.Clear();
-            _registration = null;
-            _cropRevision++;
-            BoardPreview = null;
-            HasBoardCrop = false;
             SelectingCorners = true;
             CropText = "Click 1: top-left corner of the board in the live image.";
             Problem = null;
@@ -243,28 +244,80 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
 
     public void AddBoardCorner(NormalizedPoint point)
     {
-        if (!SelectingCorners || SelectedCorners.Count >= 4) return;
+        if (_disposed || IsBusy || !SelectingCorners || SelectedCorners.Count >= 4 || !IsFinite(point) || !CanEditCurrentCapture()) return;
+        InvalidateCrop();
+        point = ClampPoint(point);
         SelectedCorners.Add(point);
+        UpdateBoardCrop();
+    }
+
+    /// <summary>Moves an existing handle, retaining all handles even while the crop geometry is invalid.</summary>
+    public bool MoveBoardCorner(int index, NormalizedPoint point)
+    {
+        if (_disposed || IsBusy || index < 0 || index >= SelectedCorners.Count || !IsFinite(point) || !CanEditCurrentCapture()) return false;
+        point = ClampPoint(point);
+        if (SelectedCorners[index] == point) return false;
+        // Invalidate before notifying the view or encoding another photo with obsolete geometry.
+        InvalidateCrop();
+        SelectedCorners[index] = point;
+        UpdateBoardCrop();
+        return true;
+    }
+
+    private static bool IsFinite(NormalizedPoint point) => double.IsFinite(point.X) && double.IsFinite(point.Y);
+    private static NormalizedPoint ClampPoint(NormalizedPoint point) => new(Math.Clamp(point.X, 0, 1), Math.Clamp(point.Y, 0, 1));
+
+    private bool CornersMatch(CameraFrame frame) => _cornerCapture is not { } capture ||
+        (capture.Epoch == frame.Epoch && capture.Width == frame.Width && capture.Height == frame.Height);
+
+    private bool CanEditCurrentCapture()
+    {
+        if (_cornerCapture is not { } capture ||
+            (capture.Epoch == Capture.Epoch && (Capture.LatestFrame is not { } frame || CornersMatch(frame)))) return true;
+        ClearRegistration();
+        Problem = "Camera or format changed. Select the four board corners again.";
+        return false;
+    }
+
+    private void InvalidateCrop()
+    {
+        _registration = null;
+        _cropRevision++;
+        HasBoardCrop = false;
+        BoardPreview = null;
+    }
+
+    private void UpdateBoardCrop()
+    {
         string[] labels = ["top-left", "top-right", "bottom-right", "bottom-left"];
         if (SelectedCorners.Count < 4)
         {
-            CropText = $"Click {SelectedCorners.Count + 1}: {labels[SelectedCorners.Count]} corner of the board.";
+            CropText = $"Click {SelectedCorners.Count + 1}: {labels[SelectedCorners.Count]} corner of the board. Drag any numbered corner to adjust it.";
+            Problem = null;
             return;
         }
         SelectingCorners = false;
         try
         {
             var frame = Capture.GetFreshFrame(TimeSpan.FromSeconds(1));
-            _registration = BoardRegistration.Create(frame, SelectedCorners);
-            _cropRevision++;
-            BoardPreview = ToBitmap(_registration.Rectify(frame, 480, 300));
+            if (!CornersMatch(frame))
+            {
+                ClearRegistration();
+                Problem = "Camera or format changed. Select the four board corners again.";
+                return;
+            }
+            var registration = BoardRegistration.Create(frame, SelectedCorners);
+            var preview = ToBitmap(registration.Rectify(frame, 480, 300));
+            _cornerCapture = (frame.Epoch, frame.Width, frame.Height);
+            _registration = registration;
+            BoardPreview = preview;
             HasBoardCrop = true;
-            CropText = "Board photo crop selected. Check the preview includes every route and score edge. This is a manual crop, not verified board registration.";
+            CropText = "Board photo crop selected. Drag any numbered corner to adjust it. Check the preview includes every route and score edge. This is a manual crop, not verified board registration.";
             Problem = null;
         }
         catch (Exception ex)
         {
-            ClearRegistration();
+            CropText = "Crop is not ready. Adjust the numbered corners in clockwise order: top-left, top-right, bottom-right, bottom-left. A fresh camera view is required.";
             Problem = ex.Message;
         }
     }
@@ -283,9 +336,12 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         // Snapshot identity is captured before encoding; callers bind it to their frozen game operation.
         var cropped = await Task.Run(() => registration.Rectify(frame, 1920, 1200), cancellationToken);
         var png = await cropped.EncodePngAsync(cancellationToken);
-        if (!Capture.IsRunning || Capture.Epoch != frame.Epoch || !ReferenceEquals(registration, _registration) ||
+        if (!Capture.IsRunning || Capture.Epoch != frame.Epoch || !ReferenceEquals(registration, _registration) || _cropRevision != cropRevision ||
             SafetyHeld || _monitor.Current.SafetyHeld || _monitor.Current.EvidenceRevision != evidenceRevision)
+        {
+            CryptographicOperations.ZeroMemory(png);
             throw new InvalidOperationException("Camera or crop changed while the photo was captured. Wait for the live preview and try again.");
+        }
         return new(png, cropped.Sequence, cropped.Epoch, cropped.CapturedAt, cropped.Width, cropped.Height, true, cropRevision, cameraId);
     }
 
@@ -333,9 +389,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
 
     private void ClearRegistration()
     {
-        _registration = null;
-        _cropRevision++;
-        HasBoardCrop = false;
+        InvalidateCrop();
+        _cornerCapture = null;
         SelectingCorners = false;
         SelectedCorners.Clear();
         BoardPreview = null;

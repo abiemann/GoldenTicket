@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.IO;
+using System.Globalization;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
@@ -13,7 +15,10 @@ using System.Windows.Threading;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Desktop.Views;
 using GoldenTicket.Application;
+using GoldenTicket.Domain;
+using GoldenTicket.Domain.Model;
 using GoldenTicket.Domain.Manifest;
+using GoldenTicket.Vision;
 
 internal static class Program
 {
@@ -43,6 +48,7 @@ internal static class Program
                 model.Setup.Seats[1].DisplayName = "Conductor";
                 model.Setup.Seats[2].DisplayName = "Brakeman";
                 await RenderSizes("setup", () => new SetupView { DataContext = model });
+                await VerifyHumanPresentation();
                 foreach (var seat in model.Setup.Seats) seat.IsComputer = true;
                 await model.StartMatchCommand.ExecuteAsync(null);
                 for (var step = 0; step < 35 && model.Table.ClaimedRoutes.Count < 3; step++)
@@ -61,6 +67,7 @@ internal static class Program
                 await RenderSizes("connection-off", () => new ConnectionView { DataContext = model.Connection });
                 await model.ShowCheckpointPhotoCommand.ExecuteAsync(null);
                 await RenderSizes("checkpoint-photo", () => new CheckpointPhotoView { DataContext = model.CheckpointPhoto });
+                await VerifyCheckpointPhotoPresentation();
                 await File.WriteAllTextAsync(Path.Combine(Output, "layout-report.json"), JsonSerializer.Serialize(Results, new JsonSerializerOptions { WriteIndented = true }));
                 await File.WriteAllTextAsync(Path.Combine(Output, "binding-errors.log"), BindingLog.Text.ToString());
                 Console.WriteLine($"Rendered {Results.Count} real-view cases. Binding errors/warnings: {BindingLog.ErrorCount}.");
@@ -76,7 +83,7 @@ internal static class Program
         app.Run();
     }
 
-    private static async Task RenderSizes(string name, Func<UserControl> make)
+    private static async Task RenderSizes(string name, Func<UserControl> make, Action<UserControl>? verify = null)
     {
         foreach (var (width, height) in new[] { (1280, 800), (1000, 620) })
         {
@@ -86,6 +93,18 @@ internal static class Program
                 Background = (Brush)System.Windows.Application.Current.Resources["Surface.Window"] };
             TextElement.SetForeground(root, (Brush)System.Windows.Application.Current.Resources["Text.Primary"]);
             await Arrange(root, width, height);
+            if (view is CameraView cameraView)
+            {
+                // A detached render tree has no window to deliver Loaded after its image binding and
+                // layout settle. Exercise the same subscription/redraw path that the real window uses.
+                view.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+                await Arrange(root, width, height);
+                var overlay = (Canvas)cameraView.FindName("CornerOverlay");
+                var expectedCorners = ((CameraViewModel)cameraView.DataContext).SelectedCorners.Count;
+                if (overlay.Children.OfType<Border>().Count() != expectedCorners)
+                    throw new InvalidOperationException("The camera overlay must render every editable corner handle.");
+            }
+            verify?.Invoke(view);
             var beforeErrors = BindingLog.ErrorCount;
             var buttons = Descendants<ButtonBase>(root).Where(b => b.Visibility == Visibility.Visible).Select(b =>
             {
@@ -126,23 +145,358 @@ internal static class Program
         root.UpdateLayout();
     }
 
+    private static async Task VerifyHumanPresentation()
+    {
+        var checks = new List<string>();
+        var solo = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
+        var shared = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
+        try
+        {
+            solo.Setup.ManualVerificationAccepted = true;
+            solo.Setup.Seats[0].DisplayName = "Solo test player";
+            if (!solo.IsSingleHumanGame || solo.CanConnectPhone || solo.ShowConnectionCommand.CanExecute(null))
+                throw new InvalidOperationException("A single-human setup must use the laptop without a phone connection command.");
+            await RenderSizes("solo-setup-synthetic", () => new SetupView { DataContext = solo }, view =>
+            {
+                var text = VisibleText(view);
+                if (!text.Contains("No phone connection is needed.", StringComparison.Ordinal) ||
+                    text.Contains("Multiple humans can pass", StringComparison.Ordinal))
+                    throw new InvalidOperationException("Solo setup must show laptop guidance without multiple-human connection guidance.");
+            });
+            checks.Add("Single-human setup shows laptop-only guidance and disables Connect phone.");
+
+            await solo.StartMatchCommand.ExecuteAsync(null);
+            RequireHumanPrivateView(solo, "Solo test player", mustChooseTickets: true);
+            await RenderSizes("solo-opening-tickets-synthetic", () => new PrivateSeatView { DataContext = solo },
+                view => VerifyPrivateLabels(view, solo, "Solo test player", singleHuman: true));
+            checks.Add("Starting a solo match automatically presents only that human's opening cards and destination choices.");
+
+            await solo.CommitTicketsCommand.ExecuteAsync(null);
+            RequireHumanPrivateView(solo, "Solo test player", mustChooseTickets: false);
+            await RenderSizes("solo-turn-cards-synthetic", () => new PrivateSeatView { DataContext = solo },
+                view => VerifyPrivateLabels(view, solo, "Solo test player", singleHuman: true));
+            checks.Add("Committing solo opening destinations automatically presents the human turn with Your cards and Back to table.");
+
+            solo.HidePrivateSeatCommand.Execute(null);
+            if (solo.IsPrivateVisible || solo.PrivateSeat is not null)
+                throw new InvalidOperationException("Back to table must discard the solo private view.");
+            await RenderSizes("solo-table-synthetic", () => new TableView { DataContext = solo }, view =>
+            {
+                var labels = VisibleButtons(view);
+                if (!labels.Contains("Your cards") || labels.Contains("Reveal my private view") ||
+                    VisibleText(view).Contains("Pass the laptop", StringComparison.Ordinal))
+                    throw new InvalidOperationException("The solo table must offer Your cards without a laptop handoff prompt.");
+            });
+            checks.Add("Back to table discards the private view and offers Your cards without handoff wording.");
+
+            shared.Setup.ManualVerificationAccepted = true;
+            shared.Setup.Seats[0].DisplayName = "First human test player";
+            shared.Setup.Seats[1].DisplayName = "Second human test player";
+            shared.Setup.Seats[1].IsComputer = false;
+            if (shared.IsSingleHumanGame || !shared.CanConnectPhone || !shared.ShowConnectionCommand.CanExecute(null))
+                throw new InvalidOperationException("Multiple humans must retain the optional Connect phone command.");
+            await RenderSizes("shared-setup-synthetic", () => new SetupView { DataContext = shared }, view =>
+            {
+                var text = VisibleText(view);
+                if (!text.Contains("Multiple humans can pass", StringComparison.Ordinal) ||
+                    text.Contains("No phone connection is needed.", StringComparison.Ordinal))
+                    throw new InvalidOperationException("Multiple-human setup must show the choice of laptop handoff or shared companion.");
+            });
+            checks.Add("Multiple-human setup offers laptop pass-and-hide or an optional companion.");
+
+            await shared.StartMatchCommand.ExecuteAsync(null);
+            if (shared.IsPrivateVisible || shared.PrivateSeat is not null)
+                throw new InvalidOperationException("A multiple-human match must start covered until explicit reveal.");
+            await RenderSizes("shared-table-covered-synthetic", () => new TableView { DataContext = shared }, view =>
+            {
+                var labels = VisibleButtons(view);
+                if (!labels.Contains("Reveal my private view") || labels.Contains("Your cards") ||
+                    !VisibleText(view).Contains("Pass the laptop to First human test player", StringComparison.Ordinal))
+                    throw new InvalidOperationException("The multiple-human table must retain explicit private reveal and the current handoff prompt.");
+            });
+            checks.Add("Multiple-human match startup stays covered and retains the explicit reveal handoff.");
+
+            await shared.RevealPrivateSeatCommand.ExecuteAsync(null);
+            RequireHumanPrivateView(shared, "First human test player", mustChooseTickets: true);
+            await RenderSizes("shared-first-private-synthetic", () => new PrivateSeatView { DataContext = shared },
+                view => VerifyPrivateLabels(view, shared, "First human test player", singleHuman: false));
+            await shared.CommitTicketsCommand.ExecuteAsync(null);
+            if (shared.IsPrivateVisible || shared.PrivateSeat is not null)
+                throw new InvalidOperationException("Moving to another human's opening tickets must discard the prior private view.");
+            await shared.RevealPrivateSeatCommand.ExecuteAsync(null);
+            RequireHumanPrivateView(shared, "Second human test player", mustChooseTickets: true);
+            await RenderSizes("shared-second-private-synthetic", () => new PrivateSeatView { DataContext = shared },
+                view => VerifyPrivateLabels(view, shared, "Second human test player", singleHuman: false));
+            checks.Add("Each shared private view uses the explicitly revealed human's hand and ticket sources, with the prior view discarded at handoff.");
+
+            await File.WriteAllTextAsync(Path.Combine(Output, "human-presentation-interactions.json"), JsonSerializer.Serialize(new
+            {
+                Fixture = "Synthetic in-memory matches on an isolated WPF dispatcher; no visible window, user save, network listener or camera.",
+                Checks = checks,
+                RenderSizes = new[] { "1280x800", "1000x620" }
+            }, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine($"Human presentation: {checks.Count} synthetic flow checks passed.");
+        }
+        finally
+        {
+            await solo.DisposeToolsAsync();
+            await shared.DisposeToolsAsync();
+        }
+    }
+
+    private static async Task VerifyCheckpointPhotoPresentation()
+    {
+        var model = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
+        var checks = new List<string>();
+        try
+        {
+            // Explicit visual fixtures only: no checkpoint is read or written, and no camera or
+            // capture command is invoked. Persistence and capture guards have separate tests.
+            var photo = model.CheckpointPhoto;
+            photo.CheckpointName = "Synthetic empty-board checkpoint";
+            photo.HasCheckpoint = true;
+            photo.CaptureAllowed = true;
+            photo.Status = "Synthetic photo-presentation fixture. No saved game or camera is opened.";
+            model.Table.RebuildHeadline = "Synthetic empty-board checkpoint: 0 routes and 0 trains on the board.";
+            model.Table.RebuildStock.Add(new RebuildStockRow("Synthetic player", PlayerColor.Blue, "◆", 0, 45));
+            await RenderSizes("rebuild-empty-no-photo-synthetic", () => new RebuildView { DataContext = model }, view =>
+            {
+                if (!IsShown((FrameworkElement)view.FindName("MissingPhotoPanel"), view) ||
+                    IsShown((FrameworkElement)view.FindName("SavedPhotoPanel"), view) ||
+                    !IsShown((FrameworkElement)view.FindName("EmptySavedPosition"), view) ||
+                    !VisibleText(view).Contains(photo.PhotoStateSummary, StringComparison.Ordinal) ||
+                    !VisibleText(view).Contains("All route lanes should be empty.", StringComparison.Ordinal))
+                    throw new InvalidOperationException("An empty checkpoint without a photo must explain both the absent image and the zero-route rebuild target.");
+            });
+            checks.Add("Zero-route rebuild clearly identifies the absent reference photo and says every route lane should be empty.");
+
+            await RenderSizes("checkpoint-photo-missing-synthetic", () => new CheckpointPhotoView { DataContext = photo }, view =>
+            {
+                if (!VisibleText(view).Contains(photo.PhotoStateSummary, StringComparison.Ordinal) ||
+                    !VisibleText(view).Contains(photo.CaptureGuidance, StringComparison.Ordinal) ||
+                    Descendants<Image>(view).Any(image => IsShown(image, view) && image.Source is not null))
+                    throw new InvalidOperationException("A missing-photo page must provide explicit photo state and camera setup guidance, with no stale image.");
+            });
+            checks.Add("Missing-photo page explains the missing image and camera setup instead of presenting an unexplained blank area.");
+
+            var live = SyntheticCropFixture("SYNTHETIC LIVE CROP\nNOT SAVED");
+            model.Camera.BoardPreview = live;
+            model.Camera.IsRunning = true;
+            model.Camera.HasBoardCrop = true;
+            model.Camera.SafetyHeld = false;
+            await RenderSizes("checkpoint-photo-live-crop-synthetic", () => new CheckpointPhotoView { DataContext = photo }, view =>
+            {
+                if (!photo.HasLivePreview || photo.HasPhoto || photo.PhotoImage is not null ||
+                    !Descendants<Image>(view).Any(image => IsShown(image, view) && ReferenceEquals(image.Source, live)) ||
+                    !VisibleText(view).Contains(photo.PhotoStateSummary, StringComparison.Ordinal) ||
+                    !VisibleText(view).Contains("not saved", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("The live crop must be visible and identified as not saved while the checkpoint has no reference photo.");
+                var capture = Descendants<Button>(view).Single(button => ReferenceEquals(button.Command, photo.CaptureReferenceCommand));
+                if (capture.IsEnabled)
+                    throw new InvalidOperationException("A live crop alone must not enable capture before the operator confirmation.");
+            });
+            checks.Add("Live crop appears on the photo page, is labeled not saved, and does not bypass the operator confirmation.");
+
+            var saved = SyntheticCropFixture("SYNTHETIC SAVED PHOTO\nLAYOUT FIXTURE ONLY");
+            photo.PhotoImage = saved;
+            photo.HasPhoto = true;
+            photo.CaptureDetails = "Synthetic saved-image presentation; no photo was persisted by this diagnostic.";
+            await RenderSizes("rebuild-saved-photo-synthetic", () => new RebuildView { DataContext = model }, view =>
+            {
+                var displayed = (Image)view.FindName("SavedBoardPhoto");
+                if (!IsShown(displayed, view) || !ReferenceEquals(displayed.Source, saved) ||
+                    IsShown((FrameworkElement)view.FindName("MissingPhotoPanel"), view) ||
+                    !IsShown((FrameworkElement)view.FindName("EmptySavedPosition"), view) ||
+                    !VisibleText(view).Contains("Saved board reference photo", StringComparison.Ordinal) ||
+                    Descendants<Image>(view).Any(image => IsShown(image, view) && ReferenceEquals(image.Source, live)))
+                    throw new InvalidOperationException("Rebuild must show the checkpoint's saved photo inline, retain the zero-route guidance, and exclude the live camera crop.");
+            });
+            checks.Add("Rebuild displays the exact checkpoint PhotoImage inline, retaining the saved route target and excluding the different live crop.");
+
+            await RenderSizes("checkpoint-photo-saved-synthetic", () => new CheckpointPhotoView { DataContext = photo }, view =>
+            {
+                if (!Descendants<Image>(view).Any(image => IsShown(image, view) && ReferenceEquals(image.Source, saved)) ||
+                    Descendants<Image>(view).Any(image => IsShown(image, view) && ReferenceEquals(image.Source, live)) ||
+                    !VisibleText(view).Contains(photo.PhotoStateSummary, StringComparison.Ordinal))
+                    throw new InvalidOperationException("A saved-photo page must display the saved reference and hide the different live crop.");
+            });
+            checks.Add("Saved-photo page displays the checkpoint reference instead of a currently available but different live crop.");
+
+            await File.WriteAllTextAsync(Path.Combine(Output, "checkpoint-photo-presentation.json"), JsonSerializer.Serialize(new
+            {
+                Fixture = "Explicitly seeded synthetic visual states with labeled images; no storage, camera, OS input, or capture commands are used. Separate tests cover persistence and capture validation.",
+                Checks = checks,
+                RenderSizes = new[] { "1280x800", "1000x620" }
+            }, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine($"Checkpoint photo presentation: {checks.Count} synthetic flow checks passed.");
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    private static void RequireHumanPrivateView(MainViewModel model, string humanName, bool mustChooseTickets)
+    {
+        var seat = model.Table.Seats.Single(row => row.DisplayName == humanName && row.Operator == "human");
+        if (!model.IsPrivateVisible || model.PrivateSeat is not { } privateSeat ||
+            privateSeat.SeatId != seat.SeatId || privateSeat.SeatName != humanName ||
+            privateSeat.MustChooseTickets != mustChooseTickets || privateSeat.Hand.Sum(row => row.Count) != seat.CardCount)
+            throw new InvalidOperationException($"The visible private view must belong only to the expected human: {humanName}.");
+    }
+
+    private static void VerifyPrivateLabels(UserControl view, MainViewModel model, string humanName, bool singleHuman)
+    {
+        var labels = VisibleButtons(view);
+        var text = VisibleText(view);
+        if (singleHuman
+            ? !labels.Contains("Back to table") || labels.Contains("Hide (pass the laptop on)") || !text.Contains("Your cards", StringComparison.Ordinal)
+            : !labels.Contains("Hide (pass the laptop on)") || labels.Contains("Back to table") || !text.Contains(humanName + " - private view", StringComparison.Ordinal))
+            throw new InvalidOperationException("The private-view title and return action must match the human count.");
+        var privateSeat = model.PrivateSeat ?? throw new InvalidOperationException("The expected private view is missing.");
+        var privateContexts = Descendants<FrameworkElement>(view).Select(element => element.DataContext)
+            .OfType<PrivateSeatViewModel>().Distinct().ToArray();
+        if (privateContexts.Length != 1 || !ReferenceEquals(privateContexts[0], privateSeat))
+            throw new InvalidOperationException("A private visual tree must bind to exactly the one revealed human seat.");
+        foreach (var source in new System.Collections.IEnumerable[] { privateSeat.Hand, privateSeat.Tickets, privateSeat.Offer })
+            if (!Descendants<ItemsControl>(view).Any(control => ReferenceEquals(control.ItemsSource, source)))
+                throw new InvalidOperationException("Private hand and destination controls must use the revealed seat's own collections.");
+    }
+
+    private static string[] VisibleButtons(DependencyObject root) => Descendants<Button>(root)
+        .Where(button => IsShown(button, root)).Select(Label).ToArray();
+
+    private static string VisibleText(DependencyObject root) => string.Join("\n", Descendants<TextBlock>(root)
+        .Where(block => IsShown(block, root)).Select(block => block.Text));
+
+    private static bool IsShown(DependencyObject element, DependencyObject root)
+    {
+        for (var current = element; current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            if (current is UIElement { Visibility: not Visibility.Visible }) return false;
+            if (ReferenceEquals(current, root)) return true;
+        }
+        return false;
+    }
+
     private static async Task VerifyKeyboardCornerHandler()
     {
         await using var camera = new CameraViewModel();
         var view = new CameraView { DataContext = camera };
         var image = (Image)view.FindName("PreviewImage");
-        camera.Preview = BitmapSource.Create(20, 20, 96, 96, PixelFormats.Bgra32, null, new byte[1600], 80);
+        camera.Preview = SyntheticCropFixture();
+        camera.IsRunning = true;
+        camera.Status = "Synthetic crop editing fixture. No camera is opened or connected by this diagnostic.";
+        camera.FormatText = "Synthetic 640 × 360 image · no camera input";
         camera.SelectingCorners = true;
         await Arrange(view, 1000, 620);
         var source = new FixturePresentationSource { RootVisual = view };
-        image.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Right)
+        void KeyPress(Key key) => image.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, key)
             { RoutedEvent = Keyboard.KeyDownEvent });
-        image.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Enter)
-            { RoutedEvent = Keyboard.KeyDownEvent });
+        var checks = new List<string>();
+        KeyPress(Key.Right);
+        KeyPress(Key.Enter);
         if (camera.SelectedCorners.Count != 1 || camera.SelectedCorners[0].X <= .05 || camera.SelectedCorners[0].Y != .05)
             throw new InvalidOperationException("The camera keyboard corner handler did not move and place its first corner.");
+        checks.Add("Arrow and Enter move the crosshair and place the first corner.");
+
+        var firstCorner = camera.SelectedCorners[0];
+        KeyPress(Key.D1);
+        KeyPress(Key.Right);
+        if (camera.SelectedCorners.Count != 1 || camera.SelectedCorners[0].X <= firstCorner.X ||
+            camera.SelectedCorners[0].Y != firstCorner.Y)
+            throw new InvalidOperationException("Selecting corner 1 and pressing Right must edit that corner during initial selection without adding another.");
+        checks.Add("Number 1 and Right adjust an existing corner during initial selection without adding one.");
+
+        KeyPress(Key.Enter);
+        if (camera.SelectedCorners.Count != 1)
+            throw new InvalidOperationException("Enter while editing an existing corner must return to placement without adding a corner.");
+        KeyPress(Key.Enter);
+        if (camera.SelectedCorners.Count != 2 || camera.SelectedCorners[1] != new NormalizedPoint(.95, .05))
+            throw new InvalidOperationException("Returning to placement must preserve the expected next-corner crosshair.");
+        checks.Add("Enter leaves corner editing, and the following Enter places the next corner.");
+
+        camera.AddBoardCorner(new(.95, .95));
+        camera.AddBoardCorner(new(.05, .95));
+        if (camera.SelectedCorners.Count != 4)
+            throw new InvalidOperationException("All four corner handles must survive a failed crop attempt so the user can correct them.");
+        camera.SelectingCorners = false;
+        var completedFirstCorner = camera.SelectedCorners[0];
+        KeyPress(Key.NumPad1);
+        KeyPress(Key.Right);
+        if (camera.SelectedCorners.Count != 4 || camera.SelectedCorners[0].X <= completedFirstCorner.X)
+            throw new InvalidOperationException("The keyboard must adjust corner 1 after initial corner selection is complete.");
+        if (camera.HasBoardCrop || camera.CanCapturePhoto)
+            throw new InvalidOperationException("Editing a synthetic preview without a fresh camera frame must not enable photo capture.");
+        checks.Add("Numpad 1 and Right adjust a corner after initial selection; a missing camera keeps photo capture disabled.");
+
+        var fourthCorner = camera.SelectedCorners[3];
+        KeyPress(Key.D4);
+        KeyPress(Key.Left);
+        if (camera.SelectedCorners[3].X >= fourthCorner.X || camera.SelectedCorners.Count != 4)
+            throw new InvalidOperationException("Number 4 must select and adjust the fourth corner rather than the previously selected corner.");
+        for (var i = 0; i < 50; i++) KeyPress(Key.Left);
+        if (camera.SelectedCorners[3].X != 0)
+            throw new InvalidOperationException("Keyboard corner adjustment must clamp at the image boundary.");
+        checks.Add("Number 4 selects another existing handle, and repeated Left clamps at the image boundary.");
+
+        VerifyCornerPointerMapping(view);
+        checks.Add("Pointer mapping ignores letterbox clicks and clamps a drag at the actual image boundary.");
+        camera.CropText = "Synthetic editing fixture: all four numbered handles remain adjustable. No live camera frame or valid photo crop is supplied.";
+        camera.Problem = null;
+        await File.WriteAllTextAsync(Path.Combine(Output, "camera-corner-interactions.json"), JsonSerializer.Serialize(new
+        {
+            Fixture = "Synthetic camera preview; no camera, operating-system input, or capture device was used.",
+            Checks = checks,
+            FinalCorners = camera.SelectedCorners.ToArray()
+        }, new JsonSerializerOptions { WriteIndented = true }));
         view.RaiseEvent(new RoutedEventArgs(FrameworkElement.UnloadedEvent));
-        Console.WriteLine("Camera keyboard handler: synthetic Right/Enter routed events moved and placed one corner; no OS input injected.");
+        view.DataContext = null;
+        await RenderSizes("camera-corners-synthetic", () => new CameraView { DataContext = camera });
+        Console.WriteLine($"Camera corner editing: {checks.Count} synthetic interaction checks passed; no OS input injected.");
+    }
+
+    private static void VerifyCornerPointerMapping(CameraView view)
+    {
+        var map = typeof(CameraView).GetMethod("PointInImage", BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new InvalidOperationException("The camera image coordinate mapper was not found.");
+        NormalizedPoint? Map(Point position, bool clamp) => (NormalizedPoint?)map.Invoke(view, [position, clamp]);
+        var area = (Grid)view.FindName("PreviewArea");
+        var image = (Image)view.FindName("PreviewImage");
+        var source = image.Source;
+        var scale = Math.Min(area.ActualWidth / source.Width, area.ActualHeight / source.Height);
+        var width = source.Width * scale;
+        var height = source.Height * scale;
+        var left = (area.ActualWidth - width) / 2;
+        var top = (area.ActualHeight - height) / 2;
+        var middle = Map(new Point(area.ActualWidth / 2, area.ActualHeight / 2), false);
+        if (middle is not { } point || Math.Abs(point.X - .5) > 1e-8 || Math.Abs(point.Y - .5) > 1e-8)
+            throw new InvalidOperationException("The center of the displayed image must map to normalized center coordinates.");
+        var outside = left > .1 ? new Point(left / 2, area.ActualHeight / 2) : new Point(area.ActualWidth / 2, top / 2);
+        if (left <= .1 && top <= .1)
+            throw new InvalidOperationException("The pointer fixture must provide a letterboxed image to check coordinate mapping.");
+        if (Map(outside, false) is not null)
+            throw new InvalidOperationException("A click in the letterbox must not place a corner.");
+        var clamped = Map(outside, true);
+        if (clamped is not { } edge || (left > .1 ? edge.X != 0 || Math.Abs(edge.Y - .5) > 1e-8 : edge.Y != 0 || Math.Abs(edge.X - .5) > 1e-8))
+            throw new InvalidOperationException("Dragging into the letterbox must clamp to the actual camera-image edge.");
+    }
+
+    private static BitmapSource SyntheticCropFixture(string label = "SYNTHETIC CROP FIXTURE\nNO CAMERA INPUT")
+    {
+        var visual = new DrawingVisual();
+        using (var drawing = visual.RenderOpen())
+        {
+            drawing.DrawRectangle(Brushes.Bisque, null, new Rect(0, 0, 640, 360));
+            for (var row = 0; row < 9; row++)
+            for (var column = 0; column < 16; column++)
+                if ((row + column) % 2 == 0)
+                    drawing.DrawRectangle(Brushes.SlateGray, null, new Rect(column * 40, row * 40, 40, 40));
+            drawing.DrawRectangle(Brushes.Black, null, new Rect(45, 145, 550, 65));
+            drawing.DrawText(new FormattedText(label, CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight, new Typeface("Segoe UI"), 19, Brushes.White, 1), new Point(65, 152));
+        }
+        var bitmap = new RenderTargetBitmap(640, 360, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(visual);
+        bitmap.Freeze();
+        return bitmap;
     }
 
     private static void Save(Visual root, string file, int width, int height)

@@ -46,11 +46,16 @@ This build implements the core game plus initial phone, camera and photo workflo
 - A WPF interface in the box-derived palette: a public table screen, an opaque privacy curtain with
   a per-seat private view, the operator's placement instruction and confirmation, and a results
   screen.
+- With one human, cards and destination choices open on the laptop when that player needs to act.
+  **Your cards** and **Back to table** replace handoff prompts, and **Connect phone** is hidden.
+  Matches with multiple humans keep pass-and-hide and can optionally use the phone companion.
 - A laptop-hosted HTTPS phone PWA with private human cards/tickets, digital draws and route/payment
   choices. One shared controller is paired and explicitly approved on the laptop. Private views
   expire and hide on handoff, backgrounding, or connection loss; the laptop verifies physical moves.
 - A camera screen with Windows video-only capture, resolution selection, preview, manual four-corner
-  board crop, and conservative scene-reference change/recovery indication. It identifies camera
+  board crop with draggable corners during and after selection, and conservative scene-reference
+  change/recovery indication. Focus the preview and press **1–4**, then arrow keys, to adjust a
+  corner; **Shift** makes larger steps. Invalid crops retain their handles for correction. It identifies camera
   changes and stale frames, but does not recognize trains or authorize route claims.
 - Optional encrypted, immutable board reference photos attached to validated saved checkpoints.
   Photos are cropped from fresh camera frames and authenticated on readback. They assist manual
@@ -175,10 +180,11 @@ dotnet run --project tools/GoldenTicket.Simulator -- simulate --games 20 --seats
    tickets in the box** — the application deals and holds every card, for every seat.
 2. Name the seats, pick each one's physical train colour, and mark which are computer players.
    Explicitly select manual verification; this build has no camera verification.
-3. Each human opens their private view in turn to keep their opening destination tickets. The
-   laptop returns to the public table screen between seats.
-4. On a human turn, that player opens their private view to draw cards, draw destination tickets, or
-   choose a route and how to pay for it.
+3. With one human, opening destination choices appear directly on the laptop. With multiple
+   humans, each player reveals their private view in turn; the screen is covered between seats.
+4. On a solo human's turn, their cards open on the laptop for draws, destination tickets, or route
+   and payment choices. **Back to table** returns to the public screen; **Your cards** reopens the
+   hand. With multiple humans, the active player explicitly reveals their private view.
 
 5. When any seat claims a route, the public screen names the seat, its colour and symbol, both
    endpoint cities, the exact lane, and how many trains to place. Place them in any order, then
@@ -188,10 +194,16 @@ dotnet run --project tools/GoldenTicket.Simulator -- simulate --games 20 --seats
    the results screen shows each seat's route points, destination tickets, longest continuous route
    and the trail that achieved it.
 
-Use **Connect phone** to start the local host, install/trust its public certificate, open the PWA,
-and approve the matching pairing identity. Return to **Game table** to enable phone play. The
-laptop private view remains a fallback. Use **Camera** for preview, board crop and a stable scene
-reference; after **Save and pack away**, choose **Add or view board photo** before clearing trains.
+For multiple humans, optionally use **Connect phone** to start the local host, install/trust its
+public certificate, open the PWA, and approve the matching pairing identity. Return to **Game
+table** to enable phone play. Pass-and-hide on the laptop also works. A single human needs no
+phone connection or local HTTPS setup. Use **Camera** for preview, board crop and a stable scene
+reference. **Save and pack away** saves the digital game; it does not automatically take a picture.
+Before clearing trains, choose **Add or view board photo**. Use **Camera setup** if prompted,
+select the four crop corners and establish a stable scene reference. Check the live crop, tick the
+board confirmation, then select **Capture reference photo**. Wait for the saved image to appear.
+The live crop is labeled **not saved**. An attached photo also appears directly above the saved
+route list on **Rebuild the board**; a checkpoint with no photo or no routes says so explicitly.
 
 Press **Escape** at any time to cover a private view.
 Private views also hide on deactivation and after 60 seconds without input. Lock/suspend handlers

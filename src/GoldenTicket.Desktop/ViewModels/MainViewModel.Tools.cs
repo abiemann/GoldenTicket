@@ -4,6 +4,7 @@ using GoldenTicket.Desktop.Services;
 using GoldenTicket.Domain;
 using GoldenTicket.Domain.Model;
 using GoldenTicket.Persistence;
+using System.Security.Cryptography;
 
 namespace GoldenTicket.Desktop.ViewModels;
 
@@ -26,7 +27,7 @@ public sealed partial class MainViewModel
             async _ => await PumpAsync(), () => CanCompanionControl);
         var bridge = new DesktopCompanionBridge(inner,
             () => System.Windows.Application.Current?.Dispatcher,
-            BeginRemoteCommand, EndRemoteCommand, HideLaptopPrivateViewOnly, RequireReload);
+            BeginRemoteCommand, EndRemoteCommand, () => { if (CanCompanionControl) HideLaptopPrivateViewOnly(); }, RequireReload);
         Connection = new ConnectionViewModel(bridge);
         var photoRoot = (_store as SqliteSessionStore)?.RootDirectory ?? SqliteSessionStore.DefaultRoot;
         CheckpointPhoto = new CheckpointPhotoViewModel(new CheckpointPhotoStore(photoRoot), async token =>
@@ -39,14 +40,17 @@ public sealed partial class MainViewModel
             var photo = await Camera.CapturePhotoAsync(token);
             if (coordinator != _coordinator || coordinator.Public.Checkpoint?.CheckpointId != checkpointId ||
                 coordinator.Public.Lifecycle is not (SessionLifecycle.PackedAway or SessionLifecycle.Rebuilding))
+            {
+                CryptographicOperations.ZeroMemory(photo.PngBytes);
                 throw new InvalidOperationException("The selected checkpoint changed while capturing. Check the board and try again.");
+            }
             return new CheckpointPhotoCaptureInput(photo.PngBytes,
                 new CheckpointPhotoCapture(photo.CapturedAt, photo.CameraId,
                     photo.CameraEpoch, photo.BoardCropRevision, false));
-        });
+        }, Camera, ShowCameraCommand) { CaptureAllowed = false };
     }
 
-    private bool CanCompanionControl => !_toolsDisposed && _systemAvailable && !_mustReload &&
+    private bool CanCompanionControl => CanConnectPhone && !_toolsDisposed && _systemAvailable && !_mustReload &&
         (!_operationInProgress || _handlingRemoteCommand) && !NeedsBoardReconciliation &&
         Screen == Screen.Table && _coordinator is { StorageFaulted: false };
 
@@ -95,9 +99,10 @@ public sealed partial class MainViewModel
         await Camera.RefreshDevicesCommand.ExecuteAsync(null);
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanConnectPhone))]
     private void ShowConnection()
     {
+        if (!CanConnectPhone) return;
         if (NavigateToTool(Screen.Connection)) Connection.RefreshInterfaces();
     }
 
@@ -114,6 +119,7 @@ public sealed partial class MainViewModel
         // Historical checkpoints on a resumed game are reference-only; the photo view disables
         // capture unless the game is still frozen in PackedAway/Rebuilding (capture delegate).
         var coordinator = _coordinator;
+        CheckpointPhoto.CaptureAllowed = coordinator?.Public.Lifecycle is SessionLifecycle.PackedAway or SessionLifecycle.Rebuilding;
         var checkpoint = coordinator is null ? null : await coordinator.GetCheckpointAsync();
         if (coordinator != _coordinator) return;
         var key = checkpoint is null ? null : $"{checkpoint.SessionId.Value}/{checkpoint.CheckpointId.Value}/{checkpoint.Status}";
@@ -126,6 +132,7 @@ public sealed partial class MainViewModel
     {
         _systemAvailable = available;
         HidePrivateSeat();
+        OnPropertyChanged(nameof(CanRevealPrivateSeat));
         if (!available) await Camera.StopCommand.ExecuteAsync(null);
     }
 

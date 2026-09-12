@@ -43,8 +43,11 @@
                     <Image x:Name="PreviewImage" Source="{Binding Preview}" Stretch="Uniform"
                            Focusable="True" KeyboardNavigation.IsTabStop="True"
                            MouseLeftButtonDown="PreviewImage_MouseLeftButtonDown"
+                           MouseMove="PreviewImage_MouseMove"
+                           MouseLeftButtonUp="PreviewImage_MouseLeftButtonUp"
+                           LostMouseCapture="PreviewImage_LostMouseCapture"
                            KeyDown="PreviewImage_KeyDown"
-                           AutomationProperties.Name="Live overhead camera preview. When selecting corners, use arrow keys to move the crosshair and Enter to place each corner." />
+                           AutomationProperties.Name="Live overhead camera preview. Drag numbered corners at any time. Press 1 to 4 to select a corner, then arrow keys to adjust it. Hold Shift for larger steps. During selection, Enter leaves corner editing; use arrows and Enter to place the next corner." />
                     <TextBlock Text="Camera preview is off" FontSize="22" Foreground="{StaticResource Text.OnDark}"
                                HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"
                                Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}" />
@@ -74,7 +77,7 @@
                             <Button Content="Select four board corners" Command="{Binding BeginCornerSelectionCommand}" Style="{StaticResource SecondaryButton}" Margin="0,0,8,8" />
                             <Button Content="Export board photo…" Command="{Binding ExportSnapshotCommand}" IsEnabled="{Binding CanCapturePhoto}" Style="{StaticResource SecondaryButton}" Margin="0,0,8,8" />
                         </WrapPanel>
-                        <TextBlock Style="{StaticResource Caption}" Text="Click the corners, or focus the preview and use arrow keys, then Enter. Hold Shift for larger steps." TextWrapping="Wrap" Margin="0,0,0,8" />
+                        <TextBlock Style="{StaticResource Caption}" Text="Drag any numbered corner before or after the crop is selected. Keyboard: focus the preview, press 1–4 to choose a corner, then use arrows (Shift for larger steps). When placing corners, Enter leaves editing; arrows and Enter place the next corner." TextWrapping="Wrap" Margin="0,0,0,8" />
                         <Image Source="{Binding BoardPreview}" Height="150" Stretch="Uniform" AutomationProperties.Name="Manually selected board crop preview" />
                         <TextBlock Style="{StaticResource Caption}" Text="{Binding LastExportPath}" TextWrapping="Wrap" Margin="0,6,0,0" />
                     </StackPanel>

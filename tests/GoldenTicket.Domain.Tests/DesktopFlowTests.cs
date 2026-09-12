@@ -32,7 +32,10 @@ public class DesktopFlowTests
         await model.StartMatchCommand.ExecuteAsync(null);
 
         Assert.Equal(Screen.Table, model.Screen);
-        Assert.Null(model.PrivateSeat);                 // the table screen starts covered
+        Assert.NotNull(model.PrivateSeat);              // one human uses the laptop directly
+        Assert.True(model.PrivateSeat.MustChooseTickets);
+        Assert.Equal("Alex", model.PrivateSeat.SeatName);
+        Assert.False(model.CanConnectPhone);
         Assert.True(model.CanRevealPrivateSeat);
         Assert.Contains("Alex", model.RevealPrompt);
 
@@ -63,7 +66,7 @@ public class DesktopFlowTests
     }
 
     [Fact]
-    public async Task KeepingOpeningTicketsStartsPlayAndCoversTheHandAgain()
+    public async Task KeepingOpeningTicketsStartsPlayAndShowsTheSoloHumansHand()
     {
         var model = NewMatch();
         await model.StartMatchCommand.ExecuteAsync(null);
@@ -81,9 +84,11 @@ public class DesktopFlowTests
         var human = model.Table.Seats.Single(seat => seat.DisplayName == "Alex");
         Assert.Equal(2, human.TicketCount);
 
-        // Whatever happened next, no hand is left on screen.
+        // The sole human can continue on the laptop without another reveal or phone handoff.
         Assert.All(offered, ticket => Assert.NotEqual(default, ticket));
-        Assert.True(model.PrivateSeat is null || model.PrivateSeat.SeatId == human.SeatId);
+        Assert.NotNull(model.PrivateSeat);
+        Assert.Equal(human.SeatId, model.PrivateSeat.SeatId);
+        Assert.False(model.PrivateSeat.MustChooseTickets);
     }
 
     [Fact]

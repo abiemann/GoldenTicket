@@ -14,6 +14,9 @@ public partial class CameraView : UserControl
 {
     private CameraViewModel? _subscribed;
     private NormalizedPoint _keyboardPoint = new(.05, .05);
+    private int _activeCorner = -1;
+    private int _draggedCorner = -1;
+    private Vector _dragOffset;
 
     public CameraView()
     {
@@ -37,6 +40,8 @@ public partial class CameraView : UserControl
 
     private void Unsubscribe()
     {
+        EndDrag();
+        _activeCorner = -1;
         if (_subscribed is not null)
         {
             _subscribed.SelectedCorners.CollectionChanged -= CornersChanged;
@@ -47,7 +52,12 @@ public partial class CameraView : UserControl
 
     private void CornersChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        ResetKeyboardPoint();
+        if (e.Action != NotifyCollectionChangedAction.Replace)
+        {
+            EndDrag();
+            _activeCorner = -1;
+            ResetKeyboardPoint();
+        }
         DrawCorners();
     }
 
@@ -56,10 +66,19 @@ public partial class CameraView : UserControl
         if (e.PropertyName == nameof(CameraViewModel.SelectingCorners))
         {
             ResetKeyboardPoint();
-            if (_subscribed?.SelectingCorners == true) PreviewImage.Focus();
+            if (_subscribed?.SelectingCorners == true)
+            {
+                _activeCorner = -1;
+                PreviewImage.Focus();
+            }
             DrawCorners();
         }
-        else if (e.PropertyName == nameof(CameraViewModel.Preview)) DrawCorners();
+        else if (e.PropertyName == nameof(CameraViewModel.Preview))
+        {
+            if (_subscribed?.Preview is null) EndDrag();
+            DrawCorners();
+        }
+        else if (e.PropertyName == nameof(CameraViewModel.HasBoardCrop)) DrawCorners();
     }
 
     private void ResetKeyboardPoint()
@@ -73,7 +92,8 @@ public partial class CameraView : UserControl
 
     private Rect ImageRectangle()
     {
-        if (PreviewImage.Source is not { } source || source.Width <= 0 || source.Height <= 0) return Rect.Empty;
+        if (PreviewImage.Source is not { } source || source.Width <= 0 || source.Height <= 0 ||
+            PreviewArea.ActualWidth <= 0 || PreviewArea.ActualHeight <= 0) return Rect.Empty;
         var scale = Math.Min(PreviewArea.ActualWidth / source.Width, PreviewArea.ActualHeight / source.Height);
         var width = source.Width * scale;
         var height = source.Height * scale;
@@ -82,28 +102,137 @@ public partial class CameraView : UserControl
 
     private void PreviewImage_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (DataContext is not CameraViewModel { SelectingCorners: true } vm) return;
-        var rectangle = ImageRectangle();
+        if (DataContext is not CameraViewModel { IsBusy: false } vm) return;
         var position = e.GetPosition(PreviewArea);
-        if (rectangle.IsEmpty || !rectangle.Contains(position)) return;
-        vm.AddBoardCorner(new NormalizedPoint((position.X - rectangle.Left) / rectangle.Width,
-            (position.Y - rectangle.Top) / rectangle.Height));
+        var corner = HitCorner(position);
+        if (corner >= 0)
+        {
+            PreviewImage.Focus();
+            _activeCorner = corner;
+            var rectangle = ImageRectangle();
+            var point = vm.SelectedCorners[corner];
+            _dragOffset = position - new Point(rectangle.Left + point.X * rectangle.Width, rectangle.Top + point.Y * rectangle.Height);
+            // Capture the stable image, since live frames replace the overlay's marker visuals.
+            if (PreviewImage.CaptureMouse()) _draggedCorner = corner;
+            DrawCorners();
+        }
+        else if (vm.SelectingCorners && PointInImage(position, false) is { } point)
+        {
+            PreviewImage.Focus();
+            vm.AddBoardCorner(point);
+        }
+        else return;
         e.Handled = true;
+    }
+
+    private NormalizedPoint? PointInImage(Point position, bool clamp)
+    {
+        var rectangle = ImageRectangle();
+        if (rectangle.IsEmpty || !double.IsFinite(position.X) || !double.IsFinite(position.Y) ||
+            (!clamp && !rectangle.Contains(position))) return null;
+        return new(Math.Clamp((position.X - rectangle.Left) / rectangle.Width, 0, 1),
+            Math.Clamp((position.Y - rectangle.Top) / rectangle.Height, 0, 1));
+    }
+
+    private int HitCorner(Point position)
+    {
+        if (DataContext is not CameraViewModel vm) return -1;
+        var rectangle = ImageRectangle();
+        if (rectangle.IsEmpty) return -1;
+        var nearest = -1;
+        var distanceSquared = 20d * 20;
+        for (var i = 0; i < vm.SelectedCorners.Count; i++)
+        {
+            var point = vm.SelectedCorners[i];
+            var delta = position - new Point(rectangle.Left + point.X * rectangle.Width, rectangle.Top + point.Y * rectangle.Height);
+            if (delta.LengthSquared <= distanceSquared)
+            {
+                nearest = i;
+                distanceSquared = delta.LengthSquared;
+            }
+        }
+        return nearest;
+    }
+
+    private void PreviewImage_MouseMove(object sender, MouseEventArgs e)
+    {
+        var position = e.GetPosition(PreviewArea);
+        if (_draggedCorner >= 0)
+        {
+            if (e.LeftButton != MouseButtonState.Pressed) EndDrag();
+            else
+            {
+                MoveDraggedCorner(position);
+                e.Handled = true;
+            }
+        }
+        PreviewImage.Cursor = _draggedCorner >= 0 || HitCorner(position) >= 0 ? Cursors.SizeAll :
+            _subscribed?.SelectingCorners == true ? Cursors.Cross : Cursors.Arrow;
+    }
+
+    private void MoveDraggedCorner(Point position)
+    {
+        if (DataContext is CameraViewModel vm && PointInImage(position - _dragOffset, true) is { } point)
+            vm.MoveBoardCorner(_draggedCorner, point);
+    }
+
+    private void PreviewImage_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_draggedCorner < 0) return;
+        MoveDraggedCorner(e.GetPosition(PreviewArea));
+        EndDrag();
+        e.Handled = true;
+    }
+
+    private void PreviewImage_LostMouseCapture(object sender, MouseEventArgs e) => EndDrag();
+
+    private void EndDrag()
+    {
+        _draggedCorner = -1;
+        if (PreviewImage is null) return;
+        if (PreviewImage.IsMouseCaptured) PreviewImage.ReleaseMouseCapture();
+        PreviewImage.Cursor = Cursors.Arrow;
     }
 
     private void PreviewImage_KeyDown(object sender, KeyEventArgs e)
     {
-        if (DataContext is not CameraViewModel { SelectingCorners: true } vm) return;
+        if (DataContext is not CameraViewModel { IsBusy: false, Preview: not null } vm ||
+            (!vm.SelectingCorners && vm.SelectedCorners.Count == 0)) return;
+        var selected = e.Key switch
+        {
+            Key.D1 or Key.NumPad1 => 0, Key.D2 or Key.NumPad2 => 1,
+            Key.D3 or Key.NumPad3 => 2, Key.D4 or Key.NumPad4 => 3, _ => -1
+        };
+        if (selected >= 0)
+        {
+            if (selected < vm.SelectedCorners.Count) _activeCorner = selected;
+            DrawCorners();
+            e.Handled = true;
+            return;
+        }
+        if (_activeCorner >= vm.SelectedCorners.Count) _activeCorner = -1;
+        if (!vm.SelectingCorners && _activeCorner < 0) _activeCorner = 0;
         var step = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? .025 : .0025;
+        var point = _activeCorner >= 0 ? vm.SelectedCorners[_activeCorner] : _keyboardPoint;
         switch (e.Key)
         {
-            case Key.Left: _keyboardPoint = _keyboardPoint with { X = Math.Max(0, _keyboardPoint.X - step) }; break;
-            case Key.Right: _keyboardPoint = _keyboardPoint with { X = Math.Min(1, _keyboardPoint.X + step) }; break;
-            case Key.Up: _keyboardPoint = _keyboardPoint with { Y = Math.Max(0, _keyboardPoint.Y - step) }; break;
-            case Key.Down: _keyboardPoint = _keyboardPoint with { Y = Math.Min(1, _keyboardPoint.Y + step) }; break;
-            case Key.Enter: vm.AddBoardCorner(_keyboardPoint); break;
+            case Key.Left: point = point with { X = Math.Max(0, point.X - step) }; break;
+            case Key.Right: point = point with { X = Math.Min(1, point.X + step) }; break;
+            case Key.Up: point = point with { Y = Math.Max(0, point.Y - step) }; break;
+            case Key.Down: point = point with { Y = Math.Min(1, point.Y + step) }; break;
+            case Key.Enter:
+                if (vm.SelectingCorners)
+                {
+                    if (_activeCorner >= 0) { _activeCorner = -1; ResetKeyboardPoint(); }
+                    else vm.AddBoardCorner(_keyboardPoint);
+                }
+                DrawCorners();
+                e.Handled = true;
+                return;
             default: return;
         }
+        if (_activeCorner >= 0) vm.MoveBoardCorner(_activeCorner, point);
+        else _keyboardPoint = point;
         DrawCorners();
         e.Handled = true;
     }
@@ -127,17 +256,17 @@ public partial class CameraView : UserControl
             var point = points[i];
             var marker = new Border
             {
-                Width = 26, Height = 26, CornerRadius = new CornerRadius(13), Background = Brushes.Gold,
-                BorderBrush = Brushes.Black, BorderThickness = new Thickness(2),
+                Width = 30, Height = 30, CornerRadius = new CornerRadius(15), Background = Brushes.Gold,
+                BorderBrush = i == _activeCorner ? Brushes.White : Brushes.Black, BorderThickness = new Thickness(i == _activeCorner ? 4 : 2),
                 Child = new TextBlock { Text = (i + 1).ToString(), Foreground = Brushes.Black,
                     FontWeight = FontWeights.Bold, HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center }
             };
-            Canvas.SetLeft(marker, point.X - 13);
-            Canvas.SetTop(marker, point.Y - 13);
+            Canvas.SetLeft(marker, point.X - 15);
+            Canvas.SetTop(marker, point.Y - 15);
             CornerOverlay.Children.Add(marker);
         }
-        if (vm.SelectingCorners)
+        if (vm.SelectingCorners && _activeCorner < 0)
         {
             var x = rectangle.Left + _keyboardPoint.X * rectangle.Width;
             var y = rectangle.Top + _keyboardPoint.Y * rectangle.Height;

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections.Immutable;
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using GoldenTicket.Application;
 using GoldenTicket.Domain;
@@ -33,6 +34,7 @@ public sealed record SavedSessionRow(SessionId SessionId, string Description);
 public sealed partial class SetupViewModel : ObservableObject
 {
     private readonly BoardManifest _manifest;
+    private readonly HashSet<SeatSetupRow> _observedSeats = [];
 
     public SetupViewModel(BoardManifest manifest)
     {
@@ -43,6 +45,8 @@ public sealed partial class SetupViewModel : ObservableObject
         Seats.Add(new SeatSetupRow { DisplayName = "Brakeman", Color = PlayerColor.Green, IsComputer = true });
 
         StartingSeatIndex = 0;
+        Seats.CollectionChanged += (_, _) => ObserveSeats();
+        ObserveSeats();
     }
 
     public ObservableCollection<SeatSetupRow> Seats { get; } = [];
@@ -78,6 +82,22 @@ public sealed partial class SetupViewModel : ObservableObject
     public bool CanAddSeat => Seats.Count < MaxPlayers;
 
     public bool CanRemoveSeat => Seats.Count > MinPlayers;
+
+    public int HumanSeatCount => Seats.Count(seat => !seat.IsComputer);
+
+    private void ObserveSeats()
+    {
+        foreach (var seat in _observedSeats) seat.PropertyChanged -= SeatPropertyChanged;
+        _observedSeats.Clear();
+        foreach (var seat in Seats)
+            if (_observedSeats.Add(seat)) seat.PropertyChanged += SeatPropertyChanged;
+        OnPropertyChanged(nameof(HumanSeatCount));
+    }
+
+    private void SeatPropertyChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(SeatSetupRow.IsComputer)) OnPropertyChanged(nameof(HumanSeatCount));
+    }
 
     public void AddSeat()
     {

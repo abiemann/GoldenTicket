@@ -1,5 +1,7 @@
 using System.IO;
 using System.Security.Cryptography;
+using System.ComponentModel;
+using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -20,10 +22,50 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
     private long _generation;
 
     public CheckpointPhotoViewModel(CheckpointPhotoStore store,
-        Func<CancellationToken, Task<CheckpointPhotoCaptureInput>> capture)
+        Func<CancellationToken, Task<CheckpointPhotoCaptureInput>> capture,
+        CameraViewModel? camera = null, ICommand? cameraSetupCommand = null)
     {
         _store = store;
         _capture = capture;
+        Camera = camera;
+        CameraSetupCommand = cameraSetupCommand;
+        if (Camera is not null) Camera.PropertyChanged += CameraChanged;
+    }
+
+    public CameraViewModel? Camera { get; }
+    public ICommand? CameraSetupCommand { get; }
+    public bool HasLivePreview => !HasPhoto && Camera is { IsRunning: true, BoardPreview: not null };
+
+    public string PhotoStateSummary => !HasCheckpoint ? "No saved checkpoint selected."
+        : HasPhoto ? "Board photo saved for this checkpoint."
+        : IsBusy ? "Checking or saving the board photo…"
+        : ReferenceUnavailable ? "The saved board photo could not be read."
+        : NeedsReferenceReload ? "Board photo status needs a reload."
+        : "No board photo saved for this checkpoint.";
+
+    public string CaptureGuidance => !HasCheckpoint ? "Save and pack away to create a checkpoint first."
+        : HasPhoto ? "This is the saved photo. You can use it with the route list when rebuilding."
+        : ReferenceUnavailable ? "Use the saved route list to rebuild. This checkpoint's unreadable attachment cannot be replaced."
+        : NeedsReferenceReload ? "Use Reload reference to check the existing attachment before another capture."
+        : !CaptureAllowed ? "This game has resumed. Save and pack away again before attaching a new photo."
+        : Camera is { IsRunning: false } ? "Open Camera setup and start the overhead camera preview."
+        : Camera is { HasBoardCrop: false } ? "Open Camera setup and select all four board corners."
+        : Camera is { SafetyHeld: true } ? "Open Camera setup, check the whole board and set a scene reference. Wait for stable framing."
+        : Camera is { CanCapturePhoto: false } ? "Wait for a fresh, stable camera preview before capturing."
+        : !OperatorAcknowledged ? "Check the board and live crop, tick the confirmation below, then select Capture reference photo."
+        : "Ready to capture. Keep the board in place until the photo is saved and displayed here.";
+
+    private void CameraChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(CameraViewModel.CanCapturePhoto))
+        {
+            if (Camera?.CanCapturePhoto != true) OperatorAcknowledged = false;
+            CaptureReferenceCommand.NotifyCanExecuteChanged();
+        }
+        if (args.PropertyName is nameof(CameraViewModel.IsRunning) or nameof(CameraViewModel.HasBoardCrop)
+            or nameof(CameraViewModel.SafetyHeld) or nameof(CameraViewModel.CanCapturePhoto))
+            OnPropertyChanged(nameof(CaptureGuidance));
+        if (args.PropertyName is nameof(CameraViewModel.BoardPreview) or nameof(CameraViewModel.IsRunning)) OnPropertyChanged(nameof(HasLivePreview));
     }
 
     [ObservableProperty] private string _checkpointName = "No packed checkpoint selected";
@@ -31,19 +73,33 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
     [ObservableProperty] private string _captureDetails = "";
     [ObservableProperty] private BitmapSource? _photoImage;
     [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(CaptureReferenceCommand))]
+    [NotifyPropertyChangedFor(nameof(CaptureGuidance))]
     private bool _operatorAcknowledged;
     [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(CaptureReferenceCommand))]
     [NotifyCanExecuteChangedFor(nameof(ReloadReferenceCommand))]
+    [NotifyPropertyChangedFor(nameof(PhotoStateSummary), nameof(CaptureGuidance))]
     private bool _hasCheckpoint;
     [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(CaptureReferenceCommand))]
+    [NotifyPropertyChangedFor(nameof(PhotoStateSummary), nameof(CaptureGuidance), nameof(HasLivePreview))]
     private bool _hasPhoto;
     [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(CaptureReferenceCommand))]
+    [NotifyPropertyChangedFor(nameof(PhotoStateSummary), nameof(CaptureGuidance))]
     private bool _referenceUnavailable;
     [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(CaptureReferenceCommand))]
+    [NotifyPropertyChangedFor(nameof(PhotoStateSummary), nameof(CaptureGuidance))]
     private bool _needsReferenceReload;
     [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(CaptureReferenceCommand))]
     [NotifyCanExecuteChangedFor(nameof(ReloadReferenceCommand))]
+    [NotifyPropertyChangedFor(nameof(PhotoStateSummary), nameof(CaptureGuidance))]
     private bool _isBusy;
+    [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(CaptureReferenceCommand))]
+    [NotifyPropertyChangedFor(nameof(CaptureGuidance))]
+    private bool _captureAllowed = true;
+
+    partial void OnCaptureAllowedChanged(bool value)
+    {
+        if (!value) OperatorAcknowledged = false;
+    }
 
     public string ReferenceExplanation => CheckpointPhotoReference.DisplayLabel;
 
@@ -60,7 +116,7 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
         CaptureDetails = "";
         CheckpointName = checkpoint?.Name ?? "No packed checkpoint selected";
         Status = HasCheckpoint
-            ? "Optional: capture the board before clearing it. The digital save remains a state-only checkpoint."
+            ? "The digital game is saved. A board photo is a separate capture step; save it before clearing the board if you want a visual reference."
             : "Save and pack away first to create the digital checkpoint.";
         IsBusy = false;
         if (!HasCheckpoint) return;
@@ -95,7 +151,8 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
         }
     }
 
-    private bool CanCaptureReference() => HasCheckpoint && !HasPhoto && !ReferenceUnavailable && !NeedsReferenceReload && !IsBusy && OperatorAcknowledged;
+    private bool CanCaptureReference() => HasCheckpoint && CaptureAllowed && !HasPhoto && !ReferenceUnavailable &&
+        !NeedsReferenceReload && !IsBusy && OperatorAcknowledged && (Camera?.CanCapturePhoto ?? true);
     private bool CanReloadReference() => HasCheckpoint && !IsBusy && _checkpoint is not null;
 
     [RelayCommand(CanExecute = nameof(CanReloadReference))]
@@ -119,7 +176,7 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
         try
         {
             input = await _capture(cancellationToken);
-            if (generation != _generation || !OperatorAcknowledged)
+            if (generation != _generation || !OperatorAcknowledged || !CaptureAllowed)
                 throw new InvalidOperationException("The selected checkpoint or board confirmation changed. Check the board and try again.");
             attemptedStorage = true;
             await _store.SaveReferenceAsync(checkpoint, input.PngBytes,

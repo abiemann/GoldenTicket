@@ -4,43 +4,60 @@
              xmlns:local="clr-namespace:GoldenTicket.Desktop">
     <UserControl.Resources>
         <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+        <local:NullToVisibilityConverter x:Key="NullToVisibility" />
     </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="20" MaxWidth="1100">
             <Border Style="{StaticResource Card}">
                 <StackPanel>
-                    <TextBlock Style="{StaticResource Display}" Text="Reference photo" />
+                    <TextBlock Style="{StaticResource Display}" Text="Saved board photo" />
                     <TextBlock Style="{StaticResource Heading}" Text="{Binding CheckpointName}" TextWrapping="Wrap" />
                     <TextBlock Margin="0,8,0,0" Text="{Binding ReferenceExplanation}" TextWrapping="Wrap" />
-                    <TextBlock Margin="0,8,0,0" TextWrapping="Wrap"
-                               Text="This optional photo stays encrypted on this laptop under your Windows account. It contains the board camera image only. Your saved cards, turns, scores, and route ownership remain in the digital checkpoint." />
-                    <TextBlock Margin="0,8,0,0" TextWrapping="Wrap"
-                               Text="Before capture, keep the complete board in view, clear hands and private cards from the image, and check that every train matches the committed route list. Remove any uncommitted placement from this reference. This version does not recognize or verify the trains in the photo." />
+                    <TextBlock Margin="0,8,0,0" Text="{Binding PhotoStateSummary}" FontWeight="SemiBold" TextWrapping="Wrap"
+                               AutomationProperties.LiveSetting="Polite" />
                 </StackPanel>
             </Border>
             <Border Style="{StaticResource Card}" Margin="0,12,0,0">
                 <StackPanel>
-                    <CheckBox IsChecked="{Binding OperatorAcknowledged}" IsEnabled="{Binding HasCheckpoint}"
-                              Margin="0,0,0,12">
-                        <TextBlock TextWrapping="Wrap"
-                                   Text="I checked the whole board against the saved route list. The camera shows the complete board with no private cards, hands, or uncommitted trains." />
-                    </CheckBox>
-                    <WrapPanel>
+                    <Border x:Name="SavedPhotoPanel" BorderBrush="{StaticResource Text.Primary}" BorderThickness="1"
+                            Visibility="{Binding HasPhoto, Converter={StaticResource BoolToVisibility}}">
+                        <Image x:Name="SavedBoardPhoto" Source="{Binding PhotoImage}" Stretch="Uniform" MaxHeight="700"
+                               AutomationProperties.Name="Saved operator-attested board reference" />
+                    </Border>
+                    <StackPanel x:Name="MissingPhotoPanel" Visibility="{Binding HasPhoto, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
+                        <TextBlock Text="Saving the game does not automatically take a photo. Attach one here before clearing the board if you want a visual reference."
+                                   TextWrapping="Wrap" Margin="0,0,0,8" />
+                        <TextBlock Text="{Binding CaptureGuidance}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,0,0,10"
+                                   AutomationProperties.LiveSetting="Polite" />
+                        <Button Content="Camera setup" Command="{Binding CameraSetupCommand}" Style="{StaticResource SecondaryButton}"
+                                HorizontalAlignment="Left" Margin="0,0,0,12"
+                                Visibility="{Binding CameraSetupCommand, Converter={StaticResource NullToVisibility}}" />
+                        <StackPanel x:Name="LivePreviewPanel" Visibility="{Binding HasLivePreview, Converter={StaticResource BoolToVisibility}}" Margin="0,0,0,12">
+                            <TextBlock Text="Live board crop (not saved)" Style="{StaticResource Heading}" />
+                            <Image x:Name="LiveBoardPreview" Source="{Binding Camera.BoardPreview}" Stretch="Uniform" Height="280"
+                                   AutomationProperties.Name="Live cropped camera preview, not a saved photo" />
+                        </StackPanel>
+                        <CheckBox IsChecked="{Binding OperatorAcknowledged}" IsEnabled="{Binding HasCheckpoint}"
+                                  Margin="0,0,0,12">
+                            <TextBlock TextWrapping="Wrap"
+                                       Text="I checked the whole board against the saved route list. The camera shows the complete board with no private cards, hands, or uncommitted trains." />
+                        </CheckBox>
                         <Button Content="Capture reference photo" Command="{Binding CaptureReferenceCommand}"
                                 Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="20,10" Margin="0,0,8,8"
                                 AutomationProperties.Name="Capture reference photo for this saved checkpoint" />
-                        <Button Content="Reload reference" Command="{Binding ReloadReferenceCommand}"
-                                Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="20,10" Margin="0,0,8,8"
-                                AutomationProperties.Name="Read back the saved reference photo without taking a new photo" />
-                    </WrapPanel>
+                    </StackPanel>
+                    <Button Content="Reload reference" Command="{Binding ReloadReferenceCommand}"
+                            Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Padding="20,10" Margin="0,0,8,8"
+                            AutomationProperties.Name="Read back the saved reference photo without taking a new photo" />
                     <TextBlock Margin="0,12,0,0" Text="{Binding Status}" TextWrapping="Wrap"
                                AutomationProperties.LiveSetting="Polite" />
                     <TextBlock Margin="0,8,0,0" Style="{StaticResource Caption}" Text="{Binding CaptureDetails}" />
-                    <Border Margin="0,12,0,0" BorderBrush="{StaticResource Text.Primary}" BorderThickness="1"
-                            Visibility="{Binding HasPhoto, Converter={StaticResource BoolToVisibility}}">
-                        <Image Source="{Binding PhotoImage}" Stretch="Uniform" MaxHeight="700"
-                               AutomationProperties.Name="Saved operator-attested board reference" />
-                    </Border>
+                    <Expander Header="About board reference photos" Margin="0,12,0,0">
+                        <StackPanel Margin="0,8,0,0">
+                            <TextBlock TextWrapping="Wrap" Text="This optional photo stays encrypted on this laptop under your Windows account. Cards, turns, scores, and route ownership remain in the digital checkpoint." />
+                            <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Text="Before capture, check that every train matches the saved route list. Remove uncommitted trains, hands and private cards from the image. This version does not recognize or verify trains in the photo." />
+                        </StackPanel>
+                    </Expander>
                 </StackPanel>
             </Border>
         </StackPanel>

@@ -51,7 +51,43 @@
             <DockPanel>
                 <TextBlock DockPanel.Dock="Top" Style="{StaticResource Heading}" Text="The saved position" />
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{Binding Table.RebuildTarget}">
+                    <StackPanel>
+                        <StackPanel x:Name="SavedPhotoPanel" Margin="0,0,0,16"
+                                    Visibility="{Binding CheckpointPhoto.HasPhoto, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock FontWeight="SemiBold" Text="Saved board reference photo" />
+                            <TextBlock Style="{StaticResource Caption}" Margin="0,4,0,8"
+                                       Text="Board contents were confirmed by the operator when this photo was saved. Use the saved route list below to rebuild." />
+                            <Image x:Name="SavedBoardPhoto" Source="{Binding CheckpointPhoto.PhotoImage}"
+                                   Stretch="Uniform" MaxHeight="320"
+                                   AutomationProperties.Name="Saved board reference photo for this checkpoint" />
+                            <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
+                                       Text="{Binding CheckpointPhoto.CaptureDetails}" />
+                        </StackPanel>
+
+                        <Border x:Name="MissingPhotoPanel" Style="{StaticResource Panel}"
+                                Visibility="{Binding CheckpointPhoto.HasPhoto, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold" Text="{Binding CheckpointPhoto.PhotoStateSummary}" />
+                                <Button Content="Add or view board photo" Command="{Binding ShowCheckpointPhotoCommand}"
+                                        Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Margin="0,8,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock FontWeight="SemiBold" Margin="0,0,0,4" Text="Saved routes" />
+                        <TextBlock x:Name="EmptySavedPosition" Margin="0,4,0,8"
+                                   Text="This saved position has no routes. All route lanes should be empty.">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Table.RebuildTarget.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <ItemsControl ItemsSource="{Binding Table.RebuildTarget}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border BorderBrush="{StaticResource Ornament}" BorderThickness="0,0,0,1" Padding="0,8">
@@ -74,7 +110,8 @@
                                 </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                        </ItemsControl>
+                    </StackPanel>
                 </ScrollViewer>
             </DockPanel>
         </Border>
@@ -111,7 +148,7 @@
                         <TextBlock Style="{StaticResource Heading}" Text="Confirm and resume" />
                         <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8"
                                    Text="You confirm the rebuilt board yourself. Check every route in the list, including lanes of parallel routes. A saved reference photo can help; automatic piece verification is not enabled." />
-                        <Button Content="View saved board photo" Command="{Binding ShowCheckpointPhotoCommand}"
+                        <Button Content="Add or view board photo" Command="{Binding ShowCheckpointPhotoCommand}"
                                 Style="{StaticResource SecondaryButton}" Margin="0,0,0,12" />
 
                         <CheckBox Margin="0,0,0,10" IsChecked="{Binding Table.RebuildAcknowledged}"

@@ -90,7 +90,13 @@
                     <TextBlock Style="{StaticResource Caption}"
                                Text="Leave the physical train cards and destination tickets in the box: this application deals and holds every card, for every seat. Put the board and the plastic trains on the table as usual." />
                     <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
-                               Text="You confirm each physical placement on the laptop. The Camera tab offers preview and reference photos; automatic train verification is not enabled. Use Connect phone to share private digital cards on your local network." />
+                               Text="You confirm each physical placement on the laptop. The Camera tab offers preview and reference photos; automatic train verification is not enabled." />
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
+                               Text="One human: your cards and destinations appear on this laptop. No phone connection is needed."
+                               Visibility="{Binding IsSingleHumanGame, Converter={StaticResource BoolToVisibility}}" />
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
+                               Text="Multiple humans can pass and hide cards on this laptop, or use Connect phone for a shared phone or tablet on your local network."
+                               Visibility="{Binding CanConnectPhone, Converter={StaticResource BoolToVisibility}}" />
                     <CheckBox Margin="0,10,0,0" IsChecked="{Binding Setup.ManualVerificationAccepted}"
                               Content="Use manual verification: I will check all claimed routes and empty lanes at each confirmation." />
                 </StackPanel>
@@ -111,7 +117,7 @@
                 <StackPanel>
                     <TextBlock Style="{StaticResource Heading}" Text="Saved matches" />
                     <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8"
-                               Text="A saved match is restored by replaying its journal and checking the result against the stored fingerprint. Private hands stay covered until a seat reveals them." />
+                               Text="A saved match is restored by replaying its journal and checking the result against the stored fingerprint. Check the physical board before continuing. With multiple humans, hands stay covered until each player reveals their cards." />
 
                     <ListBox ItemsSource="{Binding Setup.SavedSessions}" MaxHeight="160"
                              SelectedItem="{Binding Setup.SelectedSavedSession}"

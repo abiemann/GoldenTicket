@@ -67,10 +67,23 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   shared human card/ticket actions, public-only shell cache and privacy/reconnect handling are
   integrated into the Windows shell. Actual device gates and the remaining protocol requirements
   below are still open.
+- [x] **Single-human laptop play.** One human's card and ticket choices open directly on the laptop,
+  with **Your cards** / **Back to table** controls and no **Connect phone** step. The active or
+  resumed roster determines this behavior; multiple humans retain explicit pass-and-hide and an
+  optional shared companion. Board verification, AI secrecy and explicit Hide remain in force.
 - [x] **Camera and photo foundation.** Windows video-only capture, selectable formats, manual
   four-corner crop and conservative scene-reference checks; optional encrypted operator-attested
   checkpoint photos with integrity/readback and stale-capture protection. No automated train
   verification or machine-verified photo checkpoint is claimed.
+- [x] **Adjustable photo crop.** Drag any numbered corner during or after selection, or select it
+  with 1–4 and nudge with arrows (Shift for larger steps). Invalid geometry keeps all handles editable
+  and disables photo capture until corrected. Synthetic view-model and WPF checks cover editing,
+  crop invalidation, image-edge clamping and camera-session changes; physical mouse-drag acceptance
+  with the overhead camera remains to be checked.
+- [x] **Visible photo capture and rebuild status.** Distinguish a digital save, a live unsaved crop
+  and an attached photo. Explain disabled capture prerequisites, offer Camera setup from the photo
+  page, display the saved photo inline during rebuilding, and explain zero-route saved positions.
+  Capture remains explicit and requires an operator board check; a digital save alone has no photo.
 - [x] **Offline package build workflow.** A clean-source, locked-dependency PowerShell builder creates
   a self-contained Windows x64 ZIP with runtime/assets checks, notices, provenance and checksums.
   Actual package output is recorded separately in [packaging evidence](docs/offline-package.md);

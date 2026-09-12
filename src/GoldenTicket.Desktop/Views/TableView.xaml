@@ -224,10 +224,21 @@
                     <StackPanel>
                         <TextBlock Style="{StaticResource Heading}" Text="Your turn" />
                         <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8" Text="{Binding RevealPrompt}" />
-                        <Button Style="{StaticResource PrimaryButton}" Content="Reveal my private view"
+                        <Button
                                 HorizontalAlignment="Stretch"
                                 IsEnabled="{Binding CanRevealPrivateSeat}"
-                                Command="{Binding RevealPrivateSeatCommand}" />
+                                Command="{Binding RevealPrivateSeatCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+                                    <Setter Property="Content" Value="Reveal my private view" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsSingleHumanGame}" Value="True">
+                                            <Setter Property="Content" Value="Your cards" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
                     </StackPanel>
                 </Border>
 
@@ -244,7 +255,7 @@
                             <StackPanel Visibility="{Binding Table.IsSaving,
                                                     Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
                                 <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,6"
-                                           Text="Saves the exact position, including an unfinished turn. Clear your hands from the board first." />
+                                           Text="Saves cards, turns and claimed routes, including an unfinished turn. A board photo is a separate capture step after saving." />
                                 <TextBox Margin="0,0,0,8" Text="{Binding Table.SaveName, UpdateSourceTrigger=PropertyChanged}" />
                                 <Button Style="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"
                                         Content="Save and pack away"
@@ -264,6 +275,7 @@
                                        Text="{Binding Table.RebuildHeadline}" />
                             <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8"
                                        Text="Before clearing the board, you can attach an optional camera reference photo to this checkpoint." />
+                            <TextBlock Text="{Binding CheckpointPhoto.PhotoStateSummary}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8" />
                             <Button Style="{StaticResource SecondaryButton}" HorizontalAlignment="Stretch" Margin="0,0,0,10"
                                     Content="Add or view board photo" Command="{Binding ShowCheckpointPhotoCommand}" />
                             <TextBlock Foreground="{StaticResource Action.Primary}" FontWeight="SemiBold"
