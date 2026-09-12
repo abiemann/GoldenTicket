@@ -286,6 +286,15 @@ public sealed class GameCoordinator
 
     // ---- Save, pack away and rebuild (DESIGN 19.8) -------------------------------------------
 
+    /// <summary>Immutable checkpoint metadata for the local encrypted-photo workflow. This does
+    /// not expose hands, ticket choices, decks, or referee journal payloads.</summary>
+    public async Task<PackAwayCheckpoint?> GetCheckpointAsync(CancellationToken cancellationToken = default)
+    {
+        await _writer.WaitAsync(cancellationToken);
+        try { return _state.Checkpoint; }
+        finally { _writer.Release(); }
+    }
+
     /// <summary>
     /// The checkpoint identity of a save that has been requested but not yet written, so an
     /// interrupted preparation can be carried forward against the same request.

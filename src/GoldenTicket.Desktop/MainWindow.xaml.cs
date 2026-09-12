@@ -11,6 +11,8 @@ public partial class MainWindow : Window
     private MainViewModel? _model;
     private readonly DispatcherTimer _privacyTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     private long _lastInteraction = Environment.TickCount64;
+    private bool _closingAfterCleanup;
+    private bool _cleanupStarted;
 
     public MainWindow()
     {
@@ -49,11 +51,25 @@ public partial class MainWindow : Window
         };
         _privacyTimer.Tick += (_, _) =>
         {
-            if (Environment.TickCount64 - _lastInteraction >= 60_000) _model.HidePrivateSeat();
+            // The phone owns its own reveal timeout. An idle, already-covered laptop must not
+            // revoke an active phone hand every time this timer ticks.
+            if (_model.PrivateSeat is not null && Environment.TickCount64 - _lastInteraction >= 60_000)
+                _model.HidePrivateSeat();
         };
         _privacyTimer.Start();
         SystemEvents.SessionSwitch += OnSessionSwitch;
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        Closing += async (_, args) =>
+        {
+            if (_closingAfterCleanup || _model is null) return;
+            args.Cancel = true;
+            if (_cleanupStarted) return;
+            _cleanupStarted = true;
+            IsEnabled = false;
+            try { await _model.DisposeToolsAsync(); }
+            catch (Exception exception) { DiagnosticLog.Write(exception, App.DiagnosticsDirectory, DateTimeOffset.UtcNow); }
+            finally { _closingAfterCleanup = true; Close(); }
+        };
         Closed += (_, _) =>
         {
             _privacyTimer.Stop();
@@ -81,10 +97,11 @@ public partial class MainWindow : Window
     private void UpdateSystemPrivacy(bool canInteract)
     {
         if (Dispatcher.HasShutdownStarted) return;
-        Dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(() =>
+        Dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(async () =>
         {
             _model?.HidePrivateSeat();
             _model?.SetWindowActive(canInteract && IsActive);
+            if (_model is not null) await _model.SetSystemAvailableAsync(canInteract);
         }));
     }
 

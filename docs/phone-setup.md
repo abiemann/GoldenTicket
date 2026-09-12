@@ -1,12 +1,12 @@
 # Connect a phone or tablet on the local network
 
-This guide currently applies to the **M0 connection-test PWA** in
-`tools/GoldenTicket.ConnectivitySpike`. It tests local HTTPS, certificate trust, browser
-installation, and pairing. The game companion, digital cards, and private player views are not
-implemented in this test app. Record device results using the
-[device checklist](companion-device-evidence.md).
+The Windows app's **Connect phone** screen hosts the game PWA, including digital cards, tickets
+and human actions. The separate **M0 connection-test PWA** in
+`tools/GoldenTicket.ConnectivitySpike` remains available for isolated networking diagnostics; it
+does not contain game play. The same LAN and certificate setup principles apply to both. Record
+which host you used and device results using the [device checklist](companion-device-evidence.md).
 
-The laptop hosts the test app. The phone reaches it over the local network. No hosted server,
+The laptop hosts the app. The phone reaches it over the local network. No hosted server,
 subscription, cloud pairing service, or Internet connection is required for the running test.
 Developer package restore may require Internet access before the test. Phone installation
 behavior without Internet still needs to pass the real-device checklist.
@@ -58,13 +58,19 @@ user from changing it.
 
 ## 2. Start the laptop host
 
-From the repository directory, using the laptop's actual LAN IPv4 address:
+In the Windows game, open **Connect phone**, refresh/select the actual Private LAN adapter,
+and start hosting. The screen displays the HTTPS address, IP fallback, temporary certificate
+sharing address, public certificate path/fingerprint, pairing code and QR. Keep the Windows app
+running throughout play. **Game table** must be the active Windows screen for phone game actions.
+
+For an isolated diagnostic instead, run this from the repository directory with the laptop's
+actual LAN IPv4 address (stop the game host first because the ports are shared):
 
 ```powershell
 dotnet run --project tools/GoldenTicket.ConnectivitySpike -- --address <laptop LAN IPv4>
 ```
 
-The host prints the HTTPS address, a temporary certificate-download address, the CA certificate's
+The diagnostic host prints the HTTPS address, a temporary certificate-download address, the CA certificate's
 SHA-256 fingerprint, a single-use pairing code, and a QR code. Keep the host running while testing.
 
 If the phone cannot reach it, first confirm the selected Windows connection is still Private and
@@ -92,7 +98,8 @@ test the printed IP-based HTTPS address and record that fallback.
 4. Open the printed HTTPS address in Chrome on Android or Safari on iOS. Certificate trust must
    succeed without a warning bypass. If there is a certificate warning, resolve it before
    continuing.
-5. Press `b` in the laptop console after certificate transfer to close the temporary bootstrap.
+5. On **Connect phone**, choose **Close certificate sharing** after certificate transfer. In the
+   diagnostic console, press `b` instead. This closes only temporary HTTP sharing; HTTPS stays up.
 
 Chrome on the test Pixel displayed **“File can’t be downloaded securely”** when downloading the
 certificate from the HTTP bootstrap, with **Discard** and **Keep** choices. This is a download
@@ -136,7 +143,13 @@ the offline steps while keeping the LAN working. Record whether mobile data or o
 access remained available; an Internet-connected run does not prove offline behavior. Stopping
 the laptop tests the cached reconnect screen, not offline game play without the host.
 
-Press `s` in the laptop console to save the report and `q` to quit. The spike writes reports under
+In the game PWA, enter the current code, compare the identity shown on both devices, and approve
+on **Connect phone**. Return Windows to **Game table** for opening ticket choices and normal
+human turns. Reloading the PWA requires fresh pairing; it never restores a visible hand. Stop
+hosting from **Connect phone** when finished.
+
+For the diagnostic spike only, press `s` in the laptop console to save the report and `q` to quit.
+The spike writes reports under
 `docs/evidence/m0-connectivity/`. Include the Windows network profile and any firewall changes in
 the session notes so setup costs are visible to future users. The spike has no game state or
 private-view grants, so those product checklist steps remain pending.
@@ -174,7 +187,7 @@ The same value was independently computed for the public certificate file on bot
 phone after USB transfer. This verifies the transferred bytes; Android CA installation and browser
 trust remain unconfirmed.
 
-For the eventual game companion, this event establishes an onboarding requirement: inspect the
+For the game companion, this event establishes an onboarding requirement: inspect the
 selected connection, explain a Public-profile block, and offer instructions for changing only a
 trusted connection with the user's consent. Show any required firewall scope before applying it,
 verify the result, and record failure details. This guide documents that requirement; it does not

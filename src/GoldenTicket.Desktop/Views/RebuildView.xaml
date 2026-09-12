@@ -54,18 +54,24 @@
                     <ItemsControl ItemsSource="{Binding Table.RebuildTarget}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Orientation="Horizontal" Margin="0,3">
-                                    <Border Width="14" Height="14" CornerRadius="7" Margin="0,0,6,0"
-                                            VerticalAlignment="Center"
-                                            BorderBrush="{StaticResource Text.Primary}" BorderThickness="1"
-                                            Background="{Binding OwnerColor, Converter={StaticResource PlayerColorBrush}}" />
-                                    <TextBlock Text="{Binding Symbol}" Width="20" />
-                                    <TextBlock Text="{Binding OwnerName}" Width="120" />
-                                    <TextBlock Text="{Binding RouteText}" Width="300" />
-                                    <TextBlock Style="{StaticResource Caption}" Width="80"
-                                               Text="{Binding TrainCount, StringFormat={}{0} trains}" />
-                                    <TextBlock Style="{StaticResource Caption}" Text="{Binding LaneLabel}" />
-                                </StackPanel>
+                                <Border BorderBrush="{StaticResource Ornament}" BorderThickness="0,0,0,1" Padding="0,8">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border Width="14" Height="14" CornerRadius="7" Margin="0,0,6,0"
+                                                    VerticalAlignment="Center"
+                                                    BorderBrush="{StaticResource Text.Primary}" BorderThickness="1"
+                                                    Background="{Binding OwnerColor, Converter={StaticResource PlayerColorBrush}}" />
+                                            <TextBlock Text="{Binding Symbol}" Margin="0,0,6,0" />
+                                            <TextBlock Text="{Binding OwnerName}" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding RouteText}" Margin="20,4,0,0" />
+                                        <WrapPanel Margin="20,4,0,0">
+                                            <TextBlock Style="{StaticResource Caption}" Margin="0,0,12,0"
+                                                       Text="{Binding TrainCount, StringFormat={}{0} trains}" />
+                                            <TextBlock Style="{StaticResource Caption}" Text="{Binding LaneLabel}" />
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -104,7 +110,9 @@
                     <StackPanel>
                         <TextBlock Style="{StaticResource Heading}" Text="Confirm and resume" />
                         <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8"
-                                   Text="This build has no camera, so you confirm the rebuilt board yourself. Check every route in the list, including lanes of parallel routes." />
+                                   Text="You confirm the rebuilt board yourself. Check every route in the list, including lanes of parallel routes. A saved reference photo can help; automatic piece verification is not enabled." />
+                        <Button Content="View saved board photo" Command="{Binding ShowCheckpointPhotoCommand}"
+                                Style="{StaticResource SecondaryButton}" Margin="0,0,0,12" />
 
                         <CheckBox Margin="0,0,0,10" IsChecked="{Binding Table.RebuildAcknowledged}"
                                   Content="Every saved route is back on the board, and nothing else is." />

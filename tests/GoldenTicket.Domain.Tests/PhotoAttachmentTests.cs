@@ -1,0 +1,455 @@
+using System.Buffers.Binary;
+using System.Collections.Immutable;
+using System.Diagnostics;
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using GoldenTicket.Desktop.ViewModels;
+using GoldenTicket.Domain.Model;
+using GoldenTicket.Persistence;
+using GoldenTicket.Vision;
+
+namespace GoldenTicket.Domain.Tests;
+
+/// <summary>Real DPAPI/AES-GCM files and full PNG validation; no train-recognition claim.</summary>
+public sealed class PhotoAttachmentTests : IDisposable
+{
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "GoldenTicket.PhotoTests", Guid.NewGuid().ToString("N"));
+    private static CancellationToken Token => TestContext.Current.CancellationToken;
+
+    public void Dispose()
+    {
+        // The fixture uses only its own fixed temporary root; no caller path is accepted here.
+        if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
+    }
+
+    private static PackAwayCheckpoint Checkpoint()
+    {
+        ImmutableArray<TargetRoute> target = [new(new RouteId("test-route"), new SeatId(1), 3)];
+        return new PackAwayCheckpoint(CheckpointId.New(), SessionId.New(), "Evening checkpoint",
+            DateTimeOffset.UtcNow.AddMinutes(-1), PackAwayCheckpoint.CurrentFormatVersion, 12, 9, 4,
+            "ttr-us-classic-en-v1", "sha256:manifest", "logical-v2:test", TurnPhase.TurnStart,
+            null, target, PackAwayCheckpoint.HashTarget(target), TargetProvenance.LogicalStateOnly,
+            null, CheckpointStatus.Verified);
+    }
+
+    private static CheckpointPhotoCapture Capture() => new(DateTimeOffset.UtcNow, "Board camera", 7, 2, true);
+
+    [Fact]
+    public async Task ReferenceSurvivesReopenWithoutChangingAuthoritativeCheckpointTruth()
+    {
+        var checkpoint = Checkpoint();
+        var original = checkpoint;
+        var png = WpfPng();
+        var capture = Capture();
+        var store = new CheckpointPhotoStore(_root);
+        var receipt = await store.SaveReferenceAsync(checkpoint, png, capture, Token);
+        var restored = await new CheckpointPhotoStore(_root).ReadReferenceAsync(checkpoint, Token);
+        Assert.NotNull(restored);
+        Assert.Equal(receipt, restored.Reference);
+        Assert.Equal(png, restored.PngBytes);
+        Assert.Equal(16, receipt.Width);
+        Assert.Equal(8, receipt.Height);
+        Assert.Equal("sha256:" + Convert.ToHexStringLower(SHA256.HashData(png)), receipt.ImageHash);
+        Assert.Equal(original, checkpoint);
+        Assert.Null(checkpoint.PhotoHash);
+        Assert.Equal(TargetProvenance.LogicalStateOnly, checkpoint.TargetProvenance);
+        var encrypted = await File.ReadAllBytesAsync(store.AttachmentPath(checkpoint.SessionId, checkpoint.CheckpointId), Token);
+        Assert.False(encrypted.AsSpan().IndexOf(png) >= 0);
+        Assert.DoesNotContain(checkpoint.LogicalStateHash, Encoding.UTF8.GetString(encrypted));
+        Assert.DoesNotContain(capture.CameraId, Encoding.UTF8.GetString(encrypted));
+        Assert.Empty(Directory.EnumerateFiles(_root, "*.pending", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public async Task LegacyCheckpointHasNoPhotoAndDoesNotCreateDirectories()
+    {
+        Assert.Null(await new CheckpointPhotoStore(_root).ReadReferenceAsync(Checkpoint(), Token));
+        Assert.False(Directory.Exists(_root));
+    }
+
+    [Fact]
+    public async Task DesktopBgraCameraEncodingIsAcceptedAndRoundTrips()
+    {
+        var pixels = Enumerable.Range(0, 32 * 16 * 4).Select(i => (byte)(i % 251)).ToArray();
+        var bitmap = BitmapSource.Create(32, 16, 96, 96, PixelFormats.Bgra32, null, pixels, 32 * 4);
+        bitmap.Freeze();
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var stream = new MemoryStream();
+        encoder.Save(stream);
+        var checkpoint = Checkpoint();
+        var store = new CheckpointPhotoStore(_root);
+        await store.SaveReferenceAsync(checkpoint, stream.ToArray(), Capture(), Token);
+        Assert.Equal(stream.ToArray(), (await store.ReadReferenceAsync(checkpoint, Token))!.PngBytes);
+    }
+
+    [Fact]
+    public async Task ActualWinRtCameraPngEncoderIsAcceptedByReferenceStore()
+    {
+        var checkpoint = Checkpoint();
+        var pixels = Enumerable.Range(0, 32 * 16 * 4).Select(i => (byte)(i % 251)).ToArray();
+        var frame = CameraFrame.CopyFromBgra32(32, 16, pixels, sequence: 19, epoch: 4);
+        var png = await frame.EncodePngAsync(Token);
+        var store = new CheckpointPhotoStore(_root);
+        await store.SaveReferenceAsync(checkpoint, png,
+            new CheckpointPhotoCapture(frame.CapturedAt, "camera-driver", frame.Epoch, 3, true), Token);
+        Assert.Equal(png, (await store.ReadReferenceAsync(checkpoint, Token))!.PngBytes);
+    }
+
+    [Fact]
+    public async Task RetryIsIdempotentButCannotReplaceThePhoto()
+    {
+        var checkpoint = Checkpoint();
+        var store = new CheckpointPhotoStore(_root);
+        var png = WpfPng();
+        var capture = Capture();
+        var first = await store.SaveReferenceAsync(checkpoint, png, capture, Token);
+        Assert.Equal(first, await store.SaveReferenceAsync(checkpoint, png, capture, Token));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.SaveReferenceAsync(checkpoint, WpfPng(60), capture, Token));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.SaveReferenceAsync(checkpoint, png, capture with { CameraEpoch = 8 }, Token));
+        Assert.Equal(png, (await store.ReadReferenceAsync(checkpoint, Token))!.PngBytes);
+    }
+
+    [Fact]
+    public async Task ConcurrentRetriesFinalizeOneImmutableVerifiedAttachment()
+    {
+        var checkpoint = Checkpoint();
+        var capture = Capture();
+        var png = WpfPng();
+        var first = new CheckpointPhotoStore(_root);
+        var second = new CheckpointPhotoStore(_root);
+        var results = await Task.WhenAll(first.SaveReferenceAsync(checkpoint, png, capture, Token),
+            second.SaveReferenceAsync(checkpoint, png, capture, Token));
+        Assert.Equal(results[0], results[1]);
+        Assert.Single(Directory.EnumerateFiles(_root, "*.gtphoto", SearchOption.AllDirectories));
+        Assert.Empty(Directory.EnumerateFiles(_root, "*.pending", SearchOption.AllDirectories));
+    }
+
+    [Theory]
+    [InlineData("name")]
+    [InlineData("logical")]
+    [InlineData("target")]
+    [InlineData("version")]
+    [InlineData("journal")]
+    [InlineData("board")]
+    [InlineData("profile")]
+    [InlineData("manifest")]
+    [InlineData("operation")]
+    public async Task AssociationPinsEveryImmutableCheckpointField(string change)
+    {
+        var checkpoint = Checkpoint();
+        var store = new CheckpointPhotoStore(_root);
+        await store.SaveReferenceAsync(checkpoint, WpfPng(), Capture(), Token);
+        var newTarget = checkpoint.PhysicalTarget.Add(new TargetRoute(new RouteId("another"), new SeatId(2), 2));
+        var changed = change switch
+        {
+            "name" => checkpoint with { Name = "A different checkpoint name" },
+            "logical" => checkpoint with { LogicalStateHash = "logical-v2:changed" },
+            "target" => checkpoint with { PhysicalTarget = newTarget, PhysicalTargetHash = PackAwayCheckpoint.HashTarget(newTarget) },
+            "version" => checkpoint with { SourceStateVersion = 13 },
+            "journal" => checkpoint with { SourceJournalSequence = 10 },
+            "board" => checkpoint with { BoardRevision = 5 },
+            "profile" => checkpoint with { ProfileId = "another-profile" },
+            "manifest" => checkpoint with { ManifestHash = "sha256:another-manifest" },
+            _ => checkpoint with { PendingOperationId = OperationId.New() }
+        };
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.ReadReferenceAsync(changed, Token));
+    }
+
+    [Fact]
+    public async Task CopyingAttachmentToAnotherCheckpointOrSessionCannotRebindIt()
+    {
+        var checkpoint = Checkpoint();
+        var store = new CheckpointPhotoStore(_root);
+        await store.SaveReferenceAsync(checkpoint, WpfPng(), Capture(), Token);
+        var originalPath = store.AttachmentPath(checkpoint.SessionId, checkpoint.CheckpointId);
+        foreach (var other in new[] { checkpoint with { CheckpointId = CheckpointId.New() }, checkpoint with { SessionId = SessionId.New() } })
+        {
+            var path = store.AttachmentPath(other.SessionId, other.CheckpointId);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.Copy(originalPath, path);
+            await Assert.ThrowsAsync<InvalidDataException>(() => store.ReadReferenceAsync(other, Token));
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(8)]
+    [InlineData(12)]
+    [InlineData(16)]
+    [InlineData(-1)]
+    public async Task HeaderAndCiphertextCorruptionAreRejected(int offset)
+    {
+        var checkpoint = Checkpoint();
+        var store = new CheckpointPhotoStore(_root);
+        await store.SaveReferenceAsync(checkpoint, WpfPng(), Capture(), Token);
+        var path = store.AttachmentPath(checkpoint.SessionId, checkpoint.CheckpointId);
+        var bytes = await File.ReadAllBytesAsync(path, Token);
+        bytes[offset < 0 ? bytes.Length - 1 : offset] ^= 0x40;
+        await File.WriteAllBytesAsync(path, bytes, Token);
+        var exception = await Record.ExceptionAsync(() => store.ReadReferenceAsync(checkpoint, Token));
+        Assert.True(exception is InvalidDataException or CryptographicException);
+    }
+
+    [Fact]
+    public async Task TruncatedOrOversizedAttachmentIsRejectedBeforeDecryption()
+    {
+        var checkpoint = Checkpoint();
+        var store = new CheckpointPhotoStore(_root);
+        var path = store.AttachmentPath(checkpoint.SessionId, checkpoint.CheckpointId);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await File.WriteAllBytesAsync(path, "GTPHOTO1"u8.ToArray(), Token);
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.ReadReferenceAsync(checkpoint, Token));
+        await using (var stream = File.OpenWrite(path)) stream.SetLength(CheckpointPhotoStore.MaximumPngBytes + 1024 * 1024);
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.ReadReferenceAsync(checkpoint, Token));
+    }
+
+    [Theory]
+    [InlineData("../outside")]
+    [InlineData("C:\\outside")]
+    [InlineData("1111111111111111111111111111111A")]
+    [InlineData("11111111-1111-1111-1111-111111111111")]
+    [InlineData("")]
+    public void CallerPathsAndNonCanonicalIdsNeverEnterTheFilesystem(string id)
+    {
+        var store = new CheckpointPhotoStore(_root);
+        Assert.Throws<ArgumentException>(() => store.AttachmentPath(new SessionId(id), CheckpointId.New()));
+        Assert.Throws<ArgumentException>(() => store.AttachmentPath(SessionId.New(), new CheckpointId(id)));
+        Assert.False(Directory.Exists(_root));
+    }
+
+    [Fact]
+    public void DirectoryJunctionsAreRejectedAtConfiguredRootAndSessionPath()
+    {
+        var sessionId = SessionId.New();
+        var target = Path.Combine(_root, "junction-target");
+        var sessions = Path.Combine(_root, "sessions");
+        var junction = Path.Combine(sessions, sessionId.Value);
+        Directory.CreateDirectory(target);
+        Directory.CreateDirectory(sessions);
+        // Junction creation does not require symbolic-link privilege. Both paths are generated
+        // inside this fixture, and cleanup removes only the link itself without following it.
+        var start = new ProcessStartInfo("cmd.exe")
+        {
+            UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardOutput = true, RedirectStandardError = true
+        };
+        foreach (var argument in new[] { "/c", "mklink", "/J", junction, target }) start.ArgumentList.Add(argument);
+        using var process = Process.Start(start)!;
+        Assert.True(process.WaitForExit(10_000), "Creating a temporary test junction timed out.");
+        Assert.True(process.ExitCode == 0, process.StandardError.ReadToEnd());
+        try
+        {
+            Assert.Throws<IOException>(() => new CheckpointPhotoStore(junction));
+            Assert.Throws<IOException>(() => new CheckpointPhotoStore(Path.Combine(junction, "child")));
+            Assert.Throws<IOException>(() => new CheckpointPhotoStore(_root).AttachmentPath(sessionId, CheckpointId.New()));
+        }
+        finally { Directory.Delete(junction); }
+        Assert.True(Directory.Exists(target));
+    }
+
+    [Theory]
+    [InlineData("unconfirmed")]
+    [InlineData("stale")]
+    [InlineData("future")]
+    [InlineData("before-checkpoint")]
+    [InlineData("epoch")]
+    [InlineData("camera")]
+    public async Task CaptureMustBeFreshIdentifiedAndExplicitlyAttested(string change)
+    {
+        var checkpoint = Checkpoint();
+        var capture = Capture();
+        capture = change switch
+        {
+            "unconfirmed" => capture with { OperatorConfirmedBoardOnlyAndTarget = false },
+            "stale" => capture with { CapturedAt = DateTimeOffset.UtcNow.AddMinutes(-3) },
+            "future" => capture with { CapturedAt = DateTimeOffset.UtcNow.AddMinutes(3) },
+            "before-checkpoint" => capture with { CapturedAt = checkpoint.CreatedAt.AddMilliseconds(-1) },
+            "epoch" => capture with { CameraEpoch = -1 },
+            _ => capture with { CameraId = "camera\nforged metadata" }
+        };
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            new CheckpointPhotoStore(_root).SaveReferenceAsync(checkpoint, WpfPng(), capture, Token));
+        Assert.False(Directory.Exists(_root));
+    }
+
+    [Theory]
+    [InlineData(CheckpointStatus.CommittedAwaitingReadback)]
+    [InlineData(CheckpointStatus.Faulted)]
+    public async Task DigitalReadbackMustSucceedBeforeAReferenceCanBeAdded(CheckpointStatus status)
+    {
+        await Assert.ThrowsAsync<InvalidDataException>(() => new CheckpointPhotoStore(_root)
+            .SaveReferenceAsync(Checkpoint() with { Status = status }, WpfPng(), Capture(), Token));
+    }
+
+    [Fact]
+    public async Task TargetIntegrityIsCheckedBeforeImageStorage()
+    {
+        var checkpoint = Checkpoint() with { PhysicalTargetHash = "sha256:tampered" };
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            new CheckpointPhotoStore(_root).SaveReferenceAsync(checkpoint, WpfPng(), Capture(), Token));
+        Assert.False(Directory.Exists(_root));
+    }
+
+    [Theory]
+    [InlineData("crc")]
+    [InlineData("truncated")]
+    [InlineData("trailing")]
+    [InlineData("dimensions")]
+    [InlineData("pixels")]
+    [InlineData("filter")]
+    [InlineData("inflate")]
+    [InlineData("metadata")]
+    [InlineData("short-pixels")]
+    [InlineData("bad-adler")]
+    public async Task InvalidPngCannotBecomeAStoredReference(string corruption)
+    {
+        var png = Png(2, 1, [0, 30, 40, 50, 60, 70, 80]);
+        png = corruption switch
+        {
+            "crc" => Mutate(png, 29),
+            "truncated" => png[..^3],
+            "trailing" => [.. png, 0],
+            "dimensions" => Png(9000, 1, [0, 1, 2, 3]),
+            "pixels" => Png(8192, 8192, [0, 1, 2, 3]),
+            "filter" => Png(2, 1, [5, 30, 40, 50, 60, 70, 80]),
+            "inflate" => Png(1, 1, [0, 30, 40, 50, 60, 70, 80]),
+            "metadata" => Png(2, 1, [0, 30, 40, 50, 60, 70, 80], embeddedText: true),
+            "short-pixels" => Png(2, 1, [0, 30, 40, 50]),
+            "bad-adler" => Png(2, 1, [0, 30, 40, 50, 60, 70, 80], badAdler: true),
+            _ => png
+        };
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            new CheckpointPhotoStore(_root).SaveReferenceAsync(Checkpoint(), png, Capture(), Token));
+        Assert.False(Directory.Exists(_root));
+    }
+
+    [Fact]
+    public async Task CancelledSaveDoesNotCreateAnAttachment()
+    {
+        using var canceled = new CancellationTokenSource();
+        canceled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            new CheckpointPhotoStore(_root).SaveReferenceAsync(Checkpoint(), WpfPng(), Capture(), canceled.Token));
+        Assert.False(Directory.Exists(_root));
+    }
+
+    [Fact]
+    public async Task ViewModelRequiresConfirmationAndShowsOnlyDecodedVerifiedReference()
+    {
+        var checkpoint = Checkpoint();
+        var png = WpfPng();
+        var captureCalls = 0;
+        var vm = new CheckpointPhotoViewModel(new CheckpointPhotoStore(_root), _ =>
+        {
+            captureCalls++;
+            return Task.FromResult(new CheckpointPhotoCaptureInput(png.ToArray(), Capture() with { OperatorConfirmedBoardOnlyAndTarget = false }));
+        });
+        await vm.LoadCheckpointAsync(checkpoint, Token);
+        Assert.False(vm.CaptureReferenceCommand.CanExecute(null));
+        vm.OperatorAcknowledged = true;
+        Assert.True(vm.CaptureReferenceCommand.CanExecute(null));
+        await vm.CaptureReferenceCommand.ExecuteAsync(null);
+        Assert.Equal(1, captureCalls);
+        Assert.True(vm.HasPhoto, vm.Status);
+        Assert.NotNull(vm.PhotoImage);
+        Assert.False(vm.CaptureReferenceCommand.CanExecute(null));
+        Assert.False(vm.OperatorAcknowledged);
+        await vm.LoadCheckpointAsync(null, Token);
+        Assert.False(vm.HasPhoto);
+        Assert.Null(vm.PhotoImage);
+        Assert.False(vm.HasCheckpoint);
+    }
+
+    [Fact]
+    public async Task ChangingCheckpointDuringCaptureRejectsTheOldCallback()
+    {
+        var checkpoint = Checkpoint();
+        var pending = new TaskCompletionSource<CheckpointPhotoCaptureInput>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var vm = new CheckpointPhotoViewModel(new CheckpointPhotoStore(_root), _ => pending.Task);
+        await vm.LoadCheckpointAsync(checkpoint, Token);
+        vm.OperatorAcknowledged = true;
+        var capturing = vm.CaptureReferenceCommand.ExecuteAsync(null);
+        await vm.LoadCheckpointAsync(null, Token);
+        pending.SetResult(new CheckpointPhotoCaptureInput(WpfPng(), Capture()));
+        await capturing;
+        Assert.False(vm.HasPhoto);
+        Assert.False(vm.IsBusy);
+        Assert.False(Directory.Exists(_root));
+    }
+
+    [Fact]
+    public async Task DamagedReferenceLeavesRouteBasedRebuildAvailableAndDisallowsReplacingEvidence()
+    {
+        var checkpoint = Checkpoint();
+        var store = new CheckpointPhotoStore(_root);
+        await store.SaveReferenceAsync(checkpoint, WpfPng(), Capture(), Token);
+        var path = store.AttachmentPath(checkpoint.SessionId, checkpoint.CheckpointId);
+        await File.WriteAllBytesAsync(path, "corrupt reference"u8.ToArray(), Token);
+        var vm = new CheckpointPhotoViewModel(store, _ => throw new InvalidOperationException("Must not capture."));
+        await vm.LoadCheckpointAsync(checkpoint, Token);
+        vm.OperatorAcknowledged = true;
+        Assert.True(vm.HasCheckpoint);
+        Assert.True(vm.ReferenceUnavailable);
+        Assert.False(vm.HasPhoto);
+        Assert.False(vm.CaptureReferenceCommand.CanExecute(null));
+        Assert.Contains("saved route list", vm.Status);
+        Assert.True(checkpoint.IsSafeToPackAway);
+    }
+
+    private static byte[] WpfPng(byte baseValue = 30)
+    {
+        var pixels = Enumerable.Range(0, 16 * 8 * 3).Select(index => (byte)(baseValue + index % 64)).ToArray();
+        var bitmap = BitmapSource.Create(16, 8, 96, 96, PixelFormats.Rgb24, null, pixels, 16 * 3);
+        bitmap.Freeze();
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var stream = new MemoryStream();
+        encoder.Save(stream);
+        return stream.ToArray();
+    }
+
+    private static byte[] Mutate(byte[] bytes, int offset) { bytes[offset] ^= 0x40; return bytes; }
+
+    private static byte[] Png(int width, int height, byte[] decompressed, bool embeddedText = false, bool badAdler = false)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
+        var header = new byte[13];
+        BinaryPrimitives.WriteInt32BigEndian(header, width);
+        BinaryPrimitives.WriteInt32BigEndian(header.AsSpan(4), height);
+        header[8] = 8;
+        header[9] = 2;
+        Chunk(stream, "IHDR", header);
+        if (embeddedText) Chunk(stream, "tEXt", "private metadata"u8.ToArray());
+        using var compressed = new MemoryStream();
+        using (var zip = new ZLibStream(compressed, CompressionLevel.SmallestSize, leaveOpen: true)) zip.Write(decompressed);
+        var data = compressed.ToArray();
+        if (badAdler) data[^1] ^= 0x40;
+        Chunk(stream, "IDAT", data);
+        Chunk(stream, "IEND", []);
+        return stream.ToArray();
+    }
+
+    private static void Chunk(Stream stream, string type, byte[] data)
+    {
+        Span<byte> number = stackalloc byte[4];
+        BinaryPrimitives.WriteInt32BigEndian(number, data.Length);
+        stream.Write(number);
+        var payload = Encoding.ASCII.GetBytes(type).Concat(data).ToArray();
+        stream.Write(payload);
+        uint crc = uint.MaxValue;
+        foreach (var value in payload)
+        {
+            crc ^= value;
+            for (var i = 0; i < 8; i++) crc = (crc >> 1) ^ ((crc & 1) == 0 ? 0 : 0xedb88320);
+        }
+        BinaryPrimitives.WriteUInt32BigEndian(number, ~crc);
+        stream.Write(number);
+    }
+}

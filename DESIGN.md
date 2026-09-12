@@ -1630,13 +1630,31 @@ The rights item does not prevent designing or testing the application. Use origi
 
 This document specifies the complete intended product. Implemented behavior and executed checks are recorded in the audit and README; the remaining sections must not be read as evidence that a feature exists. Model training, recognition accuracy, GPU compatibility, companion-device support, AI strength, and camera recovery timing remain unverified.
 
-### 24.4 Implementation audit status, September 12, 2026
+### 24.4 Implementation audit and follow-up status, September 12, 2026
 
 The repository now contains Domain, Application, AI, Persistence, Desktop, Simulator, and test projects. The implemented desktop uses explicit manual physical verification and a private laptop view. It implements digital dealing/turns, route reservation and confirmation, exact scoring algorithms, heuristic opponents, SQLite event replay, and the box-derived palette. Audit fixes add stale-view protection, physical reconciliation before resumed play, strict save integrity and path checks, concurrent-write protection, bounded AI waiting, and regression tests.
 
 The subsequent work adds state-only named checkpoints, pack-away/rebuild lifecycles, disclosed supply-policy continuations and a standalone local HTTPS/QR/pairing/PWA connectivity spike. The September 12 audit corrects checkpoint verification and restart gates, policy/desktop continuation bugs, network/session/certificate security and browser diagnostic/cache behavior. The spike has no game commands or private-seat views and is not embedded in the desktop app.
 
-There is still no product camera acquisition/vision/calibration/gesture subsystem, CPU/GPU inference selection, game companion host/PWA, narrated story/audio, photographed pack-away checkpoint, or installer. The state-only rebuild uses a textual route list, not a geometry-based board diagram. Snapshot rows currently hold validation metadata and state hashes rather than the complete encrypted snapshots specified in section 19.2. Camera geometry and the physical board-data audit are absent. The desktop remains framework-dependent. These are implementation gaps, not changes to the requirements in this design.
+The follow-up implementation adds `GoldenTicket.CompanionHost`, an embedded local HTTPS game PWA
+with laptop-approved controller pairing, short private-view grants and the four human digital
+actions; `GoldenTicket.Vision`, with real Windows capture, manual board cropping and scene-reference
+comparison; and encrypted optional checkpoint-reference photos. The Windows shell now exposes
+camera, connection and photo screens. These changes are described in
+[the implementation record and acceptance checklist](docs/IMPLEMENTATION-2026-09-12.md).
+
+Current deviations remain explicit: the PWA uses bundled plain JavaScript and two-second public
+snapshot polling instead of the specified TypeScript/WSS event cursor. Controller sessions are
+process-local and each page reload requires fresh laptop-approved pairing. The device uses a
+30-second reveal timeout and Hide, without hold-to-peek. Photos are operator-attested encrypted
+sidecars to `LogicalStateOnly` checkpoints, not `VerifiedBoardPhoto` evidence. Automatic train/
+landmark/gesture recognition, learned models, CPU/GPU inference selection and measured camera
+recovery are absent. The rebuild target remains a route list rather than a geometry-based diagram.
+Snapshot rows hold validation metadata and state hashes rather than complete encrypted snapshots.
+Physical board-data review, narrated story/audio and installer acceptance remain outstanding.
+The normal developer build is framework-dependent; the offline packaging workflow produces a
+separate self-contained x64 ZIP after documented source validation. These are implementation gaps,
+not changes to the full requirements above.
 
 The [original audit](docs/AUDIT-2026-09-11.md) maps R01–R16 to source evidence; the [follow-up audit](docs/AUDIT-2026-09-12.md) records the reviewed changes, fixes and current validation. [TODO.md](TODO.md) lists the remaining implementation and real-device acceptance work. Passing domain, persistence, view-model or browser-script tests does not satisfy the camera, privacy lifecycle, packaging, or mobile hardware gates.
 

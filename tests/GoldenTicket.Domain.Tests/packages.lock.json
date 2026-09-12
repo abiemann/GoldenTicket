@@ -198,8 +198,10 @@
           "CommunityToolkit.Mvvm": "[8.4.2, )",
           "GoldenTicket.AI": "[1.0.0, )",
           "GoldenTicket.Application": "[1.0.0, )",
+          "GoldenTicket.CompanionHost": "[1.0.0, )",
           "GoldenTicket.Domain": "[1.0.0, )",
-          "GoldenTicket.Persistence": "[1.0.0, )"
+          "GoldenTicket.Persistence": "[1.0.0, )",
+          "GoldenTicket.Vision": "[1.0.0, )"
         }
       },
       "goldenticket.ai": {
@@ -212,6 +214,12 @@
         "type": "Project",
         "dependencies": {
           "GoldenTicket.Domain": "[1.0.0, )"
+        }
+      },
+      "goldenticket.companionhost": {
+        "type": "Project",
+        "dependencies": {
+          "GoldenTicket.Application": "[1.0.0, )"
         }
       },
       "goldenticket.connectivityspike": {
@@ -235,6 +243,9 @@
           "GoldenTicket.Application": "[1.0.0, )",
           "GoldenTicket.Domain": "[1.0.0, )"
         }
+      },
+      "goldenticket.vision": {
+        "type": "Project"
       },
       "CommunityToolkit.Mvvm": {
         "type": "CentralTransitive",

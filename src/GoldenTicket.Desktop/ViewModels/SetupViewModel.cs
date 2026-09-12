@@ -27,8 +27,8 @@ public sealed record SavedSessionRow(SessionId SessionId, string Description);
 
 /// <summary>
 /// Table configuration and the saved-match list. Onboarding here covers seats, colours, operators,
-/// clockwise order and the starting player; the camera, companion and story steps of DESIGN 3.3
-/// belong to later milestones and are not pretended to exist.
+/// clockwise order and the starting player. Camera and companion setup have separate desktop
+/// screens; automatic train verification and the story layer remain later work.
 /// </summary>
 public sealed partial class SetupViewModel : ObservableObject
 {

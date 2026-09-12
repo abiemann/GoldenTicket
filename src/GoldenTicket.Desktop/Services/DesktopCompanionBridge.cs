@@ -1,0 +1,66 @@
+using System.Windows.Threading;
+using GoldenTicket.CompanionHost;
+using GoldenTicket.Domain;
+
+namespace GoldenTicket.Desktop.Services;
+
+/// <summary>One serialized path from the HTTP server to the desktop coordinator. Local UI
+/// operations remain responsible for their existing busy/storage gates; remote mutations set the
+/// same gate for their entire durable command and AI continuation.</summary>
+internal sealed class DesktopCompanionBridge(
+    ICompanionGameBridge inner,
+    Func<Dispatcher?> dispatcher,
+    Func<bool> beginCommand,
+    Action endCommand,
+    Action beforePrivateRead,
+    Action commandFaulted) : ICompanionGameBridge
+{
+    private readonly SemaphoreSlim _serial = new(1, 1);
+
+    public Task<CompanionPublicSnapshot> ReadPublicAsync(CancellationToken cancellationToken = default) =>
+        RunAsync(() => inner.ReadPublicAsync(cancellationToken), cancellationToken);
+
+    public Task<CompanionPrivateSnapshot?> ReadPrivateAsync(SeatId seat, long expectedVersion,
+        CancellationToken cancellationToken = default) => RunAsync(async () =>
+        {
+            beforePrivateRead();
+            return await inner.ReadPrivateAsync(seat, expectedVersion, cancellationToken);
+        }, cancellationToken);
+
+    public Task<CompanionCommandReceipt> ExecuteAsync(SeatId seat, CompanionCommand command,
+        CancellationToken cancellationToken = default) => RunAsync(async () =>
+        {
+            if (!beginCommand())
+                return new CompanionCommandReceipt(false, false, command.ExpectedStateVersion,
+                    "LaptopBusy", "Wait for the laptop, then hide and reveal your hand again.");
+            try
+            {
+                // Keep the authorization cancellation alive until the coordinator admits the
+                // command. Its durable command id handles retry; uncertain writes remain governed
+                // by the coordinator's storage-fault protection.
+                return await inner.ExecuteAsync(seat, command, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch
+            {
+                commandFaulted();
+                throw;
+            }
+            finally { endCommand(); }
+        }, cancellationToken);
+
+    private async Task<T> RunAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
+    {
+        await _serial.WaitAsync(cancellationToken);
+        try
+        {
+            var ui = dispatcher();
+            if (ui is { HasShutdownStarted: true } || ui is { HasShutdownFinished: true })
+                throw new OperationCanceledException("The desktop is closing.");
+            return ui is not null && !ui.CheckAccess()
+                ? await ui.InvokeAsync(action, DispatcherPriority.Normal, cancellationToken).Task.Unwrap()
+                : await action();
+        }
+        finally { _serial.Release(); }
+    }
+}

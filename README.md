@@ -12,14 +12,15 @@ The September 12, 2026 [implementation audit](docs/AUDIT-2026-09-12.md) found th
 the corrected bugs and security issues, and separates automated evidence from remaining device tests.
 [TODO.md](TODO.md) tracks the work needed to complete the product.
 
-For the phone connection test, follow [local phone setup](docs/phone-setup.md). It records the
-September 12 Pixel test, including Windows Private-network/UAC setup, scoped firewall access,
-and certificate provisioning. Full phone acceptance remains in progress.
+The subsequent [September 12 implementation update](docs/IMPLEMENTATION-2026-09-12.md) adds the
+game phone companion, camera tools, and encrypted board reference photos. Use its morning
+acceptance checklist and [local phone setup](docs/phone-setup.md). Real-device acceptance remains
+in progress; automatic train recognition is not enabled.
 
 ## What this build does
 
-This is the first implementation slice from DESIGN §23.1, with much of M1 and the laptop-only part
-of M2. Neither the physical data review nor the full milestone acceptance gates are complete:
+This build implements the core game plus initial phone, camera and photo workflows from DESIGN
+§23.1. Neither the physical data review nor the full milestone acceptance gates are complete:
 
 - A classic North America rules data package with 36 cities, 100 routes, 30 destination tickets,
   and 110 train cards. Runtime loading requires the supported profile/version and a valid checksum;
@@ -45,6 +46,15 @@ of M2. Neither the physical data review nor the full milestone acceptance gates 
 - A WPF interface in the box-derived palette: a public table screen, an opaque privacy curtain with
   a per-seat private view, the operator's placement instruction and confirmation, and a results
   screen.
+- A laptop-hosted HTTPS phone PWA with private human cards/tickets, digital draws and route/payment
+  choices. One shared controller is paired and explicitly approved on the laptop. Private views
+  expire and hide on handoff, backgrounding, or connection loss; the laptop verifies physical moves.
+- A camera screen with Windows video-only capture, resolution selection, preview, manual four-corner
+  board crop, and conservative scene-reference change/recovery indication. It identifies camera
+  changes and stale frames, but does not recognize trains or authorize route claims.
+- Optional encrypted, immutable board reference photos attached to validated saved checkpoints.
+  Photos are cropped from fresh camera frames and authenticated on readback. They assist manual
+  rebuilding; checkpoints retain their explicit state-only provenance.
 - Explicit manual-verification opt-in, per-placement whole-board attestation, and a board-check
   gate before restored games can resume AI or human actions. Hiding a private view invalidates late
   asynchronous results. Fault logs contain bounded error metadata rather than exception payloads.
@@ -54,21 +64,17 @@ of M2. Neither the physical data review nor the full milestone acceptance gates 
 
 These are later milestones in `DESIGN.md`, and nothing here pretends they exist:
 
-- **No camera.** Physical placement is confirmed by the operator (`VerificationMode.Manual`).
-  Submitting camera evidence is refused with `CameraVerificationNotAvailable`. Calibration, the
-  vision pipeline, board recovery after a jog and the wake gesture are M3–M5.
-- **No game phone companion.** A standalone M0 connectivity spike has a Kestrel host, local HTTPS
-  trust bootstrap, QR, pairing and a cacheable PWA diagnostic shell. It is not integrated into the
-  Windows game and has no cards, private-seat grants or game commands. Humans still pass the laptop
-  and use the privacy curtain (the laptop-only fallback in DESIGN §4.7). The complete companion is
-  M0/M2. When it is built, iOS/iPadOS will be listed as *untested* rather than
-  supported: no Apple device is available for the repeated real-device testing DESIGN §22.7 requires
-  (see [docs/companion-device-evidence.md](docs/companion-device-evidence.md)).
-- **No board photograph in a save.** Save and pack away works, with named checkpoints, guided
-  rebuilding from the route list and exactly-once resume, but every checkpoint is
-  `LogicalStateOnly`: there is no camera to photograph the board, and a partially placed claim is
-  not part of the saved physical target. The verified photograph and the pending-placement mask are
-  M4.
+- **No automatic camera verification.** Physical placement is confirmed by the operator
+  (`VerificationMode.Manual`). Scene similarity does not prove route ownership. Automatic landmarks,
+  train recognition, gesture wakeup, and CPU/GPU inference remain unfinished.
+- **Phone acceptance is incomplete.** The embedded companion is functional and tested with
+  automated HTTPS/browser cases, but Android certificate/install/offline acceptance and all Apple
+  device acceptance remain outstanding. This slice uses two-second snapshot polling and fresh
+  laptop pairing after page reload; WSS/event-cursor recovery and durable controller registration
+  remain design gaps. See [implementation details](docs/IMPLEMENTATION-2026-09-12.md).
+- **No machine-verified photo checkpoint.** Optional operator-attested reference photos are saved
+  separately with encryption, checkpoint association and readback checks. Checkpoints remain
+  `LogicalStateOnly`; partial placement masks and automatic whole-board reconciliation are still M4.
 - **No story mode, narration or sound.** That is M6.
 - **No installer.** M7.
 - **No board geometry.** DESIGN §6.3 forbids shipping placeholder coordinates, so the data package
@@ -92,7 +98,8 @@ dotnet run --project tools/GoldenTicket.Simulator -- verify-data
 - .NET 10 SDK (pinned to 10.0.401 in `global.json`)
 
 The current desktop build is framework-dependent and needs the .NET 10 Windows Desktop runtime.
-The self-contained offline distribution required by the design is still outstanding.
+Build the self-contained offline ZIP with the [packaging workflow](docs/offline-package.md) when preparing a
+validated source commit; clean-machine and installer acceptance remain outstanding.
 
 No paid IDE, account, or internet connection is needed to run the application. Building it the first
 time downloads NuGet packages.
@@ -113,6 +120,7 @@ The connectivity scripts also have behavioral regression tests using Node's buil
 
 ```bash
 node --test tests/GoldenTicket.ConnectivitySpike.Tests/shell.test.cjs
+node --test tests/GoldenTicket.Domain.Tests/CompanionHostClient.test.cjs
 ```
 
 ```bash
@@ -145,6 +153,7 @@ dotnet run --project tools/GoldenTicket.Simulator -- simulate --games 20 --seats
    laptop returns to the public table screen between seats.
 4. On a human turn, that player opens their private view to draw cards, draw destination tickets, or
    choose a route and how to pay for it.
+
 5. When any seat claims a route, the public screen names the seat, its colour and symbol, both
    endpoint cities, the exact lane, and how many trains to place. Place them in any order, then
    check the entire board, including previously claimed routes, tick the attestation checkbox, and
@@ -152,6 +161,11 @@ dotnet run --project tools/GoldenTicket.Simulator -- simulate --games 20 --seats
 6. After someone finishes a turn with two trains or fewer, every seat takes one more turn, and then
    the results screen shows each seat's route points, destination tickets, longest continuous route
    and the trail that achieved it.
+
+Use **Connect phone** to start the local host, install/trust its public certificate, open the PWA,
+and approve the matching pairing identity. Return to **Game table** to enable phone play. The
+laptop private view remains a fallback. Use **Camera** for preview, board crop and a stable scene
+reference; after **Save and pack away**, choose **Add or view board photo** before clearing trains.
 
 Press **Escape** at any time to cover a private view.
 Private views also hide on deactivation and after 60 seconds without input. Lock/suspend handlers

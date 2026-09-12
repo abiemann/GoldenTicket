@@ -1,0 +1,61 @@
+{
+  "capturedAtUtc": "2026-09-12T18:12:51.4889579+00:00",
+  "files": [
+    {
+      "path": "tools/GoldenTicket.UiSmoke/GoldenTicket.UiSmoke.csproj",
+      "sha256": "65611a0b7cf34b2608b46943dc0f73ce8342b0989e0a7a9400513bb9ceff296b"
+    },
+    {
+      "path": "tools/GoldenTicket.UiSmoke/Program.cs",
+      "sha256": "8fcdfdaa765b3116cc886d53fb0565d858c91805fd784b69def90ee5b8c34e39"
+    },
+    {
+      "path": "src/GoldenTicket.Desktop/Theme/Controls.xaml",
+      "sha256": "d5323b451568cc1d820b5c9b157b971efa124a1dc30534f04fd91227a1af6979"
+    },
+    {
+      "path": "src/GoldenTicket.Desktop/Theme/Palette.xaml",
+      "sha256": "496cf82b5e2e46153346c365fa6edea434a696e49de31c00d6ce160896271ea4"
+    },
+    {
+      "path": "src/GoldenTicket.Desktop/Views/SetupView.xaml",
+      "sha256": "a79138a9321a144b9b82ecadec225c37822432af2c32b3e40f506026fbbd0581"
+    },
+    {
+      "path": "src/GoldenTicket.Desktop/Views/TableView.xaml",
+      "sha256": "a7a46b8fea4ebbfddc51a2d3e33d7932c9deb5b0d27c02989cab61f4c55c6f9b"
+    },
+    {
+      "path": "src/GoldenTicket.Desktop/ViewModels/TableViewModel.cs",
+      "sha256": "e9407f88b63b3af40353c0d9f060c89605a550b78d35116687b6e3f4bd506600"
+    },
+    {
+      "path": "src/GoldenTicket.Desktop/Views/RebuildView.xaml",
+      "sha256": "4ec4fc1680eec1c4e25fc5a017ee749e7ff5a7d471dab3d0fd8a1af9d158d3d6"
+    },
+    {
+      "path": "src/GoldenTicket.Desktop/Views/CameraView.xaml",
+      "sha256": "dc24ab3eced4296d73ef46f727134866b2b52c90ea2eda155510141e57b53326"
+    },
+    {
+      "path": "src/GoldenTicket.Desktop/Views/CameraView.xaml.cs",
+      "sha256": "41aafb3b885ffa07986b5e659ba5411ced959a4eb4f0c31063acbdc996160080"
+    },
+    {
+      "path": "src/GoldenTicket.Desktop/ViewModels/CameraViewModel.cs",
+      "sha256": "e9b24aa610dad2881bea78a8552c41af6a0908ef1c68bb03e1088d3d6eff2150"
+    },
+    {
+      "path": "src/GoldenTicket.Desktop/Views/ConnectionView.xaml",
+      "sha256": "ff366dbd476a68b0a0fe3f0635b29d2972af472a50e948d8cd18a3f9eb8cd9df"
+    },
+    {
+      "path": "src/GoldenTicket.Desktop/Views/CheckpointPhotoView.xaml",
+      "sha256": "75d8e9e34c80faf102e850ae1d1fc5ec315c44514bf3a14b7fb7dc819de4193d"
+    },
+    {
+      "path": "src/GoldenTicket.Desktop/ViewModels/CheckpointPhotoViewModel.cs",
+      "sha256": "2eee58c715e3dc4a36066615e2bfd7cf78124743f6e7c4fee68be58e822e3074"
+    }
+  ]
+}

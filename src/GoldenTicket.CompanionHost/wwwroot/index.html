@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#702c38">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Golden Ticket">
+  <title>Golden Ticket</title>
+  <link rel="manifest" href="/companion/manifest.webmanifest">
+  <link rel="icon" href="/companion/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/companion/icon-192.png">
+  <link rel="stylesheet" href="/companion/app.css">
+  <script src="/companion/app.js" defer></script>
+</head>
+<body>
+  <header><span class="ticket-mark" aria-hidden="true">GT</span><div><p class="eyebrow">YOUR PRIVATE CARRIAGE</p><h1>Golden Ticket</h1></div><button id="hide" class="hide-button" type="button">Hide</button></header>
+  <main>
+    <p id="connection" role="status" class="connection">Connecting to your laptop…</p>
+    <p id="notice" role="status" class="notice"></p>
+    <section id="connect" class="panel">
+      <p class="eyebrow">WELCOME ABOARD</p><h2>Your journey starts here</h2>
+      <p>The game lives on the Windows laptop. This device shows one human player's cards at a time. Stay on the same private network.</p>
+      <p id="shell-status">Preparing the offline app shell…</p>
+      <div id="install-help"><p>For a home-screen app: on iPhone/iPad use Safari → Share → Add to Home Screen. On Android use the browser menu → Install app or Add to Home screen. Launch it there before pairing. An offline shortcut or this browser also works.</p><button id="install" hidden type="button">Install app</button><button id="browser-mode" type="button" class="secondary">Continue in this browser</button></div>
+      <form id="pair-form" hidden>
+        <label for="device-label">Device name</label><input id="device-label" maxlength="64" autocomplete="off" value="Shared phone">
+        <label for="pair-code">Code shown on the laptop</label><input id="pair-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="000000" required>
+        <button id="pair-button" type="submit">Request connection</button>
+      </form>
+      <p id="pair-status" role="status"></p>
+    </section>
+    <section id="curtain" class="panel curtain" hidden>
+      <div class="privacy-symbol" aria-hidden="true">◈</div><p class="eyebrow">CARDS ARE COVERED</p><h2 id="handoff">Follow the laptop</h2>
+      <p id="curtain-detail">Keep this device private. Reveal only when it is your turn.</p>
+      <button id="reveal" type="button" disabled>Reveal my cards</button>
+      <p class="fine-print">Tap Hide before passing the device. Cards also hide when you leave the app, the connection drops, or the turn changes. Device screenshots cannot be prevented.</p>
+    </section>
+    <section id="private" class="panel" hidden aria-label="Private player turn"></section>
+    <section id="public" class="panel" hidden><p class="eyebrow">AT THE TABLE</p><h2>Journey progress</h2><div id="scoreboard"></div><p id="public-instruction"></p></section>
+    <footer>Local play · No account · No cloud<br>Physical train placement is verified on the laptop.</footer>
+  </main>
+</body>
+</html>

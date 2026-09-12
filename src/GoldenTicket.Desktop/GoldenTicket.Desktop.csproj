@@ -27,6 +27,8 @@
     <ProjectReference Include="..\GoldenTicket.Application\GoldenTicket.Application.csproj" />
     <ProjectReference Include="..\GoldenTicket.AI\GoldenTicket.AI.csproj" />
     <ProjectReference Include="..\GoldenTicket.Persistence\GoldenTicket.Persistence.csproj" />
+    <ProjectReference Include="..\GoldenTicket.CompanionHost\GoldenTicket.CompanionHost.csproj" />
+    <ProjectReference Include="..\GoldenTicket.Vision\GoldenTicket.Vision.csproj" />
   </ItemGroup>
 
 </Project>

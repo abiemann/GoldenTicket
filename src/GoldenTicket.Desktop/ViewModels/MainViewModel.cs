@@ -21,6 +21,9 @@ public enum Screen
     /// <summary>Guided reconstruction against a saved checkpoint's target (DESIGN 19.8).</summary>
     Rebuild,
     FinalScore,
+    Camera,
+    Connection,
+    CheckpointPhoto,
 }
 
 /// <summary>
@@ -55,6 +58,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         Setup = new SetupViewModel(manifest);
         Table = new TableViewModel(manifest);
+        InitializeTools();
     }
 
     public SetupViewModel Setup { get; }
@@ -98,6 +102,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     partial void OnScreenChanged(Screen value)
     {
+        if (value is Screen.Setup or Screen.Table or Screen.Rebuild or Screen.FinalScore) _gameScreen = value;
         HidePrivateSeat();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
     }
@@ -246,6 +251,8 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (_coordinator is not { } coordinator || !CanRevealPrivateSeat || _revealable is not { } seat) return;
 
+        Connection.InvalidatePrivateGrants();
+
         var generation = _revealGeneration;
         var view = await coordinator.GetSeatViewAsync(seat.SeatId);
         if (generation != _revealGeneration || !CanRevealPrivateSeat ||
@@ -267,6 +274,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         _revealGeneration++;
         PrivateSeat = null;
+        Connection.InvalidatePrivateGrants();
     }
 
     public void SetWindowActive(bool active)
@@ -660,6 +668,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         var view = _coordinator.Public;
         Table.Update(view, _coordinator.PublicHistory);
+        await RefreshCheckpointPhotoAsync();
         if (NeedsBoardReconciliation)
         {
             Table.Placement = null;

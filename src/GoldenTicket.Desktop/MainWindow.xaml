@@ -10,6 +10,7 @@
         mc:Ignorable="d"
         Title="GoldenTicket" Height="880" Width="1400" MinHeight="620" MinWidth="1000"
         Background="{StaticResource Surface.Window}"
+        Foreground="{StaticResource Text.Primary}"
         WindowStartupLocation="CenterScreen">
 
     <Window.Resources>
@@ -19,7 +20,32 @@
     </Window.Resources>
 
     <Grid>
-        <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Border Background="{StaticResource Surface.Panel}" Padding="16,8">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsPrivateVisible}" Value="True">
+                            <Setter Property="IsEnabled" Value="False" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Left" Text="GoldenTicket" FontWeight="Bold" FontSize="22"
+                           Foreground="{StaticResource Action.Primary}" VerticalAlignment="Center" Margin="0,0,24,0" />
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="Game table" Command="{Binding ShowGameCommand}" Style="{StaticResource SecondaryButton}" />
+                    <Button Content="Camera" Command="{Binding ShowCameraCommand}" Style="{StaticResource SecondaryButton}" />
+                    <Button Content="Connect phone" Command="{Binding ShowConnectionCommand}" Style="{StaticResource SecondaryButton}" />
+                    <Button Content="Saved board photo" Command="{Binding ShowCheckpointPhotoCommand}" Style="{StaticResource SecondaryButton}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+        <Grid Grid.Row="1">
             <Grid.Style>
                 <Style TargetType="Grid">
                     <Style.Triggers>
@@ -41,9 +67,18 @@
 
         <views:FinalScoreView
             Visibility="{Binding Screen, Converter={StaticResource ScreenVisibility}, ConverterParameter=FinalScore}" />
+        <Border Visibility="{Binding Screen, Converter={StaticResource ScreenVisibility}, ConverterParameter=Camera}">
+            <views:CameraView DataContext="{Binding Camera}" />
+        </Border>
+        <Border Visibility="{Binding Screen, Converter={StaticResource ScreenVisibility}, ConverterParameter=Connection}">
+            <views:ConnectionView DataContext="{Binding Connection}" />
+        </Border>
+        <Border Visibility="{Binding Screen, Converter={StaticResource ScreenVisibility}, ConverterParameter=CheckpointPhoto}">
+            <views:CheckpointPhotoView DataContext="{Binding CheckpointPhoto}" />
+        </Border>
         </Grid>
 
-        <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Padding="12,6"
+        <Border Grid.Row="1" VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Padding="12,6"
                 Background="{StaticResource Surface.Panel}"
                 Visibility="{Binding Busy, Converter={StaticResource EmptyStringToVisibility}}">
             <TextBlock Text="{Binding Busy}" FontWeight="SemiBold" />
@@ -54,6 +89,7 @@
             private view under it exists only while a seat is revealed.
         -->
         <views:PrivateSeatView
+            Grid.RowSpan="2"
             Visibility="{Binding IsPrivateVisible, Converter={StaticResource BoolToVisibility}}" />
     </Grid>
 </Window>

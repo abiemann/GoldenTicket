@@ -24,7 +24,8 @@
     </Style>
 
     <Style TargetType="TextBlock">
-        <Setter Property="Foreground" Value="{StaticResource Text.Primary}" />
+        <!-- Inherit foreground from the parent control. A global text foreground overrides
+             the light text on burgundy buttons and breaks their accessible contrast. -->
         <Setter Property="FontSize" Value="{StaticResource Font.Body}" />
         <Setter Property="TextWrapping" Value="Wrap" />
     </Style>

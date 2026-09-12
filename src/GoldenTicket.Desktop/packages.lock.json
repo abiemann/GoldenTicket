@@ -55,6 +55,12 @@
           "GoldenTicket.Domain": "[1.0.0, )"
         }
       },
+      "goldenticket.companionhost": {
+        "type": "Project",
+        "dependencies": {
+          "GoldenTicket.Application": "[1.0.0, )"
+        }
+      },
       "goldenticket.domain": {
         "type": "Project"
       },
@@ -65,6 +71,9 @@
           "GoldenTicket.Domain": "[1.0.0, )",
           "Microsoft.Data.Sqlite": "[10.0.12, )"
         }
+      },
+      "goldenticket.vision": {
+        "type": "Project"
       },
       "Microsoft.Data.Sqlite": {
         "type": "CentralTransitive",

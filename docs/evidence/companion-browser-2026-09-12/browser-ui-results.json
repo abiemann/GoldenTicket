@@ -1,0 +1,117 @@
+{
+  "browser": "Chromium 152.0.7977.83",
+  "fixtureTransport": "HTTP loopback secure context; synthetic .NET bridge payloads; no certificate bypass",
+  "viewports": [
+    "448×900",
+    "320×740",
+    "768×1024"
+  ],
+  "screenshots": "Synthetic player data only",
+  "results": [
+    {
+      "name": "pixel: offline shell and browser-context pairing",
+      "passed": true,
+      "milliseconds": 2129
+    },
+    {
+      "name": "pixel: human opening tickets and pass-and-hide",
+      "passed": true,
+      "milliseconds": 138
+    },
+    {
+      "name": "pixel: card draw, second draw and next human",
+      "passed": true,
+      "milliseconds": 3948
+    },
+    {
+      "name": "pixel: ticket offer return ordering",
+      "passed": true,
+      "milliseconds": 4010
+    },
+    {
+      "name": "pixel: route payment and laptop physical verification boundary",
+      "passed": true,
+      "milliseconds": 3980
+    },
+    {
+      "name": "pixel: Hide, focus loss and stale reveal cover private DOM",
+      "passed": true,
+      "milliseconds": 5831
+    },
+    {
+      "name": "pixel: disconnected cover and cached reconnect shell",
+      "passed": true,
+      "milliseconds": 4455
+    },
+    {
+      "name": "small-phone: offline shell and browser-context pairing",
+      "passed": true,
+      "milliseconds": 2522
+    },
+    {
+      "name": "small-phone: human opening tickets and pass-and-hide",
+      "passed": true,
+      "milliseconds": 121
+    },
+    {
+      "name": "small-phone: card draw, second draw and next human",
+      "passed": true,
+      "milliseconds": 3560
+    },
+    {
+      "name": "small-phone: ticket offer return ordering",
+      "passed": true,
+      "milliseconds": 4020
+    },
+    {
+      "name": "small-phone: route payment and laptop physical verification boundary",
+      "passed": true,
+      "milliseconds": 1982
+    },
+    {
+      "name": "small-phone: Hide, focus loss and stale reveal cover private DOM",
+      "passed": true,
+      "milliseconds": 5854
+    },
+    {
+      "name": "small-phone: disconnected cover and cached reconnect shell",
+      "passed": true,
+      "milliseconds": 4472
+    },
+    {
+      "name": "tablet: offline shell and browser-context pairing",
+      "passed": true,
+      "milliseconds": 2534
+    },
+    {
+      "name": "tablet: human opening tickets and pass-and-hide",
+      "passed": true,
+      "milliseconds": 160
+    },
+    {
+      "name": "tablet: card draw, second draw and next human",
+      "passed": true,
+      "milliseconds": 3536
+    },
+    {
+      "name": "tablet: ticket offer return ordering",
+      "passed": true,
+      "milliseconds": 3988
+    },
+    {
+      "name": "tablet: route payment and laptop physical verification boundary",
+      "passed": true,
+      "milliseconds": 4024
+    },
+    {
+      "name": "tablet: Hide, focus loss and stale reveal cover private DOM",
+      "passed": true,
+      "milliseconds": 5807
+    },
+    {
+      "name": "tablet: disconnected cover and cached reconnect shell",
+      "passed": true,
+      "milliseconds": 4449
+    }
+  ]
+}

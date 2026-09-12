@@ -1,0 +1,37 @@
+✔ embedded-browser handoff is visible even when the worker never activates (2.7082ms)
+✔ worker activation times out and leaves recheck and pairing diagnostics usable (1.2358ms)
+✔ a manual recheck after pairing does not prove persistence across reload (1.3904ms)
+✔ a fresh page with a valid session does prove reload persistence (0.8092ms)
+✔ losing the laptop clears stale successful report fields (0.7883ms)
+✔ an index page alone is not reported as a complete offline shell (0.6633ms)
+✔ re-pairing in the same page clears evidence from an older loaded session (0.894ms)
+✔ pairing during initial worker activation does not become reload evidence (0.7608ms)
+✔ a stale session read cannot overwrite successful pairing (0.9994ms)
+✔ a double tap sends only one single-use pairing request (0.8062ms)
+✔ a hanging session request is aborted and does not leave Recheck locked (0.9526ms)
+✔ worker upgrades delete only this spike's old caches (1.1055ms)
+✔ only allowlisted shell GETs use the current shell cache (0.5891ms)
+✔ API, unknown paths, query strings, POSTs and foreign origins bypass shell handling (0.5228ms)
+✔ pairing waits for a fully cached shell and chosen final launch context (3.022ms)
+✔ missing cached asset and insecure contexts never offer pairing (2.0167ms)
+✔ private reveal renders only the permitted view and Hide clears DOM and memory (1.8517ms)
+✔ delayed private response cannot uncover a hand after Hide (0.9084ms)
+✔ background then foreground always returns covered even with delayed reveal (1.13ms)
+✔ a newer laptop handoff observed during reveal rejects the delayed old private response (0.8887ms)
+✔ a poll observing this reveal own generation does not discard its valid response (0.8345ms)
+✔ an old poll cannot rewind handoff generation and re-pairing can reset it for a restarted host (0.911ms)
+✔ turn revision change, revoke, and connection failure clear private views (2.3797ms)
+✔ an incompatible shell version covers cards and blocks reveal until reload (0.8638ms)
+✔ blur and pointer cancellation clear privacy immediately (2.0424ms)
+✔ heartbeat timeout and grant expiry cover without waiting for network (1.6507ms)
+✔ command clears private UI before transport and duplicate tap cannot submit twice (0.8718ms)
+✔ untrusted player text is assigned as text and never interpreted as HTML (0.6554ms)
+✔ worker caches only named shell assets and never intercepts APIs or arbitrary navigation (1.1223ms)
+ℹ tests 29
+ℹ suites 0
+ℹ pass 29
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 97.6541

@@ -39,7 +39,11 @@ public partial class App : System.Windows.Application
 
         if (alreadyReported) return;
 
-        if (MainWindow?.DataContext is MainViewModel model) model.SetWindowActive(false);
+        if (MainWindow?.DataContext is MainViewModel model)
+        {
+            model.SetWindowActive(false);
+            model.PauseAfterUnhandledFault();
+        }
         if (MainWindow is { } window) window.IsEnabled = false;
 
         MessageBox.Show(

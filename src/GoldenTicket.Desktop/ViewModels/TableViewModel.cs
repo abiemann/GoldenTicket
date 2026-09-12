@@ -237,7 +237,7 @@ public sealed partial class TableViewModel : ObservableObject
             $"\"{checkpoint.Name}\" - {checkpoint.RouteCount} route{(checkpoint.RouteCount == 1 ? "" : "s")}, " +
             $"{checkpoint.TotalTrainsOnBoard} trains on the board" +
             (checkpoint.Provenance == TargetProvenance.LogicalStateOnly
-                ? ". Saved without a board photograph; the route list below is the record."
+                ? ". The saved route list is the rebuild target; an optional reference photo can help."
                 : ".");
 
         RebuildSuspendedAction = checkpoint.SuspendedTurnPhase switch

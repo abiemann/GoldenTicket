@@ -2,7 +2,8 @@
 
 Updated September 12, 2026 after the [implementation audit](docs/AUDIT-2026-09-12.md).
 The complete requirements remain in [DESIGN.md](DESIGN.md). This is a partial manual desktop
-implementation, not a completed camera-assisted product.
+implementation with a game companion and camera/reference-photo tools, not a completed automatic
+camera-assisted product. See [September 12 progress and morning checks](docs/IMPLEMENTATION-2026-09-12.md).
 
 ## Still missing: feature checklist
 
@@ -18,8 +19,9 @@ validation requirements; mark each feature complete only after those checks pass
 - [ ] **CPU/GPU inference selection** — Auto at launch uses a validated GPU or falls back to CPU; retain manual overrides and show a CPU chip or GPU/lightning status indicator (M4/M5).
 - [ ] **Photographed save and rebuild** — the state-only half is implemented (M2): named checkpoints,
   the `PreparingPackAway`/`PackedAway`/`Rebuilding` lifecycle, commit-then-readback validation,
-  route-list guided reconstruction and exactly-once resume. Still missing: the board diagram and (M4) the verified board
-  photograph, the pending-placement mask, pinned images and photo readback.
+  route-list guided reconstruction and exactly-once resume. Optional encrypted, operator-attested
+  reference photos now have immutable checkpoint binding and authenticated readback. Still missing:
+  the board diagram, machine-verified photograph, pending-placement mask and full evidence lifecycle.
 - [ ] **Offline installer packaging** — self-contained Windows x64 distribution with required runtimes and assets included (M7).
 - [ ] **Training mode, voice, story, and audio: last feature pass** — Training follows Story without effects/ambience; narration follows visual/voice/both settings. Complete photo save-and-rebuild and packaging foundation first (M6).
 
@@ -50,15 +52,32 @@ earlier; perform final release checks and package refresh after the narrative fe
 
 ## Complete the product in dependency order
 
+- [x] **Embedded companion first slice.** Local HTTPS host, controller approval/CSRF/private grants,
+  shared human card/ticket actions, public-only shell cache and privacy/reconnect handling are
+  integrated into the Windows shell. Actual device gates and the remaining protocol requirements
+  below are still open.
+- [x] **Camera and photo foundation.** Windows video-only capture, selectable formats, manual
+  four-corner crop and conservative scene-reference checks; optional encrypted operator-attested
+  checkpoint photos with integrity/readback and stale-capture protection. No automated train
+  verification or machine-verified photo checkpoint is claimed.
+- [x] **Offline package build workflow.** A clean-source, locked-dependency PowerShell builder creates
+  a self-contained Windows x64 ZIP with runtime/assets checks, notices, provenance and checksums.
+  Actual package output is recorded separately in [packaging evidence](docs/offline-package.md);
+  clean-machine acceptance and an installer remain open.
+- [ ] Replace companion snapshot polling with WSS/event-cursor synchronization; persist protected
+  approved-device registry, implement reconnect/lease recovery without pairing after every reload,
+  and add hold-to-peek plus full accessibility/device acceptance. Current plain-JS client is a
+  bundled implementation deviation from the planned TypeScript build.
 - [x] **Record first Pixel setup requirements.** Document the Windows Public-to-Private change,
   Administrator/UAC requirement, scoped firewall rule, successful LAN bootstrap, and verified USB
   certificate transfer in [phone setup](docs/phone-setup.md). Android certificate approval and the
   remaining PWA acceptance checks are still pending.
-- [ ] **M0/M2: guided connection setup.** Detect the actual Windows network profile, explain a
+- [x] **M0/M2: guided connection setup first slice.** Detect the actual Windows network profile, explain a
   Public-profile block, guide consent for a trusted-network change and scoped firewall access,
   and verify each step. Handle Chrome's HTTP certificate-download warning with a verified local
   transfer path; explain Android's CA confirmation and record the outcome without treating it as
-  successful HTTPS trust. Preserve laptop-only play if the user declines.
+  successful HTTPS trust. Preserve laptop-only play if the user declines. The UI displays a scoped
+  firewall command and links Windows network settings; applying OS changes remains explicit.
 - [ ] **M0/M1: data and platform evidence.** Review every city connection, lane, color, train length,
   and all 30 tickets against the supported physical edition. Record reviewer/provenance. Supply
   measured route-cell geometry and board landmarks; retain the current unaudited status until done.
@@ -77,19 +96,19 @@ earlier; perform final release checks and package refresh after the narrative fe
   through a certificate warning. Verified laptop-side; **still needs the real-device runs** in
   [docs/companion-device-evidence.md](docs/companion-device-evidence.md), and the QR has never been
   scanned by a camera.
-- [ ] **M0/M2: companion.** Implement the embedded same-origin HTTPS/WSS host, protected per-laptop
-  certificate setup, local naming/pairing, controller/private-view grants, authorization and CSRF
-  validation, and versioned idempotent commands. Build the iOS/iPadOS/Android PWA with pass-and-hide,
-  shell-only caching, reconnect, update handling, and accessibility. Generate a connection QR on
-  the laptop and synchronize initial public data/snapshot directly from its local host after pairing;
+- [ ] **M0/M2: companion completion.** Extend the embedded HTTPS host and game PWA with the remaining
+  WSS/recovery/registry protocol and accessibility requirements. Keep the implemented certificate,
+  pairing, grants, CSRF, idempotent commands, shell-only cache and QR behavior covered by regression
+  tests. Synchronize public data/snapshots directly from the local host after pairing and
   handle changes during synchronization without losing events. Require no inputs or services outside
   the LAN, including during first setup. Prove QR setup, local certificate trust, and initial sync
   with WAN disconnected on real devices before claiming support. Android is testable throughout;
   iOS/iPadOS depends on a single borrowed-device session, so build the M0 connectivity spike as a
   standalone fifteen-minute checklist that a borrowed device can be taken through without the game
   UI (docs/companion-device-evidence.md).
-- [ ] **M3: camera.** Add WinRT high-resolution acquisition, bounded frame ownership, camera choice,
-  preview and quality checks, printable markers, board landmarks, calibration, and recording/replay.
+- [ ] **M3: camera completion.** Validate the implemented WinRT acquisition, bounded frame ownership,
+  camera choice, preview and manual crop against the real board. Add printable markers, board
+  landmarks, automatic calibration, detailed quality gates and recording/replay.
 - [ ] **M4: verification.** Implement whole-board recognition, authorized pending evidence,
   board-first human placement, occlusion/unknown foreground rejection, jog/reconnect recovery,
   stale-epoch rejection, wake gesture, and explicit mode-change reconciliation.
@@ -104,15 +123,15 @@ earlier; perform final release checks and package refresh after the narrative fe
   partial operations preserved, route-list guided reconstruction with whole-target attestation,
   and exactly-once resume. Verified by `PackAwayTests` and `PackAwayDurabilityTests`.
 - [ ] **M2/M4: persistence and pack away, remaining.** Add the geometry-based rebuild diagram, complete encrypted snapshots,
-  backup-before-migration, pinned images, verified board photographs and photo readback,
+  backup-before-migration, full evidence pinning and machine-verified board photographs,
   partial-operation (pending placement) targets, and current-checkpoint success receipts for the
   companion. Add correction branches and optional encrypted portable export/import.
 - [ ] Complete non-audio theme/high-contrast/screen-reader/keyboard work and adjustable privacy timing
   before the final narrative feature pass.
 - [ ] Implement and evaluate the specified Challenging AI sampled lookahead; current difficulty
   choices tune a heuristic. Keep opponent hands/deck state inaccessible and report strength honestly.
-- [ ] **M7: distribution.** Provide the self-contained x64 offline build and installer/ZIP, native
-  dependency smoke checks, license/asset notices and provenance, and documented upgrades/uninstall
+- [ ] **M7: distribution completion.** Validate the self-contained x64 ZIP on clean Windows, add an
+  installer, native dependency smoke checks, complete license/asset notice review and upgrades/uninstall
   that retain saves. Establish packaging before the final narrative pass, then refresh it with the
   finished audio assets. Re-run package advisories when preparing a release.
 - [ ] **M6: Training, voice/story/audio last.** After photographed save-and-rebuild works, implement
