@@ -62,6 +62,30 @@
                            Text="{Binding Table.RulesDecisionText}"
                            Visibility="{Binding Table.RulesDecisionText, Converter={StaticResource EmptyStringToVisibility}}" />
 
+                <!--
+                    DESIGN 6.4: the printed rules do not reach this position, so the house policy is
+                    shown in full and applied only when an operator accepts it. It is recorded in the
+                    journal with its version, and holds for the rest of the match.
+                -->
+                <Border Style="{StaticResource Panel}" Margin="0,10,0,0"
+                        Visibility="{Binding Table.RulesContinuation, Converter={StaticResource NullToVisibility}}">
+                    <StackPanel DataContext="{Binding Table.RulesContinuation}">
+                        <TextBlock FontWeight="SemiBold" FontSize="15" Text="{Binding Title}" />
+                        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0" Text="{Binding Why}" />
+                        <TextBlock Margin="0,8,0,0" Text="{Binding Effect}" />
+
+                        <CheckBox Margin="0,12,0,0"
+                                  IsChecked="{Binding DataContext.Table.RulesContinuationAccepted,
+                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                  Content="Apply this policy for the rest of the match." />
+
+                        <Button Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,10,0,0"
+                                Content="Continue with this policy"
+                                Command="{Binding DataContext.ResolveRulesDecisionCommand,
+                                          RelativeSource={RelativeSource AncestorType=UserControl}}" />
+                    </StackPanel>
+                </Border>
+
                 <TextBlock Margin="0,6,0,0" FontWeight="SemiBold" Foreground="{StaticResource Action.Primary}"
                            Text="{Binding Status}"
                            Visibility="{Binding Status, Converter={StaticResource EmptyStringToVisibility}}" />

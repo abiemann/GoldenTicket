@@ -135,6 +135,12 @@ public sealed class RulesHarness
     /// </summary>
     private bool _journalDescribesState = true;
 
+    /// <summary>
+    /// Declares that a fixture changed state in a way no journal event describes, so replay
+    /// assertions refuse to run rather than comparing against a journal that no longer matches.
+    /// </summary>
+    public void MarkJournalDiverged() => _journalDescribesState = false;
+
     /// <summary>Replays the recorded journal into a fresh state (DESIGN 7.2 invariant 12).</summary>
     public GameState Replay() =>
         GameReducer.Rebuild(TestManifest.Manifest, TestManifest.Catalog, _journal);

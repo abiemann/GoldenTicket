@@ -205,6 +205,9 @@ public static class GameReducer
         state.CurrentTurnAction = TurnAction.None;
         state.TrainCardsTakenThisTurn = 0;
 
+        // A turn completed with no action is a pass. A full round of them means play cannot go on.
+        state.ConsecutivePasses = e.Action == TurnAction.None ? state.ConsecutivePasses + 1 : 0;
+
         if (state.FinalRound is { } finalRound &&
             finalRound.RemainingTurnsBySeat.TryGetValue(e.SeatId, out var remaining) &&
             remaining > 0)
@@ -352,9 +355,15 @@ public static class GameReducer
         state.AcceptedRulesPolicies = state.AcceptedRulesPolicies.SetItem(e.Code, e.PolicyId);
         state.RulesDecision = null;
 
-        // The phase the pause interrupted is restored by the events the engine emits after this one.
+        // The turn counters survive the pause, so the phase it interrupted can be restored exactly:
+        // a seat part way through a draw still owes its second card.
         if (state.TurnPhase == TurnPhase.RulesDecisionRequired)
-            state.TurnPhase = TurnPhase.TurnStart;
+        {
+            state.TurnPhase =
+                state.CurrentTurnAction == TurnAction.DrawTrainCards && state.TrainCardsTakenThisTurn == 1
+                    ? TurnPhase.AwaitingSecondTrainCard
+                    : TurnPhase.TurnStart;
+        }
     }
 
     // ---- Save, pack away and rebuild (DESIGN 19.8) -------------------------------------------

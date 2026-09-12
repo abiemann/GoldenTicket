@@ -54,6 +54,11 @@ public sealed partial class TableViewModel : ObservableObject
     [ObservableProperty] private string? _finalRoundText;
     [ObservableProperty] private string? _rulesDecisionText;
 
+    /// <summary>The reviewed way forward for the paused position, when one exists (DESIGN 6.4).</summary>
+    [ObservableProperty] private RulesContinuation? _rulesContinuation;
+
+    [ObservableProperty] private bool _rulesContinuationAccepted;
+
     /// <summary>Set while a claim is waiting for its physical trains (DESIGN 4.5).</summary>
     [ObservableProperty] private PlacementInstruction? _placement;
     [ObservableProperty] private bool _wholeBoardAcknowledged;
@@ -114,6 +119,9 @@ public sealed partial class TableViewModel : ObservableObject
         RulesDecisionText = view.RulesDecision is { } decision
             ? $"Paused - {decision.Code}: {decision.Explanation}"
             : null;
+
+        RulesContinuation = view.RulesDecision is { } paused ? RulesContinuations.For(paused.Code) : null;
+        if (RulesContinuation is null) RulesContinuationAccepted = false;
 
         Seats.Clear();
         foreach (var seat in view.Seats)

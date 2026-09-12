@@ -156,6 +156,9 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
         // submissions and ordinary move inference are all refused.
         var isLifecycleCommand = IsLifecycleCommand(command);
 
+        // Accepting a continuation is the one command the rules pause exists to receive.
+        var isRulesResolution = command is ResolveRulesDecision;
+
         if (state.IsGameplaySuspended && !isLifecycleCommand)
         {
             return CommandResult.Reject("SessionSuspended",
@@ -169,7 +172,7 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
 
         // DESIGN 21.1: a rare unresolved supply state must still be savable, so the lifecycle
         // controls are allowed through the pause that blocks ordinary play.
-        if (state.TurnPhase == TurnPhase.RulesDecisionRequired && !isLifecycleCommand)
+        if (state.TurnPhase == TurnPhase.RulesDecisionRequired && !isLifecycleCommand && !isRulesResolution)
         {
             return CommandResult.Reject("RulesDecisionRequired",
                 state.RulesDecision?.Explanation ?? "The match is paused on an unresolved supply state.");
@@ -186,6 +189,7 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
             BeginBoardRebuild c => HandleBeginRebuild(context, c),
             AttestBoardRebuild c => HandleAttestRebuild(context, c),
             ResumePackedGame c => HandleResumePackedGame(context, c),
+            ResolveRulesDecision c => HandleResolveRulesDecision(context, c),
             CommitTicketSelection c => HandleTicketSelection(context, c),
             SelectTrainCard c => HandleSelectTrainCard(context, c),
             RequestTicketOffer c => HandleRequestTicketOffer(context, c),
@@ -195,6 +199,91 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
             ConfirmBeforeStateRestored c => HandleConfirmRestored(context, c),
             _ => CommandResult.Reject("UnknownCommand", $"{command.GetType().Name} is not a supported command."),
         };
+    }
+
+    private static bool HasAccepted(GameState state, string code) =>
+        state.AcceptedRulesPolicies.ContainsKey(code);
+
+    // ---- Rare supply states (DESIGN 6.4) ------------------------------------------------------
+
+    /// <summary>
+    /// Accepts the reviewed continuation for the paused position and carries play forward. The
+    /// acceptance holds for the rest of the match, so the same position does not stop play again.
+    /// </summary>
+    private CommandResult HandleResolveRulesDecision(TransitionContext context, ResolveRulesDecision command)
+    {
+        var state = context.State;
+
+        if (state.RulesDecision is not { } decision)
+            return CommandResult.Reject("NoRulesDecision", "The match is not paused on a rules decision.");
+
+        if (!string.Equals(decision.Code, command.Code, StringComparison.Ordinal))
+            return CommandResult.Reject("RulesDecisionMismatch", "That decision is not the one the match is paused on.");
+
+        if (RulesContinuations.For(command.Code) is not { } policy)
+        {
+            return CommandResult.Reject("NoReviewedPolicy",
+                "There is no reviewed way forward for this position yet. The match stays saved and paused.");
+        }
+
+        // Echoing the policy id back means an operator cannot accept a policy they were not shown.
+        if (!string.Equals(policy.PolicyId, command.PolicyId, StringComparison.Ordinal))
+            return CommandResult.Reject("PolicyMismatch", "That is not the policy offered for this position.");
+
+        if (string.IsNullOrWhiteSpace(command.Operator))
+            return CommandResult.Reject("OperatorMissing", "Accepting a rules policy must record who accepted it.");
+
+        context.Emit(new RulesDecisionResolved(
+            policy.Code, policy.PolicyId, RulesContinuations.PolicyVersion,
+            command.Operator.Trim(), _time.GetUtcNow()));
+
+        ContinueAfterRulesDecision(context, policy.Code);
+        return CommandResult.Accept(context.Events);
+    }
+
+    /// <summary>
+    /// Resumes whatever the pause interrupted. The turn counters survive the pause, so the engine
+    /// can tell a seat that still owes its second card from one whose draw had already finished.
+    /// </summary>
+    private void ContinueAfterRulesDecision(TransitionContext context, string code)
+    {
+        var state = context.State;
+        if (state.Lifecycle != SessionLifecycle.Active) return;
+
+        switch (code)
+        {
+            case RulesContinuations.NoLegalAction:
+                EndTurn(context, state.ActiveSeatId, TurnAction.None);
+                return;
+
+            case RulesContinuations.NoSelectableSecondDraw:
+                EndTurn(context, state.ActiveSeatId, TurnAction.DrawTrainCards);
+                return;
+
+            default:
+                // A market pause can interrupt a draw before its turn has finished.
+                if (state.CurrentTurnAction != TurnAction.DrawTrainCards) return;
+
+                if (state.TrainCardsTakenThisTurn >= Constants.TrainCardsPerDrawTurn)
+                {
+                    EndTurn(context, state.ActiveSeatId, TurnAction.DrawTrainCards);
+                    return;
+                }
+
+                if (SecondPickPossible(state)) return;   // the seat can still take its second card
+
+                if (HasAccepted(state, RulesContinuations.NoSelectableSecondDraw))
+                {
+                    EndTurn(context, state.ActiveSeatId, TurnAction.DrawTrainCards);
+                    return;
+                }
+
+                context.Emit(new RulesDecisionRaised(
+                    RulesContinuations.NoSelectableSecondDraw,
+                    "The first train card is saved, but no legal second card is available. " +
+                    "The match is paused until the depleted-supply policy is resolved."));
+                return;
+        }
     }
 
     /// <summary>The save, rebuild and resume controls, which the lifecycle gate lets through.</summary>
@@ -576,6 +665,12 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
             EndTurn(context, seat, TurnAction.DrawTrainCards);
         else if (!SecondPickPossible(state))
         {
+            if (HasAccepted(state, RulesContinuations.NoSelectableSecondDraw))
+            {
+                EndTurn(context, seat, TurnAction.DrawTrainCards);
+                return CommandResult.Accept(context.Events);
+            }
+
             context.Emit(new RulesDecisionRaised(
                 "NoSelectableSecondDraw",
                 "The first train card is saved, but no legal second card is available. " +
@@ -839,6 +934,14 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
             return;
         }
 
+        // DESIGN 6.4: the accepted pass policy must terminate. Once every seat has passed in a row,
+        // no seat can do anything at all, so the match is scored rather than circling the table.
+        if (state.ConsecutivePasses >= state.Seats.Length)
+        {
+            context.Emit(new FinalScoringCompleted(FinalScoring.Compute(state)));
+            return;
+        }
+
         var nextIndex = (state.ActiveSeatIndex + 1) % state.Seats.Length;
         context.Emit(new TurnStarted(state.Seats[nextIndex].SeatId, state.TurnNumber + 1));
         RaiseIfNoLegalAction(context);
@@ -851,6 +954,14 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
         var view = Projector.ProjectSeat(state, state.ActiveSeatId);
 
         if (LegalActionCalculator.For(view, Manifest).Any) return;
+
+        if (HasAccepted(state, RulesContinuations.NoLegalAction))
+        {
+            // The disclosed policy: this seat passes. EndTurn's consecutive-pass guard is what
+            // stops a table where nobody can act from circling forever.
+            EndTurn(context, state.ActiveSeatId, TurnAction.None);
+            return;
+        }
 
         context.Emit(new RulesDecisionRaised(
             "NoLegalAction",
@@ -875,6 +986,9 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
             var filled = state.FaceUp.Count(card => card is not null);
             if (filled < state.FaceUp.Count)
             {
+                // The accepted policy plays on with however many cards the supply can show.
+                if (HasAccepted(state, RulesContinuations.PartialMarketSupply)) return;
+
                 context.Emit(new RulesDecisionRaised(
                     "PartialMarketSupply",
                     $"Only {filled} of {state.FaceUp.Count} market slots can be filled. " +
@@ -892,6 +1006,9 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
                 .Count(card => Catalog.KindOf(card) != TrainCardKind.Locomotive);
             if (normalCards < state.FaceUp.Count - Constants.LocomotiveMarketResetThreshold + 1)
             {
+                // The accepted policy stops applying the reset rule for the rest of the match.
+                if (HasAccepted(state, RulesContinuations.MarketResetImpossible)) return;
+
                 context.Emit(new RulesDecisionRaised(
                     "MarketResetImpossible",
                     "The available train-card supply cannot form a market with fewer than " +
@@ -901,6 +1018,8 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
 
             if (reset >= MaximumMarketResets)
             {
+                if (HasAccepted(state, RulesContinuations.MarketResetUnstable)) return;
+
                 context.Emit(new RulesDecisionRaised(
                     "MarketResetUnstable",
                     $"The face-up market still held {locomotives} locomotives after {MaximumMarketResets} " +

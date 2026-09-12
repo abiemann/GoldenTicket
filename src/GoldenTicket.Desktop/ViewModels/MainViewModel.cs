@@ -426,6 +426,25 @@ public sealed partial class MainViewModel : ObservableObject
     private bool CanSubmitOperator() => !_operationInProgress && !_mustReload &&
         !NeedsBoardReconciliation && Screen == Screen.Table;
 
+    /// <summary>
+    /// Accepts the reviewed continuation for a paused supply position (DESIGN 6.4). The operator has
+    /// to tick the acknowledgement first, so a policy is never applied by a stray click.
+    /// </summary>
+    [RelayCommand]
+    public async Task ResolveRulesDecisionAsync()
+    {
+        if (_coordinator is null || Table.RulesContinuation is not { } policy) return;
+
+        if (!Table.RulesContinuationAccepted)
+        {
+            Status = "Read the policy and tick the box before applying it.";
+            return;
+        }
+
+        await SubmitLifecycleAsync(new ResolveRulesDecision(
+            _coordinator.NewEnvelope(), policy.Code, policy.PolicyId, Environment.UserName));
+    }
+
     // ---- Save, pack away and rebuild (DESIGN 4.10, 19.8) --------------------------------------
 
     /// <summary>

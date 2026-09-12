@@ -45,8 +45,11 @@ earlier; perform final release checks and package refresh after the narrative fe
 - [ ] **M0/M1: data and platform evidence.** Review every city connection, lane, color, train length,
   and all 30 tickets against the supported physical edition. Record reviewer/provenance. Supply
   measured route-cell geometry and board landmarks; retain the current unaudited status until done.
-- [ ] Resolve the documented rare supply rules with an explicit reviewed/versioned policy and
-  continuation UI. A safe saved pause prevents corruption but does not make these cases playable.
+- [x] **Rare supply rules resolved.** Each paused position now offers one reviewed, versioned
+  continuation the operator accepts explicitly; the acceptance is journalled with its policy version
+  and holds for the match. The pass policy terminates: a full round of passes goes to final scoring.
+  Documented in [docs/rules-policies.md](docs/rules-policies.md). Remaining: confirm each policy
+  against an official clarification where one exists, rather than shipping them as house policy.
 - [x] **M0: connectivity spike built.** `tools/GoldenTicket.ConnectivitySpike` generates a
   per-installation DPAPI-protected CA and a hostname/IP-matching leaf, serves a trusted same-origin
   HTTPS host bound to a chosen private interface, advertises `gt-<id>.local` over mDNS with an IP

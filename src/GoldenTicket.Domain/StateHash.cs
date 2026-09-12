@@ -28,7 +28,8 @@ public static class StateHash
     /// Strings are JSON escaped and dictionary entries are sorted, avoiding delimiter collisions
     /// and insertion-order differences. This contains referee secrets and must not enter public logs.
     /// </summary>
-    public static string Canonicalize(GameState state) => CanonicalizeCore(state) + PackAwaySuffix(state);
+    public static string Canonicalize(GameState state) =>
+        CanonicalizeCore(state) + PackAwaySuffix(state) + RulesPolicySuffix(state);
 
     /// <summary>
     /// The gameplay fingerprint: the same content, with lifecycle, the transaction counters and the
@@ -55,6 +56,20 @@ public static class StateHash
     /// Appended only when a save is in flight or committed, so a match that has never been packed
     /// away hashes exactly as it did before this state existed and older saves stay readable.
     /// </summary>
+    /// <summary>
+    /// Appended only once a continuation policy has been accepted or a seat has passed, so a match
+    /// that never met a rare supply state hashes exactly as it did before these existed.
+    /// </summary>
+    private static string RulesPolicySuffix(GameState state) =>
+        state.AcceptedRulesPolicies.IsEmpty && state.ConsecutivePasses == 0
+            ? string.Empty
+            : "\n" + JsonSerializer.Serialize(new
+            {
+                AcceptedRulesPolicies = state.AcceptedRulesPolicies
+                    .OrderBy(pair => pair.Key, StringComparer.Ordinal).ToArray(),
+                state.ConsecutivePasses,
+            });
+
     private static string PackAwaySuffix(GameState state) =>
         state.Checkpoint is null && state.PackAwayRequest is null &&
         !state.RebuildAttested && state.CheckpointFault is null
