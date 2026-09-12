@@ -6,7 +6,7 @@
 //
 // No game state, no private information, no persistence beyond the pairing cookie the laptop sets.
 
-const SHELL_CACHE = 'gt-spike-shell-v1';
+const SHELL_CACHE = 'gt-spike-shell-v2';
 
 const state = {
     secureContext: false,
@@ -16,8 +16,10 @@ const state = {
     shellCachedOffline: false,
     launchedStandalone: false,
     displayMode: 'browser',
+    embeddedBrowser: '',
     paired: false,
     sessionSurvivedReload: false,
+    pairAnyway: false,
 };
 
 function mark(id, ok, unknown) {
@@ -32,6 +34,11 @@ function mark(id, ok, unknown) {
 function detail(id, text) {
     const node = document.getElementById(id);
     if (node) node.textContent = text;
+}
+
+function show(id, visible) {
+    const node = document.getElementById(id);
+    if (node) node.hidden = !visible;
 }
 
 function currentDisplayMode() {
@@ -57,6 +64,10 @@ function isIosDevice() {
         (platform === 'MacIntel' && Number(navigator.maxTouchPoints || 0) > 1);
 }
 
+function isAndroidDevice() {
+    return /Android/i.test(String(navigator.userAgent || ''));
+}
+
 // An in-app browser cannot install a PWA and often cannot register a service worker, so a failure
 // here would be blamed on the laptop rather than on the app the link was opened inside.
 function embeddedBrowserName() {
@@ -68,6 +79,7 @@ function embeddedBrowserName() {
         [/LinkedInApp/i, 'LinkedIn'],
         [/Line\//i, 'LINE'],
         [/Snapchat/i, 'Snapchat'],
+        [/Pinterest/i, 'Pinterest'],
         [/\bGSA\//i, 'the Google app'],
     ];
 
@@ -80,6 +92,88 @@ function embeddedBrowserName() {
     }
     return null;
 }
+
+// The address a player should end up on, without any fragment or query. This is the only thing the
+// laptop's QR code carries (DESIGN 18.5), and the only thing worth copying between browsers.
+function landingAddress() {
+    return window.location.origin + window.location.pathname;
+}
+
+// Android's intent scheme hands a URL to Chrome specifically. There is no iOS equivalent, which is
+// why the iOS path below is written as instructions rather than a button.
+function androidChromeIntentUrl(address) {
+    const target = new URL(address);
+    if (!/^https?:$/.test(target.protocol)) throw new TypeError('The handoff target must be HTTP or HTTPS.');
+
+    target.hash = '';
+    const scheme = target.protocol.slice(0, -1);
+    return `intent://${target.host}${target.pathname}${target.search}` +
+        `#Intent;scheme=${scheme};package=com.android.chrome;end`;
+}
+
+async function copyAddress(button) {
+    const target = button.getAttribute('data-copy');
+    const address = landingAddress();
+
+    try {
+        await navigator.clipboard.writeText(address);
+        detail(target, 'Copied. Paste it into Chrome or Safari.');
+    } catch {
+        // Clipboard access needs a secure context and, in some browsers, a very recent tap. Selecting
+        // the text by hand always works.
+        detail(target, `Copying was refused. Press and hold ${address} to select and copy it.`);
+    }
+}
+
+// ---- The handoff gate ---------------------------------------------------------------------------
+
+function renderHandoff() {
+    for (const node of document.querySelectorAll('.address')) {
+        node.textContent = landingAddress();
+    }
+
+    if (!state.embeddedBrowser || state.launchedStandalone) {
+        show('handoff', false);
+        show('checks', true);
+        return;
+    }
+
+    show('handoff', true);
+    show('checks', false);
+
+    const open = document.getElementById('handoff-open');
+
+    if (isAndroidDevice()) {
+        detail('handoff-title', 'Open this in Chrome');
+        detail('handoff-message',
+            `This page was opened inside ${state.embeddedBrowser}. That browser cannot add an app to ` +
+            'the home screen, so the checks below would fail for a reason that has nothing to do with ' +
+            'the laptop.');
+        detail('handoff-instructions',
+            'Tap Open in Chrome. If it stays inside this app, use the app’s own menu and choose ' +
+            'Open in Chrome or Open in external browser.');
+
+        try {
+            open.href = androidChromeIntentUrl(landingAddress());
+            open.hidden = false;
+        } catch {
+            open.hidden = true;
+        }
+    } else {
+        detail('handoff-title', isIosDevice() ? 'Open this in Safari' : 'Open this in a real browser');
+        detail('handoff-message',
+            `This page was opened inside ${state.embeddedBrowser}. That browser cannot add an app to ` +
+            'the home screen, so the checks below would fail for a reason that has nothing to do with ' +
+            'the laptop.');
+        detail('handoff-instructions', isIosDevice()
+            ? 'Use this app’s menu or its Share control and choose Open in Safari. If neither ' +
+              'offers it, copy the address below and paste it into Safari.'
+            : 'Copy the address below and paste it into Chrome or Safari.');
+        open.hidden = true;
+    }
+}
+
+// ---- The four questions --------------------------------------------------------------------------
 
 async function checkConnection() {
     state.secureContext = window.isSecureContext === true;
@@ -127,19 +221,39 @@ async function checkInstallation() {
     mark('check-standalone', state.launchedStandalone);
 
     if (!document.getElementById('display-detail').textContent) {
-        const embedded = embeddedBrowserName();
-        if (embedded && !state.launchedStandalone) {
-            detail('display-detail',
-                `This page was opened inside ${embedded}. Open it in Safari or Chrome instead: ` +
-                'an in-app browser cannot install a home-screen app.');
-        } else if (isIosDevice() && !state.launchedStandalone) {
-            detail('display-detail',
-                'Display mode: browser. On iPhone or iPad use Share → Add to Home Screen, ' +
-                'then open it from there and run these checks again.');
-        } else {
-            detail('display-detail', `Display mode: ${state.displayMode}`);
-        }
+        detail('display-detail', `Display mode: ${state.displayMode}`);
     }
+
+    detail('install-instructions', installInstructions());
+}
+
+function installInstructions() {
+    if (state.launchedStandalone) return 'Installed and launched from the home screen. Pair here.';
+
+    if (state.embeddedBrowser) {
+        return `This page is running inside ${state.embeddedBrowser}, which cannot install an app. ` +
+            'Open it in Chrome or Safari first.';
+    }
+
+    if (isIosDevice()) {
+        return 'iPhone and iPad: tap Share, then Add to Home Screen. Close this tab, open the new ' +
+            'icon from the home screen, and carry on there. Safari and the installed app do not ' +
+            'share cookies, so pairing has to happen in the installed app.';
+    }
+
+    if (isAndroidDevice()) {
+        return 'Android: accept the install prompt, or open the browser menu and choose Install app ' +
+            'or Add to Home screen. Then open the new icon and carry on there.';
+    }
+
+    return 'Use the browser’s install control, usually in or beside the address bar, then open ' +
+        'the installed app and carry on there.';
+}
+
+function renderPairGate() {
+    const blocked = !state.launchedStandalone && !state.pairAnyway;
+    show('pair-blocked', blocked);
+    show('pair-area', !blocked);
 }
 
 async function checkSession() {
@@ -204,6 +318,7 @@ async function send() {
         shellCachedOffline: state.shellCachedOffline,
         displayMode: state.displayMode,
         launchedStandalone: state.launchedStandalone,
+        embeddedBrowser: state.embeddedBrowser,
         sessionSurvivedReload: state.sessionSurvivedReload,
         notes: document.getElementById('notes').value,
     };
@@ -226,13 +341,33 @@ async function send() {
 }
 
 async function runChecks() {
+    // Detected first: the installation guidance below reads it, and a page opened inside another
+    // app needs to say so rather than offering an install control that browser does not have.
+    state.embeddedBrowser = embeddedBrowserName() || '';
+
     await checkConnection();
     await checkInstallation();
+    renderHandoff();
+    renderPairGate();
     await checkSession();
+}
+
+for (const button of document.querySelectorAll('button[data-copy]')) {
+    button.addEventListener('click', () => copyAddress(button));
 }
 
 document.getElementById('pair-form').addEventListener('submit', pair);
 document.getElementById('recheck').addEventListener('click', runChecks);
 document.getElementById('send').addEventListener('click', send);
+
+document.getElementById('handoff-continue').addEventListener('click', () => {
+    show('handoff', false);
+    show('checks', true);
+});
+
+document.getElementById('pair-anyway').addEventListener('click', () => {
+    state.pairAnyway = true;
+    renderPairGate();
+});
 
 runChecks();

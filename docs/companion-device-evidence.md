@@ -55,6 +55,7 @@ Run this repeatedly during development; it is the platform with routine access.
 | # | Step | Pass condition |
 |---|---|---|
 | A1 | Join laptop and device to the same private Wi-Fi, WAN unplugged | Both on the same subnet |
+| A0 | **Scan the QR on the laptop console with the phone's own camera** | The camera offers the bootstrap address and opens it. This is the acceptance test for the locally generated symbol; nothing else proves it |
 | A2 | Install the laptop's generated CA on the device | Certificate appears under user credentials |
 | A3 | Open the laptop origin in Chrome | Padlock shown, **no** interstitial, no bypass used |
 | A4 | Check secure-context status on the page | `window.isSecureContext === true` |
@@ -64,10 +65,17 @@ Run this repeatedly during development; it is the platform with routine access.
 | A8 | Install / Add to Home Screen | Launches standalone, or the shortcut fallback is recorded honestly |
 | A9 | Pair inside the launched context | Pairing code accepted; laptop confirms the same identity |
 | A10 | Background, lock, return | View resumes **covered**; a fresh private-view grant is required |
+| A11 | Open the address from inside a messaging app (paste it into a chat to yourself, tap it) | The handoff gate appears instead of the checks, and **Open in Chrome** leaves the in-app browser |
 
 Known Android risk: `.local` name resolution is historically weaker than on iOS. If A5 needs the IP
 fallback, that is a finding to record, not a workaround to hide — DESIGN §18.5 requires the
 IP-origin caveat to be explained to the user.
+
+A0 is listed first because it is the cheapest thing to get wrong. The QR encoder is written here
+rather than taken from a package (DESIGN §18.3 requires the generation code to be bundled, with no
+redirect service), and although it is checked against the standard's published capacity, format,
+version and alignment tables and read back with a Reed-Solomon syndrome check, and although an
+independent decoder reads every symbol correctly, none of that is a phone camera.
 
 ## iOS / iPadOS checklist (borrowed device, one session)
 
@@ -86,6 +94,8 @@ arrives: server running, CA export ready, pairing screen open, this file printed
 | I8 | **Pair inside the home-screen app**, not the Safari tab | Pairing succeeds there. DESIGN §18.5 step 5 warns not to assume the tab and the home-screen app share cookies or storage — this line is the whole reason to check |
 | I9 | Background / task switcher / return | Resumes covered; fresh grant required |
 | I10 | Reopen after the laptop restarts | Reconnect guidance; no stale private data |
+| I11 | Scan the laptop QR with the iOS camera | The camera offers the bootstrap address and opens it in Safari |
+| I12 | Open the address from inside a messaging app | The handoff gate appears with Safari share-sheet instructions, and the copy-address button works |
 
 If the session runs short, I2, I6 and I8 are the three that cannot be inferred from Android and
 must not be skipped.
@@ -96,13 +106,22 @@ must not be skipped.
 dotnet run --project tools/GoldenTicket.ConnectivitySpike -- --address <laptop private IP>
 ```
 
-It prints the origin, the CA fingerprint to compare aloud, and a pairing code. Keys while it runs:
-`n` new pairing code, `b` close the certificate bootstrap, `a` re-announce the local name,
-`s` save a report, `q` quit. A report is written to `docs/evidence/m0-connectivity/` on exit either
-way.
+It prints the origin, the CA fingerprint to compare aloud, a pairing code, and a QR code for the
+address the device should land on next. Keys while it runs: `n` new pairing code, `b` close the
+certificate bootstrap, `a` re-announce the local name, `c` redraw the connection QR, `s` save a
+report, `q` quit. A report is written to `docs/evidence/m0-connectivity/` on exit either way.
 
-Useful switches: `--port` and `--bootstrap-port` if something else holds 8443 or 8080, and
-`--no-mdns` to force the IP fallback and see what a device does without the `.local` name.
+The QR carries **only** the landing address, never the pairing code (DESIGN §18.5), so a photograph
+of the laptop screen gives nothing away on its own. While the certificate bootstrap is open the
+symbol points at `http://<ip>:8080/`; pressing `b` closes the bootstrap and redraws it pointing at
+the trusted HTTPS origin.
+
+Useful switches: `--port` and `--bootstrap-port` if something else holds 8443 or 8080, `--no-mdns`
+to force the IP fallback and see what a device does without the `.local` name, and `--qr <text>` to
+draw one symbol and exit — worth running before a borrowed-device session to confirm the console's
+font and window size produce something a camera can actually read. If the printed symbol will not
+scan, the console also writes a larger one to
+`%LOCALAPPDATA%\GoldenTicket\companion-host\connect\connect.svg`, which any browser will open.
 
 If the phone cannot reach the laptop, the console prints the exact `netsh` rule to allow the ports
 on the **private** profile only. The spike never changes the firewall itself.
@@ -119,6 +138,8 @@ on the **private** profile only. The spike never changes the firewall itself.
 | Layer | State |
 |---|---|
 | Laptop side | **Works.** Verified on this machine: the generated chain validates by name and by IP with no bypass, the bootstrap serves only the public CA, an unknown `Host` is refused with 421, a cross-origin or header-less POST is refused with 403, API responses are `no-store`, the shell is served under a same-origin CSP, and the pairing round-trip issues an HttpOnly/Secure cookie that a later request recognises. mDNS advertisement started. |
+| Connection QR | **Generated and read back.** Capacity counted from the symbol's own geometry agrees with the standard's published table for every version and level; the format and version bit strings are computed from their BCH generators and match the published constants; every symbol decodes to the text it encodes with a clean Reed-Solomon syndrome, and an independent decoder reads the four real landing addresses correctly. **Never scanned by a camera** — see checklist line A0. |
+| Handoff and install order | **Behaviour verified in a desktop browser** against simulated user agents for eight in-app browsers and for real Chrome and Safari, at a 375-pixel viewport. Not verified on a phone. |
 | Android | Not run. |
 | iOS/iPadOS | Not run, and no device available. |
 

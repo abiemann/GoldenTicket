@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using GoldenTicket.ConnectivitySpike;
+using GoldenTicket.ConnectivitySpike.Connect;
 using GoldenTicket.ConnectivitySpike.Networking;
 using GoldenTicket.ConnectivitySpike.Pairing;
 using GoldenTicket.ConnectivitySpike.Security;
@@ -24,6 +26,24 @@ var options = SpikeOptions.Parse(args);
 if (options.ShowHelp)
 {
     SpikeOptions.PrintUsage();
+    return 0;
+}
+
+// The connection QR is drawn with block characters, which need a UTF-8 console.
+try
+{
+    Console.OutputEncoding = Encoding.UTF8;
+}
+catch (IOException)
+{
+    // No console attached; the SVG file and the typed address still work.
+}
+
+// A way to see whether this console can render a scannable symbol at all, before a borrowed device
+// is sitting in front of it. It touches no network.
+if (options.QrProbe is not null)
+{
+    PrintConnectionQr(options.QrProbe, Path.Combine(LocalCertificateAuthority.DefaultDirectory, "connect"));
     return 0;
 }
 
@@ -182,7 +202,7 @@ app.MapGet("/api/spike/session", (HttpContext context) =>
 
 app.MapPost("/api/spike/pair", async (HttpContext context, PairRequest request) =>
 {
-    var result = pairing.Redeem(request.Code, request.Label);
+    var result = pairing.Redeem(request.Code, request.Label ?? "");
 
     if (result.Outcome != PairingOutcome.Paired)
         return Results.Ok(new { paired = false, message = result.Message });
@@ -214,6 +234,7 @@ app.MapPost("/api/spike/report", (HttpContext context, DeviceReportRequest reque
         request.ShellCachedOffline,
         Truncate(request.DisplayMode, 30),
         request.LaunchedStandalone,
+        Truncate(request.EmbeddedBrowser, 40),
         pairing.IsPaired(context.Request.Cookies["gt_spike_device"]),
         request.SessionSurvivedReload,
         Truncate(request.Notes, 500));
@@ -260,8 +281,14 @@ while (running)
             {
                 await bootstrap.StopAsync();
                 bootstrapOpen = false;
-                Console.WriteLine("\n  certificate bootstrap closed.");
+                Console.WriteLine("\n  certificate bootstrap closed. The connection QR now points at the");
+                Console.WriteLine("  trusted origin instead:");
+                PrintConnectionQr(LandingAddress(), Path.Combine(LocalCertificateAuthority.DefaultDirectory, "connect"));
             }
+            break;
+
+        case 'c':
+            PrintConnectionQr(LandingAddress(), Path.Combine(LocalCertificateAuthority.DefaultDirectory, "connect"));
             break;
 
         case 'a':
@@ -298,6 +325,15 @@ return 0;
 
 // ---- Helpers ------------------------------------------------------------------------------------------
 
+// DESIGN 18.5: the address the device should land on next. Before the certificate has been
+// transferred that is the plain-HTTP bootstrap, because the device cannot yet trust anything else;
+// afterwards it is the stable HTTPS origin, by name when the name is being advertised.
+string LandingAddress() => bootstrapOpen
+    ? $"http://{selected.Address}:{options.BootstrapPort}/"
+    : mdnsStarted
+        ? $"https://{material.Hostname}:{options.HttpsPort}/"
+        : $"https://{selected.Address}:{options.HttpsPort}/";
+
 void PrintBanner()
 {
     Console.WriteLine();
@@ -318,15 +354,51 @@ void PrintBanner()
         ? $"  certificate  http://{selected.Address}:{options.BootstrapPort}/  (open this first, then press b)"
         : "  certificate  bootstrap closed");
     Console.WriteLine();
-    Console.WriteLine($"  pairing code {Spaced(pairing.CurrentCode ?? code)}");
+    Console.WriteLine($"  pairing code {Spaced(pairing.CurrentCode ?? code)}   (type this on the device; it is");
+    Console.WriteLine("               never in the QR, and it is single-use)");
     Console.WriteLine();
     Console.WriteLine("  If the phone cannot reach the laptop, allow the port through the firewall for");
     Console.WriteLine("  the private network only, in an elevated prompt:");
     Console.WriteLine($"    netsh advfirewall firewall add rule name=\"GoldenTicket spike\" dir=in action=allow \\");
     Console.WriteLine($"      protocol=TCP localport={options.HttpsPort},{options.BootstrapPort} profile=private");
     Console.WriteLine();
-    Console.WriteLine("  keys:  n new code   b close bootstrap   a re-announce   s save report   ? help   q quit");
+    Console.WriteLine("  keys:  n new code   b close bootstrap   a re-announce   c connection QR");
+    Console.WriteLine("         s save report   ? help   q quit");
     Console.WriteLine(new string('=', 60));
+
+    PrintConnectionQr(LandingAddress(), Path.Combine(LocalCertificateAuthority.DefaultDirectory, "connect"));
+}
+
+// The "Connect phone or tablet" view of DESIGN 18.5: a locally generated QR, the same address as
+// readable text, and nothing else. The QR carries no pairing code and no game state.
+static void PrintConnectionQr(string address, string directory)
+{
+    QrCode symbol;
+    try
+    {
+        symbol = QrCode.Encode(address);
+    }
+    catch (ArgumentException exception)
+    {
+        Console.WriteLine($"  No QR for {address}: {exception.Message}");
+        return;
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("  Point the phone's camera at this. It only opens the page below.");
+    Console.WriteLine();
+
+    var printed = QrRenderer.TryWriteToConsole(symbol, Console.Out);
+    var file = QrRenderer.TryWriteSvg(symbol, address, directory);
+
+    Console.WriteLine();
+    Console.WriteLine($"  or type it:  {address}");
+
+    if (!printed)
+        Console.WriteLine("  This console cannot draw the symbol; open the file below instead.");
+
+    if (file is not null)
+        Console.WriteLine($"  larger:      {file}");
 }
 
 static string Spaced(string value) =>
@@ -386,16 +458,22 @@ static WebApplication BuildBootstrap(SpikeOptions options, LocalTrustMaterial ma
         <title>GoldenTicket certificate</title>
         <style>
           body { font: 16px/1.5 system-ui, sans-serif; margin: 0; padding: 24px;
-                 background: #F1E7D2; color: #33271F; }
+                 background: #F1E7D2; color: #33271F; max-width: 640px; }
           h1 { color: #7A241C; font-size: 22px; }
+          h2 { color: #7A241C; font-size: 17px; margin-top: 26px; }
           a.button { display: inline-block; background: #7A241C; color: #FBF6EA; padding: 14px 20px;
                      border-radius: 4px; text-decoration: none; font-weight: 600; margin: 12px 0; }
-          code { background: #E4D3AF; padding: 2px 5px; border-radius: 3px; word-break: break-all; }
+          code { background: #E4D3AF; padding: 2px 5px; border-radius: 3px; word-break: break-all;
+                 -webkit-user-select: all; user-select: all; }
+          .warn { padding: 10px 12px; background: #E4D3AF; border-left: 4px solid #7A241C;
+                  border-radius: 3px; }
           ol { padding-left: 22px; } li { margin-bottom: 10px; }
         </style></head><body>
         <h1>Trust this laptop</h1>
         <p>This page is plain HTTP on purpose: your device cannot trust the certificate it has not
         installed yet. Nothing private is served here, and this page closes after setup.</p>
+
+        <h2>1 &middot; Install the certificate</h2>
         <p><a class="button" href="/ca.crt">Download the certificate</a></p>
         <p>Check this fingerprint matches the laptop screen before trusting it:</p>
         <p><code>{{WebUtility.HtmlEncode(material.AuthorityFingerprint)}}</code></p>
@@ -404,10 +482,24 @@ static WebApplication BuildBootstrap(SpikeOptions options, LocalTrustMaterial ma
           Settings &rarr; General &rarr; About &rarr; Certificate Trust Settings and turn
           <b>on</b> full trust for this certificate. Installing alone is not enough.</li>
           <li><b>Android:</b> install it as a <i>CA certificate</i> in the security settings.</li>
-          <li>Then open <code>https://{{WebUtility.HtmlEncode(material.Hostname)}}:{{options.HttpsPort}}</code>
-          and check there is no warning. If the name does not resolve, use
-          <code>https://{{address}}:{{options.HttpsPort}}</code>.</li>
         </ol>
+
+        <h2>2 &middot; Open the trusted address</h2>
+        <p><code>https://{{WebUtility.HtmlEncode(material.Hostname)}}:{{options.HttpsPort}}/</code></p>
+        <p>If that name does not resolve, use
+        <code>https://{{address}}:{{options.HttpsPort}}/</code> instead.</p>
+        <p class="warn"><b>Do not tap through a warning.</b> If the browser offers
+        &ldquo;Advanced&rdquo;, &ldquo;Proceed anyway&rdquo; or &ldquo;Visit this website&rdquo;,
+        stop. The certificate is not trusted yet, and continuing past the warning hides that rather
+        than fixing it. Go back to step 1 instead.</p>
+        <p>Open that address in <b>Chrome or Safari</b>, not inside a messaging app's browser: an
+        in-app browser usually cannot install a home-screen app.</p>
+
+        <h2>3 &middot; Install to the home screen, then pair</h2>
+        <p>Add the page to the home screen and open it from there <i>before</i> typing the pairing
+        code. A browser tab and the installed app keep separate cookies, so a code spent in a tab can
+        leave the installed app unpaired. The pairing code is shown on the laptop and is never part
+        of the QR code.</p>
         </body></html>
         """, "text/html; charset=utf-8"));
 
@@ -429,6 +521,7 @@ internal sealed record DeviceReportRequest(
     bool ShellCachedOffline,
     string? DisplayMode,
     bool LaunchedStandalone,
+    string? EmbeddedBrowser,
     bool SessionSurvivedReload,
     string? Notes);
 
@@ -437,6 +530,7 @@ internal sealed record SpikeOptions(
     int BootstrapPort,
     string? PreferredAddress,
     bool DisableMulticastDns,
+    string? QrProbe,
     bool ShowHelp)
 {
     public static SpikeOptions Parse(string[] args)
@@ -460,6 +554,7 @@ internal sealed record SpikeOptions(
             Read("--bootstrap-port", 8080),
             ReadText("--address"),
             args.Contains("--no-mdns"),
+            ReadText("--qr"),
             args.Contains("--help") || args.Contains("-h"));
     }
 
@@ -470,6 +565,8 @@ internal sealed record SpikeOptions(
           --bootstrap-port <n>  plain-HTTP certificate transfer port (default 8080)
           --address <ip>        which private address to serve on; prompts if omitted
           --no-mdns             do not advertise the .local name, to test the IP fallback
+          --qr <text>           draw one QR symbol and exit, to check this console can render a
+                                scannable one; touches no network
           --help                this text
 
         Proves trusted local HTTPS, local-origin resolution, offline installation and pairing on a

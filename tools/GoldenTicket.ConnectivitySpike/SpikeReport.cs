@@ -38,6 +38,9 @@ public sealed record DeviceObservation(
     bool ShellCachedOffline,
     string DisplayMode,
     bool LaunchedStandalone,
+    /// <summary>The in-app browser the page was opened inside, or empty for a real browser. A run
+    /// from inside one explains an installation failure that is not the laptop's fault.</summary>
+    string EmbeddedBrowser,
     bool Paired,
     bool SessionSurvivedReload,
     string? Notes);

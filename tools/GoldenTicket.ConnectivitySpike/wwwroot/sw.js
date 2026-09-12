@@ -5,7 +5,7 @@
 // spike at all, and this file stays that way so the behaviour observed on a device is the behaviour
 // the real companion will have.
 
-const SHELL_CACHE = 'gt-spike-shell-v1';
+const SHELL_CACHE = 'gt-spike-shell-v2';
 
 const SHELL = [
     './',

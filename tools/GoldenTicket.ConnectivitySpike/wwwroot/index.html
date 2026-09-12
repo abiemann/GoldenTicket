@@ -21,6 +21,11 @@
   be changed and reloaded during a borrowed-device session; the real companion uses the TypeScript
   and Vite pipeline from DESIGN 17.1.
 
+  The order of the sections is the order DESIGN 18.5 requires: trust the laptop, land in a real
+  browser, install to the home screen, and only then pair. Pairing last matters because a browser tab
+  and a home-screen app do not reliably share cookies, so a code redeemed in the wrong place is spent
+  for nothing.
+
   There is no game state here, and nothing private is ever shown.
 -->
 
@@ -31,65 +36,104 @@
 </header>
 
 <main>
-  <section class="card">
-    <h2>1 &middot; Trusted connection</h2>
-    <ul class="checks">
-      <li id="check-secure"><span class="mark">…</span><span>Secure context</span></li>
-      <li id="check-origin"><span class="mark">…</span><span>Reached the laptop</span></li>
-      <li id="check-name"><span class="mark">…</span><span>Reached it by name, not by IP address</span></li>
-    </ul>
-    <p class="detail" id="origin-detail"></p>
-    <p class="muted">If your browser showed a warning to get here, this check has <b>failed</b>,
-       even if the page loaded. Do not bypass it.</p>
+
+  <!-- Shown only when the page was opened inside another app's browser, which usually cannot
+       install a home-screen app and sometimes cannot register a service worker at all. -->
+  <section class="card gate" id="handoff" hidden>
+    <h2 id="handoff-title">Open this in a real browser</h2>
+    <p id="handoff-message"></p>
+    <p><a class="button primary" id="handoff-open" href="#" hidden>Open in Chrome</a></p>
+    <p id="handoff-instructions"></p>
+    <button type="button" class="secondary" data-copy="handoff-copy-detail">Copy this address</button>
+    <p class="detail"><code class="address"></code></p>
+    <p class="detail" id="handoff-copy-detail"></p>
+    <p><button type="button" class="link" id="handoff-continue">Run the checks here anyway</button></p>
   </section>
 
-  <section class="card">
-    <h2>2 &middot; Installation</h2>
-    <ul class="checks">
-      <li id="check-sw-support"><span class="mark">…</span><span>Service workers supported</span></li>
-      <li id="check-sw"><span class="mark">…</span><span>Service worker registered</span></li>
-      <li id="check-cache"><span class="mark">…</span><span>Shell cached for offline use</span></li>
-      <li id="check-standalone"><span class="mark">…</span><span>Launched from the home screen</span></li>
-    </ul>
-    <p class="detail" id="display-detail"></p>
-    <p class="muted"><b>iPhone / iPad:</b> Share &rarr; Add to Home Screen, then open it from there
-       and run this page again. <b>Android:</b> use the install prompt or the browser menu.</p>
-  </section>
+  <div id="checks">
 
-  <section class="card">
-    <h2>3 &middot; Pairing</h2>
-    <p class="muted">Type the code shown on the laptop. Do this <b>inside the home-screen app</b>,
-       not the browser tab: they may not share cookies.</p>
-    <form id="pair-form" autocomplete="off">
-      <label for="code">Pairing code</label>
-      <input id="code" name="code" inputmode="numeric" pattern="[0-9 ]*" maxlength="9"
-             placeholder="0000 0000" required>
-      <label for="label">Which device is this?</label>
-      <input id="label" name="label" maxlength="40" placeholder="Alex's phone">
-      <button type="submit" class="primary">Pair with the laptop</button>
-    </form>
-    <p class="detail" id="pair-detail"></p>
-    <ul class="checks">
-      <li id="check-paired"><span class="mark">…</span><span>Paired</span></li>
-      <li id="check-session"><span class="mark">…</span><span>Session survived a reload</span></li>
-    </ul>
-  </section>
+    <section class="card">
+      <h2>1 &middot; Trusted connection</h2>
+      <ul class="checks">
+        <li id="check-secure"><span class="mark">…</span><span>Secure context</span></li>
+        <li id="check-origin"><span class="mark">…</span><span>Reached the laptop</span></li>
+        <li id="check-name"><span class="mark">…</span><span>Reached it by name, not by IP address</span></li>
+      </ul>
+      <p class="detail" id="origin-detail"></p>
+      <p class="warn"><b>Do not tap through a warning.</b> If the browser offered “Advanced”,
+         “Proceed anyway”, “Show details” or “Visit this website”, stop and go back. The laptop's
+         certificate has not been trusted properly yet, and tapping through hides that instead of
+         fixing it. Install the certificate from the laptop's setup page first, then return here and
+         reload. On iPhone and iPad, installing the profile is only half of it: turn the certificate
+         <b>on</b> in Settings &rarr; General &rarr; About &rarr; Certificate Trust Settings.</p>
+    </section>
 
-  <section class="card">
-    <h2>4 &middot; Offline</h2>
-    <p class="muted">Turn the laptop's Wi-Fi router off the internet, or stop the laptop program,
-       then reload this page. It should still appear from the cache.</p>
-    <button type="button" id="recheck" class="secondary">Run the checks again</button>
-  </section>
+    <section class="card">
+      <h2>2 &middot; Install to the home screen</h2>
+      <p class="muted">Do this <b>before</b> pairing. A browser tab and the installed app keep
+         separate cookies and storage, so a pairing code spent in a tab can leave the installed app
+         still unpaired.</p>
+      <ul class="checks">
+        <li id="check-sw-support"><span class="mark">…</span><span>Service workers supported</span></li>
+        <li id="check-sw"><span class="mark">…</span><span>Service worker registered</span></li>
+        <li id="check-cache"><span class="mark">…</span><span>Shell cached for offline use</span></li>
+        <li id="check-standalone"><span class="mark">…</span><span>Launched from the home screen</span></li>
+      </ul>
+      <p class="detail" id="display-detail"></p>
+      <p class="muted" id="install-instructions"></p>
+      <button type="button" class="secondary" data-copy="install-copy-detail">Copy this address</button>
+      <p class="detail"><code class="address"></code></p>
+      <p class="detail" id="install-copy-detail"></p>
+    </section>
 
-  <section class="card">
-    <h2>Send the result</h2>
-    <label for="notes">Anything that went wrong</label>
-    <textarea id="notes" rows="3" maxlength="500"
-              placeholder="e.g. Safari refused the name until the certificate was fully trusted"></textarea>
-    <button type="button" id="send" class="primary">Send this to the laptop</button>
-    <p class="detail" id="send-detail"></p>
-  </section>
+    <section class="card">
+      <h2>3 &middot; Pairing</h2>
+
+      <div id="pair-blocked" hidden>
+        <p class="warn"><b>Install first.</b> This is still a browser tab, so a code redeemed here
+           may not carry into the home-screen app. Finish step 2, open the app from the home screen,
+           and pair there.</p>
+        <p><button type="button" class="link" id="pair-anyway">Pair here anyway, to see what
+           happens</button></p>
+      </div>
+
+      <div id="pair-area">
+        <p class="muted">Type the code shown on the laptop. It is single-use and short-lived, and it
+           is never part of the QR code.</p>
+        <form id="pair-form" autocomplete="off">
+          <label for="code">Pairing code</label>
+          <input id="code" name="code" inputmode="numeric" pattern="[0-9 ]*" maxlength="9"
+                 placeholder="0000 0000" required>
+          <label for="label">Which device is this?</label>
+          <input id="label" name="label" maxlength="40" placeholder="Alex's phone">
+          <button type="submit" class="primary">Pair with the laptop</button>
+        </form>
+      </div>
+
+      <p class="detail" id="pair-detail"></p>
+      <ul class="checks">
+        <li id="check-paired"><span class="mark">…</span><span>Paired</span></li>
+        <li id="check-session"><span class="mark">…</span><span>Session survived a reload</span></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>4 &middot; Offline</h2>
+      <p class="muted">Turn the laptop's Wi-Fi router off the internet, or stop the laptop program,
+         then reload this page. It should still appear from the cache.</p>
+      <button type="button" id="recheck" class="secondary">Run the checks again</button>
+    </section>
+
+    <section class="card">
+      <h2>Send the result</h2>
+      <label for="notes">Anything that went wrong</label>
+      <textarea id="notes" rows="3" maxlength="500"
+                placeholder="e.g. Safari refused the name until the certificate was fully trusted"></textarea>
+      <button type="button" id="send" class="primary">Send this to the laptop</button>
+      <p class="detail" id="send-detail"></p>
+    </section>
+
+  </div>
 </main>
 
 <script src="app.js"></script>

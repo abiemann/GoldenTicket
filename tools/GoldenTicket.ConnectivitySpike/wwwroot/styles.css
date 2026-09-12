@@ -18,6 +18,9 @@
 
 * { box-sizing: border-box; }
 
+/* Several rules below set a display, which would otherwise defeat the hidden attribute. */
+[hidden] { display: none !important; }
+
 body {
     margin: 0;
     padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
@@ -107,10 +110,60 @@ button {
     cursor: pointer;
 }
 
-button.primary { background: var(--burgundy); color: var(--paper); }
+button.primary, a.button.primary { background: var(--burgundy); color: var(--paper); }
 button.secondary { background: var(--paper); color: var(--rail-blue); border-color: var(--rail-blue); }
 
 button:active { border-width: 2px; }
+
+/* The handoff button is an anchor, because only a real navigation reaches Android's intent scheme. */
+a.button {
+    display: block;
+    width: 100%;
+    min-height: 48px;
+    padding: 12px 18px;
+    font-weight: 600;
+    text-align: center;
+    text-decoration: none;
+    border: 1px solid var(--ink);
+    border-radius: 4px;
+}
+
+/* An escape hatch, not a route: it must be reachable but must not compete with the real action. */
+button.link {
+    width: auto;
+    min-height: 48px;
+    margin: 0;
+    padding: 12px 0;
+    background: none;
+    border: none;
+    color: var(--rail-blue);
+    font-weight: 400;
+    text-align: left;
+    text-decoration: underline;
+}
+
+/* The gate replaces the page rather than sitting above it, so it is drawn to be read first. */
+.card.gate { border-width: 2px; border-color: var(--burgundy); }
+
+.warn {
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    font-size: 14px;
+    background: var(--aged-paper);
+    border-left: 4px solid var(--burgundy);
+    border-radius: 3px;
+}
+
+code {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 14px;
+    background: var(--aged-paper);
+    padding: 3px 6px;
+    border-radius: 3px;
+    word-break: break-all;
+    -webkit-user-select: all;
+    user-select: all;
+}
 
 @media (prefers-reduced-motion: reduce) {
     * { animation: none !important; transition: none !important; }
