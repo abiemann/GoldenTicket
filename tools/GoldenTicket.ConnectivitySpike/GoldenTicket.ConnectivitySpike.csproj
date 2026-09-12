@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    DESIGN 23 M0: a feasibility probe, not the product's companion host. It answers the four
+    questions DESIGN 22.7 says must be settled on real devices before substantial companion UI work:
+    trusted local HTTPS, local-origin resolution, offline installation, and a pairing round-trip in
+    the final launched context. It deliberately contains no game state, no private views and no
+    game commands. What it proves moves into src/GoldenTicket.CompanionHost during M2.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Windows-targeted: the per-installation private keys are protected with DPAPI. -->
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.22000.0</SupportedOSPlatformVersion>
+    <RootNamespace>GoldenTicket.ConnectivitySpike</RootNamespace>
+    <AssemblyName>GoldenTicket.ConnectivitySpike</AssemblyName>
+    <UserSecretsId>goldenticket-connectivity-spike</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
+  </ItemGroup>
+
+  <!-- The tests check the DNS wire format directly rather than over a live socket. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="GoldenTicket.Domain.Tests" />
+  </ItemGroup>
+
+  <!-- Copy the shell beside the binaries so the spike also runs from a published folder, not just
+       from the project directory during development. -->
+  <ItemGroup>
+    <Content Update="wwwroot\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

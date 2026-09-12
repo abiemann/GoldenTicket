@@ -90,8 +90,38 @@ arrives: server running, CA export ready, pairing screen open, this file printed
 If the session runs short, I2, I6 and I8 are the three that cannot be inferred from Android and
 must not be skipped.
 
+## Running the spike
+
+```powershell
+dotnet run --project tools/GoldenTicket.ConnectivitySpike -- --address <laptop private IP>
+```
+
+It prints the origin, the CA fingerprint to compare aloud, and a pairing code. Keys while it runs:
+`n` new pairing code, `b` close the certificate bootstrap, `a` re-announce the local name,
+`s` save a report, `q` quit. A report is written to `docs/evidence/m0-connectivity/` on exit either
+way.
+
+Useful switches: `--port` and `--bootstrap-port` if something else holds 8443 or 8080, and
+`--no-mdns` to force the IP fallback and see what a device does without the `.local` name.
+
+If the phone cannot reach the laptop, the console prints the exact `netsh` rule to allow the ports
+on the **private** profile only. The spike never changes the firewall itself.
+
+### Before the friend arrives
+
+1. Laptop and phone on the same Wi-Fi, WAN unplugged.
+2. Spike running, bootstrap page open on the laptop so you can read the fingerprint.
+3. This checklist to hand.
+4. Know which of the two origins you are testing: the `.local` name, or the IP fallback.
+
 ## Current status
 
-Nothing here has been run. The embedded host and the PWA do not exist yet, so there is nothing to
-test. This file exists so the evidence requirements are fixed **before** the code, and so a borrowed
-device is not wasted on an unprepared session.
+| Layer | State |
+|---|---|
+| Laptop side | **Works.** Verified on this machine: the generated chain validates by name and by IP with no bypass, the bootstrap serves only the public CA, an unknown `Host` is refused with 421, a cross-origin or header-less POST is refused with 403, API responses are `no-store`, the shell is served under a same-origin CSP, and the pairing round-trip issues an HttpOnly/Secure cookie that a later request recognises. mDNS advertisement started. |
+| Android | Not run. |
+| iOS/iPadOS | Not run, and no device available. |
+
+The laptop-side checks say the host is ready to be pointed at a phone. They say nothing about
+whether a phone will trust it, resolve its name, or install it offline - which is the entire point
+of the spike, and needs the real devices.

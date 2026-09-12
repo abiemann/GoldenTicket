@@ -47,6 +47,12 @@ earlier; perform final release checks and package refresh after the narrative fe
   measured route-cell geometry and board landmarks; retain the current unaudited status until done.
 - [ ] Resolve the documented rare supply rules with an explicit reviewed/versioned policy and
   continuation UI. A safe saved pause prevents corruption but does not make these cases playable.
+- [x] **M0: connectivity spike built.** `tools/GoldenTicket.ConnectivitySpike` generates a
+  per-installation DPAPI-protected CA and a hostname/IP-matching leaf, serves a trusted same-origin
+  HTTPS host bound to a chosen private interface, advertises `gt-<id>.local` over mDNS with an IP
+  fallback, offers a closable plain-HTTP certificate bootstrap, and runs a single-use rate-limited
+  pairing round-trip. Verified laptop-side; **still needs the real-device runs** in
+  [docs/companion-device-evidence.md](docs/companion-device-evidence.md).
 - [ ] **M0/M2: companion.** Implement the embedded same-origin HTTPS/WSS host, protected per-laptop
   certificate setup, local naming/pairing, controller/private-view grants, authorization and CSRF
   validation, and versioned idempotent commands. Build the iOS/iPadOS/Android PWA with pass-and-hide,
