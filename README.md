@@ -7,8 +7,9 @@ computer opponents.
 
 `DESIGN.md` is the full design. This README says what is **built** and what is **not**.
 
-The September 11, 2026 [implementation audit](docs/AUDIT-2026-09-11.md) found that the full design is
-**not implemented**. It documents the code fixes, regression evidence, and remaining requirements.
+The September 12, 2026 [implementation audit](docs/AUDIT-2026-09-12.md) found that the full design is
+**not implemented**. It reviews the new pack-away, supply-policy and connectivity work, documents
+the corrected bugs and security issues, and separates automated evidence from remaining device tests.
 [TODO.md](TODO.md) tracks the work needed to complete the product.
 
 ## What this build does
@@ -52,9 +53,11 @@ These are later milestones in `DESIGN.md`, and nothing here pretends they exist:
 - **No camera.** Physical placement is confirmed by the operator (`VerificationMode.Manual`).
   Submitting camera evidence is refused with `CameraVerificationNotAvailable`. Calibration, the
   vision pipeline, board recovery after a jog and the wake gesture are M3–M5.
-- **No phone companion.** There is no embedded Kestrel host, no PWA, no pairing and no local HTTPS
-  trust workflow. Humans pass the laptop and use the privacy curtain (the laptop-only fallback in
-  DESIGN §4.7). That is M0/M2. When it is built, iOS/iPadOS will be listed as *untested* rather than
+- **No game phone companion.** A standalone M0 connectivity spike has a Kestrel host, local HTTPS
+  trust bootstrap, QR, pairing and a cacheable PWA diagnostic shell. It is not integrated into the
+  Windows game and has no cards, private-seat grants or game commands. Humans still pass the laptop
+  and use the privacy curtain (the laptop-only fallback in DESIGN §4.7). The complete companion is
+  M0/M2. When it is built, iOS/iPadOS will be listed as *untested* rather than
   supported: no Apple device is available for the repeated real-device testing DESIGN §22.7 requires
   (see [docs/companion-device-evidence.md](docs/companion-device-evidence.md)).
 - **No board photograph in a save.** Save and pack away works, with named checkpoints, guided
@@ -99,6 +102,13 @@ dotnet build GoldenTicket.sln --no-restore
 
 ```bash
 dotnet test GoldenTicket.sln
+```
+
+The connectivity scripts also have behavioral regression tests using Node's built-in runner
+(validated with Node 24.19.0; no npm packages). Node is a development test tool, not an app runtime:
+
+```bash
+node --test tests/GoldenTicket.ConnectivitySpike.Tests/shell.test.cjs
 ```
 
 ```bash
@@ -154,13 +164,14 @@ src/GoldenTicket.AI/            heuristic opponents and route planning
 src/GoldenTicket.Persistence/   SQLite journal, encryption, restore
 src/GoldenTicket.Desktop/       WPF views and view models
 tools/GoldenTicket.Simulator/   headless matches and the data audit
+tools/GoldenTicket.ConnectivitySpike/ standalone local HTTPS/PWA feasibility tool; no game data
 tests/                          rules fixtures, properties, privacy, persistence, view models
 data/classic-us/                hashed board and ticket manifest; physical audit pending
 shared/theme/                   canonical box-derived theme tokens
 docs/                           rules policy decisions and milestone evidence
 ```
 
-The projects in DESIGN §18.3 that belong to later milestones (`GoldenTicket.Vision`,
+The product projects in DESIGN §18.3 that belong to later milestones (`GoldenTicket.Vision`,
 `GoldenTicket.Windows`, `GoldenTicket.CompanionHost`, `companion/`, `training/`, `models/`) do not
 exist yet. They are deliberately absent rather than present and empty.
 
@@ -188,4 +199,5 @@ section. The load-bearing ones:
 
 DESIGN §23.2 asks for measured results to stay distinguishable from design assumptions. What has
 actually been run is in `docs/evidence/`. Nothing about camera recognition, GPU backends, companion
-devices, or AI strength is claimed, because none of it exists here yet.
+devices, or AI strength has passed the required acceptance gates. The connectivity shell and
+state-only rebuild have automated checks; neither establishes real-device PWA or camera support.

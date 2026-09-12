@@ -14,7 +14,8 @@ captured, and the honest support position given the hardware actually available.
 
 ### What the release may say
 
-- **Android:** supported, with the exact OS and Chrome versions recorded.
+- **Android:** currently untested for the companion. Say supported only after the real-device
+  checklist passes, with the exact OS and Chrome versions recorded.
 - **iOS/iPadOS:** *untested* — not "unsupported". The companion is built to web standards and will
   probably work, but DESIGN §22.7 does not let an untested platform be advertised. Say so plainly in
   the known-limitations section rather than omitting iOS.
@@ -72,10 +73,10 @@ fallback, that is a finding to record, not a workaround to hide — DESIGN §18.
 IP-origin caveat to be explained to the user.
 
 A0 is listed first because it is the cheapest thing to get wrong. The QR encoder is written here
-rather than taken from a package (DESIGN §18.3 requires the generation code to be bundled, with no
-redirect service), and although it is checked against the standard's published capacity, format,
-version and alignment tables and read back with a Reed-Solomon syndrome check, and although an
-independent decoder reads every symbol correctly, none of that is a phone camera.
+rather than taken from a package (DESIGN §18.3 requires bundled generation, not a custom encoder).
+It is checked against published capacity, format, version and alignment tables and read back with
+an in-repository test decoder and Reed-Solomon syndrome check. That decoder shares some encoder
+metadata; it is not independent scanner evidence, and none of those checks is a phone camera.
 
 ## iOS / iPadOS checklist (borrowed device, one session)
 
@@ -138,7 +139,7 @@ on the **private** profile only. The spike never changes the firewall itself.
 | Layer | State |
 |---|---|
 | Laptop side | **Works.** Verified on this machine: the generated chain validates by name and by IP with no bypass, the bootstrap serves only the public CA, an unknown `Host` is refused with 421, a cross-origin or header-less POST is refused with 403, API responses are `no-store`, the shell is served under a same-origin CSP, and the pairing round-trip issues an HttpOnly/Secure cookie that a later request recognises. mDNS advertisement started. |
-| Connection QR | **Generated and read back.** Capacity counted from the symbol's own geometry agrees with the standard's published table for every version and level; the format and version bit strings are computed from their BCH generators and match the published constants; every symbol decodes to the text it encodes with a clean Reed-Solomon syndrome, and an independent decoder reads the four real landing addresses correctly. **Never scanned by a camera** — see checklist line A0. |
+| Connection QR | **Generated and read back in repository tests.** Capacity, format, version and alignment checks and a Reed-Solomon syndrome check pass. Earlier implementation notes report a separate decode of four landing addresses, but no standalone decoder artifact is retained here; this audit reproduced the in-repository tests only. **No recorded phone-camera scan** — see checklist line A0. |
 | Handoff and install order | **Behaviour verified in a desktop browser** against simulated user agents for eight in-app browsers and for real Chrome and Safari, at a 375-pixel viewport. Not verified on a phone. |
 | Android | Not run. |
 | iOS/iPadOS | Not run, and no device available. |

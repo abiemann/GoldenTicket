@@ -202,7 +202,9 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
     }
 
     private static bool HasAccepted(GameState state, string code) =>
-        state.AcceptedRulesPolicies.ContainsKey(code);
+        RulesContinuations.For(code) is { } policy &&
+        state.AcceptedRulesPolicies.TryGetValue(code, out var accepted) &&
+        string.Equals(accepted, policy.PolicyId, StringComparison.Ordinal);
 
     // ---- Rare supply states (DESIGN 6.4) ------------------------------------------------------
 
@@ -233,9 +235,18 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
         if (string.IsNullOrWhiteSpace(command.Operator))
             return CommandResult.Reject("OperatorMissing", "Accepting a rules policy must record who accepted it.");
 
+        var restoredPhase = decision.InterruptedTurnPhase is { } interrupted &&
+            interrupted != TurnPhase.RulesDecisionRequired
+            ? interrupted
+            : state.Lifecycle == SessionLifecycle.Setup
+                ? TurnPhase.SetupTicketSelection
+                : state.CurrentTurnAction == TurnAction.DrawTrainCards && state.TrainCardsTakenThisTurn == 1
+                    ? TurnPhase.AwaitingSecondTrainCard
+                    : TurnPhase.TurnStart;
+
         context.Emit(new RulesDecisionResolved(
             policy.Code, policy.PolicyId, RulesContinuations.PolicyVersion,
-            command.Operator.Trim(), _time.GetUtcNow()));
+            command.Operator.Trim(), _time.GetUtcNow(), restoredPhase));
 
         ContinueAfterRulesDecision(context, policy.Code);
         return CommandResult.Accept(context.Events);
@@ -261,10 +272,19 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
                 return;
 
             default:
+                // Permission to keep a partial market is distinct from permission to disable
+                // locomotive resets. Apply the remaining checks before resuming a card selection.
+                if (code == RulesContinuations.PartialMarketSupply)
+                {
+                    MaintainMarket(context);
+                    if (state.RulesDecision is not null) return;
+                }
+
                 // A market pause can interrupt a draw before its turn has finished.
                 if (state.CurrentTurnAction != TurnAction.DrawTrainCards) return;
 
-                if (state.TrainCardsTakenThisTurn >= Constants.TrainCardsPerDrawTurn)
+                if (state.TurnPhase == TurnPhase.TurnStart ||
+                    state.TrainCardsTakenThisTurn >= Constants.TrainCardsPerDrawTurn)
                 {
                     EndTurn(context, state.ActiveSeatId, TurnAction.DrawTrainCards);
                     return;
@@ -393,6 +413,9 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
     {
         var state = context.State;
 
+        if (state.Lifecycle != SessionLifecycle.PackedAway)
+            return CommandResult.Reject("NotPackedAway", "Readback only completes a packed save.");
+
         if (state.Checkpoint is not { } checkpoint || checkpoint.CheckpointId != command.CheckpointId)
             return CommandResult.Reject("UnknownCheckpoint", "That checkpoint is not the one being validated.");
 
@@ -413,7 +436,8 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
     {
         var state = context.State;
 
-        if (state.Lifecycle != SessionLifecycle.PackedAway || state.Checkpoint is not { } checkpoint)
+        if (state.Lifecycle is not (SessionLifecycle.PackedAway or SessionLifecycle.Rebuilding) ||
+            state.Checkpoint is not { } checkpoint)
             return CommandResult.Reject("NotPackedAway", "This match is not packed away.");
 
         if (checkpoint.CheckpointId != command.CheckpointId)
@@ -463,9 +487,8 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
     }
 
     /// <summary>
-    /// DESIGN 19.8: clicking Resume runs the checks again, so a train moved after the attestation
-    /// blocks a stale confirmation. Resume restores the saved operation exactly once and does not
-    /// itself commit a pending route.
+    /// DESIGN 19.8: Resume rechecks the logical target and restores the saved operation exactly once.
+    /// In manual mode physical agreement is an operator attestation, not camera evidence.
     /// </summary>
     private CommandResult HandleResumePackedGame(TransitionContext context, ResumePackedGame command)
     {
@@ -493,7 +516,7 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
                 "The saved position no longer matches this match. The rebuild must be checked again.");
         }
 
-        if (!string.Equals(StateHash.ComputeLogical(state), checkpoint.LogicalStateHash, StringComparison.Ordinal))
+        if (!StateHash.MatchesLogical(state, checkpoint.LogicalStateHash))
         {
             return CommandResult.Reject("LogicalStateChanged",
                 "The saved game state does not match this checkpoint. Resuming could corrupt the match.");
@@ -984,17 +1007,19 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
             FillEmptySlots(context);
 
             var filled = state.FaceUp.Count(card => card is not null);
-            if (filled < state.FaceUp.Count)
+            if (filled < state.FaceUp.Count && !HasAccepted(state, RulesContinuations.PartialMarketSupply))
             {
-                // The accepted policy plays on with however many cards the supply can show.
-                if (HasAccepted(state, RulesContinuations.PartialMarketSupply)) return;
-
                 context.Emit(new RulesDecisionRaised(
                     "PartialMarketSupply",
                     $"Only {filled} of {state.FaceUp.Count} market slots can be filled. " +
                     "The match is paused with all revealed cards preserved until the depleted-supply policy is resolved."));
                 return;
             }
+
+            // Both reset decisions disclose the same match-long policy. Once either is accepted,
+            // future refills must not consume randomness or reset again, even if supply improves.
+            if (HasAccepted(state, RulesContinuations.MarketResetImpossible) ||
+                HasAccepted(state, RulesContinuations.MarketResetUnstable)) return;
 
             var locomotives = state.FaceUp.Count(
                 card => card is { } value && Catalog.KindOf(value) == TrainCardKind.Locomotive);
@@ -1004,11 +1029,8 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
             var normalCards = state.TrainDeck.Concat(state.TrainDiscard)
                 .Concat(state.FaceUp.Where(card => card is not null).Select(card => card!.Value))
                 .Count(card => Catalog.KindOf(card) != TrainCardKind.Locomotive);
-            if (normalCards < state.FaceUp.Count - Constants.LocomotiveMarketResetThreshold + 1)
+            if (normalCards < filled - Constants.LocomotiveMarketResetThreshold + 1)
             {
-                // The accepted policy stops applying the reset rule for the rest of the match.
-                if (HasAccepted(state, RulesContinuations.MarketResetImpossible)) return;
-
                 context.Emit(new RulesDecisionRaised(
                     "MarketResetImpossible",
                     "The available train-card supply cannot form a market with fewer than " +
@@ -1018,8 +1040,6 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
 
             if (reset >= MaximumMarketResets)
             {
-                if (HasAccepted(state, RulesContinuations.MarketResetUnstable)) return;
-
                 context.Emit(new RulesDecisionRaised(
                     "MarketResetUnstable",
                     $"The face-up market still held {locomotives} locomotives after {MaximumMarketResets} " +

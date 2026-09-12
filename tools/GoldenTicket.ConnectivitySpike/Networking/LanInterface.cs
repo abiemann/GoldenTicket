@@ -5,7 +5,8 @@ using System.Net.Sockets;
 namespace GoldenTicket.ConnectivitySpike.Networking;
 
 /// <summary>One usable private network address the host could bind to.</summary>
-public sealed record LanInterface(string Name, string Description, IPAddress Address)
+public sealed record LanInterface(string Name, string Description, IPAddress Address,
+    int PrefixLength, Guid AdapterId)
 {
     public override string ToString() => $"{Address}  ({Name} - {Description})";
 }
@@ -23,19 +24,22 @@ public static class LanInterfaces
     public static IReadOnlyList<LanInterface> Discover()
     {
         var found = new List<LanInterface>();
+        var privateAdapters = WindowsNetworkProfiles.ReadPrivateAdapters();
 
         foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
         {
             if (adapter.OperationalStatus != OperationalStatus.Up) continue;
             if (adapter.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
             if (adapter.NetworkInterfaceType == NetworkInterfaceType.Tunnel) continue;
+            if (!Guid.TryParse(adapter.Id, out var adapterId) || !privateAdapters.Contains(adapterId)) continue;
 
             foreach (var unicast in adapter.GetIPProperties().UnicastAddresses)
             {
                 if (unicast.Address.AddressFamily != AddressFamily.InterNetwork) continue;
                 if (!IsPrivate(unicast.Address)) continue;
 
-                found.Add(new LanInterface(adapter.Name, adapter.Description, unicast.Address));
+                found.Add(new LanInterface(adapter.Name, adapter.Description, unicast.Address,
+                    unicast.PrefixLength, adapterId));
             }
         }
 
@@ -59,5 +63,20 @@ public static class LanInterfaces
             192 => octets[1] == 168,
             _ => false,
         };
+    }
+
+    public static bool IsInSubnet(IPAddress peer, IPAddress local, int prefixLength)
+    {
+        if (peer.IsIPv4MappedToIPv6) peer = peer.MapToIPv4();
+        if (!IsPrivate(peer) || !IsPrivate(local) || prefixLength is < 1 or > 32) return false;
+        var peerBytes = peer.GetAddressBytes();
+        var localBytes = local.GetAddressBytes();
+        for (var index = 0; index < 4; index++)
+        {
+            var bits = Math.Clamp(prefixLength - index * 8, 0, 8);
+            var mask = (byte)(0xff << (8 - bits));
+            if ((peerBytes[index] & mask) != (localBytes[index] & mask)) return false;
+        }
+        return true;
     }
 }

@@ -4,7 +4,7 @@ namespace GoldenTicket.Domain.Model;
 
 /// <summary>
 /// The documented way out of one paused supply state (DESIGN 6.4). Each is a house policy: the
-/// printed rules do not reach these positions, so the decision is disclosed rather than invented
+/// printed rules do not specify every software boundary, so the decision is disclosed rather than invented
 /// silently, applied only when an operator accepts it, and recorded in the journal with its version.
 /// </summary>
 public sealed record RulesContinuation(
@@ -71,8 +71,8 @@ public static class RulesContinuations
                 NoLegalAction,
                 "seat-passes-the-turn",
                 "This seat passes",
-                "The printed rules have no pass, because they do not reach a position where a seat " +
-                "can do nothing at all. Forcing an illegal action would be worse than passing.",
+                "The printed rules do not specify a pass for a seat with no legal action. " +
+                "This house policy lets that seat pass without inventing cards or making an illegal move.",
                 "The seat's turn ends with no action. If every seat passes in a row, the match goes " +
                 "to final scoring, because nothing further can happen."),
         }

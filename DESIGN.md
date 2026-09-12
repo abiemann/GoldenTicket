@@ -1,6 +1,7 @@
 # GoldenTicket: Ticket to Ride Windows Companion
 
-**Status:** Product specification with a partial C# implementation. The manual desktop slice has automated validation; the full camera/PWA product is incomplete. See the [implementation audit](docs/AUDIT-2026-09-11.md) and [remaining work](TODO.md).  
+**Status:** Product specification with a partial C# implementation. The manual desktop slice, state-only pack-away and standalone connectivity spike have automated validation; the full camera/PWA product is incomplete. See the [implementation audit](docs/AUDIT-2026-09-12.md) and [remaining work](TODO.md).
+
 **Design date:** September 11, 2026.  
 **Working name:** GoldenTicket. This is a project codename, not an approved product name.  
 **Target:** Windows 11 x64; the classic English North America Ticket to Ride board shown in the user's photographs, product DO7201 / 7201.  
@@ -1589,7 +1590,7 @@ The game, physical/digital division, local operation, Windows host, iOS/Android 
 | Item | Why it remains open | Resolution point |
 |---|---|---|
 | Exact board geometry and ticket data audit | Box images identify the edition but are not production calibration data | M1 data manifest review |
-| Physical camera/mount reference configuration | No camera model or laptop specification was finally selected | M0/M3 measured compatibility report |
+| Physical camera/mount reference configuration | Pixel USB webcam capture was tested at 1920×1080 in a temporary probe; the purchased NEEWER DS009 arm and existing upright still need a mounted stability/lighting test. Exact phone model and complete hardware report remain unrecorded | M0/M3 measured compatibility report |
 | Train appearance generalization | Training on the developer's pieces is permitted, but coverage is unmeasured | M4/M5 held-out evaluation |
 | Actual package/native compatibility | Version research is not a compiled integration test | M0 locked dependency report |
 | Local PWA installation and trust | Secure-context, CA provisioning, local naming, and offline home-screen behavior differ by platform | M0 iPhone/iPad and Android device evidence before declaring support |
@@ -1615,13 +1616,15 @@ The rights item does not prevent designing or testing the application. Use origi
 
 This document specifies the complete intended product. Implemented behavior and executed checks are recorded in the audit and README; the remaining sections must not be read as evidence that a feature exists. Model training, recognition accuracy, GPU compatibility, companion-device support, AI strength, and camera recovery timing remain unverified.
 
-### 24.4 Implementation audit status, September 11, 2026
+### 24.4 Implementation audit status, September 12, 2026
 
 The repository now contains Domain, Application, AI, Persistence, Desktop, Simulator, and test projects. The implemented desktop uses explicit manual physical verification and a private laptop view. It implements digital dealing/turns, route reservation and confirmation, exact scoring algorithms, heuristic opponents, SQLite event replay, and the box-derived palette. Audit fixes add stale-view protection, physical reconciliation before resumed play, strict save integrity and path checks, concurrent-write protection, bounded AI waiting, and regression tests.
 
-There is no camera acquisition/vision/calibration/gesture subsystem, CPU/GPU inference selection, local companion server or PWA, narrated story/audio, photographed pack-away checkpoint, or installer. Snapshot rows currently hold validation metadata and state hashes rather than the complete encrypted snapshots specified in section 19.2. Camera geometry and the physical board-data audit are absent. The desktop remains framework-dependent. These are implementation gaps, not changes to the requirements in this design.
+The subsequent work adds state-only named checkpoints, pack-away/rebuild lifecycles, disclosed supply-policy continuations and a standalone local HTTPS/QR/pairing/PWA connectivity spike. The September 12 audit corrects checkpoint verification and restart gates, policy/desktop continuation bugs, network/session/certificate security and browser diagnostic/cache behavior. The spike has no game commands or private-seat views and is not embedded in the desktop app.
 
-The [audit report](docs/AUDIT-2026-09-11.md) maps R01–R16 and the major subsystem requirements to source evidence. [TODO.md](TODO.md) lists the remaining implementation and real-device acceptance work. Passing domain, persistence, or view-model tests does not satisfy the camera, privacy lifecycle, packaging, or mobile hardware gates.
+There is still no product camera acquisition/vision/calibration/gesture subsystem, CPU/GPU inference selection, game companion host/PWA, narrated story/audio, photographed pack-away checkpoint, or installer. The state-only rebuild uses a textual route list, not a geometry-based board diagram. Snapshot rows currently hold validation metadata and state hashes rather than the complete encrypted snapshots specified in section 19.2. Camera geometry and the physical board-data audit are absent. The desktop remains framework-dependent. These are implementation gaps, not changes to the requirements in this design.
+
+The [original audit](docs/AUDIT-2026-09-11.md) maps R01–R16 to source evidence; the [follow-up audit](docs/AUDIT-2026-09-12.md) records the reviewed changes, fixes and current validation. [TODO.md](TODO.md) lists the remaining implementation and real-device acceptance work. Passing domain, persistence, view-model or browser-script tests does not satisfy the camera, privacy lifecycle, packaging, or mobile hardware gates.
 
 ## 25. Sources
 

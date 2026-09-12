@@ -1,0 +1,9 @@
+  Determining projects to restore...
+  Restored D:\Projects\GoldenTicket\src\GoldenTicket.Application\GoldenTicket.Application.csproj (in 63 ms).
+  Restored D:\Projects\GoldenTicket\src\GoldenTicket.Domain\GoldenTicket.Domain.csproj (in 63 ms).
+  Restored D:\Projects\GoldenTicket\tools\GoldenTicket.Simulator\GoldenTicket.Simulator.csproj (in 63 ms).
+  Restored D:\Projects\GoldenTicket\src\GoldenTicket.AI\GoldenTicket.AI.csproj (in 63 ms).
+  Restored D:\Projects\GoldenTicket\tools\GoldenTicket.ConnectivitySpike\GoldenTicket.ConnectivitySpike.csproj (in 251 ms).
+  Restored D:\Projects\GoldenTicket\src\GoldenTicket.Persistence\GoldenTicket.Persistence.csproj (in 252 ms).
+  Restored D:\Projects\GoldenTicket\src\GoldenTicket.Desktop\GoldenTicket.Desktop.csproj (in 255 ms).
+  Restored D:\Projects\GoldenTicket\tests\GoldenTicket.Domain.Tests\GoldenTicket.Domain.Tests.csproj (in 258 ms).

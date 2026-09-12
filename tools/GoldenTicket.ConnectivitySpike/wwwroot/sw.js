@@ -5,7 +5,7 @@
 // spike at all, and this file stays that way so the behaviour observed on a device is the behaviour
 // the real companion will have.
 
-const SHELL_CACHE = 'gt-spike-shell-v2';
+const SHELL_CACHE = 'gt-spike-shell-v3';
 
 const SHELL = [
     './',
@@ -17,6 +17,7 @@ const SHELL = [
     'icon-512.png',
     'manifest.webmanifest',
 ];
+const SHELL_URLS = new Set(SHELL.map(asset => new URL(asset, self.location.href).href));
 
 self.addEventListener('install', (event) => {
     event.waitUntil(caches.open(SHELL_CACHE).then((cache) => cache.addAll(SHELL)));
@@ -27,7 +28,8 @@ self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys()
             .then((names) => Promise.all(
-                names.filter((name) => name !== SHELL_CACHE).map((name) => caches.delete(name))))
+                names.filter((name) => name.startsWith('gt-spike-shell-') && name !== SHELL_CACHE)
+                    .map((name) => caches.delete(name))))
             .then(() => self.clients.claim()));
 });
 
@@ -38,8 +40,11 @@ self.addEventListener('fetch', (event) => {
     if (url.pathname.includes('/api/')) return;
     if (event.request.method !== 'GET') return;
     if (url.origin !== self.location.origin) return;
+    if (!SHELL_URLS.has(url.href)) return;
 
+    // Read only this version's allowlisted shell. Unknown paths must not become successful HTML
+    // responses when offline, and responses in another cache are not part of this shell contract.
     event.respondWith(
-        caches.match(event.request).then((cached) => cached || fetch(event.request).catch(() =>
-            caches.match('index.html'))));
+        caches.open(SHELL_CACHE).then(async cache =>
+            (await cache.match(event.request)) || fetch(event.request)));
 });

@@ -1,8 +1,11 @@
 using System.Net;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using GoldenTicket.ConnectivitySpike;
 using GoldenTicket.ConnectivitySpike.Networking;
 using GoldenTicket.ConnectivitySpike.Pairing;
 using GoldenTicket.ConnectivitySpike.Security;
+using Microsoft.AspNetCore.Http;
 
 namespace GoldenTicket.Domain.Tests;
 
@@ -104,6 +107,62 @@ public class ConnectivitySpikeTests : IDisposable
     }
 
     [Fact]
+    public void ReplacingTheAuthorityCannotLeaveALeafSignedByTheOldAuthority()
+    {
+        var address = IPAddress.Parse("192.168.1.50");
+        var original = new LocalCertificateAuthority(_directory).EnsureMaterial(address);
+        using var originalServer = original.ServerCertificate;
+        var replacementDirectory = Path.Combine(_directory, "replacement");
+        var replacement = new LocalCertificateAuthority(replacementDirectory).EnsureMaterial(address);
+        using var replacementServer = replacement.ServerCertificate;
+        foreach (var name in new[] { "authority.crt", "authority.key.dpapi" })
+            File.Copy(Path.Combine(replacementDirectory, name), Path.Combine(_directory, name), overwrite: true);
+
+        var renewed = new LocalCertificateAuthority(_directory).EnsureMaterial(address);
+        using var renewedServer = renewed.ServerCertificate;
+        using var root = X509CertificateLoader.LoadCertificate(renewed.AuthorityCertificateDer);
+        using var chain = new X509Chain();
+        chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+        chain.ChainPolicy.CustomTrustStore.Add(root);
+        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        chain.ChainPolicy.DisableCertificateDownloads = true;
+
+        Assert.Equal(replacement.AuthorityFingerprint, renewed.AuthorityFingerprint);
+        Assert.NotEqual(originalServer.Thumbprint, renewedServer.Thumbprint);
+        Assert.True(chain.Build(renewedServer));
+    }
+
+    [Fact]
+    public void MissingAuthorityKeyFailsWithoutSilentlyReplacingDeviceTrust()
+    {
+        var authority = new LocalCertificateAuthority(_directory);
+        using var server = authority.EnsureMaterial(IPAddress.Parse("10.0.0.5")).ServerCertificate;
+        var originalCa = File.ReadAllBytes(Path.Combine(_directory, "authority.crt"));
+        File.Delete(Path.Combine(_directory, "authority.key.dpapi"));
+
+        Assert.Throws<CryptographicException>(() => authority.EnsureMaterial(IPAddress.Parse("10.0.0.5")));
+        Assert.Equal(originalCa, File.ReadAllBytes(Path.Combine(_directory, "authority.crt")));
+    }
+
+    [Fact]
+    public void MalformedProtectedLeafIsReissuedWithoutChangingTheAuthority()
+    {
+        var address = IPAddress.Parse("10.0.0.5");
+        var authority = new LocalCertificateAuthority(_directory);
+        var original = authority.EnsureMaterial(address);
+        using var originalServer = original.ServerCertificate;
+        var malformed = ProtectedData.Protect([1],
+            System.Text.Encoding.UTF8.GetBytes("GoldenTicket.CompanionHost.v1"), DataProtectionScope.CurrentUser);
+        File.WriteAllBytes(Path.Combine(_directory, "server.pfx.dpapi"), malformed);
+
+        var renewed = authority.EnsureMaterial(address);
+        using var renewedServer = renewed.ServerCertificate;
+        Assert.Equal(original.AuthorityFingerprint, renewed.AuthorityFingerprint);
+        Assert.NotEqual(originalServer.Thumbprint, renewedServer.Thumbprint);
+        Assert.True(renewedServer.HasPrivateKey);
+    }
+
+    [Fact]
     public void ThePrivateKeysAreNotWrittenInTheClear()
     {
         var authority = new LocalCertificateAuthority(_directory);
@@ -148,6 +207,74 @@ public class ConnectivitySpikeTests : IDisposable
     public void OnlyPrivateAddressesMayBeServedOn(string address, bool expected)
     {
         Assert.Equal(expected, LanInterfaces.IsPrivate(IPAddress.Parse(address)));
+    }
+
+    [Theory]
+    [InlineData("192.168.1.99", 24, true)]
+    [InlineData("::ffff:192.168.1.99", 24, true)]
+    [InlineData("192.168.2.99", 24, false)]
+    [InlineData("10.0.0.1", 24, false)]
+    [InlineData("8.8.8.8", 8, false)]
+    [InlineData("192.168.1.49", 30, true)]
+    [InlineData("192.168.1.54", 30, false)]
+    [InlineData("192.168.1.50", 0, false)]
+    public void PeersMustBelongToTheSelectedSubnet(string peer, int prefixLength, bool allowed)
+    {
+        Assert.Equal(allowed, LanInterfaces.IsInSubnet(IPAddress.Parse(peer), IPAddress.Parse("192.168.1.50"), prefixLength));
+    }
+
+    [Theory]
+    [InlineData("192.168.1.99", true, 200)]
+    [InlineData("192.168.1.99", false, 403)]
+    [InlineData("192.168.2.99", true, 403)]
+    [InlineData("8.8.8.8", true, 403)]
+    [InlineData("127.0.0.1", false, 200)]
+    public void BothHostsRejectOutsidePeersAndPublicNetworkProfiles(string peer, bool isPrivate, int expected)
+    {
+        var policy = new SpikeRequestPolicy(IPAddress.Parse("192.168.1.50"), 24,
+            ["https://gt-test.local:8443"], () => isPrivate);
+        var context = NewRequest(peer);
+        Assert.Equal(expected, policy.Validate(context));
+        Assert.Equal(expected, policy.Validate(context, bootstrap: true));
+    }
+
+    [Theory]
+    [InlineData("gt-test.local:8443", "https://gt-test.local:8443", "1", 200)]
+    [InlineData("gt-test.local:8443", null, "1", 200)] // non-browser clients still need the custom header
+    [InlineData("gt-test.local:8443", null, null, 403)]
+    [InlineData("gt-test.local:8443", "null", "1", 403)]
+    [InlineData("gt-test.local:8443", "https://evil.example", "1", 403)]
+    [InlineData("gt-test.local:8443", "https://gt-test.local:8443, https://evil.example", "1", 403)]
+    [InlineData("evil.example:8443", "https://gt-test.local:8443", "1", 421)]
+    public void HostOriginAndCsrfChecksRejectCrossOriginWrites(string host, string? origin, string? header, int expected)
+    {
+        var policy = new SpikeRequestPolicy(IPAddress.Parse("192.168.1.50"), 24,
+            ["https://gt-test.local:8443"], () => true);
+        var context = NewRequest("192.168.1.99");
+        context.Request.Method = "POST";
+        context.Request.Path = "/api/spike/pair";
+        context.Request.Host = new HostString(host);
+        if (origin is not null) context.Request.Headers.Origin = origin;
+        if (header is not null) context.Request.Headers["X-GoldenTicket-Spike"] = header;
+        Assert.Equal(expected, policy.Validate(context));
+    }
+
+    [Fact]
+    public void ConcurrentReportsCannotExceedTheMemoryBudget()
+    {
+        var buffer = new BoundedObservationBuffer<int>(128);
+        Parallel.For(0, 2000, value => buffer.TryAdd(value));
+        Assert.Equal(128, buffer.Snapshot().Count);
+        Assert.False(buffer.TryAdd(2001));
+    }
+
+    private static DefaultHttpContext NewRequest(string peer)
+    {
+        var context = new DefaultHttpContext();
+        context.Connection.RemoteIpAddress = IPAddress.Parse(peer);
+        context.Request.Host = new HostString("gt-test.local:8443");
+        context.Request.Path = "/";
+        return context;
     }
 
     // ---- Multicast DNS wire format ---------------------------------------------------------------
@@ -245,9 +372,12 @@ public class ConnectivitySpikeTests : IDisposable
     {
         var pairing = new PairingService();
         var code = pairing.IssueCode();
+        var incorrectCode = code == "00000000" ? "11111111" : "00000000";
 
         for (var attempt = 0; attempt < PairingService.MaximumAttempts; attempt++)
-            Assert.Equal(PairingOutcome.WrongCode, pairing.Redeem("00000000", "guesser").Outcome);
+            Assert.Equal(PairingOutcome.WrongCode, pairing.Redeem(incorrectCode, "guesser").Outcome);
+
+        Assert.Null(pairing.CurrentCode);
 
         Assert.Equal(PairingOutcome.TooManyAttempts, pairing.Redeem(code, "guesser").Outcome);
         Assert.Null(pairing.CurrentCode);
@@ -260,7 +390,7 @@ public class ConnectivitySpikeTests : IDisposable
         var pairing = new PairingService(clock);
         var code = pairing.IssueCode();
 
-        clock.Advance(PairingService.CodeLifetime + TimeSpan.FromSeconds(1));
+        clock.Advance(PairingService.CodeLifetime);
 
         Assert.Null(pairing.CurrentCode);
         Assert.Equal(PairingOutcome.Expired, pairing.Redeem(code, "late").Outcome);
@@ -322,6 +452,20 @@ public class ConnectivitySpikeTests : IDisposable
         pairing.Revoke(device.DeviceSessionId);
 
         Assert.False(pairing.IsPaired(device.DeviceSessionId));
+    }
+
+    [Fact]
+    public void RetainingACookieCannotExtendTheServerSideSessionLifetime()
+    {
+        var clock = new MovableClock(DateTimeOffset.UtcNow);
+        var pairing = new PairingService(clock);
+        var device = pairing.Redeem(pairing.IssueCode(), "phone").Device!;
+        clock.Advance(PairingService.SessionLifetime - TimeSpan.FromSeconds(1));
+        Assert.True(pairing.IsPaired(device.DeviceSessionId));
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.Null(pairing.Find(device.DeviceSessionId));
+        Assert.False(pairing.IsPaired(device.DeviceSessionId));
+        Assert.Empty(pairing.Devices);
     }
 
     /// <summary>A clock the test moves by hand, so no extra test-only dependency is needed.</summary>

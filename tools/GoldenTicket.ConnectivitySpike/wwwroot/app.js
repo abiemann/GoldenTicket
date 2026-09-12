@@ -6,7 +6,40 @@
 //
 // No game state, no private information, no persistence beyond the pairing cookie the laptop sets.
 
-const SHELL_CACHE = 'gt-spike-shell-v2';
+const SHELL_CACHE = 'gt-spike-shell-v3';
+const SHELL_ASSETS = ['index.html', 'app.js', 'styles.css', 'icon.svg',
+    'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
+let checksRunning = false;
+let firstSessionCheck = true;
+let sessionFoundOnLoad = false;
+let pairingInProgress = false;
+let sessionEpoch = 0;
+
+// ready never rejects when installation fails. Bound it so a failed check cannot hide the
+// handoff instructions or leave the rest of the diagnostic page permanently waiting.
+async function withDeadline(operation, milliseconds = 10000) {
+    let timer;
+    try {
+        return await Promise.race([operation, new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('Installation check timed out. Try again.')), milliseconds);
+        })]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function apiRequest(address, options = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+        const response = await fetch(address, { credentials: 'same-origin', cache: 'no-store',
+            ...options, signal: controller.signal });
+        const body = response.ok ? await response.json() : null;
+        return { response, body };
+    } finally {
+        clearTimeout(timer);
+    }
+}
 
 const state = {
     secureContext: false,
@@ -180,9 +213,10 @@ async function checkConnection() {
     mark('check-secure', state.secureContext);
 
     const origin = window.location.origin;
-    state.reachedByName = /^https:\/\/gt-[0-9a-f]{8}\.local/i.test(origin);
+    state.reachedByName = /^gt-[0-9a-f]{8}\.local$/i.test(window.location.hostname);
 
-    mark('check-origin', true);
+    // A cached page proves nothing about the current connection; checkSession supplies that result.
+    mark('check-origin', false, true);
     mark('check-name', state.reachedByName);
 
     detail('origin-detail', state.reachedByName
@@ -191,14 +225,16 @@ async function checkConnection() {
 }
 
 async function checkInstallation() {
+    state.serviceWorkerRegistered = false;
+    detail('display-detail', '');
     state.serviceWorkerSupported = 'serviceWorker' in navigator;
     mark('check-sw-support', state.serviceWorkerSupported);
 
     if (state.serviceWorkerSupported) {
         try {
             // A service worker needs a secure context, which is exactly what this is testing.
-            await navigator.serviceWorker.register('sw.js', { scope: './' });
-            await navigator.serviceWorker.ready;
+            await withDeadline(navigator.serviceWorker.register('sw.js', { scope: './' })
+                .then(() => navigator.serviceWorker.ready));
             state.serviceWorkerRegistered = true;
         } catch (error) {
             state.serviceWorkerRegistered = false;
@@ -209,8 +245,8 @@ async function checkInstallation() {
 
     try {
         const cache = await caches.open(SHELL_CACHE);
-        const cached = await cache.match('index.html') || await cache.match('./');
-        state.shellCachedOffline = !!cached;
+        const cached = await Promise.all(SHELL_ASSETS.map(asset => cache.match(asset)));
+        state.shellCachedOffline = cached.every(response => response && response.ok);
     } catch {
         state.shellCachedOffline = false;
     }
@@ -257,37 +293,56 @@ function renderPairGate() {
 }
 
 async function checkSession() {
+    if (pairingInProgress) return;
+    const epoch = sessionEpoch;
     try {
-        const response = await fetch('api/spike/session', { credentials: 'same-origin', cache: 'no-store' });
+        const { response, body } = await apiRequest('api/spike/session');
+        if (epoch !== sessionEpoch) return;
         if (!response.ok) throw new Error(`status ${response.status}`);
 
-        const body = await response.json();
         state.paired = body.paired === true;
+        mark('check-origin', true);
 
-        // Reaching this on a fresh load means the cookie survived the reload or relaunch, which is
-        // the thing DESIGN 18.5 warns must not be assumed between a tab and a home-screen app.
-        state.sessionSurvivedReload = state.paired;
+        // Only the first check on this page can prove that the session survived a page load.
+        // Clicking Recheck after pairing in the same page is not reload evidence.
+        if (firstSessionCheck) sessionFoundOnLoad = state.paired;
+        state.sessionSurvivedReload = sessionFoundOnLoad && state.paired;
 
         mark('check-paired', state.paired);
         mark('check-session', state.sessionSurvivedReload);
 
         if (state.paired) detail('pair-detail', `Paired as "${body.label}".`);
     } catch (error) {
+        if (epoch !== sessionEpoch) return;
         // Offline is an expected state here; the cached shell should still have rendered.
+        state.paired = false;
+        state.sessionSurvivedReload = false;
+        mark('check-origin', false, true);
         mark('check-paired', false, true);
         mark('check-session', false, true);
         detail('pair-detail', 'The laptop could not be reached just now.');
+    } finally {
+        if (epoch === sessionEpoch) firstSessionCheck = false;
     }
 }
 
 async function pair(event) {
     event.preventDefault();
+    if (pairingInProgress) return;
+    pairingInProgress = true;
+    sessionEpoch++;
+    // Pairing may start while the initial installation check is still pending. No later response
+    // in this page can prove that this new session survived a reload.
+    firstSessionCheck = false;
+    sessionFoundOnLoad = false;
+    state.sessionSurvivedReload = false;
+    mark('check-session', false);
 
     const code = document.getElementById('code').value.replace(/\s+/g, '');
     const label = document.getElementById('label').value;
 
     try {
-        const response = await fetch('api/spike/pair', {
+        const { response, body } = await apiRequest('api/spike/pair', {
             method: 'POST',
             credentials: 'same-origin',
             cache: 'no-store',
@@ -295,15 +350,25 @@ async function pair(event) {
             body: JSON.stringify({ code, label }),
         });
 
-        const body = await response.json();
+        if (!response.ok) throw new Error(`status ${response.status}`);
         detail('pair-detail', body.message || (body.paired ? 'Paired.' : 'Pairing refused.'));
 
         state.paired = body.paired === true;
         mark('check-paired', state.paired);
 
-        if (state.paired) document.getElementById('code').value = '';
+        if (state.paired) {
+            document.getElementById('code').value = '';
+            sessionFoundOnLoad = false;
+            state.sessionSurvivedReload = false;
+            mark('check-session', false);
+        }
     } catch (error) {
+        state.paired = false;
+        mark('check-paired', false, true);
         detail('pair-detail', 'The laptop could not be reached.');
+    } finally {
+        sessionEpoch++;
+        pairingInProgress = false;
     }
 }
 
@@ -324,7 +389,7 @@ async function send() {
     };
 
     try {
-        const response = await fetch('api/spike/report', {
+        const { response } = await apiRequest('api/spike/report', {
             method: 'POST',
             credentials: 'same-origin',
             cache: 'no-store',
@@ -341,15 +406,22 @@ async function send() {
 }
 
 async function runChecks() {
-    // Detected first: the installation guidance below reads it, and a page opened inside another
-    // app needs to say so rather than offering an install control that browser does not have.
-    state.embeddedBrowser = embeddedBrowserName() || '';
+    if (checksRunning) return;
+    checksRunning = true;
+    try {
+        // Show navigation guidance before any asynchronous installation check can stall.
+        state.embeddedBrowser = embeddedBrowserName() || '';
+        state.displayMode = currentDisplayMode();
+        state.launchedStandalone = state.displayMode !== 'browser';
+        renderHandoff();
+        renderPairGate();
 
-    await checkConnection();
-    await checkInstallation();
-    renderHandoff();
-    renderPairGate();
-    await checkSession();
+        await checkConnection();
+        await checkInstallation();
+        await checkSession();
+    } finally {
+        checksRunning = false;
+    }
 }
 
 for (const button of document.querySelectorAll('button[data-copy]')) {

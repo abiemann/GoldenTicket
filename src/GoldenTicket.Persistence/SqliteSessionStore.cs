@@ -702,7 +702,8 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
         await using var connection = await OpenAsync(sessionId, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Payload, Nonce FROM PackAwayCheckpoint
+            SELECT Payload, Nonce, Name, CreatedAt, FormatVersion, SourceStateVersion,
+                SourceJournalSeq, TargetProvenance, PhotoHash, Status FROM PackAwayCheckpoint
             WHERE SessionId = $sessionId AND CheckpointId = $checkpointId;
             """;
         command.Parameters.AddWithValue("$sessionId", sessionId.Value);
@@ -711,9 +712,32 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;
 
-        var plaintext = encryption.Decrypt((byte[])reader["Payload"], (byte[])reader["Nonce"]);
-        return System.Text.Json.JsonSerializer.Deserialize<PackAwayCheckpoint>(
-            plaintext, CheckpointSerializerOptions);
+        byte[]? plaintext = null;
+        try
+        {
+            plaintext = encryption.Decrypt((byte[])reader["Payload"], (byte[])reader["Nonce"]);
+            var checkpoint = JsonSerializer.Deserialize<PackAwayCheckpoint>(plaintext, CheckpointSerializerOptions);
+            if (checkpoint is null || checkpoint.SessionId != sessionId || checkpoint.CheckpointId != checkpointId ||
+                checkpoint.FormatVersion != PackAwayCheckpoint.CurrentFormatVersion ||
+                checkpoint.Name != reader.GetString(2) || checkpoint.CreatedAt.ToString("O") != reader.GetString(3) ||
+                checkpoint.FormatVersion != reader.GetInt32(4) || checkpoint.SourceStateVersion != reader.GetInt64(5) ||
+                checkpoint.SourceJournalSequence != reader.GetInt64(6) ||
+                checkpoint.TargetProvenance.ToString() != reader.GetString(7) ||
+                checkpoint.PhotoHash != (reader.IsDBNull(8) ? null : reader.GetString(8)) ||
+                checkpoint.Status.ToString() != reader.GetString(9) ||
+                checkpoint.PhysicalTarget.IsDefault ||
+                checkpoint.PhysicalTargetHash != PackAwayCheckpoint.HashTarget(checkpoint.PhysicalTarget))
+                throw new SessionIntegrityException("The stored checkpoint does not match its authenticated metadata or target.");
+            return checkpoint;
+        }
+        catch (Exception error) when (error is CryptographicException or JsonException or NotSupportedException or InvalidCastException)
+        {
+            throw new SessionIntegrityException("The stored checkpoint could not be authenticated or decoded.");
+        }
+        finally
+        {
+            if (plaintext is not null) CryptographicOperations.ZeroMemory(plaintext);
+        }
     }
 
     private static Task WriteSnapshotAsync(

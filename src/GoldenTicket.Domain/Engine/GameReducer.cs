@@ -342,7 +342,10 @@ public static class GameReducer
 
     private static void ApplyRulesDecision(GameState state, RulesDecisionRaised e)
     {
-        state.RulesDecision = new RulesDecision(e.Code, e.Explanation);
+        state.RulesDecision = new RulesDecision(e.Code, e.Explanation)
+        {
+            InterruptedTurnPhase = state.TurnPhase,
+        };
         state.TurnPhase = TurnPhase.RulesDecisionRequired;
     }
 
@@ -352,15 +355,28 @@ public static class GameReducer
     /// </summary>
     private static void ApplyRulesDecisionResolved(GameState state, RulesDecisionResolved e)
     {
+        if (e.PolicyVersion != RulesContinuations.PolicyVersion ||
+            RulesContinuations.For(e.Code) is not { } policy ||
+            !string.Equals(policy.PolicyId, e.PolicyId, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The saved rules policy or its version is not supported by this build.");
+        }
+
+        if (e.RestoredTurnPhase is { } recordedPhase &&
+            recordedPhase is not (TurnPhase.SetupTicketSelection or TurnPhase.TurnStart or TurnPhase.AwaitingSecondTrainCard))
+            throw new InvalidDataException("The saved rules continuation phase is not supported by this build.");
+
         state.AcceptedRulesPolicies = state.AcceptedRulesPolicies.SetItem(e.Code, e.PolicyId);
         state.RulesDecision = null;
 
-        // The turn counters survive the pause, so the phase it interrupted can be restored exactly:
-        // a seat part way through a draw still owes its second card.
+        // New writers explicitly preserve the interrupted phase. Old events must retain their
+        // original counter-based semantics, including the old face-up-locomotive edge case;
+        // otherwise replay would change hashes of matches saved immediately after that event.
         if (state.TurnPhase == TurnPhase.RulesDecisionRequired)
         {
-            state.TurnPhase =
-                state.CurrentTurnAction == TurnAction.DrawTrainCards && state.TrainCardsTakenThisTurn == 1
+            state.TurnPhase = e.RestoredTurnPhase is { } phase
+                ? phase
+                : state.CurrentTurnAction == TurnAction.DrawTrainCards && state.TrainCardsTakenThisTurn == 1
                     ? TurnPhase.AwaitingSecondTrainCard
                     : TurnPhase.TurnStart;
         }

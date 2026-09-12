@@ -37,7 +37,15 @@ public static class StateHash
     /// with the restored state "excluding lifecycle/version bookkeeping", which is exactly this, and
     /// invariant 15 uses it to prove that packing away and rebuilding changed nothing about the game.
     /// </summary>
-    public static string ComputeLogical(GameState state)
+    public static string ComputeLogical(GameState state) => ComputeLogicalCore(state, includeRulesPolicies: true);
+
+    /// <summary>Retains read compatibility with checkpoints written before supply policies were covered.</summary>
+    public static bool MatchesLogical(GameState state, string expected) =>
+        string.Equals(expected.StartsWith("logical-v1:", StringComparison.Ordinal)
+                ? ComputeLogicalCore(state, includeRulesPolicies: false)
+                : ComputeLogical(state), expected, StringComparison.Ordinal);
+
+    private static string ComputeLogicalCore(GameState state, bool includeRulesPolicies)
     {
         var normalised = state.Fork();
         normalised.StateVersion = 0;
@@ -48,8 +56,9 @@ public static class StateHash
         normalised.RebuildAttested = false;
         normalised.CheckpointFault = null;
 
-        return "logical-v1:" +
-               Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(CanonicalizeCore(normalised))));
+        var content = CanonicalizeCore(normalised) + (includeRulesPolicies ? RulesPolicySuffix(normalised) : string.Empty);
+        return (includeRulesPolicies ? "logical-v2:" : "logical-v1:") +
+               Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
     }
 
     /// <summary>

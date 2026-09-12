@@ -1,0 +1,22 @@
+✔ embedded-browser handoff is visible even when the worker never activates (2.7171ms)
+✔ worker activation times out and leaves recheck and pairing diagnostics usable (1.2219ms)
+✔ a manual recheck after pairing does not prove persistence across reload (1.7557ms)
+✔ a fresh page with a valid session does prove reload persistence (0.7974ms)
+✔ losing the laptop clears stale successful report fields (0.7928ms)
+✔ an index page alone is not reported as a complete offline shell (0.6514ms)
+✔ re-pairing in the same page clears evidence from an older loaded session (0.896ms)
+✔ pairing during initial worker activation does not become reload evidence (0.7672ms)
+✔ a stale session read cannot overwrite successful pairing (0.9238ms)
+✔ a double tap sends only one single-use pairing request (0.8323ms)
+✔ a hanging session request is aborted and does not leave Recheck locked (0.9667ms)
+✔ worker upgrades delete only this spike's old caches (1.2403ms)
+✔ only allowlisted shell GETs use the current shell cache (0.612ms)
+✔ API, unknown paths, query strings, POSTs and foreign origins bypass shell handling (0.5518ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 14
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 83.4562

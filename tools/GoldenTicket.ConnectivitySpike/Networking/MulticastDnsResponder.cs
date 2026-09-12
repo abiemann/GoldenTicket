@@ -34,15 +34,21 @@ public sealed class MulticastDnsResponder : IAsyncDisposable
 
     private readonly string _hostname;
     private readonly IPAddress _address;
+    private readonly int _prefixLength;
+    private readonly Func<bool> _networkIsPrivate;
     private readonly CancellationTokenSource _stopping = new();
 
     private Socket? _socket;
     private Task? _loop;
+    private int _interfaceIndex;
 
-    public MulticastDnsResponder(string hostname, IPAddress address)
+    public MulticastDnsResponder(string hostname, IPAddress address, int prefixLength = 32,
+        Func<bool>? networkIsPrivate = null)
     {
         _hostname = hostname.TrimEnd('.');
         _address = address;
+        _prefixLength = prefixLength;
+        _networkIsPrivate = networkIsPrivate ?? (() => true);
     }
 
     /// <summary>How many queries this responder has answered. Reported as spike evidence.</summary>
@@ -59,13 +65,18 @@ public sealed class MulticastDnsResponder : IAsyncDisposable
     /// </summary>
     public bool TryStart()
     {
+        if (_socket is not null || _stopping.IsCancellationRequested) return false;
         try
         {
+            var adapter = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+                .Single(candidate => candidate.GetIPProperties().UnicastAddresses.Any(item => item.Address.Equals(_address)));
+            _interfaceIndex = adapter.GetIPProperties().GetIPv4Properties().Index;
             _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
 
             // Windows already runs an mDNS responder for its own name; sharing the port lets this
             // one answer for the GoldenTicket name alongside it.
             _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            _socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.PacketInformation, true);
             _socket.Bind(new IPEndPoint(IPAddress.Any, MulticastPort));
 
             _socket.SetSocketOption(
@@ -74,6 +85,9 @@ public sealed class MulticastDnsResponder : IAsyncDisposable
                 new MulticastOption(MulticastGroup, _address));
 
             _socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastTimeToLive, 255);
+            // Joining an interface does not select it for outgoing multicast. Without this,
+            // Windows may advertise the board's address on a different adapter/default route.
+            _socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastInterface, _address.GetAddressBytes());
 
             _loop = Task.Run(() => ListenAsync(_stopping.Token));
             _ = AnnounceAsync();
@@ -82,11 +96,15 @@ public sealed class MulticastDnsResponder : IAsyncDisposable
         catch (SocketException exception)
         {
             Problem = $"could not join the multicast group ({exception.SocketErrorCode})";
+            _socket?.Dispose();
+            _socket = null;
             return false;
         }
         catch (Exception exception)
         {
             Problem = $"could not start ({exception.GetType().Name})";
+            _socket?.Dispose();
+            _socket = null;
             return false;
         }
     }
@@ -94,7 +112,7 @@ public sealed class MulticastDnsResponder : IAsyncDisposable
     /// <summary>Sends an unsolicited answer so caches learn the name without being asked.</summary>
     public async Task AnnounceAsync()
     {
-        if (_socket is null) return;
+        if (_socket is null || !_networkIsPrivate()) return;
 
         try
         {
@@ -115,10 +133,15 @@ public sealed class MulticastDnsResponder : IAsyncDisposable
         {
             try
             {
-                var result = await _socket.ReceiveFromAsync(
+                var result = await _socket.ReceiveMessageFromAsync(
                     buffer, SocketFlags.None, new IPEndPoint(IPAddress.Any, 0), cancellationToken);
 
+                if (result.PacketInformation.Interface != _interfaceIndex ||
+                    result.RemoteEndPoint is not IPEndPoint peer ||
+                    !LanInterfaces.IsInSubnet(peer.Address, _address, _prefixLength)) continue;
+
                 if (!AsksForThisName(buffer.AsSpan(0, result.ReceivedBytes), out var queryId)) continue;
+                if (!_networkIsPrivate()) continue;
 
                 var response = BuildResponse(queryId);
                 await _socket.SendToAsync(
@@ -155,7 +178,7 @@ public sealed class MulticastDnsResponder : IAsyncDisposable
         var flags = BinaryPrimitives.ReadUInt16BigEndian(message[2..]);
 
         // Responses have QR set; only questions are answered.
-        if ((flags & 0x8000) != 0) return false;
+        if ((flags & 0xF800) != 0) return false;
 
         var questions = BinaryPrimitives.ReadUInt16BigEndian(message[4..]);
         var offset = 12;
@@ -185,6 +208,7 @@ public sealed class MulticastDnsResponder : IAsyncDisposable
         var cursor = offset;
         var jumped = false;
         var safety = 0;
+        var wireLength = 1;
 
         while (cursor < message.Length)
         {
@@ -211,6 +235,7 @@ public sealed class MulticastDnsResponder : IAsyncDisposable
                 continue;
             }
 
+            if (length > 63 || (wireLength += length + 1) > 255) break;
             if (cursor + 1 + length > message.Length) break;
 
             labels.Add(Encoding.UTF8.GetString(message.Slice(cursor + 1, length)));

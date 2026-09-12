@@ -1,0 +1,6 @@
+Test run for D:\Projects\GoldenTicket\tests\GoldenTicket.Domain.Tests\bin\Release\net10.0-windows10.0.26100.0\GoldenTicket.Domain.Tests.dll (.NETCoreApp,Version=v10.0)
+A total of 1 test files matched the specified pattern.
+WARNING: Overwriting results file: D:\Projects\GoldenTicket\docs\evidence\audit-2026-09-12\final-tests.trx
+Results File: D:\Projects\GoldenTicket\docs\evidence\audit-2026-09-12\final-tests.trx
+
+Passed!  - Failed:     0, Passed:   332, Skipped:     0, Total:   332, Duration: 1 s - GoldenTicket.Domain.Tests.dll (net10.0)

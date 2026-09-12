@@ -1,6 +1,6 @@
 # GoldenTicket implementation completion
 
-Updated September 11, 2026 after the [implementation audit](docs/AUDIT-2026-09-11.md).
+Updated September 12, 2026 after the [implementation audit](docs/AUDIT-2026-09-12.md).
 The complete requirements remain in [DESIGN.md](DESIGN.md). This is a partial manual desktop
 implementation, not a completed camera-assisted product.
 
@@ -18,7 +18,7 @@ validation requirements; mark each feature complete only after those checks pass
 - [ ] **CPU/GPU inference selection** — Auto at launch uses a validated GPU or falls back to CPU; retain manual overrides and show a CPU chip or GPU/lightning status indicator (M4/M5).
 - [ ] **Photographed save and rebuild** — the state-only half is implemented (M2): named checkpoints,
   the `PreparingPackAway`/`PackedAway`/`Rebuilding` lifecycle, commit-then-readback validation,
-  diagram-based guided reconstruction and exactly-once resume. Still missing (M4): the verified board
+  route-list guided reconstruction and exactly-once resume. Still missing: the board diagram and (M4) the verified board
   photograph, the pending-placement mask, pinned images and photo readback.
 - [ ] **Offline installer packaging** — self-contained Windows x64 distribution with required runtimes and assets included (M7).
 - [ ] **Training mode, voice, story, and audio: last feature pass** — Training follows Story without effects/ambience; narration follows visual/voice/both settings. Complete photo save-and-rebuild and packaging foundation first (M6).
@@ -28,6 +28,14 @@ earlier; perform final release checks and package refresh after the narrative fe
 
 ## Audit fixes implemented
 
+- [x] Harden the connectivity spike's network boundary, request limits, session lifetime and local
+  certificate handling; keep the full game companion and real-device evidence outstanding.
+- [x] Compare complete checkpoint readback data, include supply policies in new logical hashes,
+  require a fresh rebuild attestation after restart, and permit safe readback retry.
+- [x] Keep packed/rebuilding games behind the privacy gate, scope operator acknowledgements to the
+  current decision, and continue eligible AI turns after resolving a pause or rebuild.
+- [x] Bound browser installation/network checks, prevent false reload/cache success reports, and
+  constrain the service worker to its own explicitly allowed shell assets.
 - [x] Confine save paths and reject linked/unsupported paths before filesystem operations.
 - [x] Check snapshot/journal/version integrity, prevent competing writers, and preserve old save compatibility.
 - [x] Keep unreadable saves visible, sanitize recovery errors, and block gameplay after uncertain writes.
@@ -84,9 +92,9 @@ earlier; perform final release checks and package refresh after the narrative fe
   held-out physical sets, and ship an offline model. Users never train or download a model.
 - [x] **M2: state-only pack away and rebuild.** Named checkpoints, durable packed/rebuild lifecycles,
   frozen source state, commit-then-readback validation before any safe-to-pack result, suspended
-  partial operations preserved, diagram-based guided reconstruction with whole-target attestation,
+  partial operations preserved, route-list guided reconstruction with whole-target attestation,
   and exactly-once resume. Verified by `PackAwayTests` and `PackAwayDurabilityTests`.
-- [ ] **M2/M4: persistence and pack away, remaining.** Add complete encrypted snapshots,
+- [ ] **M2/M4: persistence and pack away, remaining.** Add the geometry-based rebuild diagram, complete encrypted snapshots,
   backup-before-migration, pinned images, verified board photographs and photo readback,
   partial-operation (pending placement) targets, and current-checkpoint success receipts for the
   companion. Add correction branches and optional encrypted portable export/import.
@@ -113,6 +121,7 @@ earlier; perform final release checks and package refresh after the narrative fe
 dotnet restore GoldenTicket.sln --locked-mode --configfile NuGet.config
 dotnet build GoldenTicket.sln --no-restore
 dotnet test GoldenTicket.sln --no-restore
+node --test tests/GoldenTicket.ConnectivitySpike.Tests/shell.test.cjs
 dotnet run --project tools/GoldenTicket.Simulator --no-build --no-restore -- verify-data
 dotnet run --project tools/GoldenTicket.Simulator --no-build --no-restore -- simulate --games 25 --seats 4 --seed 400
 dotnet list GoldenTicket.sln package --vulnerable --include-transitive --no-restore

@@ -1,0 +1,12 @@
+Data package: D:\Projects\GoldenTicket\tools\GoldenTicket.Simulator\bin\Release\net10.0\data\classic-us\classic-us-v1.json
+  profile            ttr-us-classic-en-v1 (schema 1, rules policy 1)
+  edition            Ticket to Ride - classic English North America [DO7201, 7201]
+  cities             36
+  routes             100 (22 parallel groups, 44 grey lanes)
+  total track length 309 train spaces
+  tickets            30 (4-22 points)
+  train cards        110 (9 kinds)
+  computed dataHash  sha256:913e8931538b124a05d146adb536fcc9258869bdf159a5a4efb287392da3df3f
+  recorded dataHash  sha256:913e8931538b124a05d146adb536fcc9258869bdf159a5a4efb287392da3df3f
+
+  audit status       UNAUDITED - not yet checked against the physical board (DESIGN 6.3)

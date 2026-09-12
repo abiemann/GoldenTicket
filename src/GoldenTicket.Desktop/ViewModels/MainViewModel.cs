@@ -85,13 +85,22 @@ public sealed partial class MainViewModel : ObservableObject
     private (SeatId SeatId, string Name)? _revealable;
 
     public bool CanRevealPrivateSeat => _revealable is not null && !_operationInProgress
-        && _windowActive && !NeedsBoardReconciliation && !_mustReload && _coordinator?.StorageFaulted != true;
+        && _windowActive && Screen == Screen.Table && !NeedsBoardReconciliation && !_mustReload
+        && _coordinator is { StorageFaulted: false }
+        && _coordinator.Public.Lifecycle is SessionLifecycle.Setup or SessionLifecycle.Active
+        && _coordinator.Public.TurnPhase != TurnPhase.RulesDecisionRequired;
 
     public string RevealPrompt => _revealable is { } seat
         ? $"Pass the laptop to {seat.Name}, then reveal their private view."
         : "No human seat needs the screen right now.";
 
     partial void OnPrivateSeatChanged(PrivateSeatViewModel? value) => OnPropertyChanged(nameof(IsPrivateVisible));
+
+    partial void OnScreenChanged(Screen value)
+    {
+        HidePrivateSeat();
+        OnPropertyChanged(nameof(CanRevealPrivateSeat));
+    }
 
     // ---- Setup -----------------------------------------------------------------------------
 
@@ -206,7 +215,8 @@ public sealed partial class MainViewModel : ObservableObject
         if (_coordinator is null || NeedsBoardReconciliation) return null;
 
         var view = _coordinator.Public;
-        if (view.Lifecycle == SessionLifecycle.Finished) return null;
+        if (view.Lifecycle is not (SessionLifecycle.Setup or SessionLifecycle.Active) ||
+            view.TurnPhase == TurnPhase.RulesDecisionRequired) return null;
 
         if (view.Lifecycle == SessionLifecycle.Setup)
         {
@@ -433,7 +443,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     public async Task ResolveRulesDecisionAsync()
     {
-        if (_coordinator is null || Table.RulesContinuation is not { } policy) return;
+        if (_coordinator is null || !CanSubmitOperator() || Table.RulesContinuation is not { } policy) return;
 
         if (!Table.RulesContinuationAccepted)
         {
@@ -530,6 +540,11 @@ public sealed partial class MainViewModel : ObservableObject
     public async Task ResumePackedGameAsync()
     {
         if (_coordinator is null || Public?.Checkpoint is not { } checkpoint) return;
+        if (!Table.RebuildAcknowledged || !Table.RebuildAttested)
+        {
+            Status = "Confirm the whole saved board before resuming.";
+            return;
+        }
 
         await SubmitLifecycleAsync(new ResumePackedGame(_coordinator.NewEnvelope(), checkpoint.CheckpointId));
         if (_coordinator.Public.Lifecycle == SessionLifecycle.Active) Screen = Screen.Table;
@@ -555,7 +570,15 @@ public sealed partial class MainViewModel : ObservableObject
                 return;
             }
 
-            await RefreshAsync();
+            if (outcome.IsAccepted && command is ResolveRulesDecision or CancelPackAwayPreparation or ResumePackedGame)
+            {
+                if (_coordinator.Public.Lifecycle == SessionLifecycle.Active) Screen = Screen.Table;
+                await PumpAsync();
+            }
+            else
+            {
+                await RefreshAsync();
+            }
         }
         catch (Exception)
         {

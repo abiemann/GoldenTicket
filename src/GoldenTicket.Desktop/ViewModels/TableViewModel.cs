@@ -120,8 +120,11 @@ public sealed partial class TableViewModel : ObservableObject
             ? $"Paused - {decision.Code}: {decision.Explanation}"
             : null;
 
-        RulesContinuation = view.RulesDecision is { } paused ? RulesContinuations.For(paused.Code) : null;
-        if (RulesContinuation is null) RulesContinuationAccepted = false;
+        RulesContinuation = !view.IsGameplaySuspended && view.RulesDecision is { } paused
+            ? RulesContinuations.For(paused.Code) : null;
+        // Each newly published decision needs its own acknowledgement, including a policy raised
+        // while accepting another one (for example, partial market followed by no second draw).
+        RulesContinuationAccepted = false;
 
         Seats.Clear();
         foreach (var seat in view.Seats)
@@ -166,7 +169,7 @@ public sealed partial class TableViewModel : ObservableObject
             History.Add(who + entry.Text);
         }
 
-        Placement = view.PendingClaim is { } pending
+        Placement = !view.IsGameplaySuspended && view.PendingClaim is { } pending
             ? BuildPlacement(view, pending)
             : null;
     }
@@ -214,14 +217,20 @@ public sealed partial class TableViewModel : ObservableObject
             return;
         }
 
-        SaveStatus = checkpoint.Status switch
+        SaveStatus = view.Lifecycle switch
         {
-            CheckpointStatus.Verified =>
-                $"Saved as \"{checkpoint.Name}\" at {checkpoint.CreatedAt.ToLocalTime():HH:mm}. " +
-                "You can pack the game away.",
-            CheckpointStatus.CommittedAwaitingReadback =>
-                "The save is written and is being checked. Do not pack the game away yet.",
-            _ => "The save could not be validated. The game stays packed until this is resolved.",
+            SessionLifecycle.Rebuilding => "Rebuilding the saved position. Finish the board check to resume.",
+            SessionLifecycle.PreparingPackAway => "Saving a new checkpoint. Do not pack the game away yet.",
+            SessionLifecycle.PackedAway => checkpoint.Status switch
+            {
+                CheckpointStatus.Verified =>
+                    $"Saved as \"{checkpoint.Name}\" at {checkpoint.CreatedAt.ToLocalTime():HH:mm}. " +
+                    "You can pack the game away.",
+                CheckpointStatus.CommittedAwaitingReadback =>
+                    "The save is written and is being checked. Do not pack the game away yet.",
+                _ => "The save could not be validated. The game stays packed until this is resolved.",
+            },
+            _ => $"Previous checkpoint: \"{checkpoint.Name}\". Save again before packing away the current game.",
         };
 
         RebuildHeadline =
@@ -291,6 +300,14 @@ public sealed partial class TableViewModel : ObservableObject
 
     private string DescribeInstruction(PublicView view, PublicSeatSummary active) => view.TurnPhase switch
     {
+        _ when view.Lifecycle == SessionLifecycle.PreparingPackAway =>
+            "Saving the current position. Wait for the completed save before removing any trains.",
+        _ when view.Lifecycle == SessionLifecycle.PackedAway =>
+            "This match is packed away. Use the saved-position rebuild workflow to continue.",
+        _ when view.Lifecycle == SessionLifecycle.Rebuilding =>
+            "Rebuild the saved target, including empty lanes, before resuming play.",
+        TurnPhase.RulesDecisionRequired =>
+            "Review the supply policy below before continuing the match.",
         TurnPhase.SetupTicketSelection =>
             "Each seat keeps at least " +
             $"{_manifest.RulesConstants.SetupTicketMinimumKeep} of its {_manifest.RulesConstants.SetupTicketOffer} " +

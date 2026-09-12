@@ -1,6 +1,7 @@
 using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Events;
 using GoldenTicket.Domain.Model;
+using GoldenTicket.Persistence;
 
 namespace GoldenTicket.Domain.Tests;
 
@@ -284,6 +285,194 @@ public class RulesContinuationTests
     }
 
     // ---- The pass policy must terminate -----------------------------------------------------------
+
+    [Theory]
+    [InlineData(RulesContinuations.MarketResetImpossible)]
+    [InlineData(RulesContinuations.MarketResetUnstable)]
+    public void AcceptingEitherResetPolicyDisablesFutureResetsEvenWhenSupplyBecomesFeasible(string code)
+    {
+        var harness = Ready();
+        GameReducer.ApplyTransition(harness.State, [new RulesDecisionRaised(code, "Reset paused")]);
+        var policy = RulesContinuations.For(code)!;
+        harness.SubmitAccepted(new ResolveRulesDecision(
+            harness.Envelope(), code, policy.PolicyId, Operator));
+
+        // A later discard can make a normal market possible again. The disclosed policy nevertheless
+        // says resets stay disabled for this match, rather than silently restarting them here.
+        ArrangeSupply(harness,
+            [TrainCardKind.Red, TrainCardKind.Green, TrainCardKind.Blue,
+                TrainCardKind.Locomotive, TrainCardKind.Locomotive],
+            [TrainCardKind.Locomotive, TrainCardKind.Red]);
+        var result = harness.SubmitAccepted(new SelectTrainCard(harness.Envelope(harness.State.ActiveSeatId), 0));
+
+        Assert.DoesNotContain(result.Transition!.Events, entry => entry is MarketReset);
+        Assert.Equal(3, harness.State.FaceUp.Count(card => card is { } id &&
+            harness.State.Catalog.KindOf(id) == TrainCardKind.Locomotive));
+        harness.AssertInvariants();
+    }
+
+    [Fact]
+    public void AcceptingASmallerMarketDoesNotAlsoAcceptDisablingLocomotiveResets()
+    {
+        var harness = Ready();
+        ArrangeSupply(harness,
+            [TrainCardKind.Red, TrainCardKind.Green, TrainCardKind.Locomotive,
+                TrainCardKind.Locomotive, TrainCardKind.Locomotive], []);
+        var seat = harness.State.ActiveSeatId;
+        harness.SubmitAccepted(new SelectTrainCard(harness.Envelope(seat), 0));
+        Assert.Equal(RulesContinuations.PartialMarketSupply, harness.State.RulesDecision?.Code);
+        var drawn = harness.State.HandOf(seat).ToArray();
+        var policy = RulesContinuations.For(RulesContinuations.PartialMarketSupply)!;
+        harness.SubmitAccepted(new ResolveRulesDecision(harness.Envelope(), policy.Code, policy.PolicyId, Operator));
+
+        Assert.Equal(RulesContinuations.MarketResetImpossible, harness.State.RulesDecision?.Code);
+        Assert.Equal(drawn, harness.State.HandOf(seat));
+        Assert.Equal(1, harness.State.TrainCardsTakenThisTurn);
+        harness.AssertInvariants();
+    }
+
+    [Fact]
+    public void ResolvingAnOpeningMarketPauseRestoresTheSetupPhase()
+    {
+        var harness = RulesHarness.Create();
+        var policy = RulesContinuations.For(RulesContinuations.MarketResetUnstable)!;
+        GameReducer.ApplyTransition(harness.State, [new RulesDecisionRaised(policy.Code, "Opening market paused")]);
+        harness.SubmitAccepted(new ResolveRulesDecision(harness.Envelope(), policy.Code, policy.PolicyId, Operator));
+
+        Assert.Equal(SessionLifecycle.Setup, harness.State.Lifecycle);
+        Assert.Equal(TurnPhase.SetupTicketSelection, harness.State.TurnPhase);
+        harness.CompleteSetup();
+        Assert.Equal(SessionLifecycle.Active, harness.State.Lifecycle);
+    }
+
+    [Fact]
+    public void UnknownPolicyVersionsCannotBeSilentlyReplayedAsCurrentPolicies()
+    {
+        var harness = PausedOnSecondDraw();
+        var policy = RulesContinuations.For(RulesContinuations.NoSelectableSecondDraw)!;
+        Assert.Throws<InvalidDataException>(() => GameReducer.ApplyTransition(harness.State,
+            [new RulesDecisionResolved(policy.Code, policy.PolicyId, RulesContinuations.PolicyVersion + 1,
+                Operator, DateTimeOffset.UtcNow)]));
+    }
+
+    [Fact]
+    public void UnknownAcceptedPolicyIdsAreInvariantViolations()
+    {
+        var harness = Ready();
+        harness.State.AcceptedRulesPolicies = harness.State.AcceptedRulesPolicies.SetItem(
+            RulesContinuations.MarketResetImpossible, "unknown-policy");
+        Assert.Contains(InvariantChecker.Check(harness.State), problem => problem.Contains("rules policy"));
+    }
+
+    [Fact]
+    public void AFaceUpLocomotiveEndsTheTurnAfterAcceptingTheRefillPolicy()
+    {
+        var harness = Ready();
+        ArrangeSupply(harness,
+            [TrainCardKind.Locomotive, TrainCardKind.Red, TrainCardKind.Blue,
+                TrainCardKind.White, TrainCardKind.Green], []);
+        var seat = harness.State.ActiveSeatId;
+        harness.SubmitAccepted(new SelectTrainCard(harness.Envelope(seat), 0));
+        Assert.Equal(1, harness.State.TrainCardsTakenThisTurn);
+        Assert.Equal(RulesContinuations.PartialMarketSupply, harness.State.RulesDecision?.Code);
+        var held = harness.State.HandOf(seat).ToArray();
+        var policy = RulesContinuations.For(RulesContinuations.PartialMarketSupply)!;
+        var result = harness.SubmitAccepted(new ResolveRulesDecision(
+            harness.Envelope(), policy.Code, policy.PolicyId, Operator));
+
+        Assert.NotEqual(seat, harness.State.ActiveSeatId);
+        Assert.Equal(held, harness.State.HandOf(seat));
+        Assert.Contains(result.Transition!.Events, entry => entry is TurnCompleted);
+        var resolved = Assert.Single(result.Transition.Events.OfType<RulesDecisionResolved>());
+        Assert.Equal(TurnPhase.TurnStart, resolved.RestoredTurnPhase);
+        Assert.Equal(TurnPhase.TurnStart,
+            ((RulesDecisionResolved)EventSerializer.Deserialize(EventSerializer.Serialize(resolved))).RestoredTurnPhase);
+        harness.AssertInvariants();
+    }
+
+    [Fact]
+    public void LegacyJournalReconstructsTheCompletedLocomotiveDrawBeforeResuming()
+    {
+        var harness = Enumerable.Range(1, 100)
+            .Select(seed => RulesHarness.Create(seed: (ulong)seed))
+            .First(candidate => candidate.State.FaceUp.Any(card => card is { } id &&
+                candidate.State.Catalog.KindOf(id) == TrainCardKind.Locomotive));
+        harness.CompleteSetup();
+        var seat = harness.State.ActiveSeatId;
+        var slot = Enumerable.Range(0, harness.State.FaceUp.Count).First(index =>
+            harness.State.FaceUp[index] is { } id && harness.State.Catalog.KindOf(id) == TrainCardKind.Locomotive);
+        var policy = RulesContinuations.For(RulesContinuations.PartialMarketSupply)!;
+        GameEvent[] events =
+        [
+            new FaceUpCardTaken(seat, slot, harness.State.FaceUp[slot]!.Value, TrainCardKind.Locomotive, true),
+            new RulesDecisionRaised(policy.Code, "Saved refill pause"),
+        ];
+        var journal = harness.Journal.Concat(events.Select((entry, index) => new JournaledEvent(
+            harness.Journal[^1].Sequence + index + 1, harness.State.StateVersion + 1, entry))).ToArray();
+
+        var restored = GameReducer.Rebuild(TestManifest.Manifest, TestManifest.Catalog, journal);
+        Assert.Equal(TurnPhase.TurnStart, restored.RulesDecision!.InterruptedTurnPhase);
+        Assert.DoesNotContain(nameof(RulesDecision.InterruptedTurnPhase),
+            System.Text.Json.JsonSerializer.Serialize(restored.RulesDecision));
+        var result = harness.Rules.ValidateAndApply(restored, new ResolveRulesDecision(
+            new CommandEnvelope(restored.SessionId, CommandId.New(), restored.StateVersion),
+            policy.Code, policy.PolicyId, Operator));
+        Assert.True(result.IsAccepted, result.Rejection?.Message);
+        GameReducer.ApplyTransition(restored, result.Transition!.Events);
+        Assert.NotEqual(seat, restored.ActiveSeatId);
+        InvariantChecker.AssertConsistent(restored);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void HistoricalResolutionsKeepTheirOriginalStateHashWhenNoRestoredPhaseWasRecorded(bool duringSetup)
+    {
+        var harness = Enumerable.Range(1, 100)
+            .Select(seed => RulesHarness.Create(seed: (ulong)seed))
+            .First(candidate => candidate.State.FaceUp.Any(card => card is { } id &&
+                candidate.State.Catalog.KindOf(id) == TrainCardKind.Locomotive));
+        if (!duringSetup) harness.CompleteSetup();
+        var seat = harness.State.ActiveSeatId;
+        var policy = RulesContinuations.For(RulesContinuations.PartialMarketSupply)!;
+        var beforeResolution = harness.State.Fork();
+        var priorEvents = new List<GameEvent>();
+        if (!duringSetup)
+        {
+            var slot = Enumerable.Range(0, harness.State.FaceUp.Count).First(index =>
+                harness.State.FaceUp[index] is { } id && harness.State.Catalog.KindOf(id) == TrainCardKind.Locomotive);
+            priorEvents.Add(new FaceUpCardTaken(seat, slot, harness.State.FaceUp[slot]!.Value,
+                TrainCardKind.Locomotive, true));
+        }
+        priorEvents.Add(new RulesDecisionRaised(policy.Code, "Historical refill pause"));
+        GameReducer.ApplyTransition(beforeResolution, priorEvents);
+
+        // These assignments are the original f7fd310 reducer semantics. The old app persisted a
+        // snapshot hash at this boundary even though a face-up locomotive had actually ended its
+        // draw. Replaying that old event cannot retroactively correct the recorded position.
+        var historical = beforeResolution.Fork();
+        historical.AcceptedRulesPolicies = historical.AcceptedRulesPolicies.SetItem(policy.Code, policy.PolicyId);
+        historical.RulesDecision = null;
+        historical.TurnPhase = historical.CurrentTurnAction == TurnAction.DrawTrainCards &&
+            historical.TrainCardsTakenThisTurn == 1 ? TurnPhase.AwaitingSecondTrainCard : TurnPhase.TurnStart;
+        historical.JournalSequence++;
+        historical.StateVersion++;
+        var storedLegacyHash = StateHash.Compute(historical);
+
+        var legacyResolution = new RulesDecisionResolved(policy.Code, policy.PolicyId,
+            RulesContinuations.PolicyVersion, Operator, DateTimeOffset.UnixEpoch);
+        var legacyPayload = EventSerializer.Serialize(legacyResolution);
+        Assert.DoesNotContain("RestoredTurnPhase", System.Text.Encoding.UTF8.GetString(legacyPayload));
+        var deserialized = EventSerializer.Deserialize(legacyPayload);
+        var journal = harness.Journal.Concat(priorEvents.Select((entry, index) => new JournaledEvent(
+            harness.Journal[^1].Sequence + index + 1, harness.State.StateVersion + 1, entry)))
+            .Append(new JournaledEvent(harness.Journal[^1].Sequence + priorEvents.Count + 1,
+                harness.State.StateVersion + 2, deserialized)).ToArray();
+        var restored = GameReducer.Rebuild(TestManifest.Manifest, TestManifest.Catalog, journal);
+
+        Assert.Equal(storedLegacyHash, StateHash.Compute(restored));
+        Assert.Equal(historical.TurnPhase, restored.TurnPhase);
+    }
 
     /// <summary>
     /// The pass policy is the only one that could circle the table forever. Once every seat has

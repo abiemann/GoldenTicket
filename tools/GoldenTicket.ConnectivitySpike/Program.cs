@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -8,6 +7,8 @@ using GoldenTicket.ConnectivitySpike.Networking;
 using GoldenTicket.ConnectivitySpike.Pairing;
 using GoldenTicket.ConnectivitySpike.Security;
 using Microsoft.AspNetCore.Http.Json;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 
 // DESIGN 23 M0 connectivity spike. It answers four questions on real devices, per DESIGN 22.7:
 //   1. Does a per-installation local CA install and produce a trusted, secure-context origin?
@@ -27,6 +28,12 @@ if (options.ShowHelp)
 {
     SpikeOptions.PrintUsage();
     return 0;
+}
+if (options.HttpsPort is < 1 or > 65535 || options.BootstrapPort is < 1 or > 65535 ||
+    options.HttpsPort == options.BootstrapPort)
+{
+    Console.Error.WriteLine("Choose distinct HTTPS and bootstrap ports between 1 and 65535.");
+    return 2;
 }
 
 // The connection QR is drawn with block characters, which need a UTF-8 console.
@@ -53,7 +60,7 @@ var candidates = LanInterfaces.Discover();
 if (candidates.Count == 0)
 {
     Console.Error.WriteLine(
-        "No private network address was found. Join the laptop to the same Wi-Fi as the phone and try again.");
+        "No eligible Windows Private network was found. Use trusted Wi-Fi marked Private in Windows Settings; public or unknown profiles are refused.");
     return 2;
 }
 
@@ -76,7 +83,8 @@ catch (Exception exception)
 }
 
 var pairing = new PairingService();
-var observations = new ConcurrentBag<DeviceObservation>();
+var observations = new BoundedObservationBuffer<DeviceObservation>(128);
+using var serverCertificate = material.ServerCertificate;
 var startedAt = DateTimeOffset.Now;
 var runId = Guid.NewGuid().ToString("n")[..8];
 
@@ -86,10 +94,13 @@ var origins = new[]
     $"https://{selected.Address}:{options.HttpsPort}",
     $"https://localhost:{options.HttpsPort}",
 };
+bool NetworkIsPrivate() => WindowsNetworkProfiles.ReadPrivateAdapters().Contains(selected.AdapterId);
+var requestPolicy = new SpikeRequestPolicy(selected.Address, selected.PrefixLength, origins, NetworkIsPrivate);
 
 // ---- Name advertisement --------------------------------------------------------------------------
 
-await using var responder = new MulticastDnsResponder(material.Hostname, selected.Address);
+await using var responder = new MulticastDnsResponder(material.Hostname, selected.Address,
+    selected.PrefixLength, NetworkIsPrivate);
 var mdnsStarted = !options.DisableMulticastDns && responder.TryStart();
 
 // ---- The temporary HTTP bootstrap (DESIGN 18.5) ---------------------------------------------------
@@ -97,16 +108,23 @@ var mdnsStarted = !options.DisableMulticastDns && responder.TryStart();
 // closed as soon as the certificate has been transferred.
 
 var bootstrapOpen = true;
-var bootstrap = BuildBootstrap(options, material, selected.Address);
+await using var bootstrap = BuildBootstrap(options, material, selected, NetworkIsPrivate);
 await bootstrap.StartAsync();
 
 // ---- The trusted HTTPS host ------------------------------------------------------------------------
 
-var builder = WebApplication.CreateBuilder();
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    ContentRootPath = AppContext.BaseDirectory,
+    WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot"),
+});
 builder.Logging.ClearProviders();
 builder.WebHost.ConfigureKestrel(kestrel =>
 {
     kestrel.AddServerHeader = false;
+    kestrel.Limits.MaxRequestBodySize = SpikeRequestPolicy.MaximumRequestBytes;
+    kestrel.Limits.MaxConcurrentConnections = 64;
+    kestrel.Limits.Http2.MaxStreamsPerConnection = 32;
 
     void Listen(IPAddress address) => kestrel.Listen(address, options.HttpsPort, listen =>
         listen.UseHttps(material.ServerCertificate));
@@ -117,45 +135,34 @@ builder.WebHost.ConfigureKestrel(kestrel =>
 
 builder.Services.Configure<JsonOptions>(json =>
     json.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase);
+builder.Services.AddRateLimiter(limits =>
+{
+    limits.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    limits.AddFixedWindowLimiter("writes", limit =>
+    {
+        limit.PermitLimit = 60;
+        limit.Window = TimeSpan.FromMinutes(1);
+        limit.QueueLimit = 0;
+        limit.AutoReplenishment = true;
+    });
+});
 
-var app = builder.Build();
+await using var app = builder.Build();
 
 // DESIGN 18.5: validate Host and Origin against the current allowlist, and never let an API
 // response be cached.
 app.Use(async (context, next) =>
 {
-    var host = context.Request.Host.Value ?? string.Empty;
-    if (!origins.Any(origin => origin.EndsWith("//" + host, StringComparison.OrdinalIgnoreCase)))
+    var status = requestPolicy.Validate(context);
+    if (context.Request.Path.StartsWithSegments("/api")) context.Response.Headers.CacheControl = "no-store";
+    if (status != StatusCodes.Status200OK)
     {
-        context.Response.StatusCode = StatusCodes.Status421MisdirectedRequest;
-        await context.Response.WriteAsync("This host name is not served here.");
+        context.Response.StatusCode = status;
+        await context.Response.WriteAsync("This request is not allowed on the selected private network and origin.");
         return;
     }
 
-    if (context.Request.Path.StartsWithSegments("/api"))
-    {
-        context.Response.Headers.CacheControl = "no-store";
-
-        var origin = context.Request.Headers.Origin.ToString();
-        if (!string.IsNullOrEmpty(origin) &&
-            !origins.Contains(origin, StringComparer.OrdinalIgnoreCase))
-        {
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await context.Response.WriteAsync("Cross-origin requests are refused.");
-            return;
-        }
-
-        // A custom header cannot be sent cross-origin without a preflight this host never allows,
-        // which is the CSRF guard for the spike's small API surface.
-        if (HttpMethods.IsPost(context.Request.Method) &&
-            context.Request.Headers["X-GoldenTicket-Spike"] != "1")
-        {
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await context.Response.WriteAsync("Missing the spike request header.");
-            return;
-        }
-    }
-    else
+    if (!context.Request.Path.StartsWithSegments("/api"))
     {
         context.Response.Headers.ContentSecurityPolicy =
             "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
@@ -167,6 +174,7 @@ app.Use(async (context, next) =>
     await next();
 });
 
+app.UseRateLimiter();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -212,22 +220,24 @@ app.MapPost("/api/spike/pair", async (HttpContext context, PairRequest request) 
         HttpOnly = true,
         Secure = true,
         SameSite = SameSiteMode.Strict,
-        MaxAge = TimeSpan.FromHours(12),
+        MaxAge = PairingService.SessionLifetime,
+        Path = "/",
     });
 
     Console.WriteLine($"  paired: {result.Device.Label}");
     await Task.CompletedTask;
     return Results.Ok(new { paired = true, message = result.Message });
-});
+}).RequireRateLimiting("writes");
 
 app.MapPost("/api/spike/report", (HttpContext context, DeviceReportRequest request) =>
 {
+    var reachedOrigin = $"{context.Request.Scheme}://{context.Request.Host}";
     var observation = new DeviceObservation(
         DateTimeOffset.Now,
         Truncate(request.Label, 60),
         Truncate(request.UserAgent, 300),
-        Truncate(request.Origin, 120),
-        request.Origin?.Contains(material.Hostname, StringComparison.OrdinalIgnoreCase) ?? false,
+        reachedOrigin,
+        context.Request.Host.Host.Equals(material.Hostname, StringComparison.OrdinalIgnoreCase),
         request.SecureContext,
         request.ServiceWorkerSupported,
         request.ServiceWorkerRegistered,
@@ -239,10 +249,11 @@ app.MapPost("/api/spike/report", (HttpContext context, DeviceReportRequest reque
         request.SessionSurvivedReload,
         Truncate(request.Notes, 500));
 
-    observations.Add(observation);
+    if (!observations.TryAdd(observation))
+        return Results.StatusCode(StatusCodes.Status429TooManyRequests);
     Console.WriteLine($"  observation from {observation.Label} ({observation.DisplayMode})");
     return Results.Ok(new { recorded = true });
-});
+}).RequireRateLimiting("writes");
 
 await app.StartAsync();
 
@@ -297,7 +308,7 @@ while (running)
             break;
 
         case 's':
-            var written = new SpikeReport(runId, startedAt, CurrentHostFacts(), [.. observations])
+            var written = new SpikeReport(runId, startedAt, CurrentHostFacts(), observations.Snapshot())
                 .Write(SpikeReport.FindRepositoryRoot());
             Console.WriteLine($"\n  report written: {written}");
             break;
@@ -313,14 +324,13 @@ while (running)
 }
 
 // Always leave a report behind, even if the operator forgot to press 's'.
-var finalReport = new SpikeReport(runId, startedAt, CurrentHostFacts(), [.. observations])
+var finalReport = new SpikeReport(runId, startedAt, CurrentHostFacts(), observations.Snapshot())
     .Write(SpikeReport.FindRepositoryRoot());
 
 Console.WriteLine($"\nReport: {finalReport}");
 
 if (bootstrapOpen) await bootstrap.StopAsync();
 await app.StopAsync();
-material.ServerCertificate.Dispose();
 return 0;
 
 // ---- Helpers ------------------------------------------------------------------------------------------
@@ -354,13 +364,16 @@ void PrintBanner()
         ? $"  certificate  http://{selected.Address}:{options.BootstrapPort}/  (open this first, then press b)"
         : "  certificate  bootstrap closed");
     Console.WriteLine();
-    Console.WriteLine($"  pairing code {Spaced(pairing.CurrentCode ?? code)}   (type this on the device; it is");
-    Console.WriteLine("               never in the QR, and it is single-use)");
+    if (pairing.CurrentCode is { } activeCode)
+    {
+        Console.WriteLine($"  pairing code {Spaced(activeCode)}   (type this on the device; it is");
+        Console.WriteLine("               never in the QR, and it is single-use)");
+    }
+    else Console.WriteLine("  pairing code none active; press n for a new code");
     Console.WriteLine();
     Console.WriteLine("  If the phone cannot reach the laptop, allow the port through the firewall for");
     Console.WriteLine("  the private network only, in an elevated prompt:");
-    Console.WriteLine($"    netsh advfirewall firewall add rule name=\"GoldenTicket spike\" dir=in action=allow \\");
-    Console.WriteLine($"      protocol=TCP localport={options.HttpsPort},{options.BootstrapPort} profile=private");
+    Console.WriteLine($"    netsh advfirewall firewall add rule name=\"GoldenTicket spike\" dir=in action=allow protocol=TCP localport={options.HttpsPort},{options.BootstrapPort} localip={selected.Address} remoteip=localsubnet profile=private program=\"{Environment.ProcessPath}\"");
     Console.WriteLine();
     Console.WriteLine("  keys:  n new code   b close bootstrap   a re-announce   c connection QR");
     Console.WriteLine("         s save report   ? help   q quit");
@@ -438,17 +451,34 @@ static LanInterface? SelectInterface(IReadOnlyList<LanInterface> candidates, str
 // The bootstrap is plain HTTP by necessity - the device cannot trust the CA it has not yet
 // installed. DESIGN 18.5 permits exactly this, provided it serves only the public certificate and
 // static instructions and is closed afterwards.
-static WebApplication BuildBootstrap(SpikeOptions options, LocalTrustMaterial material, IPAddress address)
+static WebApplication BuildBootstrap(SpikeOptions options, LocalTrustMaterial material, LanInterface selected,
+    Func<bool> networkIsPrivate)
 {
+    var address = selected.Address;
     var builder = WebApplication.CreateBuilder();
     builder.Logging.ClearProviders();
     builder.WebHost.ConfigureKestrel(kestrel =>
     {
         kestrel.AddServerHeader = false;
+        kestrel.Limits.MaxRequestBodySize = SpikeRequestPolicy.MaximumRequestBytes;
+        kestrel.Limits.MaxConcurrentConnections = 32;
         kestrel.Listen(address, options.BootstrapPort);
     });
 
     var bootstrap = builder.Build();
+    var policy = new SpikeRequestPolicy(address, selected.PrefixLength,
+        [$"http://{address}:{options.BootstrapPort}"], networkIsPrivate);
+    bootstrap.Use(async (context, next) =>
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        context.Response.Headers["Referrer-Policy"] = "no-referrer";
+        context.Response.Headers.ContentSecurityPolicy =
+            "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+        var status = policy.Validate(context, bootstrap: true);
+        if (status != StatusCodes.Status200OK) { context.Response.StatusCode = status; return; }
+        await next();
+    });
 
     // Raw string with $$ so the CSS braces stay literal and {{...}} marks an interpolation.
     bootstrap.MapGet("/", () => Results.Content($$"""
@@ -475,7 +505,9 @@ static WebApplication BuildBootstrap(SpikeOptions options, LocalTrustMaterial ma
 
         <h2>1 &middot; Install the certificate</h2>
         <p><a class="button" href="/ca.crt">Download the certificate</a></p>
-        <p>Check this fingerprint matches the laptop screen before trusting it:</p>
+        <p>Before trusting it, inspect the <b>downloaded certificate's SHA-256 fingerprint</b> in the
+        device certificate viewer and compare it with the <b>laptop screen</b>. Matching text on
+        this unencrypted page alone does not verify the downloaded file.</p>
         <p><code>{{WebUtility.HtmlEncode(material.AuthorityFingerprint)}}</code></p>
         <ol>
           <li><b>iPhone / iPad:</b> install the downloaded profile in Settings, then go to

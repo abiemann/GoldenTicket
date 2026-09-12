@@ -295,4 +295,14 @@ public sealed class GameState
 /// A supply state the pinned profile does not resolve (DESIGN 6.4). The match is preserved and the
 /// exact cause is reported; no undocumented substitute rule is applied.
 /// </summary>
-public sealed record RulesDecision(string Code, string Explanation);
+public sealed record RulesDecision(string Code, string Explanation)
+{
+    /// <summary>
+    /// Derived during journal replay from the phase immediately before RulesDecisionRaised. This
+    /// distinguishes a completed face-up locomotive draw from a first ordinary/blind card without
+    /// changing persisted event formats or hashes of existing paused matches. Restore replays the
+    /// journal and never deserializes this continuation from a cached snapshot.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public TurnPhase? InterruptedTurnPhase { get; init; }
+}

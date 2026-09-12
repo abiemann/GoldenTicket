@@ -63,6 +63,12 @@ public sealed record PackAwayCheckpoint(
     [System.Text.Json.Serialization.JsonIgnore]
     public int TotalTrainsOnBoard => PhysicalTarget.Sum(route => route.Length);
 
+    /// <summary>Readback compares the full immutable record, including the target, not just copied hash strings.</summary>
+    public bool HasSameContentAs(PackAwayCheckpoint other) =>
+        (this with { PhysicalTarget = other.PhysicalTarget, Status = other.Status }) == other &&
+        !PhysicalTarget.IsDefault && !other.PhysicalTarget.IsDefault &&
+        PhysicalTarget.SequenceEqual(other.PhysicalTarget);
+
     /// <summary>
     /// A fingerprint of the physical target alone, so a rebuild can be checked against the exact
     /// arrangement that was saved rather than against whatever the match looks like later.

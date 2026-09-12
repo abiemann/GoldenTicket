@@ -68,6 +68,7 @@ public sealed class LocalCertificateAuthority
             {
                 var existing = File.ReadAllText(InstallationIdPath).Trim();
                 if (existing.Length == 8 && existing.All(char.IsAsciiLetterOrDigit)) return existing;
+                throw new CryptographicException("The installation identifier is damaged. Restore the host material before continuing.");
             }
 
             var generated = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(4));
@@ -85,10 +86,13 @@ public sealed class LocalCertificateAuthority
     /// </summary>
     public LocalTrustMaterial EnsureMaterial(IPAddress lanAddress)
     {
-        var authority = LoadAuthority() ?? CreateAuthority();
+        // Prevent two launches from mixing certificates and keys during first setup/renewal.
+        using var materialLock = new FileStream(Path.Combine(_directory, "material.lock"),
+            FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        using var authority = LoadAuthority() ?? CreateAuthority();
         var server = LoadServer();
 
-        if (server is null || NeedsReissue(server, lanAddress))
+        if (server is null || NeedsReissue(server, authority, lanAddress))
         {
             server?.Dispose();
             server = IssueServerCertificate(authority, lanAddress);
@@ -109,9 +113,20 @@ public sealed class LocalCertificateAuthority
     /// or when the hostname has changed. DESIGN 18.5 requires the SANs to match the address actually
     /// used; a mismatched certificate must never be worked around by disabling validation.
     /// </summary>
-    private bool NeedsReissue(X509Certificate2 server, IPAddress lanAddress)
+    private bool NeedsReissue(X509Certificate2 server, X509Certificate2 authority, IPAddress lanAddress)
     {
-        if (server.NotAfter <= DateTime.Now.AddDays(RenewWithinDays)) return true;
+        if (!server.HasPrivateKey || server.NotBefore.ToUniversalTime() > DateTime.UtcNow ||
+            server.NotAfter.ToUniversalTime() <= DateTime.UtcNow.AddDays(RenewWithinDays)) return true;
+
+        // SANs alone do not prove this leaf belongs to the CA being exported. A restored or
+        // replaced CA must never leave the host serving a certificate signed by the old key.
+        using var chain = new X509Chain();
+        chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+        chain.ChainPolicy.CustomTrustStore.Add(authority);
+        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        chain.ChainPolicy.DisableCertificateDownloads = true;
+        chain.ChainPolicy.ApplicationPolicy.Add(new Oid("1.3.6.1.5.5.7.3.1"));
+        if (!chain.Build(server)) return true;
 
         var names = ReadSubjectAlternativeNames(server);
         return !names.Contains(Hostname, StringComparer.OrdinalIgnoreCase) ||
@@ -163,8 +178,8 @@ public sealed class LocalCertificateAuthority
         var now = DateTimeOffset.UtcNow;
         var certificate = request.CreateSelfSigned(now.AddMinutes(-5), now.AddYears(AuthorityYears));
 
-        File.WriteAllBytes(AuthorityCertPath, certificate.Export(X509ContentType.Cert));
         Protect(AuthorityKeyPath, key.ExportPkcs8PrivateKey());
+        File.WriteAllBytes(AuthorityCertPath, certificate.Export(X509ContentType.Cert));
 
         return certificate;
     }
@@ -202,16 +217,12 @@ public sealed class LocalCertificateAuthority
 
         var notBefore = DateTimeOffset.UtcNow.AddMinutes(-5);
         var notAfter = notBefore.AddDays(ServerCertificateDays);
+        if (notAfter > authority.NotAfter.ToUniversalTime()) notAfter = authority.NotAfter.ToUniversalTime();
 
-        // A CA loaded from disk carries no private key and needs one reattached to sign; a CA created
-        // in this same run already has it. Only dispose the copy this method made.
-        var borrowedAuthority = authority.HasPrivateKey;
-        var signingAuthority = borrowedAuthority ? authority : authority.CopyWithPrivateKey(LoadAuthorityKey());
-
-        try
+        // Both freshly created and restored authorities have their matching private key attached.
         {
             var issued = request.Create(
-                signingAuthority, notBefore, notAfter, RandomNumberGenerator.GetBytes(16));
+                authority, notBefore, notAfter, RandomNumberGenerator.GetBytes(16));
 
             // Whether Create returns the private key attached depends on the runtime; take it as it
             // comes rather than assuming, because attaching a second time throws.
@@ -223,9 +234,12 @@ public sealed class LocalCertificateAuthority
                 var password = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(24));
                 var pfx = withKey.Export(X509ContentType.Pfx, password);
 
-                Protect(ServerPath, Combine(password, pfx));
-
-                return X509CertificateLoader.LoadPkcs12(pfx, password, X509KeyStorageFlags.Exportable);
+                try
+                {
+                    Protect(ServerPath, Combine(password, pfx));
+                    return X509CertificateLoader.LoadPkcs12(pfx, password, X509KeyStorageFlags.Exportable);
+                }
+                finally { CryptographicOperations.ZeroMemory(pfx); }
             }
             finally
             {
@@ -233,34 +247,36 @@ public sealed class LocalCertificateAuthority
                 issued.Dispose();
             }
         }
-        finally
-        {
-            if (!borrowedAuthority) signingAuthority.Dispose();
-        }
     }
 
     // ---- Loading ----------------------------------------------------------------------------
 
     private X509Certificate2? LoadAuthority()
     {
-        if (!File.Exists(AuthorityCertPath) || !File.Exists(AuthorityKeyPath)) return null;
+        if (!File.Exists(AuthorityCertPath) && !File.Exists(AuthorityKeyPath)) return null;
+        if (!File.Exists(AuthorityCertPath) || !File.Exists(AuthorityKeyPath))
+            throw new CryptographicException("The local authority is incomplete. Restore its certificate and key; replacing it requires trusting a new CA on every device.");
 
-        try
-        {
-            var certificate = X509CertificateLoader.LoadCertificate(File.ReadAllBytes(AuthorityCertPath));
-            return certificate.NotAfter <= DateTime.Now ? null : certificate;
-        }
-        catch (CryptographicException)
-        {
-            return null;
-        }
+        using var certificate = X509CertificateLoader.LoadCertificate(File.ReadAllBytes(AuthorityCertPath));
+        if (certificate.NotBefore.ToUniversalTime() > DateTime.UtcNow ||
+            certificate.NotAfter.ToUniversalTime() <= DateTime.UtcNow ||
+            !certificate.Extensions.OfType<X509BasicConstraintsExtension>().Any(extension => extension.CertificateAuthority))
+            throw new CryptographicException("The local authority is invalid or expired. Check the clock; CA replacement requires new device trust.");
+        using var key = LoadAuthorityKey();
+        return certificate.CopyWithPrivateKey(key); // also verifies that the stored keys match
     }
 
     private RSA LoadAuthorityKey()
     {
         var key = RSA.Create();
-        key.ImportPkcs8PrivateKey(Unprotect(AuthorityKeyPath), out _);
-        return key;
+        var plaintext = Unprotect(AuthorityKeyPath);
+        try
+        {
+            key.ImportPkcs8PrivateKey(plaintext, out _);
+            return key;
+        }
+        catch { key.Dispose(); throw; }
+        finally { CryptographicOperations.ZeroMemory(plaintext); }
     }
 
     private X509Certificate2? LoadServer()
@@ -269,8 +285,14 @@ public sealed class LocalCertificateAuthority
 
         try
         {
-            var (password, pfx) = Split(Unprotect(ServerPath));
-            return X509CertificateLoader.LoadPkcs12(pfx, password, X509KeyStorageFlags.Exportable);
+            var plaintext = Unprotect(ServerPath);
+            try
+            {
+                var (password, pfx) = Split(plaintext);
+                try { return X509CertificateLoader.LoadPkcs12(pfx, password, X509KeyStorageFlags.Exportable); }
+                finally { CryptographicOperations.ZeroMemory(pfx); }
+            }
+            finally { CryptographicOperations.ZeroMemory(plaintext); }
         }
         catch (CryptographicException)
         {
@@ -282,7 +304,9 @@ public sealed class LocalCertificateAuthority
 
     private static void Protect(string path, byte[] plaintext)
     {
-        var protectedBytes = ProtectedData.Protect(plaintext, DpapiEntropy, DataProtectionScope.CurrentUser);
+        byte[] protectedBytes;
+        try { protectedBytes = ProtectedData.Protect(plaintext, DpapiEntropy, DataProtectionScope.CurrentUser); }
+        finally { CryptographicOperations.ZeroMemory(plaintext); }
 
         var temporary = path + ".tmp";
         File.WriteAllBytes(temporary, protectedBytes);
@@ -305,6 +329,7 @@ public sealed class LocalCertificateAuthority
 
     private static (string Password, byte[] Pfx) Split(byte[] buffer)
     {
+        if (buffer.Length < sizeof(int)) throw new CryptographicException("Malformed key file.");
         var length = BitConverter.ToInt32(buffer);
         if (length < 0 || length > buffer.Length - 4) throw new CryptographicException("Malformed key file.");
 

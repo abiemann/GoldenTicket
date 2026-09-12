@@ -11,7 +11,7 @@ namespace GoldenTicket.Domain.Tests;
 /// <summary>
 /// Save, pack away and rebuild (DESIGN 19.8, acceptance table 22.8). This build produces state-only
 /// checkpoints, so the rows about a verified photograph and a pending placement mask are not
-/// exercised here; everything else in the protocol is.
+/// exercised here. These tests cover the implemented manual, state-only continuation protocol.
 /// </summary>
 public class PackAwayTests
 {
@@ -335,6 +335,56 @@ public class PackAwayTests
         Assert.Empty(await coordinator.CheckInvariantsAsync(token));
     }
 
+    [Fact]
+    public async Task SavingDuringClaimCancellationPreservesTheRemovalWorkflow()
+    {
+        var store = new InMemorySessionStore();
+        var token = TestContext.Current.CancellationToken;
+        var coordinator = await PlayUntilAsync(store, c => c.Public.PendingClaim is not null);
+        var pending = coordinator.Public.PendingClaim!;
+        await coordinator.SubmitAsync(new CancelPendingClaim(
+            coordinator.NewEnvelope(pending.SeatId), pending.OperationId, TrainsWerePlaced: true), token);
+        var scoreBefore = coordinator.Public.SeatOf(pending.SeatId).RouteScore;
+        var saved = await coordinator.SaveAndPackAwayAsync("Cancelling placement", token);
+        Assert.True(saved.SafeToPack, saved.Problem);
+        Assert.Equal(TurnPhase.RestoreBeforeState, saved.Checkpoint!.SuspendedTurnPhase);
+        Assert.DoesNotContain(saved.Checkpoint.PhysicalTarget, route => route.RouteId == pending.RouteId);
+        await RebuildAndResumeAsync(coordinator);
+        Assert.Equal(TurnPhase.RestoreBeforeState, coordinator.Public.TurnPhase);
+        var restored = await coordinator.SubmitAsync(new ConfirmBeforeStateRestored(
+            coordinator.NewEnvelope(pending.SeatId), pending.OperationId), token);
+        Assert.True(restored.IsAccepted);
+        Assert.Null(coordinator.Public.PendingClaim);
+        Assert.Equal(scoreBefore, coordinator.Public.SeatOf(pending.SeatId).RouteScore);
+        Assert.Empty(await coordinator.CheckInvariantsAsync(token));
+    }
+
+    [Fact]
+    public async Task SavingAnOpenTicketOfferPreservesTheExactOfferAndRemainingDeck()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var store = new InMemorySessionStore();
+        var coordinator = await GameCoordinator.CreateAsync(Rules(), store, Setup(), DeterministicRandom.SeedFrom(21), token);
+        foreach (var seat in coordinator.Seats)
+        {
+            var offered = (await coordinator.GetSeatViewAsync(seat.SeatId, token)).SetupOffer;
+            await coordinator.SubmitAsync(new CommitTicketSelection(
+                coordinator.NewEnvelope(seat.SeatId), [.. offered.Take(2)], []), token);
+        }
+        var active = coordinator.Public.ActiveSeatId;
+        var request = await coordinator.SubmitAsync(new RequestTicketOffer(coordinator.NewEnvelope(active)), token);
+        Assert.True(request.IsAccepted);
+        var before = await coordinator.ComputeLogicalStateHashAsync(token);
+        var offeredBefore = (await coordinator.GetSeatViewAsync(active, token)).Offer!;
+        Assert.True((await coordinator.SaveAndPackAwayAsync("Open tickets", token)).SafeToPack);
+        var restored = await GameCoordinator.RestoreAsync(Rules(), store, coordinator.SessionId, token);
+        await RebuildAndResumeAsync(restored);
+        Assert.Equal(before, await restored.ComputeLogicalStateHashAsync(token));
+        var offeredAfter = (await restored.GetSeatViewAsync(active, token)).Offer!;
+        Assert.Equal(offeredBefore.Offered.ToArray(), offeredAfter.Offered.ToArray());
+        Assert.Equal(offeredBefore.MinimumKeep, offeredAfter.MinimumKeep);
+    }
+
     /// <summary>
     /// DESIGN 19.8 / 22.8: saving after the first card of a draw restores the same revealed result
     /// and the same remaining choice, with no reroll and no extra draw.
@@ -522,6 +572,131 @@ public class PackAwayTests
 
     // ---- Naming --------------------------------------------------------------------------------
 
+    [Fact]
+    public async Task RestoringAnAttestedRebuildRequiresAFreshPhysicalCheck()
+    {
+        var store = new InMemorySessionStore();
+        var token = TestContext.Current.CancellationToken;
+        var coordinator = await PlayUntilAsync(store, c => c.Public.TurnNumber >= 3);
+        var saved = await coordinator.SaveAndPackAwayAsync("Before restart", token);
+        var checkpoint = saved.Checkpoint!;
+        await coordinator.SubmitAsync(new BeginBoardRebuild(coordinator.NewEnvelope(), checkpoint.CheckpointId), token);
+        await coordinator.SubmitAsync(new AttestBoardRebuild(
+            coordinator.NewEnvelope(), checkpoint.CheckpointId, checkpoint.PhysicalTargetHash, Operator), token);
+        Assert.True(coordinator.Public.RebuildAttested);
+
+        var restored = await GameCoordinator.RestoreAsync(Rules(), store, coordinator.SessionId, token);
+        Assert.False(restored.Public.RebuildAttested);
+        var resume = await restored.SubmitAsync(new ResumePackedGame(restored.NewEnvelope(), checkpoint.CheckpointId), token);
+        Assert.Equal("BoardNotConfirmed", resume.Result.Rejection?.Code);
+        await RebuildAndResumeAsync(restored);
+    }
+
+    [Fact]
+    public async Task AHistoricalVerifiedCheckpointDoesNotAuthorizePackingDuringRebuild()
+    {
+        var store = new InMemorySessionStore();
+        var token = TestContext.Current.CancellationToken;
+        var coordinator = await PlayUntilAsync(store, c => c.Public.TurnNumber >= 3);
+        var saved = await coordinator.SaveAndPackAwayAsync("Packed", token);
+        await coordinator.SubmitAsync(new BeginBoardRebuild(coordinator.NewEnvelope(), saved.Checkpoint!.CheckpointId), token);
+        var oldResult = await coordinator.ContinuePackAwayAsync(token);
+        Assert.False(oldResult.SafeToPack);
+        Assert.Equal("NotPackedAway", oldResult.Rejection?.Code);
+    }
+
+    [Fact]
+    public async Task ConcurrentReadbackRetriesCompleteTheSameCheckpointOnce()
+    {
+        var store = new InMemorySessionStore();
+        var token = TestContext.Current.CancellationToken;
+        var coordinator = await PlayUntilAsync(store, c => c.Public.TurnNumber >= 3);
+        await coordinator.SubmitAsync(new SaveAndPackAway(coordinator.NewEnvelope(), "Retry"), token);
+        var outcomes = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => coordinator.ContinuePackAwayAsync(token)));
+        Assert.All(outcomes, outcome => Assert.True(outcome.SafeToPack, outcome.Problem));
+        Assert.Single(store.JournalOf(coordinator.SessionId), row => row.Event is PackAwayCheckpointCommitted);
+        Assert.Single(store.JournalOf(coordinator.SessionId), row => row.Event is PackAwayCheckpointVerified);
+    }
+
+    [Theory]
+    [InlineData("identity")]
+    [InlineData("source")]
+    [InlineData("target")]
+    public async Task ReadbackChecksTheWholeCheckpointAndCanRetryAfterFailure(string corruption)
+    {
+        var store = new InMemorySessionStore();
+        var token = TestContext.Current.CancellationToken;
+        var original = await PlayUntilAsync(store, c => c.Public.TurnNumber >= 8);
+        var readbackStore = new CheckpointReadStore(store)
+        {
+            Corrupt = checkpoint => corruption switch
+            {
+                "identity" => checkpoint with { CheckpointId = CheckpointId.New() },
+                "source" => checkpoint with { SourceStateVersion = checkpoint.SourceStateVersion + 1 },
+                _ => checkpoint with { PhysicalTarget = [new TargetRoute(new RouteId("wrong"), new SeatId(1), 1)] },
+            },
+        };
+        var coordinator = await GameCoordinator.RestoreAsync(Rules(), readbackStore, original.SessionId, token);
+        var failed = await coordinator.SaveAndPackAwayAsync("Validate every field", token);
+        Assert.False(failed.SafeToPack);
+        Assert.Equal(CheckpointStatus.Faulted, coordinator.Public.Checkpoint!.Status);
+
+        readbackStore.Corrupt = null;
+        var retry = await coordinator.ContinuePackAwayAsync(token);
+        Assert.True(retry.SafeToPack, retry.Problem);
+        Assert.Equal(failed.Checkpoint!.CheckpointId, retry.Checkpoint!.CheckpointId);
+        Assert.Single(store.JournalOf(original.SessionId), row => row.Event is PackAwayCheckpointCommitted);
+    }
+
+    [Fact]
+    public void LogicalHashCoversAcceptedPoliciesAndConsecutivePasses()
+    {
+        var state = RulesHarness.Create().State;
+        var original = StateHash.ComputeLogical(state);
+        state.AcceptedRulesPolicies = state.AcceptedRulesPolicies.Add("policy", "version");
+        Assert.False(StateHash.MatchesLogical(state, original));
+        var withPolicy = StateHash.ComputeLogical(state);
+        state.ConsecutivePasses = 1;
+        Assert.False(StateHash.MatchesLogical(state, withPolicy));
+        Assert.True(StateHash.MatchesLogical(state, StateHash.ComputeLogical(state)));
+        Assert.False(StateHash.MatchesLogical(state, "logical-v99:unsupported"));
+    }
+
+    [Fact]
+    public void LogicalHashStillReadsTheOriginalCheckpointFormat()
+    {
+        var state = RulesHarness.Create().State;
+        var normalised = state.Fork();
+        normalised.StateVersion = 0;
+        normalised.JournalSequence = 0;
+        normalised.Lifecycle = SessionLifecycle.Active;
+        var legacy = "logical-v1:" + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(StateHash.Canonicalize(normalised))));
+        Assert.True(StateHash.MatchesLogical(state, legacy));
+    }
+
+    private sealed class CheckpointReadStore(ISessionStore inner) : ISessionStore
+    {
+        public Func<PackAwayCheckpoint, PackAwayCheckpoint>? Corrupt { get; set; }
+        public Task CreateAsync(GameState state, CommandId commandId, Transition transition, string hash, CancellationToken ct) =>
+            inner.CreateAsync(state, commandId, transition, hash, ct);
+        public Task<StoredCommandOutcome?> FindCommandOutcomeAsync(SessionId id, CommandId command, CancellationToken ct) =>
+            inner.FindCommandOutcomeAsync(id, command, ct);
+        public Task CommitAsync(GameState state, StoredCommandOutcome outcome, Transition transition, string hash, CancellationToken ct) =>
+            inner.CommitAsync(state, outcome, transition, hash, ct);
+        public Task RecordRejectionAsync(SessionId id, StoredCommandOutcome outcome, CancellationToken ct) =>
+            inner.RecordRejectionAsync(id, outcome, ct);
+        public Task<RestoredSession> RestoreAsync(SessionId id, Manifest.BoardManifest manifest, CardCatalog catalog, CancellationToken ct) =>
+            inner.RestoreAsync(id, manifest, catalog, ct);
+        public async Task<PackAwayCheckpoint?> ReadCheckpointAsync(SessionId id, CheckpointId checkpointId, CancellationToken ct)
+        {
+            var checkpoint = await inner.ReadCheckpointAsync(id, checkpointId, ct);
+            return checkpoint is not null && Corrupt is { } corrupt ? corrupt(checkpoint) : checkpoint;
+        }
+        public Task<IReadOnlyList<SessionSummary>> ListSessionsAsync(CancellationToken ct) => inner.ListSessionsAsync(ct);
+        public Task DeleteSessionAsync(SessionId id, CancellationToken ct) => inner.DeleteSessionAsync(id, ct);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
@@ -693,5 +868,31 @@ public class PackAwayDurabilityTests : IDisposable
 
         // The name is the operator's own label and is deliberately listable without decrypting.
         Assert.Contains("Secretive", text, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Name", "Other save")]
+    [InlineData("Status", "Faulted")]
+    [InlineData("SourceStateVersion", "999999")]
+    public async Task CheckpointMetadataTamperingIsDetected(string column, string changed)
+    {
+        var token = TestContext.Current.CancellationToken;
+        var store = new Persistence.SqliteSessionStore(_root);
+        var rules = new GameRules(TestManifest.Manifest, TestManifest.Catalog);
+        var coordinator = await GameCoordinator.CreateAsync(
+            rules, store, Setup(), DeterministicRandom.SeedFrom(7), token);
+        await PlayToTurnAsync(coordinator, 3, 7, token);
+        var saved = await coordinator.SaveAndPackAwayAsync("Authenticated metadata", token);
+        Assert.True(saved.SafeToPack, saved.Problem);
+
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+            new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = store.DatabasePath(coordinator.SessionId) }.ToString());
+        await connection.OpenAsync(token);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"UPDATE PackAwayCheckpoint SET {column} = $changed;";
+        command.Parameters.AddWithValue("$changed", changed);
+        await command.ExecuteNonQueryAsync(token);
+        await Assert.ThrowsAsync<SessionIntegrityException>(() =>
+            store.ReadCheckpointAsync(coordinator.SessionId, saved.Checkpoint!.CheckpointId, token));
     }
 }

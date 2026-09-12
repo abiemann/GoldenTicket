@@ -37,6 +37,12 @@ Accepting:
 
 `RulesContinuations.PolicyVersion` is `1`. Changing a policy means bumping it.
 
+Accepting either reset-disable decision suppresses all subsequent locomotive resets for the match,
+while still refilling available slots. Smaller-market consent alone does not grant reset-disable
+consent. New resolution events record the resumed turn phase, so a first face-up locomotive still
+completes its turn even if refilling pauses. Old events without that field retain their historical
+replay behavior; previously recorded turns are not rewritten.
+
 ## What is deliberately *not* a policy
 
 - **Parallel routes.** The pinned profile's own value (`parallelRouteClosedAtOrBelowPlayers: 3`)
@@ -57,9 +63,11 @@ board photograph needs the camera milestones.
 | Physical target | Committed route ownership only | 19.8 |
 | A partially placed claim | **Not** part of the saved target. Its payment stays reserved and its claim stays uncommitted; after resuming, the trains are placed again and confirmed as usual. | 19.8, "a forward claim needs its trains placed again" |
 | Durable boundaries | Three: request, checkpoint commit, readback verification | 19.8 step 6 |
-| Safe-to-pack result | Only from a `Verified` checkpoint. A restart between commit and readback repeats the validation. | 19.8 step 6 |
-| Resume gate | Operator whole-target attestation, re-checked at the moment Resume is pressed | 19.8, guided reconstruction |
+| Safe-to-pack result | Only while `PackedAway` with a `Verified` checkpoint. Readback binds complete checkpoint content and its replayed source; a failed readback can be retried. | 19.8 step 6 |
+| Resume gate | Operator whole-target attestation, re-checked at the moment Resume is pressed. Restart invalidates a saved attestation; a fresh physical check is required. | 19.8, guided reconstruction |
+| Logical fingerprint | New checkpoints use `logical-v2`, covering accepted supply policies and the pass counter. Legacy `logical-v1` checkpoints remain readable and are still checked against the authenticated replay. | 19.8, invariant 15 |
 | Retention | The journal is never pruned, so a checkpoint's source history is pinned by construction | 19.7 |
 
+The current reconstruction display is a route list; a board diagram requires measured geometry.
 The camera milestones add the verified photograph, the pending-placement mask and image readback to
 this same protocol; the transaction boundaries and the resume gate do not change.

@@ -335,13 +335,16 @@ public sealed record FinalScoringCompleted(FinalResult Result) : GameEvent
 /// <summary>
 /// DESIGN 6.4: an operator accepted the reviewed continuation policy for a paused supply state. The
 /// policy version is recorded, so a match can never silently adopt a policy revised later.
+/// RestoredTurnPhase is recorded by new writers. Its absence retains the historical counter-based
+/// phase restoration so already resolved saves keep the state hashes written by their original app.
 /// </summary>
 public sealed record RulesDecisionResolved(
     string Code,
     string PolicyId,
     int PolicyVersion,
     string Operator,
-    DateTimeOffset ResolvedAt) : GameEvent
+    DateTimeOffset ResolvedAt,
+    TurnPhase? RestoredTurnPhase = null) : GameEvent
 {
     public override EventVisibility Visibility => EventVisibility.Public;
 

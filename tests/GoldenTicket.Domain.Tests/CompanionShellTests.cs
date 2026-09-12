@@ -77,7 +77,7 @@ public sealed class CompanionShellTests
     [Fact]
     public void TheShellLoadsNothingFromOutsideItsOwnOrigin()
     {
-        // The host serves a policy of default-src 'self' (DESIGN 18.9). An absolute reference would
+        // The host serves a policy of default-src 'self' (DESIGN 18.5). An absolute reference would
         // be refused silently, which on a borrowed device looks like a broken laptop.
         var page = Read("index.html");
 

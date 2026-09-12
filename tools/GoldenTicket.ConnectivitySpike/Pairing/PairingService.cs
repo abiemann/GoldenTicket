@@ -30,6 +30,7 @@ public sealed class PairingService(TimeProvider? timeProvider = null)
 {
     /// <summary>Long enough to type, short enough that a shoulder-surfed code is useless later.</summary>
     public static readonly TimeSpan CodeLifetime = TimeSpan.FromMinutes(5);
+    public static readonly TimeSpan SessionLifetime = TimeSpan.FromHours(12);
 
     public const int MaximumAttempts = 5;
     private const int CodeDigits = 8;
@@ -45,7 +46,7 @@ public sealed class PairingService(TimeProvider? timeProvider = null)
     /// <summary>The code currently displayed on the laptop, or null if none is outstanding.</summary>
     public string? CurrentCode
     {
-        get { lock (_gate) return IsExpired() ? null : _code; }
+        get { lock (_gate) return IsExpired() || _attempts >= MaximumAttempts ? null : _code; }
     }
 
     public DateTimeOffset? CodeExpiresAt
@@ -58,15 +59,20 @@ public sealed class PairingService(TimeProvider? timeProvider = null)
         get { lock (_gate) return Math.Max(0, MaximumAttempts - _attempts); }
     }
 
-    public IReadOnlyCollection<PairedDevice> Devices => [.. _devices.Values];
+    public IReadOnlyCollection<PairedDevice> Devices =>
+        [.. _devices.Keys.Select(Find).OfType<PairedDevice>()];
 
     /// <summary>Issues a fresh code, invalidating any outstanding one.</summary>
     public string IssueCode()
     {
         lock (_gate)
         {
-            _code = RandomNumberGenerator.GetInt32(0, (int)Math.Pow(10, CodeDigits))
-                .ToString($"D{CodeDigits}");
+            var previous = _code;
+            do
+            {
+                _code = RandomNumberGenerator.GetInt32(0, (int)Math.Pow(10, CodeDigits))
+                    .ToString($"D{CodeDigits}", System.Globalization.CultureInfo.InvariantCulture);
+            } while (_code == previous);
             _issuedAt = _time.GetUtcNow();
             _attempts = 0;
             return _code;
@@ -126,15 +132,19 @@ public sealed class PairingService(TimeProvider? timeProvider = null)
         }
     }
 
-    public bool IsPaired(string? deviceSessionId) =>
-        deviceSessionId is not null && _devices.ContainsKey(deviceSessionId);
+    public bool IsPaired(string? deviceSessionId) => Find(deviceSessionId) is not null;
 
-    public PairedDevice? Find(string? deviceSessionId) =>
-        deviceSessionId is not null && _devices.TryGetValue(deviceSessionId, out var device) ? device : null;
+    public PairedDevice? Find(string? deviceSessionId)
+    {
+        if (deviceSessionId is null || !_devices.TryGetValue(deviceSessionId, out var device)) return null;
+        if (_time.GetUtcNow() < device.PairedAt + SessionLifetime) return device;
+        _devices.TryRemove(deviceSessionId, out _);
+        return null;
+    }
 
     public void Revoke(string deviceSessionId) => _devices.TryRemove(deviceSessionId, out _);
 
-    private bool IsExpired() => _code is not null && _time.GetUtcNow() - _issuedAt > CodeLifetime;
+    private bool IsExpired() => _code is not null && _time.GetUtcNow() - _issuedAt >= CodeLifetime;
 
     /// <summary>
     /// A device label is untrusted text from the network. It is bounded and stripped of control

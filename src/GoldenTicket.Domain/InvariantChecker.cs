@@ -19,6 +19,8 @@ public static class InvariantChecker
         CheckRouteScores(state, problems);
         CheckOwnership(state, problems);
         CheckReservation(state, problems);
+        CheckRulesPolicies(state, problems);
+        CheckPackAway(state, problems);
 
         return problems;
     }
@@ -30,6 +32,62 @@ public static class InvariantChecker
 
         throw new InvalidOperationException(
             "The match violated its invariants:" + Environment.NewLine + string.Join(Environment.NewLine, problems));
+    }
+
+    private static void CheckRulesPolicies(GameState state, List<string> problems)
+    {
+        foreach (var (code, policyId) in state.AcceptedRulesPolicies)
+        {
+            if (RulesContinuations.For(code) is not { } policy ||
+                !string.Equals(policy.PolicyId, policyId, StringComparison.Ordinal))
+                problems.Add("The match contains an unsupported accepted rules policy.");
+        }
+
+        if (state.ConsecutivePasses < 0 || state.ConsecutivePasses > state.Seats.Length)
+            problems.Add("The consecutive-pass count is outside the supported table size.");
+    }
+
+    private static void CheckPackAway(GameState state, List<string> problems)
+    {
+        if (state.IsGameplaySuspended != (state.PackAwayRequest is not null))
+            problems.Add("The pack-away lifecycle does not match its saved request.");
+
+        if ((state.Lifecycle is SessionLifecycle.PackedAway or SessionLifecycle.Rebuilding) !=
+            (state.Checkpoint is not null))
+            problems.Add("The pack-away lifecycle does not match its checkpoint.");
+
+        if (state.RebuildAttested && state.Lifecycle != SessionLifecycle.Rebuilding)
+            problems.Add("A rebuild attestation exists outside reconstruction.");
+
+        if (state.Checkpoint is not { } checkpoint) return;
+
+        if (checkpoint.SessionId != state.SessionId || checkpoint.FormatVersion != PackAwayCheckpoint.CurrentFormatVersion ||
+            checkpoint.ProfileId != state.Manifest.ProfileId || checkpoint.ManifestHash != state.Manifest.DataHash ||
+            checkpoint.BoardRevision != state.BoardRevision || checkpoint.SourceStateVersion >= state.StateVersion ||
+            checkpoint.SourceJournalSequence >= state.JournalSequence ||
+            checkpoint.CheckpointId != state.PackAwayRequest?.CheckpointId ||
+            checkpoint.SuspendedTurnPhase != state.TurnPhase || checkpoint.PendingOperationId != state.PendingClaim?.OperationId ||
+            !StateHash.MatchesLogical(state, checkpoint.LogicalStateHash))
+            problems.Add("The checkpoint does not match its frozen source game.");
+
+        if (!Enum.IsDefined(checkpoint.Status) ||
+            (state.Lifecycle == SessionLifecycle.Rebuilding && checkpoint.Status != CheckpointStatus.Verified))
+            problems.Add("The checkpoint has an invalid validation status for this lifecycle.");
+
+        if (checkpoint.PhysicalTarget.IsDefault || checkpoint.TargetProvenance != TargetProvenance.LogicalStateOnly ||
+            checkpoint.PhotoHash is not null)
+        {
+            problems.Add("The checkpoint has an unsupported physical target format.");
+            return;
+        }
+
+        if (checkpoint.PhysicalTarget.Length != state.RouteOwners.Count ||
+            checkpoint.PhysicalTarget.Select(route => route.RouteId).Distinct().Count() != checkpoint.PhysicalTarget.Length ||
+            checkpoint.PhysicalTarget.Any(route =>
+                !state.Manifest.TryGetRoute(route.RouteId, out var definition) || definition.Length != route.Length ||
+                !state.RouteOwners.TryGetValue(route.RouteId, out var owner) || owner != route.SeatId) ||
+            checkpoint.PhysicalTargetHash != PackAwayCheckpoint.HashTarget(checkpoint.PhysicalTarget))
+            problems.Add("The checkpoint's physical target does not match the committed board.");
     }
 
     /// <summary>Invariant 1: card instances exist in exactly one legal location and supply is conserved.</summary>

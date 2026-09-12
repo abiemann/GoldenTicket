@@ -19,9 +19,10 @@ Run it with:
 dotnet run --project tools/GoldenTicket.ConnectivitySpike -- --address <laptop private IP>
 ```
 
-The console draws a QR for the address the device should land on. It has been checked against the
-standard and read back by an independent decoder, but **a run is the first time a camera has ever
-seen it** — record whether the phone's own camera app offered the address, and from how far away.
+The console draws a QR for the address the device should land on. It has structural and
+in-repository decoder tests, but no recorded scan by a phone camera. Record whether the phone's own
+camera app offered the address, and from how far away. The test decoder shares some encoder
+metadata and does not replace an independent scanner check.
 
 The reports here do not record the QR, because the QR contains only the landing address, which the
 report already carries as `host.boundAddress`.

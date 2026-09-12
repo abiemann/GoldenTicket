@@ -49,6 +49,7 @@ public sealed record CoordinatorUpdate(PublicView Public, ImmutableArray<PublicE
 public sealed class GameCoordinator
 {
     private readonly SemaphoreSlim _writer = new(1, 1);
+    private readonly SemaphoreSlim _packAwayWorkflow = new(1, 1);
     private readonly GameRules _rules;
     private readonly ISessionStore _store;
     private readonly List<PublicEventEntry> _history = [];
@@ -117,6 +118,16 @@ public sealed class GameCoordinator
 
         var coordinator = new GameCoordinator(rules, store, restored.State);
         coordinator.AppendHistory(restored.Journal.Select(row => row.Event));
+
+        // A physical attestation from a previous process cannot describe the board after restart.
+        // Persist the invalidation so the public view and the command gate agree on a fresh check.
+        if (restored.State is { Lifecycle: SessionLifecycle.Rebuilding, RebuildAttested: true, Checkpoint: { } checkpoint })
+        {
+            var recheck = await coordinator.SubmitAsync(
+                new BeginBoardRebuild(coordinator.NewEnvelope(), checkpoint.CheckpointId), cancellationToken);
+            if (!recheck.IsAccepted)
+                throw new SessionIntegrityException("The restored board requires a fresh rebuild check.");
+        }
         return coordinator;
     }
 
@@ -330,30 +341,59 @@ public sealed class GameCoordinator
     /// </summary>
     public async Task<PackAwayOutcome> ContinuePackAwayAsync(CancellationToken cancellationToken = default)
     {
-        if (_state.Lifecycle == SessionLifecycle.PreparingPackAway && _state.PackAwayRequest is { } request)
+        await _packAwayWorkflow.WaitAsync(cancellationToken);
+        try
+        {
+            return await ContinuePackAwayCoreAsync(cancellationToken);
+        }
+        finally
+        {
+            _packAwayWorkflow.Release();
+        }
+    }
+
+    private async Task<GameState> ReadPackAwayStateAsync(CancellationToken cancellationToken)
+    {
+        await _writer.WaitAsync(cancellationToken);
+        try { return _state.Fork(); }
+        finally { _writer.Release(); }
+    }
+
+    private async Task<PackAwayOutcome> ContinuePackAwayCoreAsync(CancellationToken cancellationToken)
+    {
+        var state = await ReadPackAwayStateAsync(cancellationToken);
+        if (state.Lifecycle == SessionLifecycle.PreparingPackAway && state.PackAwayRequest is { } request)
         {
             var committed = await SubmitAsync(
-                new CommitPackAwayCheckpoint(NewEnvelope(), request.CheckpointId), cancellationToken);
+                new CommitPackAwayCheckpoint(new CommandEnvelope(state.SessionId, CommandId.New(), state.StateVersion, null),
+                    request.CheckpointId), cancellationToken);
 
             if (!committed.IsAccepted) return PackAwayOutcome.Refused(committed.Result.Rejection!);
+            state = await ReadPackAwayStateAsync(cancellationToken);
         }
 
-        if (_state.Checkpoint is { Status: CheckpointStatus.CommittedAwaitingReadback } pending)
+        if (state.Lifecycle == SessionLifecycle.PackedAway &&
+            state.Checkpoint is { Status: CheckpointStatus.CommittedAwaitingReadback or CheckpointStatus.Faulted } pending)
         {
             var (succeeded, failure) = await ValidateCheckpointAsync(pending, cancellationToken);
 
             var recorded = await SubmitAsync(
-                new RecordCheckpointReadback(NewEnvelope(), pending.CheckpointId, succeeded, failure),
+                new RecordCheckpointReadback(new CommandEnvelope(state.SessionId, CommandId.New(), state.StateVersion, null),
+                    pending.CheckpointId, succeeded, failure),
                 cancellationToken);
 
             if (!recorded.IsAccepted) return PackAwayOutcome.Refused(recorded.Result.Rejection!);
         }
 
-        return _state.Checkpoint switch
+        state = await ReadPackAwayStateAsync(cancellationToken);
+        if (state.Lifecycle != SessionLifecycle.PackedAway)
+            return PackAwayOutcome.Refused(new CommandRejection("NotPackedAway", "The match is not currently packed away."));
+
+        return state.Checkpoint switch
         {
             { Status: CheckpointStatus.Verified } verified => PackAwayOutcome.SafeToPackAway(verified),
             { Status: CheckpointStatus.Faulted } faulted =>
-                PackAwayOutcome.Faulted(faulted, _state.CheckpointFault ?? "readback failed"),
+                PackAwayOutcome.Faulted(faulted, state.CheckpointFault ?? "readback failed"),
             _ => PackAwayOutcome.StillValidating(),
         };
     }
@@ -369,18 +409,17 @@ public sealed class GameCoordinator
         try
         {
             var stored = await _store.ReadCheckpointAsync(
-                _state.SessionId, checkpoint.CheckpointId, cancellationToken);
+                checkpoint.SessionId, checkpoint.CheckpointId, cancellationToken);
 
             if (stored is null) return (false, "the checkpoint could not be read back from storage");
 
-            if (!string.Equals(stored.LogicalStateHash, checkpoint.LogicalStateHash, StringComparison.Ordinal) ||
-                !string.Equals(stored.PhysicalTargetHash, checkpoint.PhysicalTargetHash, StringComparison.Ordinal))
+            if (!stored.HasSameContentAs(checkpoint) || stored.Status != checkpoint.Status)
             {
                 return (false, "the stored checkpoint does not match the one that was committed");
             }
 
             var restored = await _store.RestoreAsync(
-                _state.SessionId, _rules.Manifest, _rules.Catalog, cancellationToken);
+                checkpoint.SessionId, _rules.Manifest, _rules.Catalog, cancellationToken);
 
             var prefix = restored.Journal
                 .Where(row => row.Sequence < checkpoint.SourceJournalSequence)
@@ -390,8 +429,15 @@ public sealed class GameCoordinator
 
             var atCheckpoint = GameReducer.Rebuild(_rules.Manifest, _rules.Catalog, prefix);
 
-            if (!string.Equals(
-                    StateHash.ComputeLogical(atCheckpoint), checkpoint.LogicalStateHash, StringComparison.Ordinal))
+            if (atCheckpoint.StateVersion != checkpoint.SourceStateVersion ||
+                atCheckpoint.JournalSequence != checkpoint.SourceJournalSequence ||
+                atCheckpoint.BoardRevision != checkpoint.BoardRevision ||
+                atCheckpoint.TurnPhase != checkpoint.SuspendedTurnPhase ||
+                atCheckpoint.PendingClaim?.OperationId != checkpoint.PendingOperationId ||
+                atCheckpoint.Manifest.ProfileId != checkpoint.ProfileId ||
+                atCheckpoint.Manifest.DataHash != checkpoint.ManifestHash ||
+                checkpoint.FormatVersion != PackAwayCheckpoint.CurrentFormatVersion ||
+                !StateHash.MatchesLogical(atCheckpoint, checkpoint.LogicalStateHash))
             {
                 return (false, "replaying the save did not reproduce the checkpoint's game state");
             }

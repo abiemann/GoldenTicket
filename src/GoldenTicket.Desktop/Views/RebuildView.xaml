@@ -119,9 +119,10 @@
                                                 Converter={StaticResource BoolToVisibility}}">
                             <TextBlock Margin="0,0,0,8" FontWeight="SemiBold"
                                        Foreground="{StaticResource Status.Success}"
-                                       Text="Confirmed. Resuming re-checks the position before play restarts." />
+                                       Text="Confirmed by you. Keep the board unchanged and the confirmation checked until you resume." />
                             <Button Style="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"
-                                    Content="Resume game" Command="{Binding ResumePackedGameCommand}" />
+                                    Content="Resume game" Command="{Binding ResumePackedGameCommand}"
+                                    IsEnabled="{Binding Table.RebuildAcknowledged}" />
                         </StackPanel>
                     </StackPanel>
                 </Border>

@@ -1,0 +1,502 @@
+[
+  {
+    "path": "data/classic-us/classic-us-v1.json",
+    "sha256": "d004859e84a3b836805b09101207bca799abd0e3a35db4804c80c9c72876d97b"
+  },
+  {
+    "path": "Directory.Build.props",
+    "sha256": "2bbc8a114a585c485324bc0e782c4f6c3d2fea686a13fe26d20a44d151d8a0d1"
+  },
+  {
+    "path": "Directory.Packages.props",
+    "sha256": "8c95552dcb47608ace7e16e692e389934b239c18c5a6706e0cc20f444149828c"
+  },
+  {
+    "path": "global.json",
+    "sha256": "884c3d68b436980197e5c5871b6be07dc75b894b2a9e210f70a73468e9f9bd8e"
+  },
+  {
+    "path": "GoldenTicket.sln",
+    "sha256": "ff4091e8429352b48f75a874972f5c353e987f1bb4cdfa04d95c51e72f9ca1e6"
+  },
+  {
+    "path": "NuGet.config",
+    "sha256": "f545a7e2ea14ac53cdfb91217cae67b8ff14275313f6298f9a3331d205b6c948"
+  },
+  {
+    "path": "shared/theme/tokens.json",
+    "sha256": "f852aaa8427e2abba710819e27135933ea1ebbaf9fde90ece15216e4a990afc4"
+  },
+  {
+    "path": "src/GoldenTicket.AI/GoldenTicket.AI.csproj",
+    "sha256": "314c3773004f575ed2c5f5d44b1bc9c5acd3c6669f5601a582953f9d8eedf649"
+  },
+  {
+    "path": "src/GoldenTicket.AI/HeuristicAiPolicy.cs",
+    "sha256": "7381a2b85276a4dd3d71f6fc51a692703992b99b6c13f9576e8866c3061ad102"
+  },
+  {
+    "path": "src/GoldenTicket.AI/packages.lock.json",
+    "sha256": "7bbfcb75b5222668e587c123af130424cf533470727ea1968f7fb1e61b1cfc04"
+  },
+  {
+    "path": "src/GoldenTicket.AI/RoutePlanner.cs",
+    "sha256": "085d50bfb2cababea1a3fa79c1f2f4a8a2aa708cf6093e1e4de7458f6059bff9"
+  },
+  {
+    "path": "src/GoldenTicket.Application/ComputerSeatDriver.cs",
+    "sha256": "1557fbb89f3f711cd9f80a97e8fae271c98061b8e3da5387ed7f4c1440114259"
+  },
+  {
+    "path": "src/GoldenTicket.Application/GameCoordinator.cs",
+    "sha256": "d5888be03b6757b9fde29cba91606dcf501663683ca0304408dcbd9cb2f4106f"
+  },
+  {
+    "path": "src/GoldenTicket.Application/GoldenTicket.Application.csproj",
+    "sha256": "c9057d6104e94d5d4c366d72bc8314d660033c4ec019a9582b7c37635bc72bbd"
+  },
+  {
+    "path": "src/GoldenTicket.Application/InMemorySessionStore.cs",
+    "sha256": "4f40734fd2b1a3cab002a541f14cc602452919a0c9094e1c0d375a139b765a7f"
+  },
+  {
+    "path": "src/GoldenTicket.Application/ISessionStore.cs",
+    "sha256": "9fe7386c92ff84b80ca730de3605ae2627ac10f76048d03b8dec4f31864d4fc6"
+  },
+  {
+    "path": "src/GoldenTicket.Application/packages.lock.json",
+    "sha256": "7bbfcb75b5222668e587c123af130424cf533470727ea1968f7fb1e61b1cfc04"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/app.manifest",
+    "sha256": "892c4365318e362a4000aae558c0de49d56965ef1ef95d2a84bdac939018d8d3"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/App.xaml",
+    "sha256": "1f0629376c1318c5ad6760d6761428f445641fb734703d084ec381319a959e76"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/App.xaml.cs",
+    "sha256": "5cd44582a0241c74b84435192d16d0c624ead8f66bf61542d890d9b4641015ab"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/Converters.cs",
+    "sha256": "e40f03ceb1b37d7f0b9b61ef54d53c80db6e06e960f8b140ff6b8166d4a26593"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/DiagnosticLog.cs",
+    "sha256": "cfa3bc0d84a942db58d38060ecd0ffdd2c8f7ccc03cd509c68d9d81dc6b525d2"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/GoldenTicket.Desktop.csproj",
+    "sha256": "98be5a6d17bd81cb7ff6123970550ffa58f01633bb816f88394f518275c3a768"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/MainWindow.xaml",
+    "sha256": "7832762cda150ffb920259a0b294f4c4d59011067ff99a1256edc22607232d78"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/MainWindow.xaml.cs",
+    "sha256": "4a3a795eb244c15b3adaec2fe54b819b434a6ef794399fce8676c12c32bed9d5"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/packages.lock.json",
+    "sha256": "738486b68a404e7f3a8c506aee20265e581bffa60e7a674b723c90eeb7ff7f09"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/Theme/Controls.xaml",
+    "sha256": "f8a24fc8434a16a811e6059afa6589f4f6952911b0f6e8bc1d7c989f0abc0582"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/Theme/Palette.xaml",
+    "sha256": "496cf82b5e2e46153346c365fa6edea434a696e49de31c00d6ce160896271ea4"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/ViewModels/MainViewModel.cs",
+    "sha256": "572558eed1a7af0022b04dc2c089d802ffda954b33da835ddca0c1e8f6e6e50d"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/ViewModels/PrivateSeatViewModel.cs",
+    "sha256": "6799805b4af6d7cbeeeca48c506ac3ce72b99fa78eb9fde2edf5bcca347824c3"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/ViewModels/SetupViewModel.cs",
+    "sha256": "2d35f67be9be82263eacce36be398ae40932063c110b1824b925ed57814a9f23"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/ViewModels/TableViewModel.cs",
+    "sha256": "d6fddf03766d156d099377d557900d09fe9a8cf7d0e9ba918f5c1da0836efaa6"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/Views/FinalScoreView.xaml",
+    "sha256": "7fb9d5e94b849133c6bf7afc6e49fe83d97ce30847295751de3e8218d98c85a3"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/Views/FinalScoreView.xaml.cs",
+    "sha256": "3831cbf2b43e0f38ebb71858a1d949aef1c858fd4db11d98353ee342c9abc1db"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/Views/PrivateSeatView.xaml",
+    "sha256": "488e81b469ee7b6fd54d6d701a42fa3bf77fbdd5e14c8d0da24c4879bdde17f1"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/Views/PrivateSeatView.xaml.cs",
+    "sha256": "9f963fea3c8a011a77895c0db451a71e391b7aff1637a1c79107769ecdf897f2"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/Views/RebuildView.xaml",
+    "sha256": "962154248354a0b10e79ef26d2fd0e2adebfbce2295e1265d26373d4ebfa8735"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/Views/RebuildView.xaml.cs",
+    "sha256": "55fecd6e79b082a165a79de9cca513b6235713a65f2ac5cebde051d68e5ef297"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/Views/SetupView.xaml",
+    "sha256": "5efbb13aa4829d4b224277b15b0ec278e3cb20ecf087c0fb74b9e71f09e38236"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/Views/SetupView.xaml.cs",
+    "sha256": "a5f8bb8910a5ca4d805773f04a5542c7ce60851cf8cd9c8106c53c7b11107101"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/Views/TableView.xaml",
+    "sha256": "c3b5eb1f4421b6fd7ba3db2c6d866d3918dd5fb13042c47a3363f2cbfa7d01cf"
+  },
+  {
+    "path": "src/GoldenTicket.Desktop/Views/TableView.xaml.cs",
+    "sha256": "dc7e360c990fbdf643b6af55fe1a86f658eebd8c961bec45e3febcf1f8069cb6"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Ai/IAiPolicy.cs",
+    "sha256": "ba89c2d41f66a85fb951732fc0899cf39df15f24bf81dd22831352fc99203c28"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Engine/GameCommands.cs",
+    "sha256": "5af84843f6ccca11ca12563725d02088846e1469eb81f650bef6c46cac7edb5a"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Engine/GameReducer.cs",
+    "sha256": "274599e5a192508e23db63838c05dc56cfa22b5e6fd572268367c35d31d1b9fa"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Engine/GameRules.cs",
+    "sha256": "a915def6cce71aee40f63a2e7a7158a890e272fb37d4f81e304f9199edc9bce9"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Engine/LegalActions.cs",
+    "sha256": "1ee6348680a2553ac37da74022522fc838a597015143deeb3a8729ebae5432e9"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Enums.cs",
+    "sha256": "90b93dbdb6ac73243844cb930c90e167e8f2d067402757afeaa8cffedf724f45"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Events/GameEvent.cs",
+    "sha256": "6d63cc56fb1918022ec617f33ed6b565c768a1e8eaad5b8a0c533551915931a8"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/GoldenTicket.Domain.csproj",
+    "sha256": "f9d1595b3f36675930a8ba2b087e04396cb7cdef6bb77207ccb9855d06f3c9e8"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Ids.cs",
+    "sha256": "0fa58fed9ca35166dd231853671077291b73b97fd388d757c6f0f34fd4d99c15"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/InvariantChecker.cs",
+    "sha256": "5a61d5653bc84be32ec676070b27cc05267816c8cb12d46d6806a98207b6f7eb"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Json/IdConverters.cs",
+    "sha256": "4d1f034269bd3b4b582be58260e32700d58b844e9d6cfb6f8c3482e090cc774b"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Manifest/BoardManifest.cs",
+    "sha256": "337993596fe0b3105edfa48c6512acb4decf4e437b542d4d37354cfe23da36b6"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Manifest/ManifestLoader.cs",
+    "sha256": "49bc6ccd2d0f3698c035ff2ed9eb12f69f6d247575a3e7afe86500c0b9481e80"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Model/CardCatalog.cs",
+    "sha256": "fdbbb589292666fd5a7233304270a91b3f29dc518b1be83eec0b4d01143f422f"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Model/FinalResult.cs",
+    "sha256": "be10c7df88aa54c0b21bab7c897bf88fc4e0d6bf3f5a71ceb55f5f054b754cc8"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Model/GameState.cs",
+    "sha256": "718384c41e8fe42edf60ab235dbb20391c7bc33af1bc1092ecd45ac07d3ac239"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Model/PackAwayCheckpoint.cs",
+    "sha256": "352d2bfafe79ecf2e7c5eba2de488d913c9c207af594b93106b8316e2690bc0b"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Model/PendingOperations.cs",
+    "sha256": "c127728ce4d21f4a8f2c623aac28827a13d0839f1afca21e811c4e420fd42ee7"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Model/RulesContinuation.cs",
+    "sha256": "99e1586a55edb03f8acc229237ed3a0fee8c0f721034610c485ad494e5c28753"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Model/Seat.cs",
+    "sha256": "6ded30acfec2d989c05c70c2b3115302328d68540a6c04adfdbff8b1a8fa5f49"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/packages.lock.json",
+    "sha256": "2241481b7e74dcdcd600303146b730ecc12cbd8e49aa55755ef95ee499fe229a"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Projections/Projector.cs",
+    "sha256": "75536b0ef65e11508ea165a7a372c8227e0968e947ead19782aaa45e851b67c1"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Projections/Views.cs",
+    "sha256": "99ddeb980462a66c375ac2c34638eb272e18a3ec732f8fa1f1356739997e84ee"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Randomness/DeterministicRandom.cs",
+    "sha256": "2de168dfc7ecb7980a9660b96e73a99768bcc04ffbd49adb9d88ef2685e16c01"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Scoring/FinalScoring.cs",
+    "sha256": "dbcf297221b9dfd206de4179bb85921ca0411fcd6484d7cd86e516c358db741c"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Scoring/LongestTrail.cs",
+    "sha256": "366a6dc163872a564f060b7bad0268bad6c7c12525f088952aa1602bf695bc77"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/Scoring/TicketEvaluator.cs",
+    "sha256": "c8014b152e2fba94eafb8fc8f6798cf04f660a3aa396a009a8197b8292239ef7"
+  },
+  {
+    "path": "src/GoldenTicket.Domain/StateHash.cs",
+    "sha256": "d7e4d811962afbd3556e667e618bcbc0483c0ff697b108832e418ac518023a1f"
+  },
+  {
+    "path": "src/GoldenTicket.Persistence/EventSerializer.cs",
+    "sha256": "5e84e7f4520cc665a4a6707ff7acf0e28eaedc1581b6e4c46546bc9bcad0b794"
+  },
+  {
+    "path": "src/GoldenTicket.Persistence/GoldenTicket.Persistence.csproj",
+    "sha256": "57cb895c9b358b9300864496655dc0e1b4d6bf84b3c6b8b223e578670441c937"
+  },
+  {
+    "path": "src/GoldenTicket.Persistence/packages.lock.json",
+    "sha256": "e9f61281fd066cff2557c8986bf869b050755d869011a5e1986294dd70b5116f"
+  },
+  {
+    "path": "src/GoldenTicket.Persistence/SessionEncryption.cs",
+    "sha256": "a12cac16a80a57596a885b179da43a2ca85616135d5b2b594dc242a0e54a0ed6"
+  },
+  {
+    "path": "src/GoldenTicket.Persistence/SqliteSessionStore.cs",
+    "sha256": "2287d97208b6decf0780c5071164c7d9bf305042ea59b9fff620aa86fddf6973"
+  },
+  {
+    "path": "tests/GoldenTicket.ConnectivitySpike.Tests/shell.test.cjs",
+    "sha256": "0cbb32c96dec17e7c28cd6c3a46bfddf099355c55a9366073d5ea3d2d9e6175d"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/ApplicationAuditTests.cs",
+    "sha256": "0db89d0b9f0dbf0c96ed098e83bb59f51a2971f84215e21c529d4bb6129bf142"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/ClaimTests.cs",
+    "sha256": "e24c39c2e1382eec4e132574f19e73c7b0ea408ede982d30298ee4904ff619e1"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/CompanionShellTests.cs",
+    "sha256": "e406368aed370f94f5d12220ad9583a6955cb988baa3b4d80e9ca47f65224a29"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/ConnectivitySpikeTests.cs",
+    "sha256": "392895d685205bda6c5affe06ce66421c7d8b3c60c52070083e9c91587cebbc5"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/DesktopAuditTests.cs",
+    "sha256": "3c1090c5dc113606b0975a1c75a89c10a672f8c80117e43a28741afeedda7a3c"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/DesktopContinuationAuditTests.cs",
+    "sha256": "90e1cdb832bdfef7c34aa0e5ea1b6f74ef098d86a281439154fb9d9fb7d70558"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/DesktopFlowTests.cs",
+    "sha256": "1c0b15f4c8cae1ff39829a8ac30262dbeef4f40c4ec9f9fd522ee66b16051412"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/DomainAuditTests.cs",
+    "sha256": "7f14f3397e97abb1fe9412855eb0039b4f001b62fd75b4af3fcb58b287179e8b"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/GlobalUsings.cs",
+    "sha256": "dab2841d2a8af6ea44cd405cd5d4d654cdb6e702202df89ac92955380feb7565"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/GoldenTicket.Domain.Tests.csproj",
+    "sha256": "be0f53c6eae6401c8ccb4d90593ab359ff1e05d87ad800b3533024d71f38ecbc"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/ManifestTests.cs",
+    "sha256": "ba351faf098546ae6d3640da498cb8ac01b4d8faa7329997328f4617c9ad079c"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/packages.lock.json",
+    "sha256": "fe330cf69ea0e805bd02d279b171b509a080437d16181f11f55ccec6dcf74e57"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/PackAwayTests.cs",
+    "sha256": "1990f5c817ea90bb7c6ecc9c96ad2e91f9a44f3e20699d2e4510b66212019281"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/PersistenceAuditTests.cs",
+    "sha256": "c965ca9c8f85480227aa99f80fab24968fd67f67e8a98ffa764d787ad6d28f89"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/PersistenceTests.cs",
+    "sha256": "ab276c5ad8b943d3c77a753a1a5bac911f1eb7f012a5592f7b422223df1b49eb"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/PrivacyTests.cs",
+    "sha256": "11c79042f31a939347daa9dd4a873a5bd3468acddad6b3e4add3c7507bba44ba"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/PropertyTests.cs",
+    "sha256": "5a9c461cdccfaa6bcdac5c5afe51f3407dec1f61f359a9224383633ba61120e2"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/QrCodeTests.cs",
+    "sha256": "2d9a6ddb77b9b65b78cbdec362cd960479c223289a69f463c585301823fd6c17"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/RulesContinuationTests.cs",
+    "sha256": "b50f3ec78a6ce98f87ec013ff5f1f2192e45a5acb43fabef39b94b136d1d5fe5"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/RulesHarness.cs",
+    "sha256": "e2d5c1e8150c7397c52b22bf4f9dac5ce96d075d4b5dcb6403568c1e2783c6fa"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/ScoringTests.cs",
+    "sha256": "9be11d8efb9b54d8f7473e174d3cbc33986c9d4bf651f31610d1458c2319df77"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/SetupAndDrawTests.cs",
+    "sha256": "95ab1a757e2a959f0cd1097fe9195f417602c4a023cb9d5a5007f4521afad682"
+  },
+  {
+    "path": "tests/GoldenTicket.Domain.Tests/ThemeTokenTests.cs",
+    "sha256": "32f199e51a59b6bcd26b1b82e1c628777e1a6dda7b0b0478ace9745f643fb092"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/BoundedObservationBuffer.cs",
+    "sha256": "ccb42dc4c37addfc3218d55922c904b5dd92ed41ee82390851703d41d29610c7"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/Connect/QrCode.cs",
+    "sha256": "b54cadd5924c53a58c7acc2f0e46ccd073f29852ed7373a11e929c73e81b8a7b"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/Connect/QrRenderer.cs",
+    "sha256": "7e14f6d9d92aab00e99585904e3a2cfe3794425d7d143d4e64c3825d1b31dcca"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/Connect/ReedSolomon.cs",
+    "sha256": "b133c1fea0e5e499a9b1dc269c9f92269443dc14ea4dbf6f0947d9b181ef8dfd"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/GoldenTicket.ConnectivitySpike.csproj",
+    "sha256": "e1f51a2b7206773f149f3f3dcf84204f0c3f698b8e36624a1bb52409e2caa384"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/Networking/LanInterface.cs",
+    "sha256": "ff65ea6f69173d58d604f2807c31644a5a302de38b43656d782b050aa40a887a"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/Networking/MulticastDnsResponder.cs",
+    "sha256": "82369f0346a58d906b614bfc7f9a6f85fd0fa8d8ac60d89198d832a3b6d62578"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/Networking/WindowsNetworkProfiles.cs",
+    "sha256": "e759cee4be616d14d26313ea5e51ba0fc908e7b0642caf820478ecdd3c81e745"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/packages.lock.json",
+    "sha256": "a65a6c86ed81e87c4efb837af0b242ca42f0773cd7848eab13f40e5fe711e74d"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/Pairing/PairingService.cs",
+    "sha256": "f7277991170cfac2674df2b07838fd68e668d592dc9850c494c7f2a513da6109"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/Program.cs",
+    "sha256": "26c053cee409ce300be6ec6f0c517dad4b81a531e4566b66ede67d1a0dd0067e"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/Security/LocalCertificateAuthority.cs",
+    "sha256": "c3d97603a3ef39800a61169607c93b7ead5cd25ba8c6c71a710ccd50d9cf5b29"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/Security/SpikeRequestPolicy.cs",
+    "sha256": "f74fc6a7d158277f5e614e3db5ecec0e5b9992f8e8d6fb8f2fdc09fc78a9a7c6"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/SpikeReport.cs",
+    "sha256": "558114f735112988c46c42294ef964386be1a0ab16012c32608341e2ac7e263f"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/wwwroot/app.js",
+    "sha256": "b1939685d1893d74386e47d161af9f52fc57033697f1ebc1309181efaab9a518"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/wwwroot/icon-192.png",
+    "sha256": "0b7cc738544954f84681a5422c3f54ebc3bf8f131c930209c4c4bf856bf8efd3"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/wwwroot/icon-512.png",
+    "sha256": "82e102c650563f9f936576f83db8b24ee602b39715ba7d66e7ff5dae80437738"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/wwwroot/icon.svg",
+    "sha256": "4296c08ef87e2ff2176527eafa187eaa029677dc968567628b54abc57c684896"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/wwwroot/index.html",
+    "sha256": "fe9c553e5959843a26fa97889828ade424ba983c92d36aac8c57c76d745b3539"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/wwwroot/manifest.webmanifest",
+    "sha256": "ccb614a21cddade104f9227a49989fc0bdca78139ae451b76cb69a7cf40d0c8a"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/wwwroot/styles.css",
+    "sha256": "15708fa9f07d8d57fd5430e2f5c5bb74c20efcd3cb43909fe834860bb04927be"
+  },
+  {
+    "path": "tools/GoldenTicket.ConnectivitySpike/wwwroot/sw.js",
+    "sha256": "73f9c3678f3d2f92ce93e88d2140d8be824eb55a4293bba29fb5abb5d356d23e"
+  },
+  {
+    "path": "tools/GoldenTicket.Simulator/GoldenTicket.Simulator.csproj",
+    "sha256": "c9c5659fb46f8dad7ea0faab2e39c40347a59d4e700a27c5c494dc6a4327683d"
+  },
+  {
+    "path": "tools/GoldenTicket.Simulator/MatchRunner.cs",
+    "sha256": "149e62875bb5dc488857b4b2995092d9ee865781f0ecc3fd3bf3e838100e077a"
+  },
+  {
+    "path": "tools/GoldenTicket.Simulator/packages.lock.json",
+    "sha256": "e4d151a310cc16cfe2ff8e35cec6f3de67589eea2def4cbabc3b535124888207"
+  },
+  {
+    "path": "tools/GoldenTicket.Simulator/Program.cs",
+    "sha256": "6b46cc76e2d1a1f71e89781381d8468fe173e0565bce8a757c42debaab08d901"
+  }
+]
