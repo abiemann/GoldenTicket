@@ -30,6 +30,10 @@ of M2. Neither the physical data review nor the full milestone acceptance gates 
 - Durable local saves: an append-only event journal in SQLite with a tamper-evident hash chain,
   DPAPI-protected AES-GCM encryption for referee-only and private payloads, command deduplication,
   and restore by replay verified against a stored state fingerprint.
+- Save and pack away: the game suspends mid-turn, writes a named checkpoint, reads it back and only
+  then says the pieces may be cleared away. Reopening shows the saved position route by route with
+  per-seat stock guidance, takes the operator's whole-board confirmation, and resumes the exact
+  suspended action once. Packing away and rebuilding provably change nothing about the game.
 - Save paths are confined to valid session directories; concurrent writers, inconsistent journal
   metadata, missing snapshots, and corrupted state stop the operation. An uncertain save outcome
   requires a reload. Unreadable saves remain listed with recovery guidance.
@@ -50,9 +54,14 @@ These are later milestones in `DESIGN.md`, and nothing here pretends they exist:
   vision pipeline, board recovery after a jog and the wake gesture are M3–M5.
 - **No phone companion.** There is no embedded Kestrel host, no PWA, no pairing and no local HTTPS
   trust workflow. Humans pass the laptop and use the privacy curtain (the laptop-only fallback in
-  DESIGN §4.7). That is M0/M2.
-- **No save-and-pack-away photo workflow.** Matches save and restore, but the photographed
-  checkpoint and guided board rebuilding are M4.
+  DESIGN §4.7). That is M0/M2. When it is built, iOS/iPadOS will be listed as *untested* rather than
+  supported: no Apple device is available for the repeated real-device testing DESIGN §22.7 requires
+  (see [docs/companion-device-evidence.md](docs/companion-device-evidence.md)).
+- **No board photograph in a save.** Save and pack away works, with named checkpoints, guided
+  rebuilding from the route list and exactly-once resume, but every checkpoint is
+  `LogicalStateOnly`: there is no camera to photograph the board, and a partially placed claim is
+  not part of the saved physical target. The verified photograph and the pending-placement mask are
+  M4.
 - **No story mode, narration or sound.** That is M6.
 - **No installer.** M7.
 - **No board geometry.** DESIGN §6.3 forbids shipping placeholder coordinates, so the data package

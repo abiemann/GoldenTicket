@@ -10,9 +10,16 @@ These six features remain unfinished. The milestone tasks below define their imp
 validation requirements; mark each feature complete only after those checks pass.
 
 - [ ] **Camera tracking and recovery** — board recognition, move verification, and automatic recovery after camera movement (M3–M5).
-- [ ] **Phone/tablet PWA** — private pass-and-hide on iOS/iPadOS and Android, with laptop-hosted data and QR-assisted initial synchronization entirely within the LAN (M0/M2).
+- [ ] **Phone/tablet PWA** — private pass-and-hide on Android and iOS/iPadOS, with laptop-hosted data
+  and QR-assisted initial synchronization entirely within the LAN (M0/M2). No iPhone or iPad is
+  available, so **iOS cannot be claimed as supported at release**; see
+  [companion device evidence](docs/companion-device-evidence.md) for the honest wording and the
+  borrowed-device checklist.
 - [ ] **CPU/GPU inference selection** — Auto at launch uses a validated GPU or falls back to CPU; retain manual overrides and show a CPU chip or GPU/lightning status indicator (M4/M5).
-- [ ] **Photographed save and rebuild** — save the board photo and exact game state, pack away, then reconstruct and resume (M2/M4).
+- [ ] **Photographed save and rebuild** — the state-only half is implemented (M2): named checkpoints,
+  the `PreparingPackAway`/`PackedAway`/`Rebuilding` lifecycle, commit-then-readback validation,
+  diagram-based guided reconstruction and exactly-once resume. Still missing (M4): the verified board
+  photograph, the pending-placement mask, pinned images and photo readback.
 - [ ] **Offline installer packaging** — self-contained Windows x64 distribution with required runtimes and assets included (M7).
 - [ ] **Training mode, voice, story, and audio: last feature pass** — Training follows Story without effects/ambience; narration follows visual/voice/both settings. Complete photo save-and-rebuild and packaging foundation first (M6).
 
@@ -47,7 +54,10 @@ earlier; perform final release checks and package refresh after the narrative fe
   the laptop and synchronize initial public data/snapshot directly from its local host after pairing;
   handle changes during synchronization without losing events. Require no inputs or services outside
   the LAN, including during first setup. Prove QR setup, local certificate trust, and initial sync
-  with WAN disconnected on real devices before claiming support.
+  with WAN disconnected on real devices before claiming support. Android is testable throughout;
+  iOS/iPadOS depends on a single borrowed-device session, so build the M0 connectivity spike as a
+  standalone fifteen-minute checklist that a borrowed device can be taken through without the game
+  UI (docs/companion-device-evidence.md).
 - [ ] **M3: camera.** Add WinRT high-resolution acquisition, bounded frame ownership, camera choice,
   preview and quality checks, printable markers, board landmarks, calibration, and recording/replay.
 - [ ] **M4: verification.** Implement whole-board recognition, authorized pending evidence,
@@ -59,10 +69,14 @@ earlier; perform final release checks and package refresh after the narrative fe
   icon or GPU text with lightning around it, with adapter/fallback details. Package native runtimes
   and test safe switching. Evaluate a baseline first; if needed train on developer data, validate
   held-out physical sets, and ship an offline model. Users never train or download a model.
-- [ ] **M2/M4: persistence and pack away.** Add complete encrypted snapshots, backup-before-migration,
-  named checkpoints and pinned images, state/photo readback, durable packed/rebuild lifecycles,
-  partial-operation targets, guided reconstruction, current-checkpoint success receipts, and
-  exactly-once resume. Add correction branches and optional encrypted portable export/import.
+- [x] **M2: state-only pack away and rebuild.** Named checkpoints, durable packed/rebuild lifecycles,
+  frozen source state, commit-then-readback validation before any safe-to-pack result, suspended
+  partial operations preserved, diagram-based guided reconstruction with whole-target attestation,
+  and exactly-once resume. Verified by `PackAwayTests` and `PackAwayDurabilityTests`.
+- [ ] **M2/M4: persistence and pack away, remaining.** Add complete encrypted snapshots,
+  backup-before-migration, pinned images, verified board photographs and photo readback,
+  partial-operation (pending placement) targets, and current-checkpoint success receipts for the
+  companion. Add correction branches and optional encrypted portable export/import.
 - [ ] Complete non-audio theme/high-contrast/screen-reader/keyboard work and adjustable privacy timing
   before the final narrative feature pass.
 - [ ] Implement and evaluate the specified Challenging AI sampled lookahead; current difficulty
