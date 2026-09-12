@@ -14,7 +14,8 @@ captured, and the honest support position given the hardware actually available.
 
 ### What the release may say
 
-- **Android:** currently untested for the companion. Say supported only after the real-device
+- **Android:** setup is in progress on a Pixel 8 Pro; companion acceptance remains unverified.
+  Say supported only after the real-device
   checklist passes, with the exact OS and Chrome versions recorded.
 - **iOS/iPadOS:** *untested* — not "unsupported". The companion is built to web standards and will
   probably work, but DESIGN §22.7 does not let an untested platform be advertised. Say so plainly in
@@ -55,7 +56,7 @@ Run this repeatedly during development; it is the platform with routine access.
 
 | # | Step | Pass condition |
 |---|---|---|
-| A1 | Join laptop and device to the same private Wi-Fi, WAN unplugged | Both on the same subnet |
+| A1 | Join laptop and device to the same trusted LAN, WAN unplugged; laptop Ethernet plus phone Wi-Fi is valid | Both on the same subnet; the selected Windows connection is classified **Private** |
 | A0 | **Scan the QR on the laptop console with the phone's own camera** | The camera offers the bootstrap address and opens it. This is the acceptance test for the locally generated symbol; nothing else proves it |
 | A2 | Install the laptop's generated CA on the device | Certificate appears under user credentials |
 | A3 | Open the laptop origin in Chrome | Padlock shown, **no** interstitial, no bypass used |
@@ -103,6 +104,10 @@ must not be skipped.
 
 ## Running the spike
 
+Follow [Connect a phone or tablet on the local network](phone-setup.md) for the Windows Private
+profile, scoped firewall, certificate trust, and installation steps. Its dated setup record tracks
+the first Pixel connection attempt and distinguishes authorization from verified changes.
+
 ```powershell
 dotnet run --project tools/GoldenTicket.ConnectivitySpike -- --address <laptop private IP>
 ```
@@ -129,7 +134,7 @@ on the **private** profile only. The spike never changes the firewall itself.
 
 ### Before the friend arrives
 
-1. Laptop and phone on the same Wi-Fi, WAN unplugged.
+1. Laptop and phone on the same LAN, WAN unplugged; the selected Windows connection is Private.
 2. Spike running, bootstrap page open on the laptop so you can read the fingerprint.
 3. This checklist to hand.
 4. Know which of the two origins you are testing: the `.local` name, or the IP fallback.
@@ -141,7 +146,7 @@ on the **private** profile only. The spike never changes the firewall itself.
 | Laptop side | **Works.** Verified on this machine: the generated chain validates by name and by IP with no bypass, the bootstrap serves only the public CA, an unknown `Host` is refused with 421, a cross-origin or header-less POST is refused with 403, API responses are `no-store`, the shell is served under a same-origin CSP, and the pairing round-trip issues an HttpOnly/Secure cookie that a later request recognises. mDNS advertisement started. |
 | Connection QR | **Generated and read back in repository tests.** Capacity, format, version and alignment checks and a Reed-Solomon syndrome check pass. Earlier implementation notes report a separate decode of four landing addresses, but no standalone decoder artifact is retained here; this audit reproduced the in-repository tests only. **No recorded phone-camera scan** — see checklist line A0. |
 | Handoff and install order | **Behaviour verified in a desktop browser** against simulated user agents for eight in-app browsers and for real Chrome and Safari, at a 375-pixel viewport. Not verified on a phone. |
-| Android | Not run. |
+| Android | Pixel 8 Pro, Android 17 / SDK 37, Chrome `151.0.7922.108`, tested on 2026-09-12. After the verified Private-profile and scoped firewall changes, the phone loaded the HTTP bootstrap over Wi-Fi LAN. Chrome's insecure HTTP download was discarded; only the public CA was then transferred over authorized USB, with matching SHA-256 hashes on phone and laptop. The phone is waiting for the user's explicit Android CA-trust confirmation. HTTPS trust, installed PWA, pairing, and offline acceptance remain pending. See the [setup event](phone-setup.md#setup-event-2026-09-12-pixel-8-pro). |
 | iOS/iPadOS | Not run, and no device available. |
 
 The laptop-side checks say the host is ready to be pointed at a phone. They say nothing about

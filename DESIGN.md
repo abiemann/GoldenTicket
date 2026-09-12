@@ -1116,6 +1116,14 @@ The user explicitly confirmed that all PWA data may be hosted on the laptop, wit
 
 Enable companion hosting through an explicit laptop setting. Bind only the selected private LAN interface and a stable configured port, initially 8443. Configure a narrowly scoped Windows Firewall rule for the app, selected private network, and local subnet, with normal OS consent where required. Do not disable the firewall, open a router port, enable UPnP, or expose the game on a public network interface. Validate request `Host` and `Origin` against the current allowlist.
 
+Setup must inspect the actual Windows network profile; a private-range IP address does not prove
+that Windows classifies the connection as Private. Explain a Public/unknown-profile block and
+guide the user through changing only a trusted connection, including Administrator/UAC prompts
+where required. Show the proposed firewall scope before applying it and verify the resulting
+profile and reachability. Ethernet on the laptop and Wi-Fi on the phone may share the same LAN.
+Record setup outcomes and actionable failures. The first Pixel session exposed these requirements;
+see [phone setup and the September 12 event](docs/phone-setup.md).
+
 #### Trusted HTTPS is a required setup step
 
 Service workers require a secure context. A phone opening `http://192.168.x.x` on the laptop does not receive the phone's `localhost` exception. A plain HTTP bookmark or dismissing a certificate error is not an acceptable substitute for the trusted offline PWA design. [W3C secure contexts](https://www.w3.org/TR/secure-contexts/)
@@ -1127,6 +1135,12 @@ The user installs and trusts that certificate on each companion device. On iOS/i
 Provide local illustrated setup/removal instructions and show the certificate fingerprint on the laptop for verification. Certificate trust is an OS-level user decision and cannot be silently granted by JavaScript or a QR code. If the user declines, offer laptop-only play.
 
 A temporary local HTTP bootstrap, if needed for certificate transfer, serves only the public certificate and static setup instructions, carries no game credentials or private data, and closes after setup. Verify the transferred certificate's fingerprint through the laptop's trusted display or an explicit offline file-transfer workflow. Final pairing and all game operations occur over trusted HTTPS.
+
+Handle browsers that warn about downloading the public certificate over HTTP. Explain the
+provisioning step and offer a verified local file-transfer alternative, such as USB, without
+copying private keys. Distinguish the OS confirmation to add a CA from a browser HTTPS error:
+the former is an explicit user trust decision, while bypassing the latter never counts as
+successful connection setup. Include device-specific CA installation and removal instructions.
 
 Manage certificate expiration, device-clock errors, and renewal explicitly. Renew hostname-matching leaf certificates locally before expiry; keep the installation's CA stable. CA replacement requires new device trust. Removing the Windows app must provide instructions for removing its dedicated trust entry from companions. Prefer HTTPS over TCP and WSS; HTTP/3 is not required for this workflow.
 

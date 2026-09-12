@@ -12,6 +12,10 @@ The September 12, 2026 [implementation audit](docs/AUDIT-2026-09-12.md) found th
 the corrected bugs and security issues, and separates automated evidence from remaining device tests.
 [TODO.md](TODO.md) tracks the work needed to complete the product.
 
+For the phone connection test, follow [local phone setup](docs/phone-setup.md). It records the
+September 12 Pixel test, including Windows Private-network/UAC setup, scoped firewall access,
+and certificate provisioning. Full phone acceptance remains in progress.
+
 ## What this build does
 
 This is the first implementation slice from DESIGN §23.1, with much of M1 and the laptop-only part

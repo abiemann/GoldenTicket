@@ -50,6 +50,15 @@ earlier; perform final release checks and package refresh after the narrative fe
 
 ## Complete the product in dependency order
 
+- [x] **Record first Pixel setup requirements.** Document the Windows Public-to-Private change,
+  Administrator/UAC requirement, scoped firewall rule, successful LAN bootstrap, and verified USB
+  certificate transfer in [phone setup](docs/phone-setup.md). Android certificate approval and the
+  remaining PWA acceptance checks are still pending.
+- [ ] **M0/M2: guided connection setup.** Detect the actual Windows network profile, explain a
+  Public-profile block, guide consent for a trusted-network change and scoped firewall access,
+  and verify each step. Handle Chrome's HTTP certificate-download warning with a verified local
+  transfer path; explain Android's CA confirmation and record the outcome without treating it as
+  successful HTTPS trust. Preserve laptop-only play if the user declines.
 - [ ] **M0/M1: data and platform evidence.** Review every city connection, lane, color, train length,
   and all 30 tickets against the supported physical edition. Record reviewer/provenance. Supply
   measured route-cell geometry and board landmarks; retain the current unaudited status until done.
