@@ -10,11 +10,14 @@ These six features remain unfinished. The milestone tasks below define their imp
 validation requirements; mark each feature complete only after those checks pass.
 
 - [ ] **Camera tracking and recovery** — board recognition, move verification, and automatic recovery after camera movement (M3–M5).
-- [ ] **Phone/tablet PWA** — private pass-and-hide on iOS/iPadOS and Android over the local network (M0/M2).
-- [ ] **CPU/GPU inference selection** — user-selectable acceleration, a complete CPU path, and GPU failure recovery (M4/M5).
-- [ ] **Voice, story, and audio** — visual/voice/both modes, offline narration, train sounds, and congratulations (M6).
+- [ ] **Phone/tablet PWA** — private pass-and-hide on iOS/iPadOS and Android, with laptop-hosted data and QR-assisted initial synchronization entirely within the LAN (M0/M2).
+- [ ] **CPU/GPU inference selection** — Auto at launch uses a validated GPU or falls back to CPU; retain manual overrides and show a CPU chip or GPU/lightning status indicator (M4/M5).
 - [ ] **Photographed save and rebuild** — save the board photo and exact game state, pack away, then reconstruct and resume (M2/M4).
 - [ ] **Offline installer packaging** — self-contained Windows x64 distribution with required runtimes and assets included (M7).
+- [ ] **Training mode, voice, story, and audio: last feature pass** — Training follows Story without effects/ambience; narration follows visual/voice/both settings. Complete photo save-and-rebuild and packaging foundation first (M6).
+
+The user's requested order puts voice/story/audio last. Keep essential visual guidance available
+earlier; perform final release checks and package refresh after the narrative features are finished.
 
 ## Audit fixes implemented
 
@@ -40,28 +43,39 @@ validation requirements; mark each feature complete only after those checks pass
 - [ ] **M0/M2: companion.** Implement the embedded same-origin HTTPS/WSS host, protected per-laptop
   certificate setup, local naming/pairing, controller/private-view grants, authorization and CSRF
   validation, and versioned idempotent commands. Build the iOS/iPadOS/Android PWA with pass-and-hide,
-  shell-only caching, reconnect, update handling, and accessibility. Prove offline setup and local
-  certificate trust on real devices before claiming support.
+  shell-only caching, reconnect, update handling, and accessibility. Generate a connection QR on
+  the laptop and synchronize initial public data/snapshot directly from its local host after pairing;
+  handle changes during synchronization without losing events. Require no inputs or services outside
+  the LAN, including during first setup. Prove QR setup, local certificate trust, and initial sync
+  with WAN disconnected on real devices before claiming support.
 - [ ] **M3: camera.** Add WinRT high-resolution acquisition, bounded frame ownership, camera choice,
   preview and quality checks, printable markers, board landmarks, calibration, and recording/replay.
 - [ ] **M4: verification.** Implement whole-board recognition, authorized pending evidence,
   board-first human placement, occlusion/unknown foreground rejection, jog/reconnect recovery,
   stale-epoch rejection, wake gesture, and explicit mode-change reconciliation.
-- [ ] **M4/M5: inference.** Provide CPU-only and GPU selection, packaged native runtimes and CPU
-  fallback. Evaluate a baseline first; if needed train on developer data, validate held-out physical
-  sets, and ship an offline versioned model. Users must not have to train or download a model.
+- [ ] **M4/M5: inference.** Default to Auto: detect adapters at launch, validate GPU execution with
+  the packaged model, and fall back to CPU on absence, incompatibility, timeout, or failure. Retain
+  explicit CPU/GPU preferences and distinguish them from the effective backend. Display a chip/CPU
+  icon or GPU text with lightning around it, with adapter/fallback details. Package native runtimes
+  and test safe switching. Evaluate a baseline first; if needed train on developer data, validate
+  held-out physical sets, and ship an offline model. Users never train or download a model.
 - [ ] **M2/M4: persistence and pack away.** Add complete encrypted snapshots, backup-before-migration,
   named checkpoints and pinned images, state/photo readback, durable packed/rebuild lifecycles,
   partial-operation targets, guided reconstruction, current-checkpoint success receipts, and
   exactly-once resume. Add correction branches and optional encrypted portable export/import.
-- [ ] **M6: experience.** Add voice/visual/both settings, local speech/recorded fallback, original
-  story and sound assets, public-event filtering, volume and interruption controls, and adjustable
-  privacy timing. Test theme/high-contrast/screen-reader and keyboard behavior in the running UI.
+- [ ] Complete non-audio theme/high-contrast/screen-reader/keyboard work and adjustable privacy timing
+  before the final narrative feature pass.
 - [ ] Implement and evaluate the specified Challenging AI sampled lookahead; current difficulty
   choices tune a heuristic. Keep opponent hands/deck state inaccessible and report strength honestly.
 - [ ] **M7: distribution.** Provide the self-contained x64 offline build and installer/ZIP, native
   dependency smoke checks, license/asset notices and provenance, and documented upgrades/uninstall
-  that retain saves. Re-run package advisories when preparing a release.
+  that retain saves. Establish packaging before the final narrative pass, then refresh it with the
+  finished audio assets. Re-run package advisories when preparing a release.
+- [ ] **M6: Training, voice/story/audio last.** After photographed save-and-rebuild works, implement
+  Standard/Training/Story presentation. Training uses the same story with effects and ambience off;
+  speech follows Voice/Visual/Both. Add local speech/recorded fallback, original story/sound assets,
+  public-event filtering, volume/interruption controls, and mode persistence. Verify zero effects
+  in Training and identical game state across modes. This is unrelated to developer ML training.
 - [ ] Run the full DESIGN §22 physical, crash/power-loss, privacy lifecycle, camera, CPU/GPU,
   story, iOS/Android, network-loss, and clean-machine offline acceptance matrix. Automated view-model
   tests and simulated games are not substitutes for those checks.

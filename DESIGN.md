@@ -55,8 +55,8 @@ Ticket to Ride is a route-claiming game. Trains are placed to occupy the spaces 
 |---|---|---|
 | R01 | Ticket to Ride only; no other board games | No game-plugin platform or generic board-game interpreter. |
 | R02 | The classic North America edition pictured by the user | One versioned board and rules profile; no Europe, expansions, or automatic substitution of the 2025 refresh. |
-| R03 | Windows 11 with a CPU-only or GPU-accelerated choice | A fully functional CPU path, explicit backend selection, and recoverable GPU failure. |
-| R04 | Offline operation with no subscriptions or server costs | Everything ships locally; the Windows app hosts the companion connection itself. No account, hosted server, internet dependency, or recurring infrastructure cost. |
+| R03 | Windows 11; automatically use a supported GPU at launch, otherwise CPU, with a visible status icon | Default Auto selection validates the packaged GPU inference path before using it. Retain CPU/GPU overrides, a complete CPU path, and automatic CPU fallback. Show the effective backend with a chip/CPU or GPU/lightning indicator. |
+| R04 | Offline operation with no subscriptions or server costs; no PWA inputs required from outside the LAN | The Windows app locally hosts the companion, its assets, and game data. QR-assisted connection and initial synchronization use the LAN only; no account, hosted server, internet dependency, or recurring infrastructure cost. |
 | R05 | Human places trains while the camera watches | Durable pending actions, visual/audio instructions, and verified physical completion. |
 | R06 | Printed alignment markers are acceptable | A printable marker layout beside the board supports orientation and recovery. |
 | R07 | Pause after a camera jog; detect return to a suitable position automatically | Preserve state and pending action, reacquire geometry, compare the board, and resume automatically when consistent. |
@@ -64,7 +64,7 @@ Ticket to Ride is a route-claiming game. Trains are placed to occupy the spaces 
 | R09 | An open-palm gesture can wake the app | A debounced gesture requests reconciliation; it cannot grant a turn or spend cards. |
 | R10 | Developer trains with their pieces and ships the model if ML is needed | No consumer labeling, training, model accounts, or model downloads during setup. |
 | R11 | Voice, visual-only, or both | Separate presentation modes with identical underlying game state and accessible controls. |
-| R12 | Optional story mode with train and congratulation sounds | A local, event-driven narrative layer that never changes rules or exposes private information. |
+| R12 | Optional story mode with train and congratulation sounds; Training mode uses the same story without sound effects | One local narrative layer with presentation presets and no changes to rules or hidden information. Voice/story/audio are the final feature work, after photographed save-and-rebuild. |
 | R13 | Multiple humans with pass-and-hide | Pass the companion phone/tablet between human seats; keep AI information isolated and the laptop's normal display public. |
 | R14 | Use the game's box color scheme for the app | Parchment surfaces, burgundy actions, antique-gold accents, dark-brown text, and muted-blue secondary accents as specified in section 4.8. |
 | R15 | The passed-around phone/tablet app must be a PWA for iOS and Android | Responsive browser client with home-screen launch, local shell caching, secure local pairing, and no native app-store dependency. |
@@ -142,7 +142,7 @@ Prefer a mat or corner guides that fix the board's relationship to the markers. 
 
 ### 3.3 First-run sequence
 
-1. Choose the presentation mode, optional story mode, audio device, and processor mode.
+1. Choose the presentation mode, Standard/Training/Story experience, and audio device. Processor mode defaults to Auto; run the launch capability check and show its result, with CPU/GPU overrides available in settings.
 2. Explain that operation is local and that private cards appear only in the active human's private view.
 3. Select a camera by preview. Confirm camera access and enumerate usable formats.
 4. Identify the supported classic board. Show the reference edition description, not a vague “Ticket to Ride compatible” label.
@@ -235,6 +235,8 @@ The app should display the actual board image with a contrasting outline and num
 | Both | Synchronized text/overlays and speech | Private screen | Captions, narration, and optional effects |
 
 Voice guidance is not a promise that a hidden-card game can be played entirely without looking at a screen. Private choices use the companion display or the laptop fallback. Offer accessible touch controls and keyboard navigation where available. A user-selected private headphone output could later provide screen-reader access to secrets, but headphones must not be assumed from the presence of an audio device.
+
+Select the experience separately from voice/visual output: **Standard** uses essential game guidance; **Story** adds the railway narrative and optional sound effects; **Training** follows the same narrative with effects and ambience disabled. In Training, narration follows the existing Voice/Visual/Both selection. Visual-only Training is silent. Section 16 defines the shared presentation behavior.
 
 ### 4.7 Pass-and-hide
 
@@ -774,6 +776,8 @@ It never increments the active seat, approves a hidden-card spend, dismisses a m
 
 ### 14.1 Training is a development task
 
+This section concerns developer ML model training. The user-facing **Training mode** in section 16 is a gameplay presentation preset; it does not collect labels, train a model, or require the player to teach the camera their pieces.
+
 The developer captures their supported board and pieces, labels ground truth, trains offline on their workstation, evaluates the model, exports it, and ships a fixed bundle. Consumer setup performs geometric alignment and automatic quality assessment only.
 
 The initial dataset may use the developer's own set. Shipping claims must be limited to conditions tested independently; a successful fit to one recording is not proof that every classic box, worn train, camera, or lighting condition will work.
@@ -876,17 +880,22 @@ Story mode carries players through the match as a railway journey. It adds atmos
 
 Use an original conductor voice and original wording rather than copying the box's introductory story. A pack contains a departure introduction, short route acknowledgments, occasional public progress remarks, a final-call transition, and a closing sequence for the actual result.
 
+**Training mode** uses this same story sequence and guidance with all train sounds, whistles, congratulations effects, music, and ambience suppressed. Spoken narration remains governed by the Voice/Visual/Both setting; disabling sound effects does not silently change that preference. Use the same public events, story pack, repetition controls, and privacy filters rather than creating a second game or narrative engine. Training does not change rules, difficulty, card information, or scoring and does not perform ML training.
+
 ### 16.2 Narrative state
 
 ```text
 StoryState
-  enabled, packId, packVersion, verbosity
+  experienceMode: Standard | Training | Story
+  packId, packVersion, verbosity
   stage: Departure | OnTheRails | FinalCall | Arrival
   lastPresentedEventId, recentLineIds, cooldowns
   presentationSeed, narrationVolume, effectsVolume, ambienceVolume
 ```
 
 The presentation seed is separate from card shuffling and AI decisions. Toggling story mode cannot alter gameplay randomness. Store stage and repetition history so resume does not restart a long introduction.
+
+Persist experience mode with presentation settings. Switching between Training and Story preserves narrative progress; entering Training stops queued/current effects and ambience immediately. Keep the player's Story volume preferences for a later return, but suppress effect playback at dispatch while Training is active. Captions and permitted speech continue according to the selected output mode.
 
 ### 16.3 Allowed triggers
 
@@ -918,6 +927,8 @@ Use Windows local speech for dynamic city and player instructions when available
 ### 16.6 Story acceptance
 
 Story mode must pass the same complete-game and privacy tests as plain mode. Turning it on or off during a pending claim, private ticket selection, camera recovery, or final scoring cannot change the game state or expose new information.
+
+Run the same public event sequence in Training and Story: narrative progression and game-state results must match, while Training dispatches zero effects/ambience clips. Cover all voice/visual settings, switching during an active effect, save/resume of the experience setting, and rejected private-information triggers. Training in Visual-only mode must produce no automatic audio.
 
 ## 17. Windows implementation and dependencies
 
@@ -967,13 +978,21 @@ OpenCvSharp supplies image analysis, not capture. Its [slim runtime](https://www
 
 Windows ML's self-contained deployment can include its runtime, ONNX Runtime, and DirectML beside the executable. Select that mode and include all required files. Do not add the aggregate Windows App SDK/runtime packages that switch this setup to an external framework dependency. Do not call execution-provider download/catalog acquisition APIs. [Windows ML deployment](https://learn.microsoft.com/en-us/windows/ai/new-windows-ml/distributing-your-app)
 
-Expose **CPU only** and **GPU accelerated**, with detected adapter names and a short explanation that this setting accelerates camera recognition. Gameplay search, rules, and much preprocessing remain CPU work. Supported DirectX hardware must pass model and driver tests; the presence of a GPU alone is insufficient. [DirectML provider requirements](https://onnxruntime.ai/docs/execution-providers/DirectML-ExecutionProvider.html)
+Expose **Auto (default)**, **CPU only**, and **GPU accelerated**, with detected adapter names and a short explanation that this setting accelerates camera recognition. Auto implements the user's requested launch behavior: use a supported GPU when its inference check succeeds, otherwise use CPU. Gameplay search, rules, and much preprocessing remain CPU work. Supported DirectX hardware must pass model and driver tests; the presence of a GPU alone is insufficient. [DirectML provider requirements](https://onnxruntime.ai/docs/execution-providers/DirectML-ExecutionProvider.html)
+
+At launch, enumerate local adapters and validate the shipped provider/model without blocking the UI or requesting downloads. In Auto, prefer a compatible discrete adapter, then a compatible integrated adapter; exclude software adapters from the GPU status. Initialize the candidate session and execute a bounded warm-up using packaged test input, checking model outputs against the accepted contract before enabling live verification. Start with a ten-second total GPU-probe budget and tune against supported hardware. If the check fails, expires, or finds no supported adapter, activate the packaged CPU path and report its reason. If CPU initialization also fails, show vision unavailable and require explicit manual verification instead of pretending inference is active.
+
+Persist `preferredComputeMode` separately from `effectiveComputeBackend` and the active adapter. An explicit CPU preference skips GPU initialization; GPU preference still falls back safely if unavailable. Retry the selected preference at the next launch or through an explicit safe retry, without repeatedly switching providers during placement. A baseline with no ML model uses its actual processing path and must not display GPU inference merely because WPF rendering uses a graphics card.
+
+Place a compact indicator in the laptop's persistent status area: a **chip icon with CPU text** for CPU operation, or **GPU text with a lightning outline around it** for GPU operation. Use the box palette and a static shape, with accessible labels and tooltips containing the adapter name, requested mode, effective backend, and any fallback reason. During detection show **Checking processor...**; during recovery show the transition rather than a healthy GPU badge. Only display GPU after actual model execution on that adapter is established. If execution uses both GPU and CPU operators, disclose that in the tooltip. The icon opens processor settings; it must not imply that the rules engine or opponent strategy has moved to the GPU.
 
 Choose providers explicitly and allowlist only the packaged CPU/DirectML paths. Record the actual provider/device and operator assignment during diagnostics, rather than trusting the requested setting. Avoid loading additional `Microsoft.ML.OnnxRuntime.*` packages that supply competing native binaries. [Provider selection](https://learn.microsoft.com/en-us/windows/ai/new-windows-ml/select-execution-providers)
 
 The first inference spike uses a conservative FP32 model contract, initially ONNX opset 17, with fixed input sizes or a tested fixed maximum batch with padding/masks. Validate every operator against both shipped backends. For the chosen DirectML session, apply its documented sequential execution and memory-pattern settings, and serialize calls to an individual session.
 
 GPU initialization or device loss pauses observation acceptance, cancels queued inference, disposes the failed session, creates the CPU session, and rebuilds a fresh stability window. Keep the user preference but show “CPU in use” with the reason. A manual retry can reselect the GPU when no physical verification is in progress.
+
+Acceptance includes launch with no compatible GPU, integrated-only and discrete hardware, multiple adapters, initialization timeout, unsupported model operations, device loss, explicit CPU preference, and a remembered GPU preference on a later CPU-only machine. Verify equivalent accepted observations across providers, reject stale GPU results after fallback, and check that the status icon always reports the effective backend. These hardware tests remain implementation evidence to obtain.
 
 If the Windows ML integration fails M0, the bounded fallback is one pinned `Microsoft.ML.OnnxRuntime.DirectML` package, which includes a CPU fallback. Do not also install a separate CPU native runtime package. Record the change in this document and repeat offline/provider validation. DirectML's maintenance status is a dependency risk to track, not a reason to require vendor cloud runtimes or paid GPU services.
 
@@ -1092,6 +1111,8 @@ flowchart LR
 
 The laptop serves the PWA shell and API from one origin. Use ordinary same-origin HTTPS requests for commands and a WSS connection for updates. No cloud signaling, TURN relay, internet DNS dependency, CDN assets, analytics, or paid certificate service is required. “No server costs” means no hosted infrastructure; the Windows app's embedded local endpoint is part of the product.
 
+The user explicitly confirmed that all PWA data may be hosted on the laptop, without inputs from outside the LAN. Apply this to initial setup and synchronization as well as subsequent play: bundle application assets, public board/card definitions, help, and any QR-generation code with the Windows installation. The phone obtains them directly from the laptop. No external website, QR redirect service, account lookup, download, or Internet response may be required to complete the supported local setup path. This is the application's network boundary; it does not claim to control unrelated operating-system or browser traffic.
+
 Enable companion hosting through an explicit laptop setting. Bind only the selected private LAN interface and a stable configured port, initially 8443. Configure a narrowly scoped Windows Firewall rule for the app, selected private network, and local subnet, with normal OS consent where required. Do not disable the firewall, open a router port, enable UPnP, or expose the game on a public network interface. Validate request `Host` and `Origin` against the current allowlist.
 
 #### Trusted HTTPS is a required setup step
@@ -1125,10 +1146,19 @@ The M0 connectivity spike must prove the chosen name-discovery and certificate m
 5. Launch the installed home-screen app where available and pair inside that final context. Do not assume an initial browser tab and a home-screen web app share all session storage or cookies.
 6. Enter the laptop's short-lived pairing code in that launched PWA. A QR scanned with the device's existing scanner can open the initial connection/install page, but must not be assumed to target an already installed PWA. The first release does not require an in-PWA camera scanner.
 7. Show the same pairing identity on the phone and laptop; confirm the device on the laptop. Issue a revocable device session and the current controller lease.
+8. Synchronize initial data directly from the laptop: verify compatible application/API/profile versions, obtain public board/card definitions and the current public match snapshot, then subscribe to current updates. Keep private hands covered until the normal active-seat reveal authorization succeeds.
 
 Android's native-like WebAPK installation may use a cloud minting service. Strictly offline setup must remain usable through a home-screen shortcut or browser launch when that is unavailable; do not promise app-drawer/Settings integration in every offline environment. Test secure shell caching and gameplay separately from install UI. [Google PWA installation behavior](https://web.dev/learn/pwa/installation)
 
 Pairing secrets are single-use, short-lived, rate-limited, and scoped to this laptop. The connection QR contains only the local landing address; the readable code is consumed inside the final PWA context with an attempt limit. Never put reusable game credentials in query strings, browser history, or a manifest `start_url`. Pairing establishes a device, not unrestricted access to every seat's secrets.
+
+#### QR-assisted initial synchronization
+
+The laptop's **Connect phone or tablet** screen displays a locally generated QR code, the same local address as readable text, and the separate short-lived pairing code. QR is the chosen barcode format for opening the setup page with the phone's existing scanner. Scanning starts connection/setup; the actual initial data is transferred over the LAN after pairing. The QR is not a serialized game save and carries no hands, destination choices, deck order, private keys, or reusable credentials. Manual address/code entry remains available if scanning fails.
+
+Reuse the stable local origin and the trust/installation sequence above. A QR does not replace certificate trust or guarantee that the operating system opens the installed PWA instead of a browser tab. The setup page guides the player into the final installed context before pairing there. Generate the code from the selected reachable LAN address; report a local connection problem if the phone is on an isolated guest network rather than redirecting to an external service.
+
+Expose an authenticated bootstrap response containing the current public projection, profile identifier and manifest hash, API/asset versions, controller/handoff generations, `stateVersion`, and public event cursor. Capture the projection and cursor consistently on the coordinator. Reconcile the update subscription against that cursor: apply only later ordered events, and request a fresh public snapshot if updates were missed. Mark the phone **Synchronized** only after the versions and event stream agree. Never start a second game, reshuffle, or replay old private views to fill an event gap. Private state is fetched separately through a current seat grant, and the authoritative save remains on Windows.
 
 #### Manifest and cache policy
 
@@ -1156,6 +1186,7 @@ All remote commands go through the same validation and durable transaction path 
 |---|---|---|
 | `GET /api/v1/capabilities` | Protocol, application build, and connection readiness | No private state; schema compatibility checked before play |
 | `POST /api/v1/pair` | Consume pairing challenge and establish device session | Laptop confirmation and attempt limits |
+| `GET /api/v1/bootstrap` | Synchronize compatible public data and a consistent current snapshot/event cursor | Paired controller only; no private hands or deck order, no caching, and no second referee |
 | `POST /api/v1/private-view` | Obtain a current active-seat view/grant | Controller and handoff checks; no arbitrary seat query |
 | `POST /api/v1/commands` | Submit a versioned card, ticket, claim choice, Recheck, or Save and pack away request | Validate command/state/controller/operation; private choices also require the active seat grant |
 | `GET /api/v1/commands/{id}` | Resolve an uncertain result after reconnection | Only the owning authorized controller; private result details require a current matching seat grant |
@@ -1473,6 +1504,8 @@ Test current stable iOS/iPadOS Safari and Android Chrome, plus the previous supp
 | Scenario | Required result |
 |---|---|
 | Fresh setup with WAN disconnected | Guided trust, secure-context check, service-worker registration, and local play succeed without external downloads |
+| Scan the laptop QR on a fresh companion with WAN disconnected | Local landing page, trust guidance, pairing in the final app context, and initial public synchronization succeed entirely from laptop-hosted content |
+| Game changes between initial snapshot and update subscription | Catch up from the snapshot cursor or resynchronize; no lost/duplicated action, stale hand, or new deal |
 | Android offline WebAPK service unavailable | Browser/shortcut operation remains functional; install status is reported honestly |
 | Browser tab versus home-screen launch | Correct pairing in the final context; no assumed shared credentials |
 | Phone and tablet, portrait/landscape, enlarged text | Card choices and Hide stay usable with the box palette and safe areas |
@@ -1520,20 +1553,20 @@ Compare the checkpoint's logical-state hash with the restored state before gamep
 
 ## 23. Implementation milestones
 
-Each milestone ends with a runnable, reviewable artifact and relevant validation. Do not polish story content before the underlying physical transaction is dependable. The final product includes story mode; its place later in this sequence is about dependency order.
+Each milestone ends with a runnable, reviewable artifact and relevant validation. The user's priority is explicit: complete camera/PWA/inference and photographed save-and-rebuild before voice/story/audio. Training belongs to the same final narrative feature pass. Finish other planned feature work and establish offline installer packaging before that pass; final integration, packaging refresh, and release verification still follow it. Milestone IDs remain work-package references: perform M7's packaging foundation before M6's narrative work, then close M7 after all features pass acceptance. Essential visual move and recovery guidance must already work throughout earlier milestones.
 
 | Milestone | Work | Exit evidence |
 |---|---|---|
-| M0: Platform and data feasibility | WPF shell; free CLI build; WinRT camera; CV/inference/audio spikes; exact-edition data capture; local HTTPS PWA install/pairing spike on real iOS and Android | Clean-machine offline spike; device trust/origin/launch evidence; actual package lock; native notices; camera/provider report; no paid service required |
+| M0: Platform and data feasibility | WPF shell; free CLI build; WinRT camera; CV/inference spikes; exact-edition data capture; local HTTPS PWA install/pairing spike on real iOS and Android; defer audio implementation to the final feature pass | Clean-machine offline spike; device trust/origin/launch evidence; actual package lock; native notices; camera/provider report; no paid service required |
 | M1: Deterministic game | Reviewed board/ticket manifest; complete rules actions/subphases; invariants; exact scoring; pending operations; versioned rare-case policies | Independent fixtures, seeded simulations, data audit, documented supply-case decisions |
 | M2: Full digital interaction | Seat assignment, PWA pass-and-hide and laptop fallback, digital market/hands/tickets, basic AI, manual physical confirmation, exact save/checkpoint/lifecycle persistence, diagram-based rebuild, reconnect protocol | Complete local mixed-seat match using the shared companion; privacy, duplicate-command, connection-loss, mid-turn save, and crash tests |
 | M3: Camera and replay | Calibration, print layout, board landmarks, capture quality, frame leases, recorder and annotation/replay tooling | Reproducible recordings with ground truth; jog/board-shift detection; no user training |
 | M4: Verification loop | Baseline recognition, full-board matcher, planned and board-first claims, correction UI, automatic recovery, wake gesture, verified pack-away photos and guided reconstruction | Recorded and live claim/recovery scenarios plus complete pack-away/rebuild with no incorrect commits or duplicate scoring |
-| M5: Recognition model if needed | Developer dataset expansion, small model, ONNX export, backend comparison, bundle versioning | Held-out evidence showing required improvement over baseline; compatibility manifest and licenses |
-| M6: Game experience | Stronger AI levels, box-derived theme, accessible board overlays, guidance modes, original story/sounds, private-output filtering | Complete story-enabled mixed-seat match; verified theme contrast and player-color distinction; no hidden-information leakage; measured AI completion/latency |
+| M5: Recognition model if needed | Developer dataset expansion, small model, ONNX export, backend comparison, bundle versioning; Auto/CPU/GPU launch policy and effective-backend indicator for the selected inference path | Held-out evidence showing required improvement over baseline when training is needed; provider-selection/fallback tests, compatibility manifest and licenses |
+| M6: Game experience | Complete non-audio AI/theme/accessibility work first; implement Training/Story, voice/visual modes, original narration/sounds, and private-output filtering as the final feature pass after photographed save-and-rebuild and packaging foundation | Complete Training and Story mixed-seat matches; Training produces no sound effects; verified theme contrast and player-color distinction; no hidden-information leakage; measured AI completion/latency |
 | M7: Hardening and release candidate | Offline installer/PWA distribution, native dependencies, certificate renewal, mobile lifecycle/cache updates, suspend/reconnect, disk faults, photo/checkpoint crash recovery and retention, save migration, extended sessions, documentation | Full acceptance matrix, clean-machine/local-network install, real-device report, known limitations, reviewed release artifacts |
 
-M1 may proceed alongside M0's camera experiments because rules do not depend on capture. Dataset collection begins as soon as M3 tooling produces trustworthy synchronized labels. M5 is conditional on measured need; skipping training is acceptable only if M4's recognizer meets the same final criteria.
+M1 may proceed alongside M0's camera experiments because rules do not depend on capture. Dataset collection begins as soon as M3 tooling produces trustworthy synchronized labels. M5's model training is conditional on measured need; skipping training is acceptable only if M4's recognizer meets the same final criteria. Processor selection and truthful status remain required for whichever recognition path is implemented.
 
 ### 23.1 First implementation slice
 
