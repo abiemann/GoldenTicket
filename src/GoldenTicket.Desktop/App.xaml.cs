@@ -19,8 +19,25 @@ public partial class App : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (e.Args.FirstOrDefault() == "--check-package")
+        {
+            // A bounded diagnostic of the shipped runtime. Never open MainWindow, a camera,
+            // a network listener, or a player's saved game in this explicit command-line mode.
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            base.OnStartup(e);
+            if (e.Args.Length != 2) { Shutdown(2); return; }
+            _ = CheckPackageAndExitAsync(e.Args[1]);
+            return;
+        }
+        StartupUri = new Uri("MainWindow.xaml", UriKind.Relative);
         base.OnStartup(e);
         DispatcherUnhandledException += OnUnhandledException;
+    }
+
+    private async Task CheckPackageAndExitAsync(string reportPath)
+    {
+        try { Shutdown(await PackageDiagnostics.RunAsync(reportPath)); }
+        catch { Shutdown(2); } // Invalid output paths fail without a modal UI or overwriting files.
     }
 
     /// <summary>

@@ -1656,6 +1656,12 @@ The normal developer build is framework-dependent; the offline packaging workflo
 separate self-contained x64 ZIP after documented source validation. These are implementation gaps,
 not changes to the full requirements above.
 
+The packaging builder selects a separate reviewed `packages.win-x64.lock.json` graph for each
+application project. Before archiving, the published executable's explicit `--check-package` mode
+tests its loaded bundled runtime and synthetic WPF/SQLite/DPAPI/PNG/ASP.NET/asset operations without
+a visible window, camera, listener or player save. This does not satisfy clean-machine or physical
+device acceptance.
+
 The [original audit](docs/AUDIT-2026-09-11.md) maps R01–R16 to source evidence; the [follow-up audit](docs/AUDIT-2026-09-12.md) records the reviewed changes, fixes and current validation. [TODO.md](TODO.md) lists the remaining implementation and real-device acceptance work. Passing domain, persistence, view-model or browser-script tests does not satisfy the camera, privacy lifecycle, packaging, or mobile hardware gates.
 
 ## 25. Sources

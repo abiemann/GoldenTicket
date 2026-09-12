@@ -64,6 +64,9 @@ earlier; perform final release checks and package refresh after the narrative fe
   a self-contained Windows x64 ZIP with runtime/assets checks, notices, provenance and checksums.
   Actual package output is recorded separately in [packaging evidence](docs/offline-package.md);
   clean-machine acceptance and an installer remain open.
+- [x] **Runtime packaging checks.** Separate reviewed Windows-runtime lock files preserve the
+  development dependency locks. An explicit windowless executable diagnostic checks the loaded
+  bundled runtime and native components before the ZIP is created.
 - [ ] Replace companion snapshot polling with WSS/event-cursor synchronization; persist protected
   approved-device registry, implement reconnect/lease recovery without pairing after every reload,
   and add hold-to-peek plus full accessibility/device acceptance. Current plain-JS client is a

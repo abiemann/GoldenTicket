@@ -14,4 +14,11 @@
     <NoWarn>$(NoWarn);CA1416</NoWarn>
     <RepoRoot>$(MSBuildThisFileDirectory)</RepoRoot>
   </PropertyGroup>
+
+  <!-- A self-contained publish applies win-x64 to the entire project-reference graph. Its NuGet
+       targets differ from normal development restores, so keep separate committed locks instead
+       of rewriting packages.lock.json during packaging. This property must be explicit. -->
+  <PropertyGroup Condition="'$(GoldenTicketOfflinePackage)' == 'true'">
+    <NuGetLockFilePath>$(MSBuildProjectDirectory)\packages.win-x64.lock.json</NuGetLockFilePath>
+  </PropertyGroup>
 </Project>

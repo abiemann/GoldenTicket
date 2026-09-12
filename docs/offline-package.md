@@ -35,8 +35,14 @@ pwsh -NoProfile -File tools/Build-OfflinePackage.ps1
 publishing, or creating a release directory. It cannot establish that the prose is accurate;
 that review remains part of the source change.
 
-The normal build uses locked NuGet restore and may download the exact free dependency/runtime
-packs on the developer machine. It does not require a subscription or a hosted service. To build
+The package build uses locked NuGet restore with `GoldenTicketOfflinePackage=true`, which selects
+each participating project's committed `packages.win-x64.lock.json`. The seven application
+projects have separate package locks because a self-contained publish applies `win-x64` to the
+entire project-reference graph. Normal builds and solution tests keep using `packages.lock.json`;
+packaging does not rewrite those development locks or weaken locked restore.
+
+The build may download the exact free dependency/runtime packs on the developer machine. It does
+not require a subscription or a hosted service. To build
 without network access after populating the exact package cache:
 
 ```powershell
@@ -48,6 +54,21 @@ there is no fallback to downloading another version. NuGet vulnerability queries
 for that offline restore, so retain a separately performed connected vulnerability audit in the
 release evidence. Neither mode changes pinned dependencies or SDK versions deliberately.
 
+When a source change intentionally changes dependencies, update and review both lock sets before
+the source commit. The package graph is regenerated explicitly with the pinned SDK:
+
+```powershell
+dotnet restore src/GoldenTicket.Desktop/GoldenTicket.Desktop.csproj --force-evaluate --configfile NuGet.config --runtime win-x64 -p:SelfContained=true -p:GoldenTicketOfflinePackage=true
+dotnet restore src/GoldenTicket.Desktop/GoldenTicket.Desktop.csproj --locked-mode --configfile NuGet.config --runtime win-x64 -p:SelfContained=true -p:GoldenTicketOfflinePackage=true
+dotnet restore GoldenTicket.sln --locked-mode --configfile NuGet.config
+```
+
+The first command is a deliberate dependency-maintenance operation, not part of packaging. Inspect
+the seven package-lock diffs and confirm normal locks only change when the source dependency update
+requires it. The second command verifies the package graph; the third verifies and restores the
+normal development graph. These restore operations do not publish release files. Commit updated
+locks and documentation with the implementation before running the packaging script.
+
 Each run gets a unique directory under `artifacts/release/`, identified by UTC timestamp,
 source commit prefix, and a random suffix. Earlier output is never removed or overwritten.
 An interrupted run remains there for diagnosis. A complete run has:
@@ -55,6 +76,8 @@ An interrupted run remains there for diagnosis. A complete run has:
 - `GoldenTicket/`: the extracted application and all required runtime/content files.
 - `GoldenTicket-win-x64-….zip` and its adjacent `.sha256` file.
 - `restore.log`, `publish.log`, and `package-result.json` outside the player payload.
+- `runtime-diagnostic.json`, recording eight checks run by the published executable, outside the
+  player payload. It identifies the actual loaded runtime directory and reports component failures.
 - `GoldenTicket/package-provenance.json`, identifying the source commit, SDK, included runtime
   versions, publish settings, and outstanding manual acceptance.
 - `GoldenTicket/SHA256-MANIFEST.json`, covering every payload file except the manifest itself.
@@ -67,6 +90,15 @@ WPF, ASP.NET/Kestrel, SQLite, Windows camera interop, the companion shell, and b
 present. It rejects missing assets, symbolic-link/junction storage, bundled game saves or private
 keys, and unexpected untracked companion assets. It neither installs a CA nor changes firewall
 rules, network profiles, trust stores, Git tags, GitHub releases, or repository visibility.
+
+Before archiving, the builder runs `GoldenTicket.exe --check-package <new-report-path>` with a
+45-second process limit. This explicit command-line mode opens no window, camera, network listener
+or saved game. It checks that CoreCLR is loaded from the package, validates the shipped board data,
+renders the WPF theme, executes native SQLite in memory, verifies a synthetic DPAPI round trip,
+encodes/decodes a synthetic PNG through Windows and WPF, constructs the ASP.NET host without
+listening, and checks PWA assets. Existing report files are never overwritten. A failed component
+or framework-dependent runtime blocks packaging. These developer-machine checks supplement the
+clean-machine/device acceptance table below.
 
 Some NuGet packages contain a license expression or URL without the full license text.
 `licenses/dependencies.json` preserves this distinction, and `PACKAGE-THIRD-PARTY-NOTICES.md` lists

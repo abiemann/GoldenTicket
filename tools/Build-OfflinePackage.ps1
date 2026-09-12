@@ -132,7 +132,11 @@ if ([IO.Path]::GetFullPath($actualRoot) -ne $repository) { throw 'The script mus
 $sourceCommit = Assert-CleanSource ''
 if ($sourceCommit -notmatch '^[0-9a-f]{40}$') { throw 'A complete Git source commit is required.' }
 $requiredDocumentation = @('README.md', 'TODO.md', 'DESIGN.md', 'docs/offline-package.md', 'docs/phone-setup.md')
-foreach ($relative in $requiredDocumentation + @('tools/Build-OfflinePackage.ps1', 'global.json', 'NuGet.config')) {
+$requiredPackageLocks = @('GoldenTicket.Domain', 'GoldenTicket.Application', 'GoldenTicket.AI',
+    'GoldenTicket.Persistence', 'GoldenTicket.CompanionHost', 'GoldenTicket.Vision', 'GoldenTicket.Desktop') |
+    ForEach-Object { 'src/' + $_ + '/packages.win-x64.lock.json' }
+foreach ($relative in $requiredDocumentation + $requiredPackageLocks +
+    @('tools/Build-OfflinePackage.ps1', 'global.json', 'NuGet.config', 'Directory.Build.props', 'Directory.Packages.props')) {
     $path = Assert-Within (Join-Path $repository $relative) $repository
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required source documentation/configuration is missing: $relative" }
     $null = Invoke-Text $git @('-C', $repository, 'ls-files', '--error-unmatch', '--', $relative)
@@ -159,7 +163,7 @@ try {
     [IO.Directory]::CreateDirectory($packageRoot) | Out-Null
     $project = Join-Path $repository 'src/GoldenTicket.Desktop/GoldenTicket.Desktop.csproj'
     $restoreArguments = @('restore', $project, '--locked-mode', '--configfile', (Join-Path $repository 'NuGet.config'),
-        '--runtime', 'win-x64', '-p:SelfContained=true')
+        '--runtime', 'win-x64', '-p:SelfContained=true', '-p:GoldenTicketOfflinePackage=true')
     if ($OfflineBuild) {
         $emptyFeed = Assert-Within (Join-Path $runRoot 'empty-local-feed') $runRoot
         [IO.Directory]::CreateDirectory($emptyFeed) | Out-Null
@@ -170,6 +174,7 @@ try {
     $null = Assert-CleanSource $sourceCommit
     $publishArguments = @('publish', $project, '--configuration', 'Release', '--runtime', 'win-x64',
         '--self-contained', 'true', '--no-restore', '--output', $packageRoot,
+        '-p:GoldenTicketOfflinePackage=true',
         '-p:PublishTrimmed=false', '-p:PublishSingleFile=false', '-p:PublishReadyToRun=false',
         '-p:ContinuousIntegrationBuild=true')
     Write-Host 'Publishing the application with its .NET, WPF and ASP.NET runtimes...'
@@ -221,6 +226,30 @@ try {
     $includedFrameworks = @($runtimeOptions.includedFrameworks)
     foreach ($framework in @('Microsoft.NETCore.App', 'Microsoft.WindowsDesktop.App', 'Microsoft.AspNetCore.App')) {
         if ($framework -notin $includedFrameworks.name) { throw "The package did not include the $framework runtime." }
+    }
+
+    Write-Host 'Checking the published executable and its loaded runtimes without opening a window...'
+    $diagnosticReport = Join-Path $runRoot 'runtime-diagnostic.json'
+    $diagnosticStart = [Diagnostics.ProcessStartInfo]::new((Join-Path $packageRoot 'GoldenTicket.exe'))
+    $diagnosticStart.UseShellExecute = $false
+    $diagnosticStart.CreateNoWindow = $true
+    $diagnosticStart.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
+    $diagnosticStart.WorkingDirectory = $runRoot
+    $diagnosticStart.ArgumentList.Add('--check-package')
+    $diagnosticStart.ArgumentList.Add($diagnosticReport)
+    $diagnosticProcess = [Diagnostics.Process]::Start($diagnosticStart)
+    try {
+        if (-not $diagnosticProcess.WaitForExit(45000)) {
+            $diagnosticProcess.Kill($true)
+            throw 'The package runtime check timed out. No complete package is reported.'
+        }
+        if ($diagnosticProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $diagnosticReport -PathType Leaf)) {
+            throw "The published runtime check failed (exit $($diagnosticProcess.ExitCode)). Inspect $diagnosticReport; no complete package is reported."
+        }
+    } finally { $diagnosticProcess.Dispose() }
+    $diagnostic = Get-Content -LiteralPath $diagnosticReport -Raw | ConvertFrom-Json -AsHashtable
+    if (-not $diagnostic.passed -or $diagnostic.checks.Count -ne 8) {
+        throw 'The published executable did not pass all eight component checks.'
     }
 
     $documentation = @(Invoke-Text $git @('-C', $repository, 'ls-files', '--', 'README.md', 'TODO.md', 'DESIGN.md', 'docs')) -split "`n"
@@ -315,9 +344,11 @@ Packages needing that notice-text review: $($needsNoticeReview -join ', ')
         formatVersion = 1; sourceCommit = $sourceCommit; sdkVersion = $sdkVersion
         builtAtUtc = $started.ToString('O'); target = 'Windows 11 x64'; runtimeIdentifier = 'win-x64'
         selfContained = $true; trimmed = $false; singleFile = $false; readyToRun = $false
-        frameworkVersions = $includedFrameworks; lockedRestore = $true; offlineBuild = [bool]$OfflineBuild
+        frameworkVersions = $includedFrameworks; lockedRestore = $true
+        dependencyLockSet = 'packages.win-x64.lock.json'; offlineBuild = [bool]$OfflineBuild
         nugetAuditRequestedDuringRestore = -not [bool]$OfflineBuild; packageType = 'portable ZIP'; signed = $false
         documentationCommittedWithSource = $true
+        headlessRuntimeChecksPassed = $true
         requiredManualAcceptance = @('Clean Windows 11 x64 without an installed .NET runtime',
             'Internet-disconnected launch and complete manual game', 'Camera permissions and reconnect',
             'Trusted Private LAN and phone certificate/pairing setup', 'Photo save/restart/rebuild',

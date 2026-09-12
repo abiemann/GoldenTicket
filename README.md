@@ -101,6 +101,9 @@ The current desktop build is framework-dependent and needs the .NET 10 Windows D
 Build the self-contained offline ZIP with the [packaging workflow](docs/offline-package.md) when preparing a
 validated source commit; clean-machine and installer acceptance remain outstanding.
 
+The package builder runs the executable's windowless `--check-package` diagnostics against its
+bundled runtime, WPF, SQLite, DPAPI, Windows PNG encoding, ASP.NET and local assets before archiving.
+
 No paid IDE, account, or internet connection is needed to run the application. Building it the first
 time downloads NuGet packages.
 
@@ -131,7 +134,12 @@ Open `GoldenTicket.sln` in a Visual Studio version that supports the pinned .NET
 **GoldenTicket.Desktop** as the startup project.
 
 Each project has a `packages.lock.json` covering transitive dependencies. Use locked restore for
-verification; intentionally update the locks when changing dependencies. The persistence tests
+verification; intentionally update the locks when changing dependencies. The seven application
+projects also have `packages.win-x64.lock.json` for the self-contained package's runtime graph.
+Only an explicit `-p:GoldenTicketOfflinePackage=true` selects those locks; the
+[packaging workflow](docs/offline-package.md) sets it for both restore and publish and documents
+how to regenerate and verify both lock sets without changing normal development locks.
+The persistence tests
 need a normal Windows user profile with DPAPI access. A restricted or impersonated test context
 can fail data protection even when the same tests pass as the signed-in Windows user.
 

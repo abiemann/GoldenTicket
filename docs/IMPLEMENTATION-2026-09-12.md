@@ -73,6 +73,21 @@ These are explicitly **operator-attested reference photos**. The checkpoint rema
 `LogicalStateOnly`; no machine-verified photograph, pending-placement mask, or automatic board
 rebuild validation is claimed. A different reference requires a new checkpoint.
 
+### Offline distribution foundation
+
+The [package builder](offline-package.md) prepares a self-contained Windows x64 ZIP from committed
+documentation and source. The first package attempt exposed a runtime-specific NuGet lock mismatch;
+separate reviewed Windows-runtime lock files now preserve the normal development locks. Both lock
+graphs restore successfully in locked mode.
+
+The executable has an explicit windowless `--check-package` diagnostic. It exercises WPF, native
+SQLite, account DPAPI, Windows PNG encoding, ASP.NET construction and shipped assets without
+opening a camera, network listener or player save. It also requires CoreCLR to load from the
+package directory. Before publication, its development-build negative check correctly detected
+the framework-dependent runtime while the other seven component checks passed. The builder runs
+all eight checks against the published executable before archiving. Actual package results are
+recorded separately; a clean-machine/manual walkthrough is still required.
+
 ## Deliberate implementation limits
 
 - The phone uses bundled plain JavaScript with no npm runtime/build dependency. The planned
