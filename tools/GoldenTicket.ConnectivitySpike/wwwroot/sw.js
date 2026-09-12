@@ -13,6 +13,8 @@ const SHELL = [
     'app.js',
     'styles.css',
     'icon.svg',
+    'icon-192.png',
+    'icon-512.png',
     'manifest.webmanifest',
 ];
 

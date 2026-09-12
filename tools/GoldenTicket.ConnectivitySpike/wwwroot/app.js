@@ -39,9 +39,46 @@ function currentDisplayMode() {
     if (window.navigator.standalone === true) return 'standalone-ios';
 
     for (const mode of ['standalone', 'minimal-ui', 'fullscreen', 'window-controls-overlay']) {
-        if (window.matchMedia(`(display-mode: ${mode})`).matches) return mode;
+        try {
+            if (window.matchMedia(`(display-mode: ${mode})`).matches) return mode;
+        } catch {
+            // Some embedded browsers throw on an unknown media feature.
+        }
     }
     return 'browser';
+}
+
+// A modern iPad reports itself as a Mac; without the touch-point check it is mistaken for a desktop
+// and the Add to Home Screen guidance is never shown. Learned from a shipped PWA, not from the spec.
+function isIosDevice() {
+    const agent = String(navigator.userAgent || '');
+    const platform = String(navigator.platform || '');
+    return /iPad|iPhone|iPod/.test(agent) ||
+        (platform === 'MacIntel' && Number(navigator.maxTouchPoints || 0) > 1);
+}
+
+// An in-app browser cannot install a PWA and often cannot register a service worker, so a failure
+// here would be blamed on the laptop rather than on the app the link was opened inside.
+function embeddedBrowserName() {
+    const agent = String(navigator.userAgent || '');
+    const signatures = [
+        [/Messenger|FBAN|FBAV|FB_IAB|FBIOS/i, 'Messenger or Facebook'],
+        [/Instagram/i, 'Instagram'],
+        [/TikTok|BytedanceWebview/i, 'TikTok'],
+        [/LinkedInApp/i, 'LinkedIn'],
+        [/Line\//i, 'LINE'],
+        [/Snapchat/i, 'Snapchat'],
+        [/\bGSA\//i, 'the Google app'],
+    ];
+
+    for (const [pattern, name] of signatures) {
+        if (pattern.test(agent)) return name;
+    }
+
+    if (/Android/i.test(agent) && (/;\s*wv\)/i.test(agent) || /\bVersion\/4\.0\b.*\bChrome\//i.test(agent))) {
+        return 'another app';
+    }
+    return null;
 }
 
 async function checkConnection() {
@@ -90,7 +127,18 @@ async function checkInstallation() {
     mark('check-standalone', state.launchedStandalone);
 
     if (!document.getElementById('display-detail').textContent) {
-        detail('display-detail', `Display mode: ${state.displayMode}`);
+        const embedded = embeddedBrowserName();
+        if (embedded && !state.launchedStandalone) {
+            detail('display-detail',
+                `This page was opened inside ${embedded}. Open it in Safari or Chrome instead: ` +
+                'an in-app browser cannot install a home-screen app.');
+        } else if (isIosDevice() && !state.launchedStandalone) {
+            detail('display-detail',
+                'Display mode: browser. On iPhone or iPad use Share → Add to Home Screen, ' +
+                'then open it from there and run these checks again.');
+        } else {
+            detail('display-detail', `Display mode: ${state.displayMode}`);
+        }
     }
 }
 

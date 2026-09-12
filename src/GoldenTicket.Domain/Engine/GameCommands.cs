@@ -126,6 +126,16 @@ public sealed record ResumePackedGame(
     CommandEnvelope Envelope,
     CheckpointId CheckpointId) : GameCommand(Envelope);
 
+/// <summary>
+/// Accepts the reviewed continuation policy for the paused supply state (DESIGN 6.4). The policy id
+/// is echoed back so an operator cannot accept a policy they were not shown.
+/// </summary>
+public sealed record ResolveRulesDecision(
+    CommandEnvelope Envelope,
+    string Code,
+    string PolicyId,
+    string Operator) : GameCommand(Envelope);
+
 /// <summary>Why a command was refused. Codes are stable; messages are for people.</summary>
 public sealed record CommandRejection(string Code, string Message);
 

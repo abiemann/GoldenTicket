@@ -39,6 +39,7 @@ public sealed record PublicEventEntry(string Kind, SeatId? Seat, string Text);
 [JsonDerivedType(typeof(FinalRoundStarted), nameof(FinalRoundStarted))]
 [JsonDerivedType(typeof(FinalScoringCompleted), nameof(FinalScoringCompleted))]
 [JsonDerivedType(typeof(RulesDecisionRaised), nameof(RulesDecisionRaised))]
+[JsonDerivedType(typeof(RulesDecisionResolved), nameof(RulesDecisionResolved))]
 [JsonDerivedType(typeof(PackAwayRequested), nameof(PackAwayRequested))]
 [JsonDerivedType(typeof(PackAwayPreparationCancelled), nameof(PackAwayPreparationCancelled))]
 [JsonDerivedType(typeof(PackAwayCheckpointCommitted), nameof(PackAwayCheckpointCommitted))]
@@ -329,6 +330,24 @@ public sealed record FinalScoringCompleted(FinalResult Result) : GameEvent
     public override PublicEventEntry ToPublicEntry(BoardManifest manifest) =>
         new("FinalScoringCompleted", null,
             Result.SharedVictory ? "Final scoring complete: shared victory." : "Final scoring complete.");
+}
+
+/// <summary>
+/// DESIGN 6.4: an operator accepted the reviewed continuation policy for a paused supply state. The
+/// policy version is recorded, so a match can never silently adopt a policy revised later.
+/// </summary>
+public sealed record RulesDecisionResolved(
+    string Code,
+    string PolicyId,
+    int PolicyVersion,
+    string Operator,
+    DateTimeOffset ResolvedAt) : GameEvent
+{
+    public override EventVisibility Visibility => EventVisibility.Public;
+
+    public override PublicEventEntry ToPublicEntry(BoardManifest manifest) =>
+        new("RulesDecisionResolved", null,
+            $"Resolved: {RulesContinuations.For(Code)?.Title ?? PolicyId}. Play continues.");
 }
 
 /// <summary>DESIGN 6.4: an unresolved supply state. The match pauses with its exact cause.</summary>

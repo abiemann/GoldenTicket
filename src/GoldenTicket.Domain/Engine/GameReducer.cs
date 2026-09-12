@@ -91,6 +91,7 @@ public static class GameReducer
             case FinalRoundStarted e: ApplyFinalRoundStarted(state, e); break;
             case FinalScoringCompleted e: ApplyFinalScoring(state, e); break;
             case RulesDecisionRaised e: ApplyRulesDecision(state, e); break;
+            case RulesDecisionResolved e: ApplyRulesDecisionResolved(state, e); break;
 
             case PackAwayRequested e: ApplyPackAwayRequested(state, e); break;
             case PackAwayPreparationCancelled: ApplyPackAwayCancelled(state); break;
@@ -340,6 +341,20 @@ public static class GameReducer
     {
         state.RulesDecision = new RulesDecision(e.Code, e.Explanation);
         state.TurnPhase = TurnPhase.RulesDecisionRequired;
+    }
+
+    /// <summary>
+    /// Records the accepted policy and lifts the pause. The acceptance persists for the match, so
+    /// the same position continues instead of stopping play again (DESIGN 6.4).
+    /// </summary>
+    private static void ApplyRulesDecisionResolved(GameState state, RulesDecisionResolved e)
+    {
+        state.AcceptedRulesPolicies = state.AcceptedRulesPolicies.SetItem(e.Code, e.PolicyId);
+        state.RulesDecision = null;
+
+        // The phase the pause interrupted is restored by the events the engine emits after this one.
+        if (state.TurnPhase == TurnPhase.RulesDecisionRequired)
+            state.TurnPhase = TurnPhase.TurnStart;
     }
 
     // ---- Save, pack away and rebuild (DESIGN 19.8) -------------------------------------------

@@ -100,6 +100,20 @@ public sealed class GameState
     /// <summary>Set when the profile cannot resolve a supply state (DESIGN 6.4).</summary>
     public RulesDecision? RulesDecision { get; internal set; }
 
+    /// <summary>
+    /// Continuation policies an operator has accepted for this match, by code (DESIGN 6.4). Once a
+    /// policy is accepted the same position applies it instead of stopping play again, and the
+    /// acceptance is in the journal with the policy version it was taken under.
+    /// </summary>
+    public ImmutableDictionary<string, string> AcceptedRulesPolicies { get; internal set; } =
+        ImmutableDictionary<string, string>.Empty;
+
+    /// <summary>
+    /// How many seats have passed in a row because they had no legal action. A full round of them
+    /// means nothing further can happen, which is the only way the pass policy can terminate.
+    /// </summary>
+    public int ConsecutivePasses { get; internal set; }
+
     // ---- Board ----------------------------------------------------------------------------
 
     public IReadOnlyDictionary<RouteId, SeatId> RouteOwners => RouteOwnersInternal;
@@ -244,6 +258,8 @@ public sealed class GameState
             ActiveSeatIndex = ActiveSeatIndex,
             TurnNumber = TurnNumber,
             RulesDecision = RulesDecision,
+            AcceptedRulesPolicies = AcceptedRulesPolicies,
+            ConsecutivePasses = ConsecutivePasses,
             CurrentTicketOffer = CurrentTicketOffer,
             PendingClaim = PendingClaim,
             FinalRound = FinalRound,
