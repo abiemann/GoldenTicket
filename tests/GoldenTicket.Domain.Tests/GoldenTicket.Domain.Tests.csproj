@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Windows-targeted so the WPF view models can be driven headlessly alongside the domain. -->
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.22000.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>GoldenTicket.Domain.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\GoldenTicket.Domain\GoldenTicket.Domain.csproj" />
+    <ProjectReference Include="..\..\src\GoldenTicket.Application\GoldenTicket.Application.csproj" />
+    <ProjectReference Include="..\..\src\GoldenTicket.AI\GoldenTicket.AI.csproj" />
+    <ProjectReference Include="..\..\src\GoldenTicket.Persistence\GoldenTicket.Persistence.csproj" />
+    <ProjectReference Include="..\..\tools\GoldenTicket.Simulator\GoldenTicket.Simulator.csproj" />
+    <ProjectReference Include="..\..\src\GoldenTicket.Desktop\GoldenTicket.Desktop.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,57 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Box-derived palette (DESIGN 4.8). The canonical values live in shared/theme/tokens.json and a
+        test asserts this dictionary agrees with them, so both clients use one palette rather than
+        scattering literal hex values.
+    -->
+
+    <Color x:Key="Color.Parchment">#F1E7D2</Color>
+    <Color x:Key="Color.Paper">#FBF6EA</Color>
+    <Color x:Key="Color.AgedPaper">#E4D3AF</Color>
+    <Color x:Key="Color.Burgundy">#7A241C</Color>
+    <Color x:Key="Color.BurgundyHover">#621B17</Color>
+    <Color x:Key="Color.AntiqueGold">#B28A48</Color>
+    <Color x:Key="Color.Ink">#33271F</Color>
+    <Color x:Key="Color.SecondaryInk">#6B5845</Color>
+    <Color x:Key="Color.RailBlue">#254B63</Color>
+    <Color x:Key="Color.RailCharcoal">#252729</Color>
+    <Color x:Key="Color.Forest">#3E5842</Color>
+
+    <!-- Semantic roles. Views bind to these, not to the raw colours. -->
+    <SolidColorBrush x:Key="Surface.Window" Color="{StaticResource Color.Parchment}" />
+    <SolidColorBrush x:Key="Surface.Card" Color="{StaticResource Color.Paper}" />
+    <SolidColorBrush x:Key="Surface.Panel" Color="{StaticResource Color.AgedPaper}" />
+    <SolidColorBrush x:Key="Surface.Curtain" Color="{StaticResource Color.RailCharcoal}" />
+    <SolidColorBrush x:Key="Text.Primary" Color="{StaticResource Color.Ink}" />
+    <SolidColorBrush x:Key="Text.Secondary" Color="{StaticResource Color.SecondaryInk}" />
+    <SolidColorBrush x:Key="Text.OnDark" Color="{StaticResource Color.Paper}" />
+    <SolidColorBrush x:Key="Action.Primary" Color="{StaticResource Color.Burgundy}" />
+    <SolidColorBrush x:Key="Action.PrimaryHover" Color="{StaticResource Color.BurgundyHover}" />
+    <SolidColorBrush x:Key="Action.Secondary" Color="{StaticResource Color.RailBlue}" />
+    <SolidColorBrush x:Key="Focus.Outline" Color="{StaticResource Color.RailBlue}" />
+    <SolidColorBrush x:Key="Ornament" Color="{StaticResource Color.AntiqueGold}" />
+    <SolidColorBrush x:Key="Status.Success" Color="{StaticResource Color.Forest}" />
+
+    <!--
+        Gameplay encodings are deliberately separate from the decorative palette: a burgundy button is
+        not the red player's identity. Every use is paired with a seat name and a redundant symbol.
+    -->
+    <SolidColorBrush x:Key="Player.Blue" Color="#1F5C9E" />
+    <SolidColorBrush x:Key="Player.Red" Color="#B0332A" />
+    <SolidColorBrush x:Key="Player.Green" Color="#2E7D4F" />
+    <SolidColorBrush x:Key="Player.Yellow" Color="#D9A520" />
+    <SolidColorBrush x:Key="Player.Black" Color="#2B2B2B" />
+
+    <SolidColorBrush x:Key="Card.Pink" Color="#C9558E" />
+    <SolidColorBrush x:Key="Card.White" Color="#F2F0E8" />
+    <SolidColorBrush x:Key="Card.Blue" Color="#2E6DA4" />
+    <SolidColorBrush x:Key="Card.Yellow" Color="#E3B825" />
+    <SolidColorBrush x:Key="Card.Orange" Color="#DE7F2B" />
+    <SolidColorBrush x:Key="Card.Black" Color="#2B2B2B" />
+    <SolidColorBrush x:Key="Card.Red" Color="#C0392B" />
+    <SolidColorBrush x:Key="Card.Green" Color="#3E8E52" />
+    <SolidColorBrush x:Key="Card.Locomotive" Color="#8E7CC3" />
+
+</ResourceDictionary>

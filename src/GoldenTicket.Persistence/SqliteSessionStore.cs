@@ -1,0 +1,710 @@
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using GoldenTicket.Application;
+using GoldenTicket.Domain;
+using GoldenTicket.Domain.Engine;
+using GoldenTicket.Domain.Events;
+using GoldenTicket.Domain.Manifest;
+using GoldenTicket.Domain.Model;
+using Microsoft.Data.Sqlite;
+
+namespace GoldenTicket.Persistence;
+
+/// <summary>
+/// The local authoritative save (DESIGN 19.1-19.4). One SQLite database per match under
+/// <c>%LOCALAPPDATA%\GoldenTicket\sessions\</c>, in WAL mode with full synchronous durability, where
+/// each transaction commits its domain events, its command deduplication result and the resulting
+/// version and state hash together.
+/// </summary>
+public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
+{
+    public const int StoreSchemaVersion = 2;
+
+    /// <summary>Unit separator; seat names are free text and must not collide with it.</summary>
+    private const char SeatNameSeparator = '\u001f';
+
+    private readonly ConcurrentDictionary<SessionId, SessionEncryption> _encryption = new();
+
+    /// <summary>DESIGN 19.1: settings and matches live outside the installation directory.</summary>
+    public static string DefaultRoot => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GoldenTicket");
+
+    public static SqliteSessionStore CreateDefault() => new(DefaultRoot);
+
+    public string RootDirectory { get; } = Path.GetFullPath(rootDirectory);
+
+    public string SessionDirectory(SessionId sessionId)
+    {
+        // Session ids are opaque identifiers, never caller-supplied filesystem paths.
+        if (!Guid.TryParseExact(sessionId.Value, "N", out var id) ||
+            !string.Equals(id.ToString("N"), sessionId.Value, StringComparison.Ordinal))
+            throw new ArgumentException("A session id must be a lowercase, 32-digit GUID.", nameof(sessionId));
+
+        var sessionsRoot = Path.Combine(RootDirectory, "sessions");
+        var directory = Path.GetFullPath(Path.Combine(sessionsRoot, sessionId.Value));
+        if (!directory.StartsWith(sessionsRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("The session directory must remain inside the saves directory.", nameof(sessionId));
+
+        // Do not follow a save directory or its parent through a junction/symbolic link.
+        foreach (var path in new[] { sessionsRoot, directory })
+        {
+            if (Directory.Exists(path) && (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("A saved-match directory cannot be a filesystem link.");
+        }
+
+        return directory;
+    }
+
+    public string DatabasePath(SessionId sessionId)
+    {
+        var path = Path.Combine(SessionDirectory(sessionId), "session.db");
+        if (File.Exists(path) && (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            throw new IOException("A saved-match database cannot be a filesystem link.");
+        return path;
+    }
+
+    // ---- Creation ---------------------------------------------------------------------------
+
+    public async Task CreateAsync(
+        GameState state,
+        CommandId commandId,
+        Transition transition,
+        string stateHash,
+        CancellationToken cancellationToken)
+    {
+        if (File.Exists(DatabasePath(state.SessionId)))
+            throw new InvalidOperationException($"Session {state.SessionId} already exists.");
+        Directory.CreateDirectory(SessionDirectory(state.SessionId));
+
+        var (encryption, protectedKey) = SessionEncryption.CreateForNewSession();
+
+        await using var connection = await OpenAsync(state.SessionId, cancellationToken, create: true);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await CreateSchemaAsync(connection, cancellationToken);
+
+        var now = DateTimeOffset.UtcNow.ToString("O");
+
+        await ExecuteAsync(connection, """
+            INSERT INTO Session (
+                SessionId, ProfileId, ManifestHash, StoreSchemaVersion, RulesPolicyVersion,
+                EncryptionVersion, ProtectedDataKey, Lifecycle, TurnNumber, SeatNames, CreatedAt, UpdatedAt)
+            VALUES (
+                $sessionId, $profileId, $manifestHash, $storeSchema, $rulesPolicy,
+                $encryptionVersion, $protectedKey, $lifecycle, $turnNumber, $seatNames, $createdAt, $updatedAt);
+            """, cancellationToken,
+            ("$sessionId", state.SessionId.Value),
+            ("$profileId", state.Manifest.ProfileId),
+            ("$manifestHash", state.Manifest.DataHash),
+            ("$storeSchema", StoreSchemaVersion),
+            ("$rulesPolicy", state.Manifest.RulesPolicyVersion),
+            ("$encryptionVersion", SessionEncryption.FormatVersion),
+            ("$protectedKey", protectedKey),
+            ("$lifecycle", state.Lifecycle.ToString()),
+            ("$turnNumber", state.TurnNumber),
+            ("$seatNames", string.Join(SeatNameSeparator, state.Seats.Select(seat => seat.DisplayName))),
+            ("$createdAt", now),
+            ("$updatedAt", now));
+
+        await ExecuteAsync(connection,
+            "INSERT INTO MigrationHistory (Version, AppliedAt) VALUES ($version, $appliedAt);",
+            cancellationToken, ("$version", StoreSchemaVersion), ("$appliedAt", now));
+
+        await AppendEventsAsync(
+            connection, state.SessionId, encryption, state.StateVersion, transition.Events, cancellationToken);
+
+        await WriteSnapshotAsync(connection, state.SessionId, state.StateVersion,
+            state.JournalSequence, state.BoardRevision, stateHash, cancellationToken);
+
+        await WriteCommandOutcomeAsync(connection, state.SessionId,
+            new StoredCommandOutcome(commandId, true, state.StateVersion, null, null), cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+        // A failed create must never replace the key of an existing match in this process.
+        _encryption[state.SessionId] = encryption;
+    }
+
+    // ---- Commands ---------------------------------------------------------------------------
+
+    public async Task<StoredCommandOutcome?> FindCommandOutcomeAsync(
+        SessionId sessionId, CommandId commandId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(sessionId, cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Accepted, StateVersionAfter, RejectionCode, RejectionMessage
+            FROM CommandResult WHERE SessionId = $sessionId AND CommandId = $commandId;
+            """;
+        command.Parameters.AddWithValue("$sessionId", sessionId.Value);
+        command.Parameters.AddWithValue("$commandId", commandId.Value);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+
+        return new StoredCommandOutcome(
+            commandId,
+            reader.GetBoolean(0),
+            reader.GetInt64(1),
+            reader.IsDBNull(2) ? null : reader.GetString(2),
+            reader.IsDBNull(3) ? null : reader.GetString(3));
+    }
+
+    public async Task CommitAsync(
+        GameState state,
+        StoredCommandOutcome outcome,
+        Transition transition,
+        string stateHash,
+        CancellationToken cancellationToken)
+    {
+        var sessionId = state.SessionId;
+        var encryption = await GetEncryptionAsync(sessionId, cancellationToken);
+
+        await using var connection = await OpenAsync(sessionId, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var stored = await ReadLatestSnapshotAsync(connection, sessionId, cancellationToken);
+        var (headSequence, _) = await ReadJournalHeadAsync(connection, sessionId, cancellationToken);
+        if (!outcome.Accepted || outcome.StateVersionAfter != state.StateVersion ||
+            transition.Events.Length == 0 || stored.StateVersion != state.StateVersion - 1 ||
+            headSequence + 1 + transition.Events.Length != state.JournalSequence)
+            throw new SessionIntegrityException("The save has changed or the proposed transaction is inconsistent. Reopen the match before continuing.");
+
+        await AppendEventsAsync(
+            connection, sessionId, encryption, state.StateVersion, transition.Events, cancellationToken);
+
+        await WriteSnapshotAsync(
+            connection, sessionId, state.StateVersion, state.JournalSequence, state.BoardRevision, stateHash, cancellationToken);
+
+        await WriteCommandOutcomeAsync(connection, sessionId, outcome, cancellationToken);
+
+        await ExecuteAsync(connection,
+            """
+            UPDATE Session SET UpdatedAt = $updatedAt, TurnNumber = $turnNumber, Lifecycle = $lifecycle,
+                StoreSchemaVersion = $storeSchema
+            WHERE SessionId = $sessionId;
+            """,
+            cancellationToken,
+            ("$updatedAt", DateTimeOffset.UtcNow.ToString("O")),
+            ("$turnNumber", state.TurnNumber),
+            ("$lifecycle", state.Lifecycle.ToString()),
+            ("$storeSchema", StoreSchemaVersion),
+            ("$sessionId", sessionId.Value));
+
+        await ExecuteAsync(connection,
+            "INSERT OR IGNORE INTO MigrationHistory (Version, AppliedAt) VALUES ($version, $appliedAt);",
+            cancellationToken, ("$version", StoreSchemaVersion), ("$appliedAt", DateTimeOffset.UtcNow.ToString("O")));
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task RecordRejectionAsync(
+        SessionId sessionId, StoredCommandOutcome outcome, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(sessionId, cancellationToken);
+        if (outcome.Accepted)
+            throw new ArgumentException("Only rejected outcomes can be recorded without game events.", nameof(outcome));
+        await WriteCommandOutcomeAsync(connection, sessionId, outcome, cancellationToken, ignoreDuplicate: true);
+    }
+
+    // ---- Restore ----------------------------------------------------------------------------
+
+    public async Task<RestoredSession> RestoreAsync(
+        SessionId sessionId,
+        BoardManifest manifest,
+        CardCatalog catalog,
+        CancellationToken cancellationToken)
+    {
+        if (!File.Exists(DatabasePath(sessionId)))
+            throw new FileNotFoundException($"No saved match named {sessionId}.", DatabasePath(sessionId));
+
+        await using var connection = await OpenAsync(sessionId, cancellationToken);
+        // Keep metadata, journal and snapshot on a single consistent SQLite read transaction.
+        await using var transaction = connection.BeginTransaction(deferred: true);
+        var schemaVersion = await VerifyCompatibilityAsync(connection, sessionId, manifest, cancellationToken);
+
+        var encryption = await GetEncryptionAsync(sessionId, cancellationToken, reload: true);
+        var journal = await ReadJournalAsync(connection, sessionId, encryption, cancellationToken);
+
+        if (journal.Count == 0 || journal[0].Event is not SessionCreated created ||
+            created.SessionId != sessionId || created.ProfileId != manifest.ProfileId ||
+            created.ManifestHash != manifest.DataHash || created.RulesPolicyVersion != manifest.RulesPolicyVersion)
+            throw new SessionIntegrityException("The journal does not contain the expected match and rules profile.");
+
+        GameState state;
+        try
+        {
+            state = GameReducer.Rebuild(manifest, catalog, journal);
+        }
+        catch (Exception error) when (error is InvalidDataException or InvalidOperationException or ArgumentException or KeyNotFoundException)
+        {
+            throw new SessionIntegrityException("The saved journal could not be replayed. Restoration stops without changing the save.");
+        }
+
+        // DESIGN 19.4 step 3 / invariant 12: the replayed state must reproduce the stored hash.
+        var snapshot = await ReadLatestSnapshotAsync(connection, sessionId, cancellationToken);
+        // Schema 1 creation used an event count but subsequent commits used the last zero-based
+        // row index. Schema 2 consistently stores the GameState event count.
+        var sequenceMatches = snapshot.JournalSequence == state.JournalSequence ||
+            (schemaVersion == 1 && snapshot.JournalSequence == state.JournalSequence - 1);
+
+        if (!StateHash.Matches(state, snapshot.StateHash) ||
+            snapshot.StateVersion != state.StateVersion || !sequenceMatches ||
+            snapshot.BoardRevision != state.BoardRevision)
+        {
+            throw new SessionIntegrityException(
+                $"The replayed journal of {sessionId} does not match its required snapshot. " +
+                "Restoration stops rather than inventing missing state.");
+        }
+
+        var problems = InvariantChecker.Check(state);
+        if (problems.Count > 0)
+        {
+            throw new SessionIntegrityException(
+                $"The restored match failed {problems.Count} integrity checks. " +
+                "Restoration stops without exposing private cards or changing the save.");
+        }
+
+        return new RestoredSession(state, journal);
+    }
+
+    public async Task<IReadOnlyList<SessionSummary>> ListSessionsAsync(CancellationToken cancellationToken)
+    {
+        var sessionsRoot = Path.Combine(RootDirectory, "sessions");
+        if (!Directory.Exists(sessionsRoot)) return [];
+        if ((File.GetAttributes(sessionsRoot) & FileAttributes.ReparsePoint) != 0)
+            throw new IOException("The saves directory cannot be a filesystem link.");
+
+        var summaries = new List<SessionSummary>();
+
+        foreach (var directory in Directory.EnumerateDirectories(sessionsRoot))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var name = Path.GetFileName(directory);
+            if (!Guid.TryParseExact(name, "N", out var id) || id.ToString("N") != name) continue;
+            var sessionId = new SessionId(name);
+
+            try
+            {
+                if (!File.Exists(DatabasePath(sessionId)))
+                    throw new FileNotFoundException("The saved-match database is missing.");
+                await using var connection = await OpenAsync(sessionId, cancellationToken);
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT ProfileId, Lifecycle, TurnNumber, SeatNames, CreatedAt, UpdatedAt
+                    FROM Session WHERE SessionId = $sessionId;
+                    """;
+                command.Parameters.AddWithValue("$sessionId", sessionId.Value);
+
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                if (!await reader.ReadAsync(cancellationToken))
+                    throw new SessionIntegrityException("The saved match has no session metadata.");
+
+                if (!Enum.TryParse<SessionLifecycle>(reader.GetString(1), out var lifecycle) ||
+                    !Enum.IsDefined(lifecycle))
+                    throw new SessionIntegrityException("The saved match has an invalid lifecycle.");
+
+                summaries.Add(new SessionSummary(
+                    sessionId,
+                    reader.GetString(0),
+                    DateTimeOffset.Parse(reader.GetString(4)),
+                    DateTimeOffset.Parse(reader.GetString(5)),
+                    lifecycle,
+                    reader.GetInt32(2),
+                    reader.GetString(3).Split(SeatNameSeparator)));
+            }
+            catch (Exception error) when (error is SqliteException or FormatException or ArgumentException or
+                InvalidCastException or IOException or UnauthorizedAccessException or SessionIntegrityException)
+            {
+                // Keep the entry visible for deliberate retry/recovery. No private payload or raw
+                // database error is included, and the damaged file is never silently replaced.
+                summaries.Add(new SessionSummary(sessionId, "Unavailable", DateTimeOffset.UnixEpoch,
+                    DateTimeOffset.UnixEpoch, SessionLifecycle.Setup, 0, [],
+                    "This saved match could not be read. Its files have been retained; retry opening it or restore a backup."));
+            }
+        }
+
+        return [.. summaries.OrderByDescending(summary => summary.UpdatedAt)];
+    }
+
+    public Task DeleteSessionAsync(SessionId sessionId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var directory = SessionDirectory(sessionId);
+        _encryption.TryRemove(sessionId, out _);
+        SqliteConnection.ClearAllPools();
+
+        if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+
+        return Task.CompletedTask;
+    }
+
+    // ---- Internals --------------------------------------------------------------------------
+
+    private async Task<SqliteConnection> OpenAsync(
+        SessionId sessionId, CancellationToken cancellationToken, bool create = false)
+    {
+        var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = DatabasePath(sessionId),
+            Mode = create ? SqliteOpenMode.ReadWriteCreate : SqliteOpenMode.ReadWrite,
+            Pooling = true,
+        }.ToString());
+
+        try
+        {
+            await connection.OpenAsync(cancellationToken);
+
+            // DESIGN 19.3: WAL with a durability setting appropriate for power-loss recovery.
+            await using var pragma = connection.CreateCommand();
+            pragma.CommandText = "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;";
+            await pragma.ExecuteNonQueryAsync(cancellationToken);
+
+            return connection;
+        }
+        catch
+        {
+            // An open/PRAGMA failure must not return a corrupt database handle to its pool and
+            // keep the file locked. Retire only this connection-string pool, not unrelated games.
+            SqliteConnection.ClearPool(connection);
+            await connection.DisposeAsync();
+            throw;
+        }
+    }
+
+    private static async Task CreateSchemaAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE IF NOT EXISTS Session (
+                SessionId          TEXT PRIMARY KEY,
+                ProfileId          TEXT NOT NULL,
+                ManifestHash       TEXT NOT NULL,
+                StoreSchemaVersion INTEGER NOT NULL,
+                RulesPolicyVersion INTEGER NOT NULL,
+                EncryptionVersion  INTEGER NOT NULL,
+                ProtectedDataKey   BLOB NOT NULL,
+                Lifecycle          TEXT NOT NULL,
+                TurnNumber         INTEGER NOT NULL,
+                SeatNames          TEXT NOT NULL,
+                CreatedAt          TEXT NOT NULL,
+                UpdatedAt          TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS Event (
+                SessionId     TEXT NOT NULL,
+                Sequence      INTEGER NOT NULL,
+                StateVersion  INTEGER NOT NULL,
+                Type          TEXT NOT NULL,
+                SchemaVersion INTEGER NOT NULL,
+                Visibility    TEXT NOT NULL,
+                Encrypted     INTEGER NOT NULL,
+                Nonce         BLOB NULL,
+                Payload       BLOB NOT NULL,
+                PriorHash     TEXT NOT NULL,
+                PRIMARY KEY (SessionId, Sequence)
+            );
+
+            CREATE TABLE IF NOT EXISTS Snapshot (
+                SessionId       TEXT NOT NULL,
+                StateVersion    INTEGER NOT NULL,
+                JournalSequence INTEGER NOT NULL,
+                BoardRevision   INTEGER NOT NULL,
+                StateHash       TEXT NOT NULL,
+                PRIMARY KEY (SessionId, StateVersion)
+            );
+
+            CREATE TABLE IF NOT EXISTS CommandResult (
+                SessionId         TEXT NOT NULL,
+                CommandId         TEXT NOT NULL,
+                Accepted          INTEGER NOT NULL,
+                StateVersionAfter INTEGER NOT NULL,
+                RejectionCode     TEXT NULL,
+                RejectionMessage  TEXT NULL,
+                RecordedAt        TEXT NOT NULL,
+                PRIMARY KEY (SessionId, CommandId)
+            );
+
+            CREATE TABLE IF NOT EXISTS MigrationHistory (
+                Version   INTEGER PRIMARY KEY,
+                AppliedAt TEXT NOT NULL
+            );
+            """;
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>Appends the events of one transaction and returns the last sequence number used.</summary>
+    private static async Task<long> AppendEventsAsync(
+        SqliteConnection connection,
+        SessionId sessionId,
+        SessionEncryption encryption,
+        long stateVersion,
+        IReadOnlyList<GameEvent> events,
+        CancellationToken cancellationToken)
+    {
+        var (sequence, priorHash) = await ReadJournalHeadAsync(connection, sessionId, cancellationToken);
+
+        foreach (var domainEvent in events)
+        {
+            var plaintext = EventSerializer.Serialize(domainEvent);
+
+            // DESIGN 19.2: public payloads may stay readable; everything else is protected.
+            var encrypt = domainEvent.Visibility != EventVisibility.Public;
+            byte[] payload;
+            byte[]? nonce = null;
+
+            if (encrypt) payload = encryption.Encrypt(plaintext, out nonce);
+            else payload = plaintext;
+
+            priorHash = ChainHash(priorHash, domainEvent.GetType().Name, payload);
+
+            await ExecuteAsync(connection, """
+                INSERT INTO Event (
+                    SessionId, Sequence, StateVersion, Type, SchemaVersion,
+                    Visibility, Encrypted, Nonce, Payload, PriorHash)
+                VALUES (
+                    $sessionId, $sequence, $stateVersion, $type, $schemaVersion,
+                    $visibility, $encrypted, $nonce, $payload, $priorHash);
+                """, cancellationToken,
+                ("$sessionId", sessionId.Value),
+                ("$sequence", ++sequence),
+                ("$stateVersion", stateVersion),
+                ("$type", domainEvent.GetType().Name),
+                ("$schemaVersion", domainEvent.SchemaVersion),
+                ("$visibility", domainEvent.Visibility.ToString()),
+                ("$encrypted", encrypt ? 1 : 0),
+                ("$nonce", (object?)nonce ?? DBNull.Value),
+                ("$payload", payload),
+                ("$priorHash", priorHash));
+        }
+
+        return sequence;
+    }
+
+    private static async Task<(long Sequence, string PriorHash)> ReadJournalHeadAsync(
+        SqliteConnection connection, SessionId sessionId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Sequence, PriorHash FROM Event
+            WHERE SessionId = $sessionId ORDER BY Sequence DESC LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$sessionId", sessionId.Value);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? (reader.GetInt64(0), reader.GetString(1))
+            : (-1, "sha256:" + new string('0', 64));
+    }
+
+    private static async Task<List<JournaledEvent>> ReadJournalAsync(
+        SqliteConnection connection,
+        SessionId sessionId,
+        SessionEncryption encryption,
+        CancellationToken cancellationToken)
+    {
+        var journal = new List<JournaledEvent>();
+        var priorHash = "sha256:" + new string('0', 64);
+        long previousVersion = 1;
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Sequence, StateVersion, Type, Encrypted, Nonce, Payload, PriorHash, SchemaVersion, Visibility
+            FROM Event WHERE SessionId = $sessionId ORDER BY Sequence ASC;
+            """;
+        command.Parameters.AddWithValue("$sessionId", sessionId.Value);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var sequence = reader.GetInt64(0);
+            var stateVersion = reader.GetInt64(1);
+            var type = reader.GetString(2);
+            var encryptionMarker = reader.GetInt32(3);
+            var encrypted = encryptionMarker == 1;
+            var nonce = reader.IsDBNull(4) ? null : (byte[])reader["Nonce"];
+            var payload = (byte[])reader["Payload"];
+            var recordedHash = reader.GetString(6);
+            var schemaVersion = reader.GetInt32(7);
+            var visibility = reader.GetString(8);
+
+            if (sequence != journal.Count || stateVersion < previousVersion || stateVersion > previousVersion + 1 ||
+                (sequence == 0 && stateVersion != 1) || encryptionMarker is < 0 or > 1 || schemaVersion != 1 ||
+                (encrypted ? nonce?.Length != 12 : nonce is not null))
+                throw new SessionIntegrityException($"Journal row {sequence} has invalid ordering or format metadata.");
+            previousVersion = stateVersion;
+
+            priorHash = ChainHash(priorHash, type, payload);
+            if (!string.Equals(priorHash, recordedHash, StringComparison.Ordinal))
+            {
+                throw new SessionIntegrityException(
+                    $"Journal row {sequence} of {sessionId} does not match its recorded hash chain.");
+            }
+
+            try
+            {
+                var plaintext = encrypted ? encryption.Decrypt(payload, nonce!) : payload;
+                var domainEvent = EventSerializer.Deserialize(plaintext);
+                if (domainEvent.GetType().Name != type || domainEvent.SchemaVersion != schemaVersion ||
+                    domainEvent.Visibility.ToString() != visibility ||
+                    (domainEvent.Visibility != EventVisibility.Public) != encrypted)
+                    throw new SessionIntegrityException($"Journal row {sequence} does not match its event metadata.");
+                journal.Add(new JournaledEvent(sequence, stateVersion, domainEvent));
+            }
+            catch (Exception error) when (error is CryptographicException or JsonException or InvalidDataException or NotSupportedException)
+            {
+                // Do not include payloads or deserializer messages in diagnostics; events can be private.
+                throw new SessionIntegrityException($"Journal row {sequence} could not be authenticated or decoded.");
+            }
+        }
+
+        return journal;
+    }
+
+    private sealed record SnapshotHead(long StateVersion, long JournalSequence, long BoardRevision, string StateHash);
+
+    private static async Task<SnapshotHead> ReadLatestSnapshotAsync(
+        SqliteConnection connection, SessionId sessionId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT StateVersion, JournalSequence, BoardRevision, StateHash FROM Snapshot
+            WHERE SessionId = $sessionId ORDER BY StateVersion DESC LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$sessionId", sessionId.Value);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            throw new SessionIntegrityException($"The save for {sessionId} has no authoritative snapshot.");
+        return new SnapshotHead(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2), reader.GetString(3));
+    }
+
+    private static async Task<int> VerifyCompatibilityAsync(
+        SqliteConnection connection, SessionId sessionId, BoardManifest manifest, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT ProfileId, ManifestHash, StoreSchemaVersion, RulesPolicyVersion, EncryptionVersion FROM Session WHERE SessionId = $sessionId;";
+        command.Parameters.AddWithValue("$sessionId", sessionId.Value);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            throw new SessionIntegrityException($"The save for {sessionId} has no session row.");
+
+        var profileId = reader.GetString(0);
+        var manifestHash = reader.GetString(1);
+        var schemaVersion = reader.GetInt32(2);
+
+        if (schemaVersion is < 1 or > StoreSchemaVersion)
+        {
+            throw new SessionIntegrityException(
+                $"That save uses an unsupported GoldenTicket store schema ({schemaVersion}).");
+        }
+
+        if (reader.GetInt32(3) != manifest.RulesPolicyVersion || reader.GetInt32(4) != SessionEncryption.FormatVersion)
+            throw new SessionIntegrityException("That save uses an unsupported rules or encryption version.");
+
+        if (!string.Equals(profileId, manifest.ProfileId, StringComparison.Ordinal))
+        {
+            throw new SessionIntegrityException(
+                $"That save belongs to profile '{profileId}', not '{manifest.ProfileId}'.");
+        }
+
+        if (!string.Equals(manifestHash, manifest.DataHash, StringComparison.Ordinal))
+        {
+            throw new SessionIntegrityException(
+                "The board data package has changed since that match was saved. " +
+                "Restoring it against different route or ticket data would silently alter the game.");
+        }
+
+        return schemaVersion;
+    }
+
+    private static Task WriteSnapshotAsync(
+        SqliteConnection connection,
+        SessionId sessionId,
+        long stateVersion,
+        long journalSequence,
+        long boardRevision,
+        string stateHash,
+        CancellationToken cancellationToken) =>
+        ExecuteAsync(connection, """
+            INSERT INTO Snapshot (SessionId, StateVersion, JournalSequence, BoardRevision, StateHash)
+            VALUES ($sessionId, $stateVersion, $journalSequence, $boardRevision, $stateHash);
+            """, cancellationToken,
+            ("$sessionId", sessionId.Value),
+            ("$stateVersion", stateVersion),
+            ("$journalSequence", journalSequence),
+            ("$boardRevision", boardRevision),
+            ("$stateHash", stateHash));
+
+    private static Task WriteCommandOutcomeAsync(
+        SqliteConnection connection,
+        SessionId sessionId,
+        StoredCommandOutcome outcome,
+        CancellationToken cancellationToken,
+        bool ignoreDuplicate = false) =>
+        ExecuteAsync(connection, $$"""
+            INSERT {{(ignoreDuplicate ? "OR IGNORE " : "")}}INTO CommandResult (
+                SessionId, CommandId, Accepted, StateVersionAfter, RejectionCode, RejectionMessage, RecordedAt)
+            VALUES ($sessionId, $commandId, $accepted, $version, $code, $message, $recordedAt);
+            """, cancellationToken,
+            ("$sessionId", sessionId.Value),
+            ("$commandId", outcome.CommandId.Value),
+            ("$accepted", outcome.Accepted ? 1 : 0),
+            ("$version", outcome.StateVersionAfter),
+            ("$code", (object?)outcome.RejectionCode ?? DBNull.Value),
+            ("$message", (object?)outcome.RejectionMessage ?? DBNull.Value),
+            ("$recordedAt", DateTimeOffset.UtcNow.ToString("O")));
+
+    private async Task<SessionEncryption> GetEncryptionAsync(
+        SessionId sessionId, CancellationToken cancellationToken, bool reload = false)
+    {
+        if (!reload && _encryption.TryGetValue(sessionId, out var cached)) return cached;
+
+        await using var connection = await OpenAsync(sessionId, cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT ProtectedDataKey FROM Session WHERE SessionId = $sessionId;";
+        command.Parameters.AddWithValue("$sessionId", sessionId.Value);
+
+        if (await command.ExecuteScalarAsync(cancellationToken) is not byte[] protectedKey)
+            throw new SessionIntegrityException($"The save for {sessionId} has no data key.");
+
+        try
+        {
+            var encryption = SessionEncryption.Open(protectedKey);
+            _encryption[sessionId] = encryption;
+            return encryption;
+        }
+        catch (CryptographicException)
+        {
+            throw new SessionIntegrityException("The saved match's data key could not be opened for this Windows user. The original save has been retained.");
+        }
+    }
+
+    private static async Task ExecuteAsync(
+        SqliteConnection connection,
+        string sql,
+        CancellationToken cancellationToken,
+        params (string Name, object Value)[] parameters)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        foreach (var (name, value) in parameters) command.Parameters.AddWithValue(name, value);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>Tamper-evident chaining so an edited journal row is detected on restore.</summary>
+    private static string ChainHash(string priorHash, string type, byte[] payload)
+    {
+        var header = Encoding.UTF8.GetBytes(priorHash + "|" + type + "|");
+        var buffer = new byte[header.Length + payload.Length];
+        header.CopyTo(buffer, 0);
+        payload.CopyTo(buffer, header.Length);
+
+        return "sha256:" + Convert.ToHexStringLower(SHA256.HashData(buffer));
+    }
+}

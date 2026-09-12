@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0": {
+      "goldenticket.ai": {
+        "type": "Project",
+        "dependencies": {
+          "GoldenTicket.Domain": "[1.0.0, )"
+        }
+      },
+      "goldenticket.application": {
+        "type": "Project",
+        "dependencies": {
+          "GoldenTicket.Domain": "[1.0.0, )"
+        }
+      },
+      "goldenticket.domain": {
+        "type": "Project"
+      }
+    }
+  }
+}

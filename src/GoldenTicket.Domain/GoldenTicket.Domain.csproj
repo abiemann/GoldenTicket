@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>GoldenTicket.Domain</RootNamespace>
+  </PropertyGroup>
+
+  <!-- The test project drives the engine directly and sets up controlled hands. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="GoldenTicket.Domain.Tests" />
+  </ItemGroup>
+
+  <!-- DESIGN 6.3: the board/ticket manifest is versioned data, separate from executable code.
+       It is copied beside the binaries so every host resolves the same reviewed file. -->
+  <ItemGroup>
+    <Content Include="$(RepoRoot)data\classic-us\**\*.json"
+             Link="data\classic-us\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

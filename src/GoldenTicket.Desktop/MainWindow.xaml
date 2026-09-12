@@ -1,0 +1,56 @@
+<Window x:Class="GoldenTicket.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:GoldenTicket.Desktop"
+        xmlns:views="clr-namespace:GoldenTicket.Desktop.Views"
+        xmlns:vm="clr-namespace:GoldenTicket.Desktop.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        d:DataContext="{d:DesignInstance vm:MainViewModel}"
+        mc:Ignorable="d"
+        Title="GoldenTicket" Height="880" Width="1400" MinHeight="620" MinWidth="1000"
+        Background="{StaticResource Surface.Window}"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.Resources>
+        <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+        <local:EmptyStringToVisibilityConverter x:Key="EmptyStringToVisibility" />
+        <local:ScreenVisibilityConverter x:Key="ScreenVisibility" />
+    </Window.Resources>
+
+    <Grid>
+        <Grid>
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsPrivateVisible}" Value="True">
+                            <Setter Property="IsEnabled" Value="False" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
+        <!-- Public screens. Only one is realised as visible at a time. -->
+        <views:SetupView
+            Visibility="{Binding Screen, Converter={StaticResource ScreenVisibility}, ConverterParameter=Setup}" />
+
+        <views:TableView
+            Visibility="{Binding Screen, Converter={StaticResource ScreenVisibility}, ConverterParameter=Table}" />
+
+        <views:FinalScoreView
+            Visibility="{Binding Screen, Converter={StaticResource ScreenVisibility}, ConverterParameter=FinalScore}" />
+        </Grid>
+
+        <Border VerticalAlignment="Bottom" HorizontalAlignment="Stretch" Padding="12,6"
+                Background="{StaticResource Surface.Panel}"
+                Visibility="{Binding Busy, Converter={StaticResource EmptyStringToVisibility}}">
+            <TextBlock Text="{Binding Busy}" FontWeight="SemiBold" />
+        </Border>
+
+        <!--
+            The privacy curtain (DESIGN 4.7). It is fully opaque and covers everything, and the
+            private view under it exists only while a seat is revealed.
+        -->
+        <views:PrivateSeatView
+            Visibility="{Binding IsPrivateVisible, Converter={StaticResource BoolToVisibility}}" />
+    </Grid>
+</Window>

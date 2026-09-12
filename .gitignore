@@ -1,0 +1,34 @@
+# Build output
+bin/
+obj/
+artifacts/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userprefs
+
+# Test and coverage output
+TestResults/
+*.trx
+!docs/evidence/**/final-tests.trx
+*.coverage
+coverage*.json
+
+# Local tooling
+*.binlog
+.DS_Store
+
+# Local secrets, certificates, and saved games
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.key
+*.pem
+*.db
+*.db-wal
+*.db-shm

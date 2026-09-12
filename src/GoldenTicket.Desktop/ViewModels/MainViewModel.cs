@@ -1,0 +1,538 @@
+using System.Collections.ObjectModel;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using GoldenTicket.AI;
+using GoldenTicket.Application;
+using GoldenTicket.Domain;
+using GoldenTicket.Domain.Engine;
+using GoldenTicket.Domain.Manifest;
+using GoldenTicket.Domain.Model;
+using GoldenTicket.Domain.Randomness;
+using GoldenTicket.Persistence;
+
+namespace GoldenTicket.Desktop.ViewModels;
+
+public enum Screen
+{
+    Setup,
+    Table,
+    FinalScore,
+}
+
+/// <summary>
+/// Composition root and navigation. It owns the coordinator, drives computer seats between human
+/// actions, and is the only place that decides when a private view may be revealed.
+/// </summary>
+public sealed partial class MainViewModel : ObservableObject
+{
+    private readonly BoardManifest _manifest;
+    private readonly CardCatalog _catalog;
+    private readonly GameRules _rules;
+    private readonly ISessionStore _store;
+
+    private GameCoordinator? _coordinator;
+    private ComputerSeatDriver? _driver;
+    private bool _operationInProgress;
+    private bool _windowActive = true;
+    private bool _mustReload;
+    private long _revealGeneration;
+
+    public MainViewModel()
+        : this(ManifestLoader.LoadClassicUs(), SqliteSessionStore.CreateDefault())
+    {
+    }
+
+    public MainViewModel(BoardManifest manifest, ISessionStore store)
+    {
+        _manifest = manifest;
+        _catalog = CardCatalog.FromManifest(manifest);
+        _rules = new GameRules(manifest, _catalog);
+        _store = store;
+
+        Setup = new SetupViewModel(manifest);
+        Table = new TableViewModel(manifest);
+    }
+
+    public SetupViewModel Setup { get; }
+
+    public TableViewModel Table { get; }
+
+    public ObservableCollection<FinalScoreRow> FinalScores { get; } = [];
+
+    [ObservableProperty] private Screen _screen = Screen.Setup;
+
+    /// <summary>
+    /// The revealed private view, or null for the privacy curtain. DESIGN 4.7: hiding discards this
+    /// object; the hand is never left in the tree with an opacity of zero.
+    /// </summary>
+    [ObservableProperty] private PrivateSeatViewModel? _privateSeat;
+
+    [ObservableProperty] private string? _status;
+
+    [ObservableProperty] private string? _busy;
+
+    [ObservableProperty] private string _finalSummary = "";
+    [ObservableProperty] private bool _needsBoardReconciliation;
+    [ObservableProperty] private bool _boardReconciliationAcknowledged;
+
+    public bool IsPrivateVisible => PrivateSeat is not null;
+
+    /// <summary>The human seat that currently needs the screen. Recomputed on every refresh.</summary>
+    private (SeatId SeatId, string Name)? _revealable;
+
+    public bool CanRevealPrivateSeat => _revealable is not null && !_operationInProgress
+        && _windowActive && !NeedsBoardReconciliation && !_mustReload && _coordinator?.StorageFaulted != true;
+
+    public string RevealPrompt => _revealable is { } seat
+        ? $"Pass the laptop to {seat.Name}, then reveal their private view."
+        : "No human seat needs the screen right now.";
+
+    partial void OnPrivateSeatChanged(PrivateSeatViewModel? value) => OnPropertyChanged(nameof(IsPrivateVisible));
+
+    // ---- Setup -----------------------------------------------------------------------------
+
+    [RelayCommand]
+    public async Task LoadSavedSessionsAsync()
+    {
+        try
+        {
+            Setup.LoadSavedSessions(await _store.ListSessionsAsync(CancellationToken.None));
+        }
+        catch (Exception)
+        {
+            Setup.ValidationMessage = "Saved matches could not be read. Check storage access and try again.";
+        }
+    }
+
+    [RelayCommand]
+    public async Task StartMatchAsync()
+    {
+        if (_operationInProgress || Screen != Screen.Setup || Setup.TryBuildSetup() is not { } setup) return;
+
+        SetOperationInProgress(true);
+        HidePrivateSeat();
+        Busy = "Shuffling and dealing...";
+        try
+        {
+            _coordinator = await GameCoordinator.CreateAsync(
+                _rules, _store, setup, DeterministicRandom.SeedFromOperatingSystem());
+
+            _driver = new ComputerSeatDriver(
+                _coordinator, new HeuristicAiPolicy(), DeterministicRandom.SeedFromOperatingSystem().S0);
+
+            Screen = Screen.Table;
+            Status = null;
+            await PumpAsync();
+        }
+        catch (Exception)
+        {
+            Setup.ValidationMessage = "The match could not be started. Reopen the application and check its saved matches.";
+            if (Screen == Screen.Table) RequireReload();
+        }
+        finally
+        {
+            Busy = null;
+            SetOperationInProgress(false);
+        }
+    }
+
+    [RelayCommand]
+    public async Task ResumeMatchAsync()
+    {
+        if (_operationInProgress || Screen != Screen.Setup || Setup.SelectedSavedSession is not { } saved) return;
+
+        SetOperationInProgress(true);
+        HidePrivateSeat();
+        Busy = "Restoring and verifying the saved match...";
+        try
+        {
+            _coordinator = await GameCoordinator.RestoreAsync(_rules, _store, saved.SessionId);
+            if (_coordinator.Public.VerificationMode != VerificationMode.Manual)
+                throw new NotSupportedException("This build can only resume matches that use manual verification.");
+            _driver = new ComputerSeatDriver(
+                _coordinator, new HeuristicAiPolicy(), DeterministicRandom.SeedFromOperatingSystem().S0);
+
+            Screen = Screen.Table;
+            NeedsBoardReconciliation = _coordinator.Public.Lifecycle != SessionLifecycle.Finished;
+            BoardReconciliationAcknowledged = false;
+            Status = NeedsBoardReconciliation
+                ? "Saved digital state verified. Check every claimed route before continuing; any pending claim stays uncommitted."
+                : "Saved match restored and verified against its journal.";
+            await RefreshAsync();
+        }
+        catch (Exception exception)
+        {
+            Setup.ValidationMessage = exception is NotSupportedException
+                ? "This build can only resume matches that use manual verification."
+                : "The saved match could not be verified. Check storage access and the installed board-data version.";
+        }
+        finally
+        {
+            Busy = null;
+            SetOperationInProgress(false);
+        }
+    }
+
+    // ---- Privacy ---------------------------------------------------------------------------
+
+    /// <summary>Works out which human seat needs the screen, without revealing anything private.</summary>
+    private async Task<(SeatId SeatId, string Name)?> FindRevealableSeatAsync()
+    {
+        if (_coordinator is null || NeedsBoardReconciliation) return null;
+
+        var view = _coordinator.Public;
+        if (view.Lifecycle == SessionLifecycle.Finished) return null;
+
+        if (view.Lifecycle == SessionLifecycle.Setup)
+        {
+            var awaiting = await _coordinator.SeatsAwaitingSetupSelectionAsync();
+            foreach (var seatId in awaiting)
+            {
+                var seat = view.SeatOf(seatId);
+                if (seat.Kind == SeatKind.Human) return (seatId, seat.DisplayName);
+            }
+
+            return null;
+        }
+
+        if (view.TurnPhase is TurnPhase.AwaitingPhysicalPlacement
+            or TurnPhase.RestoreBeforeState
+            or TurnPhase.RulesDecisionRequired)
+        {
+            return null;
+        }
+
+        var active = view.SeatOf(view.ActiveSeatId);
+        return active.Kind == SeatKind.Human ? (active.SeatId, active.DisplayName) : null;
+    }
+
+    [RelayCommand]
+    public async Task RevealPrivateSeatAsync()
+    {
+        if (_coordinator is not { } coordinator || !CanRevealPrivateSeat || _revealable is not { } seat) return;
+
+        var generation = _revealGeneration;
+        var view = await coordinator.GetSeatViewAsync(seat.SeatId);
+        if (generation != _revealGeneration || !CanRevealPrivateSeat ||
+            !ReferenceEquals(coordinator, _coordinator) || _revealable?.SeatId != seat.SeatId ||
+            view.Public.StateVersion != coordinator.Public.StateVersion) return;
+
+        var legal = _rules.GetLegalActions(view);
+        var summary = view.Public.SeatOf(seat.SeatId);
+
+        PrivateSeat = new PrivateSeatViewModel(view, legal, _manifest, summary.DisplayName, summary.Symbol);
+    }
+
+    /// <summary>
+    /// DESIGN 4.7: hide on seat changes, deactivation, recovery dialogs and entry into public mode.
+    /// Dropping the view model clears the hand, its tickets and its pending choices together.
+    /// </summary>
+    [RelayCommand]
+    public void HidePrivateSeat()
+    {
+        _revealGeneration++;
+        PrivateSeat = null;
+    }
+
+    public void SetWindowActive(bool active)
+    {
+        _windowActive = active;
+        if (!active) HidePrivateSeat();
+        OnPropertyChanged(nameof(CanRevealPrivateSeat));
+    }
+
+    // ---- Human actions ---------------------------------------------------------------------
+
+    [RelayCommand]
+    public Task DrawBlindCardAsync() => SubmitPrivateAsync(
+        (envelope, _) => new SelectTrainCard(envelope, null));
+
+    [RelayCommand]
+    public Task DrawFaceUpCardAsync(MarketSlotRow? slot) => slot is null
+        ? Task.CompletedTask
+        : SubmitPrivateAsync((envelope, _) => new SelectTrainCard(envelope, slot.Slot));
+
+    [RelayCommand]
+    public Task DrawTicketsAsync() => SubmitPrivateAsync(
+        (envelope, _) => new RequestTicketOffer(envelope));
+
+    [RelayCommand]
+    public Task CommitTicketsAsync() => SubmitPrivateAsync((envelope, seat) =>
+        new CommitTicketSelection(envelope, seat.KeptTickets, []));
+
+    [RelayCommand]
+    public Task PlanClaimAsync() => SubmitPrivateAsync((envelope, seat) =>
+        seat.SelectedClaim is null || seat.SelectedPayment is null
+            ? null
+            : new PlanClaim(envelope, seat.SelectedClaim.RouteId, seat.ResolveSelectedPayment()));
+
+    /// <summary>
+    /// Submits a command on behalf of the revealed seat, addressed to the exact version its choices
+    /// were computed from, then hides the private view before the public screen updates.
+    /// </summary>
+    private async Task SubmitPrivateAsync(Func<CommandEnvelope, PrivateSeatViewModel, GameCommand?> build)
+    {
+        if (_coordinator is not { } coordinator || _operationInProgress || !_windowActive || _mustReload ||
+            NeedsBoardReconciliation || PrivateSeat is not { } seat) return;
+
+        var envelope = new CommandEnvelope(
+            coordinator.SessionId, CommandId.New(), seat.StateVersion, seat.SeatId);
+
+        if (build(envelope, seat) is not { } command) return;
+
+        var turnNumber = coordinator.Public.TurnNumber;
+        var lifecycle = coordinator.Public.Lifecycle;
+        SetOperationInProgress(true);
+        HidePrivateSeat();
+        var generation = _revealGeneration;
+        var accepted = false;
+        string? privateRejection = null;
+        try
+        {
+            var outcome = await coordinator.SubmitAsync(command);
+            accepted = outcome.IsAccepted;
+            privateRejection = outcome.Result.Rejection?.Message;
+            Status = accepted ? null : "That action was not accepted. Reveal your private view to review the choice.";
+            if (outcome.Result.Rejection?.Code == "StorageFaulted")
+            {
+                RequireReload();
+                return;
+            }
+            await PumpAsync();
+        }
+        catch (Exception)
+        {
+            accepted = false;
+            RequireReload();
+        }
+        finally
+        {
+            SetOperationInProgress(false);
+        }
+
+        if (!accepted && privateRejection is not null && generation == _revealGeneration &&
+            CanRevealPrivateSeat && ReferenceEquals(coordinator, _coordinator) &&
+            coordinator.Public.StateVersion == seat.StateVersion && _revealable?.SeatId == seat.SeatId)
+        {
+            seat.Message = privateRejection;
+            PrivateSeat = seat;
+            return;
+        }
+
+        // A delayed save/AI result cannot undo Hide, window deactivation, or a seat handoff.
+        if (accepted && generation == _revealGeneration && ReferenceEquals(coordinator, _coordinator) &&
+            coordinator.Public.TurnNumber == turnNumber && coordinator.Public.Lifecycle == lifecycle &&
+            _revealable is { } next && next.SeatId == seat.SeatId)
+            await RevealPrivateSeatAsync();
+    }
+
+    // ---- Operator actions ------------------------------------------------------------------
+
+    [RelayCommand]
+    public async Task ConfirmPlacementAsync()
+    {
+        if (_coordinator is null || !CanSubmitOperator() || !Table.WholeBoardAcknowledged ||
+            Table.Placement is not { AwaitingRestore: false } placement) return;
+
+        HidePrivateSeat();
+
+        var command = new SubmitClaimEvidence(
+            new CommandEnvelope(_coordinator.SessionId, CommandId.New(), placement.StateVersion, placement.SeatId),
+            placement.OperationId,
+            EvidenceKind.ManualAttestation,
+            Environment.UserName,
+            "Operator confirmed the whole board matches the expected placement.");
+
+        await SubmitOperatorAsync(command);
+    }
+
+    [RelayCommand]
+    public async Task CancelClaimAsync()
+    {
+        if (_coordinator is null || !CanSubmitOperator() || Table.Placement is not { AwaitingRestore: false } placement) return;
+
+        HidePrivateSeat();
+
+        // The operator says whether trains are already on the board; DESIGN 8.4 keeps the
+        // reservation until the before-state is restored when they are.
+        await SubmitOperatorAsync(new CancelPendingClaim(
+            new CommandEnvelope(_coordinator.SessionId, CommandId.New(), placement.StateVersion, placement.SeatId),
+            placement.OperationId, TrainsWerePlaced: true));
+    }
+
+    [RelayCommand]
+    public async Task ConfirmRestoredAsync()
+    {
+        if (_coordinator is null || !CanSubmitOperator() || !Table.WholeBoardAcknowledged ||
+            Table.Placement is not { AwaitingRestore: true } placement) return;
+
+        await SubmitOperatorAsync(new ConfirmBeforeStateRestored(
+            new CommandEnvelope(_coordinator.SessionId, CommandId.New(), placement.StateVersion, placement.SeatId),
+            placement.OperationId));
+    }
+
+    private async Task SubmitOperatorAsync(GameCommand command)
+    {
+        if (!CanSubmitOperator()) return;
+        SetOperationInProgress(true);
+        HidePrivateSeat();
+        Table.WholeBoardAcknowledged = false;
+        try
+        {
+            var outcome = await _coordinator!.SubmitAsync(command);
+            Status = outcome.IsAccepted ? null : outcome.Result.Rejection?.Message;
+            if (outcome.Result.Rejection?.Code == "StorageFaulted")
+            {
+                RequireReload();
+                return;
+            }
+            await PumpAsync();
+        }
+        catch (Exception)
+        {
+            RequireReload();
+        }
+        finally
+        {
+            SetOperationInProgress(false);
+        }
+    }
+
+    private bool CanSubmitOperator() => !_operationInProgress && !_mustReload &&
+        !NeedsBoardReconciliation && Screen == Screen.Table;
+
+    [RelayCommand]
+    public async Task ConfirmBoardReconciledAsync()
+    {
+        if (_coordinator is null || _operationInProgress || _mustReload || !NeedsBoardReconciliation ||
+            !BoardReconciliationAcknowledged) return;
+
+        SetOperationInProgress(true);
+        HidePrivateSeat();
+        NeedsBoardReconciliation = false;
+        BoardReconciliationAcknowledged = false;
+        Status = "Board reconciliation confirmed by the operator. Manual verification remains active.";
+        try
+        {
+            await PumpAsync();
+        }
+        catch (Exception)
+        {
+            NeedsBoardReconciliation = true;
+            RequireReload();
+            await RefreshAsync();
+        }
+        finally
+        {
+            SetOperationInProgress(false);
+        }
+    }
+
+    private void SetOperationInProgress(bool value)
+    {
+        _operationInProgress = value;
+        OnPropertyChanged(nameof(CanRevealPrivateSeat));
+    }
+
+    private void RequireReload()
+    {
+        _mustReload = true;
+        HidePrivateSeat();
+        Status = "Play is paused after an error. Reopen the saved match to verify its last durable state.";
+        OnPropertyChanged(nameof(CanRevealPrivateSeat));
+    }
+
+    // ---- Refresh ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Lets computer seats play whatever is available, then republishes the public screen. It stops
+    /// at any point that needs a human or the operator (DESIGN 4.5).
+    /// </summary>
+    private async Task PumpAsync()
+    {
+        if (_coordinator is null || _driver is null || NeedsBoardReconciliation || _mustReload) return;
+
+        Busy = "Computer seats are playing...";
+        try
+        {
+            await Task.Run(() => _driver.AdvanceAsync());
+        }
+        finally
+        {
+            Busy = null;
+        }
+
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_coordinator is null) return;
+
+        var view = _coordinator.Public;
+        Table.Update(view, _coordinator.PublicHistory);
+        if (NeedsBoardReconciliation)
+        {
+            Table.Placement = null;
+            Table.Instruction = "Rebuild and check the saved claimed routes below before resuming play.";
+        }
+
+        _revealable = await FindRevealableSeatAsync();
+        OnPropertyChanged(nameof(CanRevealPrivateSeat));
+        OnPropertyChanged(nameof(RevealPrompt));
+
+        if (view.FinalResult is { } result)
+        {
+            BuildFinalScores(result);
+            Screen = Screen.FinalScore;
+            PrivateSeat = null;
+        }
+    }
+
+    private void BuildFinalScores(FinalResult result)
+    {
+        var view = _coordinator!.Public;
+        FinalScores.Clear();
+
+        foreach (var score in result.Scores.OrderByDescending(score => score.Total))
+        {
+            var seat = view.SeatOf(score.SeatId);
+            var trail = score.LongestTrailWitness.IsEmpty
+                ? "none"
+                : string.Join("  ->  ", score.LongestTrailWitness.Select(_manifest.Describe));
+
+            FinalScores.Add(new FinalScoreRow(
+                seat.DisplayName,
+                seat.Color,
+                seat.Symbol,
+                score.RoutePoints,
+                score.TicketPointsGained,
+                score.TicketPointsLost,
+                score.LongestRouteBonusPoints,
+                score.Total,
+                $"{score.CompletedTicketCount} completed, {score.IncompleteTickets.Length} missed",
+                score.LongestTrailLength,
+                trail,
+                result.Winners.Contains(score.SeatId)));
+        }
+
+        var winners = string.Join(" and ", result.Winners.Select(seat => view.SeatOf(seat).DisplayName));
+        FinalSummary = result.SharedVictory
+            ? $"Shared victory: {winners}. {result.TieBreakExplanation}"
+            : $"{winners} wins. {result.TieBreakExplanation}";
+    }
+}
+
+public sealed record FinalScoreRow(
+    string SeatName,
+    PlayerColor Color,
+    string Symbol,
+    int RoutePoints,
+    int TicketsGained,
+    int TicketsLost,
+    int LongestBonus,
+    int Total,
+    string TicketSummary,
+    int LongestTrailLength,
+    string WitnessTrail,
+    bool IsWinner);

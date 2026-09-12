@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "parameters": "--vulnerable --include-transitive",
+  "sources": [
+    "https://api.nuget.org/v3/index.json"
+  ],
+  "projects": [
+    {
+      "path": "D:/Projects/GoldenTicket/src/GoldenTicket.Domain/GoldenTicket.Domain.csproj"
+    },
+    {
+      "path": "D:/Projects/GoldenTicket/src/GoldenTicket.Application/GoldenTicket.Application.csproj"
+    },
+    {
+      "path": "D:/Projects/GoldenTicket/src/GoldenTicket.AI/GoldenTicket.AI.csproj"
+    },
+    {
+      "path": "D:/Projects/GoldenTicket/src/GoldenTicket.Persistence/GoldenTicket.Persistence.csproj"
+    },
+    {
+      "path": "D:/Projects/GoldenTicket/src/GoldenTicket.Desktop/GoldenTicket.Desktop.csproj"
+    },
+    {
+      "path": "D:/Projects/GoldenTicket/tools/GoldenTicket.Simulator/GoldenTicket.Simulator.csproj"
+    },
+    {
+      "path": "D:/Projects/GoldenTicket/tests/GoldenTicket.Domain.Tests/GoldenTicket.Domain.Tests.csproj"
+    }
+  ]
+}
