@@ -4,6 +4,18 @@ Updated September 11, 2026 after the [implementation audit](docs/AUDIT-2026-09-1
 The complete requirements remain in [DESIGN.md](DESIGN.md). This is a partial manual desktop
 implementation, not a completed camera-assisted product.
 
+## Still missing: feature checklist
+
+These six features remain unfinished. The milestone tasks below define their implementation and
+validation requirements; mark each feature complete only after those checks pass.
+
+- [ ] **Camera tracking and recovery** — board recognition, move verification, and automatic recovery after camera movement (M3–M5).
+- [ ] **Phone/tablet PWA** — private pass-and-hide on iOS/iPadOS and Android over the local network (M0/M2).
+- [ ] **CPU/GPU inference selection** — user-selectable acceleration, a complete CPU path, and GPU failure recovery (M4/M5).
+- [ ] **Voice, story, and audio** — visual/voice/both modes, offline narration, train sounds, and congratulations (M6).
+- [ ] **Photographed save and rebuild** — save the board photo and exact game state, pack away, then reconstruct and resume (M2/M4).
+- [ ] **Offline installer packaging** — self-contained Windows x64 distribution with required runtimes and assets included (M7).
+
 ## Audit fixes implemented
 
 - [x] Confine save paths and reject linked/unsupported paths before filesystem operations.
