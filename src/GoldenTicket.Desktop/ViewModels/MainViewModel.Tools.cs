@@ -50,7 +50,7 @@ public sealed partial class MainViewModel
         }, Camera, ShowCameraCommand) { CaptureAllowed = false };
     }
 
-    private bool CanCompanionControl => CanConnectPhone && !_toolsDisposed && _systemAvailable && !_mustReload &&
+    private bool CanCompanionControl => CanConnectPhone && !_toolsDisposed && !_exitRequested && _systemAvailable && !_mustReload &&
         (!_operationInProgress || _handlingRemoteCommand) && !NeedsBoardReconciliation &&
         Screen == Screen.Table && _coordinator is { StorageFaulted: false };
 
@@ -79,13 +79,13 @@ public sealed partial class MainViewModel
     [RelayCommand]
     private void ShowGame()
     {
-        if (_operationInProgress || CheckpointPhoto.IsBusy) return;
+        if (_operationInProgress || _exitRequested || CheckpointPhoto.IsBusy) return;
         Screen = _gameScreen;
     }
 
     private bool NavigateToTool(Screen screen)
     {
-        if (_operationInProgress || CheckpointPhoto.IsBusy) return false;
+        if (_operationInProgress || _exitRequested || CheckpointPhoto.IsBusy) return false;
         if (Screen is Screen.Setup or Screen.Table or Screen.Rebuild or Screen.FinalScore)
             _gameScreen = Screen;
         Screen = screen;
@@ -147,7 +147,7 @@ public sealed partial class MainViewModel
         if (_toolsDisposed) return;
         _toolsDisposed = true;
         HidePrivateSeat();
-        await Connection.DisposeAsync();
-        await Camera.DisposeAsync();
+        try { await Connection.DisposeAsync(); }
+        finally { await Camera.DisposeAsync(); }
     }
 }

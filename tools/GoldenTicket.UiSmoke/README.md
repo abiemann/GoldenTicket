@@ -14,4 +14,12 @@ Separate synthetic solo and shared-human fixtures exercise setup guidance, the p
 
 Photo-presentation fixtures cover a zero-route rebuild without a photo, a missing-photo capture page, the live crop before capture, and saved-reference images on both the rebuild and photo pages. The checks require clear missing-photo and empty-board guidance, identify the live crop as not saved, preserve the operator confirmation, and verify that the displayed saved image is the checkpoint's `PhotoImage` rather than a different live crop. Results are written to `checkpoint-photo-presentation.json`. These states and visibly labeled images are seeded solely for layout validation; the runner does not persist an attachment or claim camera/storage acceptance. Separate automated tests cover those behaviors.
 
+Shutdown fixtures construct the production `MainWindow` with an in-memory model and call `Close()` twice without showing the window or raising `Loaded`. They exercise both immediately completed cleanup and camera disposal delayed by its lifecycle semaphore. Each case requires input to be disabled during cleanup, exactly one eventual `Closed` event, and no dispatcher exception. Results are written to `window-shutdown-interactions.json`. These checks use real WPF closing events without accessing a camera, hosting a server, or loading a saved game; physical camera-driver shutdown remains a hardware acceptance check.
+
+An exit-confirmation fixture starts a synthetic human match and replaces only the modal answer
+callback. Cancel must keep the window usable, leave private cards covered, and allow a deliberate
+reveal. Confirm must close once after cleanup; repeated close requests during cleanup must not
+prompt again. Results are written to `window-exit-confirmation.json`. The native message box is
+not displayed by this fixture; its appearance and default No button remain an interactive check.
+
 Inspect the rendered screenshots for visual issues that bounds assertions cannot judge. Game fixtures are local synthetic play using the in-memory store; route choices may vary. Camera screenshots include an inactive state and an explicitly labeled synthetic pattern with four editable corner handles. Connection screenshots show the inactive state. These checks establish layout, coordinate mapping, binding and routed-key handler evidence, not live-window mouse capture, keyboard focus, DPI, screen-reader, camera, firewall, certificate-trust or real-phone acceptance.

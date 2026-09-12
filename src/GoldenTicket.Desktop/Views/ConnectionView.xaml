@@ -1,6 +1,10 @@
 <UserControl x:Class="GoldenTicket.Desktop.Views.ConnectionView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:GoldenTicket.Desktop">
+    <UserControl.Resources>
+        <local:NullToVisibilityConverter x:Key="NullToVisibility" />
+    </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24">
         <StackPanel MaxWidth="1120" HorizontalAlignment="Left">
             <TextBlock Text="Connect your phone or tablet" Style="{StaticResource Display}" />
@@ -27,10 +31,12 @@
             <Border Style="{StaticResource Card}">
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                    <Image Source="{Binding ConnectionQr}" Width="246" Height="246" RenderOptions.BitmapScalingMode="NearestNeighbor" Margin="0,0,24,0"
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                    <TextBlock Grid.ColumnSpan="2" Text="2 · Trust this laptop and open the app" Style="{StaticResource Heading}" />
+                    <Image Grid.Row="1" Source="{Binding ConnectionQr}" Width="246" Height="246" RenderOptions.BitmapScalingMode="NearestNeighbor" Margin="0,0,24,0"
+                           VerticalAlignment="Top" Visibility="{Binding ConnectionQr, Converter={StaticResource NullToVisibility}}"
                            AutomationProperties.Name="Connection QR code containing only the local address" />
-                    <StackPanel Grid.Column="1">
-                        <TextBlock Text="2 · Trust this laptop and open the app" Style="{StaticResource Heading}" />
+                    <StackPanel Grid.Row="1" Grid.Column="1">
                         <TextBlock Text="Scan the code with the phone camera. On first setup, install this laptop's CA certificate and compare its fingerprint below. Android may warn about the HTTP download: use a verified USB transfer if needed. Never bypass an HTTPS connection error." />
                         <TextBox Text="{Binding Address, Mode=OneWay}" IsReadOnly="True" Margin="0,12,0,6" AutomationProperties.Name="Secure phone address" />
                         <TextBlock Text="If the .local name does not resolve, use this IP fallback. A changed laptop IP creates a new app origin and may require installing and pairing again." Style="{StaticResource Caption}" />

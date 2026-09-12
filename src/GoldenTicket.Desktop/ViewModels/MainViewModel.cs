@@ -104,7 +104,7 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>The human seat that currently needs the screen. Recomputed on every refresh.</summary>
     private (SeatId SeatId, string Name)? _revealable;
 
-    public bool CanRevealPrivateSeat => _revealable is not null && !_operationInProgress
+    public bool CanRevealPrivateSeat => _revealable is not null && !_operationInProgress && !_exitRequested
         && _windowActive && _systemAvailable && !_toolsDisposed && Screen == Screen.Table && !NeedsBoardReconciliation && !_mustReload
         && _coordinator is { StorageFaulted: false }
         && _coordinator.Public.Lifecycle is SessionLifecycle.Setup or SessionLifecycle.Active
@@ -143,7 +143,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     public async Task StartMatchAsync()
     {
-        if (_operationInProgress || Screen != Screen.Setup || Setup.TryBuildSetup() is not { } setup) return;
+        if (_operationInProgress || _exitRequested || Screen != Screen.Setup || Setup.TryBuildSetup() is not { } setup) return;
 
         SetOperationInProgress(true);
         HidePrivateSeat();
@@ -180,7 +180,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     public async Task ResumeMatchAsync()
     {
-        if (_operationInProgress || Screen != Screen.Setup || Setup.SelectedSavedSession is not { } saved) return;
+        if (_operationInProgress || _exitRequested || Screen != Screen.Setup || Setup.SelectedSavedSession is not { } saved) return;
 
         SetOperationInProgress(true);
         HidePrivateSeat();
@@ -348,7 +348,7 @@ public sealed partial class MainViewModel : ObservableObject
     /// </summary>
     private async Task SubmitPrivateAsync(Func<CommandEnvelope, PrivateSeatViewModel, GameCommand?> build)
     {
-        if (_coordinator is not { } coordinator || _operationInProgress || !_windowActive || _mustReload ||
+        if (_coordinator is not { } coordinator || _operationInProgress || _exitRequested || !_windowActive || _mustReload ||
             NeedsBoardReconciliation || PrivateSeat is not { } seat) return;
 
         var envelope = new CommandEnvelope(
@@ -479,7 +479,7 @@ public sealed partial class MainViewModel : ObservableObject
         await ShowSingleHumanCardsAsync(generation);
     }
 
-    private bool CanSubmitOperator() => !_operationInProgress && !_mustReload &&
+    private bool CanSubmitOperator() => !_operationInProgress && !_exitRequested && !_mustReload &&
         !NeedsBoardReconciliation && Screen == Screen.Table;
 
     /// <summary>
@@ -549,7 +549,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     public async Task CancelSaveAsync()
     {
-        if (_coordinator is null || _operationInProgress || _mustReload) return;
+        if (_coordinator is null || _operationInProgress || _exitRequested || _mustReload) return;
 
         await SubmitLifecycleAsync(new CancelPackAwayPreparation(
             _coordinator.NewEnvelope(), "cancelled by the operator"));
@@ -600,7 +600,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     private async Task SubmitLifecycleAsync(GameCommand command)
     {
-        if (_coordinator is null || _operationInProgress || _mustReload) return;
+        if (_coordinator is null || _operationInProgress || _exitRequested || _mustReload) return;
 
         SetOperationInProgress(true);
         HidePrivateSeat();
@@ -645,7 +645,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     public async Task ConfirmBoardReconciledAsync()
     {
-        if (_coordinator is null || _operationInProgress || _mustReload || !NeedsBoardReconciliation ||
+        if (_coordinator is null || _operationInProgress || _exitRequested || _mustReload || !NeedsBoardReconciliation ||
             !BoardReconciliationAcknowledged) return;
 
         SetOperationInProgress(true);

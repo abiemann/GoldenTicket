@@ -328,6 +328,20 @@ The photo is a visual reference paired with the full saved game. A standalone ph
 
 If a photo cannot be verified or the user has disabled saved images, offer **Save game state without photo** with a clear status. The app can still rebuild the board from its stored route diagram. Do not present an old or obstructed image as a verified picture of the saved position. Technical handling of pending moves and capture failures is specified in section 19.8.
 
+**Exit confirmation.** Closing an unfinished match without a verified pack-away checkpoint asks
+whether to exit, with **No** as the default. Explain that completed digital actions are saved
+automatically and that **Save and pack away** is required before clearing the physical board;
+do not claim that confirmed digital progress will be lost. Apply this from every screen, including
+Camera and Connect phone. No confirmation is needed before a match starts, after final scoring,
+or while a verified checkpoint is packed or being rebuilt. A missing optional photo does not
+make that digital checkpoint unsaved. If storage is faulted, warn that the latest action may
+not have been saved. Refuse closing while a game action or photo operation is still in progress
+and ask the user to retry afterward. Cover private views and reject new game/companion inputs
+while the confirmation is open. Cancel keeps the application and tools available without
+revealing a private hand. Confirm disposes local tools and defers the final window close until
+the original canceled WPF closing event has returned. Never capture a photo or create a
+pack-away checkpoint as a side effect of the exit prompt.
+
 ## 5. Digital cards and private information
 
 ### 5.1 Single source of card state

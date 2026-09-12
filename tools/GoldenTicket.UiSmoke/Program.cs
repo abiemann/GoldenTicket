@@ -47,6 +47,8 @@ internal static class Program
                 model.Setup.Seats[0].DisplayName = "Alex";
                 model.Setup.Seats[1].DisplayName = "Conductor";
                 model.Setup.Seats[2].DisplayName = "Brakeman";
+                await VerifyWindowShutdown();
+                await VerifyWindowExitConfirmation();
                 await RenderSizes("setup", () => new SetupView { DataContext = model });
                 await VerifyHumanPresentation();
                 foreach (var seat in model.Setup.Seats) seat.IsComputer = true;
@@ -81,6 +83,160 @@ internal static class Program
             }
         };
         app.Run();
+    }
+
+    private static async Task VerifyWindowShutdown()
+    {
+        var checks = new List<object>();
+        foreach (var delayCleanup in new[] { false, true })
+        {
+            BindingLog.Context = delayCleanup ? "window-shutdown-delayed" : "window-shutdown-idle";
+            var model = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
+            var dispatcher = Dispatcher.CurrentDispatcher;
+            var failures = new List<Exception>();
+            var gate = (SemaphoreSlim)(typeof(CameraCaptureService)
+                .GetField("_lifecycle", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(model.Camera.Capture)
+                ?? throw new InvalidOperationException("The camera shutdown fixture needs its lifecycle semaphore."));
+            var gateHeld = false;
+            GoldenTicket.Desktop.MainWindow? window = null;
+            var closedCount = 0;
+            var loadedCount = 0;
+            var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            void OnDispatcherFailure(object sender, DispatcherUnhandledExceptionEventArgs args)
+            {
+                failures.Add(args.Exception);
+                args.Handled = true;
+            }
+            dispatcher.UnhandledException += OnDispatcherFailure;
+            try
+            {
+                if (delayCleanup)
+                {
+                    await gate.WaitAsync();
+                    gateHeld = true;
+                }
+                // Construct the real production window, but never Show it or raise Loaded:
+                // there is no native input, camera, listener, or persisted-session load.
+                window = new GoldenTicket.Desktop.MainWindow(model);
+                window.Loaded += (_, _) => loadedCount++;
+                window.Closed += (_, _) => { closedCount++; closed.TrySetResult(); };
+                window.Close();
+                window.Close();
+                if (closedCount != 0 || window.IsEnabled)
+                    throw new InvalidOperationException("Closing must disable input and defer final close until the original Closing event returns.");
+                if (gateHeld)
+                {
+                    await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                    if (closedCount != 0)
+                        throw new InvalidOperationException("The window must remain open while camera cleanup is pending.");
+                    gate.Release();
+                    gateHeld = false;
+                }
+                await closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                if (closedCount != 1 || loadedCount != 0 || window.IsVisible || failures.Count != 0)
+                    throw new InvalidOperationException("An unseen window must close exactly once without dispatcher exceptions or loading user state.", failures.FirstOrDefault());
+                checks.Add(new { Scenario = delayCleanup ? "delayed camera disposal" : "synchronous idle disposal",
+                    CloseRequests = 2, ClosedEvents = closedCount, LoadedEvents = loadedCount,
+                    DispatcherExceptions = failures.Count, Passed = true });
+            }
+            finally
+            {
+                if (gateHeld) gate.Release();
+                // A failed assertion must still drain disposal and detach the window's system
+                // subscriptions before the next scenario or the runner's explicit shutdown.
+                try
+                {
+                    await model.DisposeToolsAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                    if (window is not null && closedCount == 0)
+                    {
+                        await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                        if (closedCount == 0) window.Close();
+                        await closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                    }
+                }
+                finally { dispatcher.UnhandledException -= OnDispatcherFailure; }
+            }
+        }
+        await File.WriteAllTextAsync(Path.Combine(Output, "window-shutdown-interactions.json"),
+            JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
+        Console.WriteLine("Window shutdown: synchronous and delayed cleanup close exactly once after repeated close requests, with no dispatcher exceptions.");
+    }
+
+    private static async Task VerifyWindowExitConfirmation()
+    {
+        BindingLog.Context = "window-exit-confirmation";
+        var model = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
+        var dispatcher = Dispatcher.CurrentDispatcher;
+        var failures = new List<Exception>();
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var closedCount = 0;
+        var promptCount = 0;
+        var allowExit = false;
+        var loadedCount = 0;
+        GoldenTicket.Desktop.MainWindow? window = null;
+        void OnDispatcherFailure(object sender, DispatcherUnhandledExceptionEventArgs args)
+        {
+            failures.Add(args.Exception);
+            args.Handled = true;
+        }
+        dispatcher.UnhandledException += OnDispatcherFailure;
+        try
+        {
+            model.Setup.ManualVerificationAccepted = true;
+            for (var index = 0; index < model.Setup.Seats.Count; index++)
+                model.Setup.Seats[index].IsComputer = index != 0;
+            await model.StartMatchAsync();
+            if (model.PrivateSeat is null) throw new InvalidOperationException("The exit fixture needs a revealed human hand.");
+            // Exercise the real closing event and production model gate, replacing only the
+            // modal answer so this test never shows UI or waits for native input.
+            window = new GoldenTicket.Desktop.MainWindow(model, prompt =>
+            {
+                promptCount++;
+                if (!prompt.CanExit || !prompt.Message.Contains("saved automatically", StringComparison.Ordinal) ||
+                    model.PrivateSeat is not null || model.CanRevealPrivateSeat || !window!.IsEnabled)
+                    throw new InvalidOperationException("The exit warning must cover private cards without starting cleanup.");
+                return allowExit;
+            });
+            window.Loaded += (_, _) => loadedCount++;
+            window.Closed += (_, _) => { closedCount++; closed.TrySetResult(); };
+            window.Close();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            if (promptCount != 1 || closedCount != 0 || !window.IsEnabled || model.PrivateSeat is not null || !model.CanRevealPrivateSeat)
+                throw new InvalidOperationException("Canceling exit must keep the window usable and its private hand covered.");
+            await model.RevealPrivateSeatAsync();
+            if (model.PrivateSeat is null) throw new InvalidOperationException("A canceled exit must permit a deliberate reveal.");
+            allowExit = true;
+            window.Close();
+            window.Close();
+            if (closedCount != 0 || window.IsEnabled)
+                throw new InvalidOperationException("Confirmed exit must retain deferred cleanup and final close.");
+            await closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            if (promptCount != 2 || closedCount != 1 || loadedCount != 0 || failures.Count != 0)
+                throw new InvalidOperationException("Exit confirmation must close once without duplicate prompts or dispatcher errors.", failures.FirstOrDefault());
+            await File.WriteAllTextAsync(Path.Combine(Output, "window-exit-confirmation.json"),
+                JsonSerializer.Serialize(new { Prompts = promptCount, CanceledExitKeptWindowUsable = true,
+                    PrivateHandStayedCovered = true, DeliberateRevealSucceeded = true,
+                    RepeatedCloseDuringCleanupDidNotReprompt = true, ClosedEvents = closedCount, LoadedEvents = loadedCount,
+                    DispatcherExceptions = failures.Count, Passed = true }, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine("Exit confirmation: cancel preserves the window; confirm closes once; private cards stay covered and cleanup requests do not reprompt.");
+        }
+        finally
+        {
+            try
+            {
+                allowExit = true;
+                await model.DisposeToolsAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                if (window is not null && closedCount == 0)
+                {
+                    await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                    if (closedCount == 0) window.Close();
+                    await closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                }
+            }
+            finally { dispatcher.UnhandledException -= OnDispatcherFailure; }
+        }
     }
 
     private static async Task RenderSizes(string name, Func<UserControl> make, Action<UserControl>? verify = null)

@@ -415,7 +415,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         _lifetime.Cancel();
         _previewTimer.Stop();
         _previewTimer.Tick -= PreviewTick;
-        await Capture.DisposeAsync();
-        _lifetime.Dispose();
+        try { await Capture.DisposeAsync(); }
+        finally { _lifetime.Dispose(); }
     }
 }

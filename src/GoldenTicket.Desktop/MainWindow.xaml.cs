@@ -13,14 +13,20 @@ public partial class MainWindow : Window
     private long _lastInteraction = Environment.TickCount64;
     private bool _closingAfterCleanup;
     private bool _cleanupStarted;
+    private bool _exitPromptOpen;
 
-    public MainWindow()
+    public MainWindow() : this(() => new MainViewModel()) { }
+
+    public MainWindow(MainViewModel model, Func<ExitPrompt, bool>? confirmExit = null)
+        : this(() => model ?? throw new ArgumentNullException(nameof(model)), confirmExit) { }
+
+    private MainWindow(Func<MainViewModel> createModel, Func<ExitPrompt, bool>? confirmExit = null)
     {
         InitializeComponent();
 
         try
         {
-            _model = new MainViewModel();
+            _model = createModel();
             DataContext = _model;
             Loaded += async (_, _) => await _model.LoadSavedSessionsAsync();
         }
@@ -63,12 +69,34 @@ public partial class MainWindow : Window
         {
             if (_closingAfterCleanup || _model is null) return;
             args.Cancel = true;
-            if (_cleanupStarted) return;
-            _cleanupStarted = true;
+            if (_cleanupStarted || _exitPromptOpen) return;
+            _exitPromptOpen = true;
+            try
+            {
+                var prompt = _model.BeginExitRequest();
+                if (prompt is not null && (!(confirmExit ?? ConfirmExit)(prompt) || !prompt.CanExit)) return;
+                _cleanupStarted = true;
+            }
+            finally
+            {
+                _exitPromptOpen = false;
+                if (!_cleanupStarted) _model.CancelExitRequest();
+            }
+            _privacyTimer.Stop();
             IsEnabled = false;
             try { await _model.DisposeToolsAsync(); }
             catch (Exception exception) { DiagnosticLog.Write(exception, App.DiagnosticsDirectory, DateTimeOffset.UtcNow); }
-            finally { _closingAfterCleanup = true; Close(); }
+            finally
+            {
+                // Idle tools can dispose synchronously. WPF must finish the first canceled
+                // Closing event before Close is called again, even when no await yielded.
+                if (!Dispatcher.HasShutdownStarted)
+                    _ = Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
+                    {
+                        _closingAfterCleanup = true;
+                        Close();
+                    }));
+            }
         };
         Closed += (_, _) =>
         {
@@ -76,6 +104,18 @@ public partial class MainWindow : Window
             SystemEvents.SessionSwitch -= OnSessionSwitch;
             SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         };
+    }
+
+    private bool ConfirmExit(ExitPrompt prompt)
+    {
+        if (!prompt.CanExit)
+        {
+            MessageBox.Show(this, prompt.Message, "Please wait", MessageBoxButton.OK, MessageBoxImage.Information);
+            return false;
+        }
+
+        return MessageBox.Show(this, prompt.Message, "Exit GoldenTicket?", MessageBoxButton.YesNo,
+            MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
     }
 
     private void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
@@ -96,9 +136,10 @@ public partial class MainWindow : Window
 
     private void UpdateSystemPrivacy(bool canInteract)
     {
-        if (Dispatcher.HasShutdownStarted) return;
+        if (_cleanupStarted || Dispatcher.HasShutdownStarted) return;
         Dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(async () =>
         {
+            if (_cleanupStarted) return;
             _model?.HidePrivateSeat();
             _model?.SetWindowActive(canInteract && IsActive);
             if (_model is not null) await _model.SetSystemAvailableAsync(canInteract);

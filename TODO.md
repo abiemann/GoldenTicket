@@ -152,6 +152,11 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   frozen source state, commit-then-readback validation before any safe-to-pack result, suspended
   partial operations preserved, route-list guided reconstruction with whole-target attestation,
   and exactly-once resume. Verified by `PackAwayTests` and `PackAwayDurabilityTests`.
+- [x] **Desktop exit confirmation.** An unfinished match prompts before exit with No selected;
+  wording distinguishes automatic digital saves from a verified pack-away checkpoint. No warning
+  for an already verified packed/rebuilding game solely because its optional photo is absent.
+  Pending writes block closing; storage faults show uncertainty. Cancel retains usable tools and
+  covers private hands. Confirm preserves deferred cleanup and final close without WPF reentry.
 - [ ] **M2/M4: persistence and pack away, remaining.** Add the geometry-based rebuild diagram, complete encrypted snapshots,
   backup-before-migration, full evidence pinning and machine-verified board photographs,
   partial-operation (pending placement) targets, and current-checkpoint success receipts for the

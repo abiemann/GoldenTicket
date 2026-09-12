@@ -205,6 +205,12 @@ board confirmation, then select **Capture reference photo**. Wait for the saved 
 The live crop is labeled **not saved**. An attached photo also appears directly above the saved
 route list on **Rebuild the board**; a checkpoint with no photo or no routes says so explicitly.
 
+Closing an unfinished game asks **Are you sure you want to exit?**, with **No** selected by
+default. Completed game actions are saved automatically; choose **No** and use **Save and pack
+away** before clearing the physical board. A verified packed checkpoint (including an unfinished
+rebuild) needs no exit warning, even without a photo. An action or photo save still running must
+finish before you retry closing. If the latest save is uncertain, the app warns you.
+
 Press **Escape** at any time to cover a private view.
 Private views also hide on deactivation and after 60 seconds without input. Lock/suspend handlers
 request covering; real Windows lifecycle behavior remains an interactive acceptance test.
