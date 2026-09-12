@@ -187,7 +187,9 @@ public sealed class InMemorySessionStore : ISessionStore
                     pair.Value.UpdatedAt,
                     pair.Value.Lifecycle,
                     pair.Value.TurnNumber,
-                    pair.Value.SeatNames))
+                    pair.Value.SeatNames,
+                    LatestCheckpointName: pair.Value.Journal.Select(row => row.Event)
+                        .OfType<PackAwayCheckpointCommitted>().LastOrDefault()?.Checkpoint.Name))
             ];
 
             return Task.FromResult(summaries);

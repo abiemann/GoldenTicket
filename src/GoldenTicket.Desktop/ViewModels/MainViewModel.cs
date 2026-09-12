@@ -62,6 +62,7 @@ public sealed partial class MainViewModel : ObservableObject
         Setup.PropertyChanged += (_, args) =>
         {
             if (_coordinator is null && args.PropertyName == nameof(SetupViewModel.HumanSeatCount)) NotifyHumanPresentation();
+            if (args.PropertyName == nameof(SetupViewModel.SelectedSavedSession)) ResumeMatchCommand.NotifyCanExecuteChanged();
         };
     }
 
@@ -92,6 +93,8 @@ public sealed partial class MainViewModel : ObservableObject
     private int HumanSeatCount => _coordinator?.Public.Seats.Count(seat => seat.Kind == SeatKind.Human) ?? Setup.HumanSeatCount;
     public bool IsSingleHumanGame => HumanSeatCount == 1;
     public bool CanConnectPhone => HumanSeatCount > 1;
+    public bool CanResumeMatch => !_operationInProgress && !_exitRequested && Screen == Screen.Setup &&
+        Setup.SelectedSavedSession is not null;
 
     private void NotifyHumanPresentation()
     {
@@ -123,6 +126,7 @@ public sealed partial class MainViewModel : ObservableObject
         if (value is Screen.Setup or Screen.Table or Screen.Rebuild or Screen.FinalScore) _gameScreen = value;
         HidePrivateSeat();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
+        ResumeMatchCommand.NotifyCanExecuteChanged();
     }
 
     // ---- Setup -----------------------------------------------------------------------------
@@ -136,7 +140,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception)
         {
-            Setup.ValidationMessage = "Saved matches could not be read. Check storage access and try again.";
+            Setup.SavedMatchMessage = "Saved matches could not be read. Check storage access and choose Refresh saved matches to retry.";
         }
     }
 
@@ -177,20 +181,27 @@ public sealed partial class MainViewModel : ObservableObject
         await ShowSingleHumanCardsAsync(generation);
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanResumeMatch))]
     public async Task ResumeMatchAsync()
     {
-        if (_operationInProgress || _exitRequested || Screen != Screen.Setup || Setup.SelectedSavedSession is not { } saved) return;
+        if (_operationInProgress || _exitRequested || Screen != Screen.Setup) return;
+        if (Setup.SelectedSavedSession is not { } saved)
+        {
+            Setup.SavedMatchMessage = "Check a saved match in the list before choosing Resume selected match.";
+            return;
+        }
 
         SetOperationInProgress(true);
         HidePrivateSeat();
+        Setup.SavedMatchMessage = null;
         Busy = "Restoring and verifying the saved match...";
         try
         {
-            _coordinator = await GameCoordinator.RestoreAsync(_rules, _store, saved.SessionId);
-            NotifyHumanPresentation();
-            if (_coordinator.Public.VerificationMode != VerificationMode.Manual)
+            var restored = await GameCoordinator.RestoreAsync(_rules, _store, saved.SessionId);
+            if (restored.Public.VerificationMode != VerificationMode.Manual)
                 throw new NotSupportedException("This build can only resume matches that use manual verification.");
+            _coordinator = restored;
+            NotifyHumanPresentation();
             _driver = new ComputerSeatDriver(
                 _coordinator, new HeuristicAiPolicy(), DeterministicRandom.SeedFromOperatingSystem().S0);
 
@@ -225,9 +236,10 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception exception)
         {
-            Setup.ValidationMessage = exception is NotSupportedException
+            Setup.SavedMatchMessage = exception is NotSupportedException
                 ? "This build can only resume matches that use manual verification."
                 : "The saved match could not be verified. Check storage access and the installed board-data version.";
+            if (Screen != Screen.Setup) RequireReload();
         }
         finally
         {
@@ -675,6 +687,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         _operationInProgress = value;
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
+        ResumeMatchCommand.NotifyCanExecuteChanged();
     }
 
     private void RequireReload()

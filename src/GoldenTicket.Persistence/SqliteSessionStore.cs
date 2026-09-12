@@ -301,9 +301,18 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
                     throw new FileNotFoundException("The saved-match database is missing.");
                 await using var connection = await OpenAsync(sessionId, cancellationToken);
                 await using var command = connection.CreateCommand();
-                command.CommandText = """
-                    SELECT ProfileId, Lifecycle, TurnNumber, SeatNames, CreatedAt, UpdatedAt
-                    FROM Session WHERE SessionId = $sessionId;
+                // Older saves can predate named checkpoints. Listing them must not require a
+                // migration or opening private state. The name is already public save metadata.
+                command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'PackAwayCheckpoint';";
+                var hasCheckpoints = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)) > 0;
+                var checkpointName = hasCheckpoints ? """
+                    (SELECT p.Name FROM PackAwayCheckpoint AS p WHERE p.SessionId = s.SessionId
+                     ORDER BY p.SourceStateVersion DESC, p.CreatedAt DESC, p.CheckpointId DESC LIMIT 1)
+                    """ : "NULL";
+                command.CommandText = $"""
+                    SELECT s.ProfileId, s.Lifecycle, s.TurnNumber, s.SeatNames, s.CreatedAt, s.UpdatedAt,
+                           {checkpointName}
+                    FROM Session AS s WHERE s.SessionId = $sessionId;
                     """;
                 command.Parameters.AddWithValue("$sessionId", sessionId.Value);
 
@@ -322,7 +331,8 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
                     DateTimeOffset.Parse(reader.GetString(5)),
                     lifecycle,
                     reader.GetInt32(2),
-                    reader.GetString(3).Split(SeatNameSeparator)));
+                    reader.GetString(3).Split(SeatNameSeparator),
+                    LatestCheckpointName: reader.IsDBNull(6) ? null : reader.GetString(6)));
             }
             catch (Exception error) when (error is SqliteException or FormatException or ArgumentException or
                 InvalidCastException or IOException or UnauthorizedAccessException or SessionIntegrityException)

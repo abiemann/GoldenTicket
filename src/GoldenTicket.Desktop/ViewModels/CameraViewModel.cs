@@ -69,12 +69,19 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string? _lastExportPath;
     public string ComputeStatus => "▣ CPU · image processing";
     public string ComputeExplanation => "Live preview, perspective crop and scene comparison run locally on the CPU. No train-recognition model or GPU inference backend is installed.";
-    public bool CanCapturePhoto => IsRunning && HasBoardCrop && !SafetyHeld && !IsBusy;
+    public bool CanExportPhoto => IsRunning && HasBoardCrop && !IsBusy && !_disposed;
+    public bool CanCapturePhoto => CanExportPhoto && !SafetyHeld;
 
-    partial void OnIsRunningChanged(bool value) => OnPropertyChanged(nameof(CanCapturePhoto));
-    partial void OnHasBoardCropChanged(bool value) => OnPropertyChanged(nameof(CanCapturePhoto));
-    partial void OnIsBusyChanged(bool value) => OnPropertyChanged(nameof(CanCapturePhoto));
+    partial void OnIsRunningChanged(bool value) => NotifyPhotoAvailability();
+    partial void OnHasBoardCropChanged(bool value) => NotifyPhotoAvailability();
+    partial void OnIsBusyChanged(bool value) => NotifyPhotoAvailability();
     partial void OnSafetyHeldChanged(bool value) => OnPropertyChanged(nameof(CanCapturePhoto));
+
+    private void NotifyPhotoAvailability()
+    {
+        OnPropertyChanged(nameof(CanExportPhoto));
+        OnPropertyChanged(nameof(CanCapturePhoto));
+    }
 
     [RelayCommand]
     private async Task RefreshDevicesAsync()
@@ -322,22 +329,29 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    public async Task<CameraPhoto> CapturePhotoAsync(CancellationToken cancellationToken = default)
+    public Task<CameraPhoto> CapturePhotoAsync(CancellationToken cancellationToken = default) =>
+        CaptureCroppedPhotoAsync(requireSceneReference: true, cancellationToken);
+
+    /// <summary>A user-requested PNG export needs current crop geometry, independently of scene comparison.</summary>
+    public Task<CameraPhoto> CaptureExportPhotoAsync(CancellationToken cancellationToken = default) =>
+        CaptureCroppedPhotoAsync(requireSceneReference: false, cancellationToken);
+
+    private async Task<CameraPhoto> CaptureCroppedPhotoAsync(bool requireSceneReference, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (SafetyHeld || _monitor.Current.SafetyHeld)
+        if (requireSceneReference && (SafetyHeld || _monitor.Current.SafetyHeld))
             throw new InvalidOperationException("Wait for stable camera framing and set a scene reference before attaching a board photo.");
-        var registration = _registration ?? throw new InvalidOperationException("Open Camera and select the four board corners before attaching a board photo.");
+        var registration = _registration ?? throw new InvalidOperationException("Open Camera and select the four board corners before capturing a board photo.");
         var frame = Capture.GetFreshFrame(TimeSpan.FromSeconds(1));
         var cameraId = Capture.ActiveDevice?.Id
-            ?? throw new InvalidOperationException("The active camera identity is unavailable. Restart the camera before attaching a photo.");
+            ?? throw new InvalidOperationException("The active camera identity is unavailable. Restart the camera before capturing a photo.");
         var evidenceRevision = _monitor.Current.EvidenceRevision;
         var cropRevision = _cropRevision;
         // Snapshot identity is captured before encoding; callers bind it to their frozen game operation.
         var cropped = await Task.Run(() => registration.Rectify(frame, 1920, 1200), cancellationToken);
         var png = await cropped.EncodePngAsync(cancellationToken);
         if (!Capture.IsRunning || Capture.Epoch != frame.Epoch || !ReferenceEquals(registration, _registration) || _cropRevision != cropRevision ||
-            SafetyHeld || _monitor.Current.SafetyHeld || _monitor.Current.EvidenceRevision != evidenceRevision)
+            (requireSceneReference && (SafetyHeld || _monitor.Current.SafetyHeld || _monitor.Current.EvidenceRevision != evidenceRevision)))
         {
             CryptographicOperations.ZeroMemory(png);
             throw new InvalidOperationException("Camera or crop changed while the photo was captured. Wait for the live preview and try again.");
@@ -351,7 +365,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     [RelayCommand]
     private async Task ExportSnapshotAsync()
     {
-        if (IsBusy || _disposed) return;
+        if (!CanExportPhoto) return;
         var dialog = new SaveFileDialog
         {
             Title = "Export board reference photo",
@@ -367,7 +381,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         string? temporary = null;
         try
         {
-            var photo = await CapturePhotoAsync(_lifetime.Token);
+            var photo = await CaptureExportPhotoAsync(_lifetime.Token);
             var target = Path.GetFullPath(dialog.FileName);
             temporary = Path.Combine(Path.GetDirectoryName(target)!, ".goldenticket-photo-" + Guid.NewGuid().ToString("N") + ".tmp");
             await File.WriteAllBytesAsync(temporary, photo.PngBytes, _lifetime.Token);
@@ -412,6 +426,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        NotifyPhotoAvailability();
         _lifetime.Cancel();
         _previewTimer.Stop();
         _previewTimer.Tick -= PreviewTick;

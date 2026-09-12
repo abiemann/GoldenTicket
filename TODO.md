@@ -75,6 +75,9 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   four-corner crop and conservative scene-reference checks; optional encrypted operator-attested
   checkpoint photos with integrity/readback and stale-capture protection. No automated train
   verification or machine-verified photo checkpoint is claimed.
+- [x] **Manual board-photo export.** A valid live crop can be exported to PNG without a scene
+  reference, including while the scene has changed. Fresh-frame and crop/camera identity checks
+  remain; encrypted checkpoint-photo capture retains its separate reference checks.
 - [x] **Adjustable photo crop.** Drag any numbered corner during or after selection, or select it
   with 1–4 and nudge with arrows (Shift for larger steps). Invalid geometry keeps all handles editable
   and disables photo capture until corrected. Synthetic view-model and WPF checks cover editing,
@@ -84,6 +87,12 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   and an attached photo. Explain disabled capture prerequisites, offer Camera setup from the photo
   page, display the saved photo inline during rebuilding, and explain zero-route saved positions.
   Capture remains explicit and requires an operator board check; a digital save alone has no photo.
+- [x] **Obvious saved-match selection.** Show a checkmark, automatically select a sole save, keep
+  selection across refreshes, and enable Resume only with a selected match. Display selection
+  guidance and restore errors in the saved-matches panel; retain the board reconciliation gate.
+- [x] **Saved-match names.** Show the entered name first, including names already stored in existing
+  checkpoints. Keep the latest committed name after resuming, use readable status text, and retain
+  support for older unnamed saves without a schema migration.
 - [x] **Offline package build workflow.** A clean-source, locked-dependency PowerShell builder creates
   a self-contained Windows x64 ZIP with runtime/assets checks, notices, provenance and checksums.
   Actual package output is recorded separately in [packaging evidence](docs/offline-package.md);

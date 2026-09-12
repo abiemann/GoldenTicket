@@ -5,6 +5,8 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
@@ -49,6 +51,8 @@ internal static class Program
                 model.Setup.Seats[2].DisplayName = "Brakeman";
                 await VerifyWindowShutdown();
                 await VerifyWindowExitConfirmation();
+                await VerifySavedMatchSelection();
+                await VerifySavedMatchName();
                 await RenderSizes("setup", () => new SetupView { DataContext = model });
                 await VerifyHumanPresentation();
                 foreach (var seat in model.Setup.Seats) seat.IsComputer = true;
@@ -236,6 +240,151 @@ internal static class Program
                 }
             }
             finally { dispatcher.UnhandledException -= OnDispatcherFailure; }
+        }
+    }
+
+    private static async Task VerifySavedMatchSelection()
+    {
+        var checks = new List<string>();
+        var store = new InMemorySessionStore();
+        var manifest = ManifestLoader.LoadClassicUs();
+        var source = new MainViewModel(manifest, store);
+        var resume = new MainViewModel(manifest, store);
+        var multiple = new MainViewModel(manifest, new InMemorySessionStore());
+        SetupView? singleView = null;
+        SetupView? multipleView = null;
+        try
+        {
+            source.Setup.ManualVerificationAccepted = true;
+            await source.StartMatchCommand.ExecuteAsync(null);
+            await resume.LoadSavedSessionsCommand.ExecuteAsync(null);
+            var summary = (await store.ListSessionsAsync(CancellationToken.None)).Single();
+            if (resume.Setup.SelectedSavedSession?.SessionId != summary.SessionId)
+                throw new InvalidOperationException("A sole saved match must be selected automatically before the user clicks Resume.");
+
+            await RenderSizes("setup-saved-single-selected-synthetic", () => new SetupView { DataContext = resume }, view =>
+            {
+                var list = SavedList(view, resume);
+                if (Descendants<CheckBox>(list).Single().IsChecked != true || !ResumeButton(view, resume).IsEnabled)
+                    throw new InvalidOperationException("A sole saved match must have a visible checkmark and enabled Resume button.");
+            });
+            checks.Add("A sole saved match is automatically checked and its real bound Resume button is enabled.");
+
+            singleView = new SetupView { DataContext = resume };
+            await Arrange(singleView, 1000, 620);
+            var resumeButton = ResumeButton(singleView, resume);
+            var invoke = new ButtonAutomationPeer(resumeButton).GetPattern(PatternInterface.Invoke) as IInvokeProvider
+                ?? throw new InvalidOperationException("The Resume button must support accessible invocation.");
+            invoke.Invoke();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            await (resume.ResumeMatchCommand.ExecutionTask
+                ?? throw new InvalidOperationException("Invoking the real Resume button must start its bound command."));
+            if (resume.Screen != Screen.Table || !resume.NeedsBoardReconciliation ||
+                resume.BoardReconciliationAcknowledged || resume.PrivateSeat is not null || resume.CanRevealPrivateSeat)
+                throw new InvalidOperationException("Resume must open the selected match while preserving the physical-board check and privacy gate.");
+            checks.Add("Accessible invocation of the real Resume button restores the in-memory match and retains board reconciliation and covered cards.");
+
+            var second = summary with { SessionId = SessionId.New(), SeatNames = ["Second synthetic match"] };
+            multiple.Setup.LoadSavedSessions([summary, second]);
+            await RenderSizes("setup-saved-multiple-unselected-synthetic", () => new SetupView { DataContext = multiple }, view =>
+            {
+                var list = SavedList(view, multiple);
+                if (Descendants<CheckBox>(list).Any(box => box.IsChecked == true) || ResumeButton(view, multiple).IsEnabled)
+                    throw new InvalidOperationException("Multiple saved matches must require a visible choice before Resume becomes enabled.");
+            });
+            checks.Add("Multiple saved matches begin unchecked and Resume stays disabled until a match is chosen.");
+
+            multipleView = new SetupView { DataContext = multiple };
+            await Arrange(multipleView, 1000, 620);
+            CheckBox[] Choices() => Descendants<CheckBox>(SavedList(multipleView, multiple)).ToArray();
+            async Task ToggleChoice(int index)
+            {
+                var toggle = new CheckBoxAutomationPeer(Choices()[index]).GetPattern(PatternInterface.Toggle) as IToggleProvider
+                    ?? throw new InvalidOperationException("Saved-match checkboxes must support accessible toggling.");
+                toggle.Toggle();
+                await Arrange(multipleView, 1000, 620);
+            }
+
+            await ToggleChoice(0);
+            if (multiple.Setup.SelectedSavedSession?.SessionId != summary.SessionId ||
+                Choices().Count(box => box.IsChecked == true) != 1 || !ResumeButton(multipleView, multiple).IsEnabled)
+                throw new InvalidOperationException("Checking the first saved match must select it and enable Resume exactly once.");
+            await ToggleChoice(1);
+            if (multiple.Setup.SelectedSavedSession?.SessionId != second.SessionId ||
+                Choices()[0].IsChecked != false || Choices()[1].IsChecked != true)
+                throw new InvalidOperationException("Checking a different match must clear the previous checkmark and select only the new match.");
+            checks.Add("Toggling either real checkbox selects exactly that match and switching to another clears the previous checkmark.");
+
+            var previousRow = multiple.Setup.SelectedSavedSession;
+            multiple.Setup.LoadSavedSessions([second, summary]);
+            await Arrange(multipleView, 1000, 620);
+            if (multiple.Setup.SelectedSavedSession?.SessionId != second.SessionId ||
+                ReferenceEquals(previousRow, multiple.Setup.SelectedSavedSession) || Choices()[0].IsChecked != true ||
+                Choices().Count(box => box.IsChecked == true) != 1 || !ResumeButton(multipleView, multiple).IsEnabled)
+                throw new InvalidOperationException("Refreshing saved rows must preserve the selected session identity and its visible checkmark after reordering.");
+            checks.Add("Refreshing and reordering saved rows preserves the selected session ID, checkmark, and enabled Resume button.");
+
+            await ToggleChoice(0);
+            if (multiple.Setup.SelectedSavedSession is not null || Choices().Any(box => box.IsChecked == true) ||
+                ResumeButton(multipleView, multiple).IsEnabled)
+                throw new InvalidOperationException("Unchecking the selected match must clear selection and disable Resume.");
+            checks.Add("Unchecking the selected match clears the choice and disables Resume without a double toggle.");
+
+            await File.WriteAllTextAsync(Path.Combine(Output, "saved-match-selection-interactions.json"),
+                JsonSerializer.Serialize(new { Fixture = "Synthetic in-memory matches; no user saves, native input, or camera.",
+                    Checks = checks, Passed = true }, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine($"Saved-match selection: {checks.Count} synthetic UI checks passed, including actual bound Resume invocation.");
+        }
+        finally
+        {
+            if (singleView is not null) singleView.DataContext = null;
+            if (multipleView is not null) multipleView.DataContext = null;
+            await source.DisposeToolsAsync();
+            await resume.DisposeToolsAsync();
+            await multiple.DisposeToolsAsync();
+        }
+
+        static ListBox SavedList(DependencyObject view, MainViewModel model) => Descendants<ListBox>(view)
+            .Single(list => ReferenceEquals(list.ItemsSource, model.Setup.SavedSessions));
+        static Button ResumeButton(DependencyObject view, MainViewModel model) => Descendants<Button>(view)
+            .Single(button => ReferenceEquals(button.Command, model.ResumeMatchCommand));
+    }
+
+    private static async Task VerifySavedMatchName()
+    {
+        var store = new InMemorySessionStore();
+        var manifest = ManifestLoader.LoadClassicUs();
+        var source = new MainViewModel(manifest, store);
+        var picker = new MainViewModel(manifest, store);
+        try
+        {
+            source.Setup.ManualVerificationAccepted = true;
+            await source.StartMatchCommand.ExecuteAsync(null);
+            await source.CommitTicketsCommand.ExecuteAsync(null);
+            source.Table.SaveName = "test2";
+            await source.SaveAndPackAwayCommand.ExecuteAsync(null);
+            if (!source.Table.IsPackedAway)
+                throw new InvalidOperationException($"The named-save fixture failed to save: {source.Status}");
+            await picker.LoadSavedSessionsCommand.ExecuteAsync(null);
+
+            await RenderSizes("setup-saved-named-test2-synthetic", () => new SetupView { DataContext = picker }, view =>
+            {
+                var list = Descendants<ListBox>(view)
+                    .Single(item => ReferenceEquals(item.ItemsSource, picker.Setup.SavedSessions));
+                var checkbox = Descendants<CheckBox>(list).Single();
+                var label = checkbox.Content as TextBlock;
+                if (checkbox.IsChecked != true || label is null ||
+                    !label.Text.StartsWith("test2  ·  ", StringComparison.Ordinal) ||
+                    !label.Text.Contains("Packed away", StringComparison.Ordinal) ||
+                    label.Text.Contains("PackedAway", StringComparison.Ordinal))
+                    throw new InvalidOperationException("The saved match must display the entered name first, a readable status, and its selection checkmark.");
+            });
+            Console.WriteLine("Saved-match name: test2 preserved through Save and Pack Away and displayed first in both rendered picker sizes.");
+        }
+        finally
+        {
+            await source.DisposeToolsAsync();
+            await picker.DisposeToolsAsync();
         }
     }
 
@@ -547,11 +696,22 @@ internal static class Program
         void KeyPress(Key key) => image.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, key)
             { RoutedEvent = Keyboard.KeyDownEvent });
         var checks = new List<string>();
+        var overlay = (Canvas)view.FindName("CornerOverlay");
+        int PlacementCueLines() => overlay.Children.OfType<System.Windows.Shapes.Line>().Count();
+        if (PlacementCueLines() != 0)
+            throw new InvalidOperationException("Starting corner selection must not put a white plus on the preview before pointer input.");
         KeyPress(Key.Right);
+        if (PlacementCueLines() != 2)
+            throw new InvalidOperationException("Explicit keyboard positioning needs a visible placement cue.");
         KeyPress(Key.Enter);
         if (camera.SelectedCorners.Count != 1 || camera.SelectedCorners[0].X <= .05 || camera.SelectedCorners[0].Y != .05)
             throw new InvalidOperationException("The camera keyboard corner handler did not move and place its first corner.");
         checks.Add("Arrow and Enter move the crosshair and place the first corner.");
+
+        image.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.MouseMoveEvent });
+        if (PlacementCueLines() != 0 || overlay.Children.OfType<Border>().Count() != 1)
+            throw new InvalidOperationException("Returning to the mouse must hide the keyboard plus and preserve the placed corner marker.");
+        checks.Add("Pointer selection has no speculative plus; keyboard input shows its cue, and mouse movement hides it without removing placed corners.");
 
         var firstCorner = camera.SelectedCorners[0];
         KeyPress(Key.D1);
@@ -570,6 +730,8 @@ internal static class Program
         checks.Add("Enter leaves corner editing, and the following Enter places the next corner.");
 
         camera.AddBoardCorner(new(.95, .95));
+        if (PlacementCueLines() != 0)
+            throw new InvalidOperationException("A pointer-placed corner must not draw a plus at the next unplaced corner.");
         camera.AddBoardCorner(new(.05, .95));
         if (camera.SelectedCorners.Count != 4)
             throw new InvalidOperationException("All four corner handles must survive a failed crop attempt so the user can correct them.");
@@ -606,6 +768,19 @@ internal static class Program
         view.RaiseEvent(new RoutedEventArgs(FrameworkElement.UnloadedEvent));
         view.DataContext = null;
         await RenderSizes("camera-corners-synthetic", () => new CameraView { DataContext = camera });
+        // Seed only presentation state here; the export tests supply owned frames and exercise
+        // actual PNG encoding. This fixture never opens a Save dialog or a camera.
+        camera.HasBoardCrop = true;
+        camera.BoardPreview = SyntheticCropFixture();
+        camera.SafetyHeld = true;
+        camera.ComparisonText = "The scene changed. Synthetic export-availability fixture.";
+        camera.CropText = "Synthetic valid crop for export-button layout testing.";
+        await RenderSizes("camera-export-scene-changed-synthetic", () => new CameraView { DataContext = camera }, view =>
+        {
+            var export = Descendants<Button>(view).Single(button => Label(button) == "Export board photo…");
+            if (!export.IsEnabled || !camera.CanExportPhoto || camera.CanCapturePhoto)
+                throw new InvalidOperationException("Manual export must stay enabled during a scene hold while checkpoint capture remains held.");
+        });
         Console.WriteLine($"Camera corner editing: {checks.Count} synthetic interaction checks passed; no OS input injected.");
     }
 

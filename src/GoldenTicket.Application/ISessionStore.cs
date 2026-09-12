@@ -30,7 +30,8 @@ public sealed record SessionSummary(
     SessionLifecycle Lifecycle,
     int TurnNumber,
     IReadOnlyList<string> SeatNames,
-    string? UnavailableReason = null);
+    string? UnavailableReason = null,
+    string? LatestCheckpointName = null);
 
 /// <summary>
 /// Durable storage for one match. DESIGN 19.3: the domain events, the command deduplication result

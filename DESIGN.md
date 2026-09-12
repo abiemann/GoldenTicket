@@ -1290,6 +1290,20 @@ Write images before committing their reference using temporary-file plus atomic 
 
 ### 19.4 Restore procedure
 
+The saved-match picker shows a visible checkmark for the selected session. Automatically select
+the sole saved match; with several matches, require one selection and preserve it by session ID
+when refreshing the list. Keep **Resume selected match** disabled while no match is selected or
+another game action is in progress. Explain selection beside the list, and show restore failures
+beside the Resume button so an unsuccessful attempt never appears to do nothing. Loading a
+match never bypasses physical reconciliation or reveals private cards on its own.
+
+Display the most recently committed checkpoint name first, followed by the updated date, turn,
+readable lifecycle status (for example, **Packed away**) and player names. Read the name from existing
+checkpoint metadata without decrypting private cards or requiring a resave. Choose the latest
+checkpoint by source state version, retain its name when play resumes, and replace it on the next
+committed named save. Older saves without a checkpoint table or name show date, turn, status and
+players. A listed name or status does not replace checkpoint integrity and readback verification.
+
 1. Open a selected session without displaying private state.
 2. Validate schema, manifest, model compatibility, checksums, and the latest durable command.
 3. Load the snapshot and verify it against journal replay where required.
@@ -1681,10 +1695,19 @@ The manual photo crop retains four editable numbered handles after selection. Op
 an existing handle while placing the remaining corners or after the crop is complete; the valid
 crop preview updates immediately. Keyboard users focus the camera preview, choose a handle with
 1–4, then use arrows (Shift for larger steps). During selection, Enter leaves handle editing and
-returns to the next-corner crosshair; arrows and Enter position and place that next corner. Crossed,
+returns to keyboard placement; arrows and Enter position and place that next corner. Mouse selection
+shows only the numbered corners already placed. While selecting corners, the mouse pointer becomes
+a crosshair over the camera image, with a move cursor over existing handles and an arrow outside
+the image. The separate placement
+crosshair appears only after explicit keyboard input and hides when mouse interaction resumes. Crossed,
 overlapping or undersized crops retain the handles for correction and disable photo capture.
 Every geometry edit invalidates previous photo geometry before notifying the view. A camera-session
 or frame-size change clears the selection; crop editing alone does not reset the scene reference.
+**Export board photo** uses the current fresh frame and valid manual crop independently of the
+scene reference. A missing reference, stabilization or scene-change hold must not disable manual
+PNG export. Missing/stale frames, invalid geometry and camera/crop changes during encoding still
+prevent export. This does not attach a checkpoint photo or change the match; checkpoint photo
+capture retains its scene-reference and operator-confirmation requirements.
 Headless synthetic interaction/rendering checks cover this behavior; real pointer dragging with
 the overhead-camera setup remains a physical acceptance check.
 

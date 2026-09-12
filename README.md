@@ -176,6 +176,13 @@ dotnet run --project tools/GoldenTicket.Simulator -- simulate --games 20 --seats
 
 ## Playing a match
 
+To continue a game, find **Saved matches**, check the match you want, then choose **Resume selected
+match**. A single saved match is checked automatically. Only one match can be selected, and Refresh
+keeps that selection when the match is still available. Resume stays disabled until a match is
+checked; any restore error appears beside that button. Check the physical board before play resumes.
+Each named save shows the name entered when saving first, followed by its date, turn, status and
+players. Existing saves retain their names; **Packed away** is the status, not the save's name.
+
 1. Put the board and the plastic trains on the table. **Leave the physical cards and destination
    tickets in the box** — the application deals and holds every card, for every seat.
 2. Name the seats, pick each one's physical train colour, and mark which are computer players.
@@ -199,6 +206,8 @@ public certificate, open the PWA, and approve the matching pairing identity. Ret
 table** to enable phone play. Pass-and-hide on the laptop also works. A single human needs no
 phone connection or local HTTPS setup. Use **Camera** for preview, board crop and a stable scene
 reference. **Save and pack away** saves the digital game; it does not automatically take a picture.
+**Export board photo** writes a PNG of the current crop and works without a scene reference, even
+when the scene has changed. It needs a fresh camera frame and valid corners; it does not save a match.
 Before clearing trains, choose **Add or view board photo**. Use **Camera setup** if prompted,
 select the four crop corners and establish a stable scene reference. Check the live crop, tick the
 board confirmation, then select **Capture reference photo**. Wait for the saved image to appear.

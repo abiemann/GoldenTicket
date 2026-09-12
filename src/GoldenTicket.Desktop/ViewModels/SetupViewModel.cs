@@ -56,6 +56,19 @@ public sealed partial class SetupViewModel : ObservableObject
     [ObservableProperty] private int _startingSeatIndex;
 
     [ObservableProperty] private SavedSessionRow? _selectedSavedSession;
+    [ObservableProperty] private string? _savedMatchMessage;
+
+    public string SavedMatchSelectionHint => SavedSessions.Count == 0
+        ? "No saved matches found."
+        : SelectedSavedSession is null
+            ? "Check one match below, then choose Resume selected match."
+            : "The checked match is selected. Choose Resume selected match to open it.";
+
+    partial void OnSelectedSavedSessionChanged(SavedSessionRow? value)
+    {
+        SavedMatchMessage = null;
+        OnPropertyChanged(nameof(SavedMatchSelectionHint));
+    }
 
     [ObservableProperty] private string? _validationMessage;
     [ObservableProperty] private bool _manualVerificationAccepted;
@@ -175,6 +188,8 @@ public sealed partial class SetupViewModel : ObservableObject
 
     public void LoadSavedSessions(IReadOnlyList<SessionSummary> summaries)
     {
+        var selectedId = SelectedSavedSession?.SessionId;
+        SelectedSavedSession = null;
         SavedSessions.Clear();
         foreach (var summary in summaries)
         {
@@ -182,8 +197,29 @@ public sealed partial class SetupViewModel : ObservableObject
                 summary.SessionId,
                 summary.UnavailableReason is { } reason
                     ? $"Unavailable saved match · {summary.SessionId} · {reason} Select Resume to retry verification."
-                    : $"{summary.UpdatedAt.ToLocalTime():yyyy-MM-dd HH:mm}  ·  turn {summary.TurnNumber}  ·  " +
-                      $"{summary.Lifecycle}  ·  {string.Join(", ", summary.SeatNames)}"));
+                    : SavedMatchDescription(summary)));
         }
+        SelectedSavedSession = SavedSessions.FirstOrDefault(row => row.SessionId == selectedId)
+            ?? (SavedSessions.Count == 1 ? SavedSessions[0] : null);
+        SavedMatchMessage = null;
+        OnPropertyChanged(nameof(SavedMatchSelectionHint));
+    }
+
+    private static string SavedMatchDescription(SessionSummary summary)
+    {
+        var name = string.IsNullOrWhiteSpace(summary.LatestCheckpointName)
+            ? "" : $"{summary.LatestCheckpointName}  ·  ";
+        var status = summary.Lifecycle switch
+        {
+            SessionLifecycle.Setup => "Setting up",
+            SessionLifecycle.Active => "In progress",
+            SessionLifecycle.Finished => "Finished",
+            SessionLifecycle.PreparingPackAway => "Preparing to pack away",
+            SessionLifecycle.PackedAway => "Packed away",
+            SessionLifecycle.Rebuilding => "Rebuilding the board",
+            _ => "Saved match",
+        };
+        return $"{name}{summary.UpdatedAt.ToLocalTime():yyyy-MM-dd HH:mm}  ·  turn {summary.TurnNumber}  ·  " +
+               $"{status}  ·  {string.Join(", ", summary.SeatNames)}";
     }
 }

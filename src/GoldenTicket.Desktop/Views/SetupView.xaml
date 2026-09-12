@@ -117,15 +117,35 @@
                 <StackPanel>
                     <TextBlock Style="{StaticResource Heading}" Text="Saved matches" />
                     <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8"
-                               Text="A saved match is restored by replaying its journal and checking the result against the stored fingerprint. Check the physical board before continuing. With multiple humans, hands stay covered until each player reveals their cards." />
+                               Text="Your saved cards, destinations and turn will be restored. You will check the physical board before play continues." />
 
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8"
+                               Text="{Binding Setup.SavedMatchSelectionHint}" />
                     <ListBox ItemsSource="{Binding Setup.SavedSessions}" MaxHeight="160"
-                             SelectedItem="{Binding Setup.SelectedSavedSession}"
-                             DisplayMemberPath="Description" />
+                             SelectedItem="{Binding Setup.SelectedSavedSession, Mode=TwoWay}"
+                             SelectionMode="Single" AutomationProperties.Name="Saved matches">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox Margin="4,6" AutomationProperties.Name="{Binding Description}"
+                                          IsChecked="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}, Mode=TwoWay}">
+                                    <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+                                </CheckBox>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
 
                     <Button Style="{StaticResource SecondaryButton}" Content="Resume selected match"
                             HorizontalAlignment="Left" Margin="0,8,0,0"
                             Command="{Binding ResumeMatchCommand}" />
+                    <TextBlock Foreground="{StaticResource Action.Primary}" FontWeight="SemiBold" Margin="0,8,0,0"
+                               Text="{Binding Setup.SavedMatchMessage}" TextWrapping="Wrap"
+                               Visibility="{Binding Setup.SavedMatchMessage, Converter={StaticResource EmptyStringToVisibility}}"
+                               AutomationProperties.LiveSetting="Polite" />
                 </StackPanel>
             </Border>
 
