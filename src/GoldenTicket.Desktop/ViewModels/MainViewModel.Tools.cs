@@ -22,7 +22,8 @@ public sealed partial class MainViewModel
 
     private void InitializeTools()
     {
-        Camera = new CameraViewModel();
+        Camera = new CameraViewModel(_store is SqliteSessionStore localStore
+            ? System.IO.Path.Combine(localStore.RootDirectory, "camera-processing.json") : null);
         var inner = new CoordinatorCompanionBridge(() => _coordinator,
             async _ => await PumpAsync(), () => CanCompanionControl);
         var bridge = new DesktopCompanionBridge(inner,

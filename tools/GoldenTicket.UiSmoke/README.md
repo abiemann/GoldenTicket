@@ -41,4 +41,10 @@ An additional fixture saves a synthetic match as `test2` through the desktop com
 a new picker at both sizes. It checks the actual row label begins with `test2`, shows the readable
 **Packed away** status, and retains its selection checkmark.
 
+Camera processing fixtures verify the default 4K capture request and Auto processor choice, source
+versus upscaled labels, and white train and square player-marker outlines at both viewport sizes.
+The outline canvas must not intercept pointer input, its toggle must hide/show geometry, and clearing
+the reference must remove candidates. These rendered outlines use synthetic geometry; actual detector
+tests and the explicit two-photo `GoldenTicket.PieceDetectionSmoke` tool test recognition separately.
+
 Inspect the rendered screenshots for visual issues that bounds assertions cannot judge. Game fixtures are local synthetic play using the in-memory store; route choices may vary. Camera screenshots include an inactive state and an explicitly labeled synthetic pattern with four editable corner handles. Connection screenshots show the inactive state. These checks establish layout, coordinate mapping, binding and routed-key handler evidence, not live-window mouse capture, keyboard focus, DPI, screen-reader, camera, firewall, certificate-trust or real-phone acceptance.

@@ -30,8 +30,9 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     private long _cropRevision;
     private bool _disposed;
 
-    public CameraViewModel()
+    public CameraViewModel(string? processingSettingsPath = null)
     {
+        _processingSettingsPath = processingSettingsPath;
         Capture = new CameraCaptureService();
         _previewTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -39,6 +40,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         };
         _previewTimer.Tick += PreviewTick;
         SelectedPreference = Preferences[0];
+        SelectedProcessor = ProcessorModes.First(option => option.Value ==
+            Services.FrameProcessingPreferences.Load(processingSettingsPath));
     }
 
     public CameraCaptureService Capture { get; }
@@ -47,8 +50,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<NormalizedPoint> SelectedCorners { get; } = [];
     public IReadOnlyList<CameraPreferenceOption> Preferences { get; } =
     [
+        new(CameraCapturePreference.HighDetail2160p, "4K preferred · best available"),
         new(CameraCapturePreference.Balanced1080p, "Balanced · up to 1080p"),
-        new(CameraCapturePreference.HighDetail2160p, "High detail · up to 4K"),
         new(CameraCapturePreference.SharedCurrent, "Shared · current Windows format")
     ];
 
@@ -67,8 +70,6 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string _cropText = "Select all four outer board corners to crop reference photos.";
     [ObservableProperty] private string? _problem;
     [ObservableProperty] private string? _lastExportPath;
-    public string ComputeStatus => "▣ CPU · image processing";
-    public string ComputeExplanation => "Live preview, perspective crop and scene comparison run locally on the CPU. No train-recognition model or GPU inference backend is installed.";
     public bool CanExportPhoto => IsRunning && HasBoardCrop && !IsBusy && !_disposed;
     public bool CanCapturePhoto => CanExportPhoto && !SafetyHeld;
 
@@ -81,6 +82,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     {
         OnPropertyChanged(nameof(CanExportPhoto));
         OnPropertyChanged(nameof(CanCapturePhoto));
+        OnPropertyChanged(nameof(CanApplyProcessor));
     }
 
     [RelayCommand]
@@ -117,12 +119,13 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         try
         {
             ClearRegistration();
+            await InitializeProcessingAsync();
             await Capture.StartAsync(SelectedDevice, SelectedPreference.Value, _lifetime.Token);
             IsRunning = true;
             FormatText = Capture.NegotiatedFormat?.ToString() ?? "Waiting for first frame";
             AvailableFormats.Clear();
             foreach (var format in Capture.AvailableFormats) AvailableFormats.Add(format.ToString());
-            Status = "Live preview. Fit the whole board in the image, clear your hands, then set a scene reference.";
+            Status = "Live preview. Select the board corners, then capture or load an empty-board reference to outline pieces.";
             _previewSequence = -1;
             _previewTimer.Start();
         }
@@ -161,9 +164,15 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     private void PreviewTick(object? sender, EventArgs args)
     {
         if (_disposed) return;
+        if (_outlinedFrame is { } outlined && outlined.Age > TimeSpan.FromSeconds(2))
+        {
+            ClearDetectionPreview();
+            DetectionText = "Waiting for a fresh processed image before outlining pieces.";
+        }
         var frame = Capture.LatestFrame;
         if (!Capture.IsRunning || frame is null || frame.Age > TimeSpan.FromSeconds(2))
         {
+            ClearDetectionPreview();
             _monitor.MarkStale();
             SafetyHeld = true;
             ComparisonText = "Camera unavailable or stale. Photo capture and scene comparison are held.";
@@ -180,7 +189,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         _previewSequence = frame.Sequence;
         try
         {
-            Preview = ToBitmap(frame);
+            if (Preview is null || !_processorReady) Preview = ToBitmap(frame);
             if (!CornersMatch(frame)) ClearRegistration();
             if (_registration is { } registration)
             {
@@ -199,6 +208,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
                 SceneReferenceState.InsufficientDetail => "Too little visible detail. Check focus, lighting, camera cover and board framing.",
                 _ => "Waiting for fresh camera frames."
             };
+            QueueFrameProcessing(frame);
         }
         catch (Exception ex)
         {
@@ -288,6 +298,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
 
     private void InvalidateCrop()
     {
+        ResetPieceReference();
         _registration = null;
         _cropRevision++;
         HasBoardCrop = false;
@@ -348,9 +359,23 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         var evidenceRevision = _monitor.Current.EvidenceRevision;
         var cropRevision = _cropRevision;
         // Snapshot identity is captured before encoding; callers bind it to their frozen game operation.
-        var cropped = await Task.Run(() => registration.Rectify(frame, 1920, 1200), cancellationToken);
+        // A 4K canvas with the board's 8:5 shape is 3456×2160. Keep checkpoint evidence
+        // unsharpened; manual exports can use the deterministic enhancement pipeline.
+        var processingRevision = _processingRevision;
+        var cropped = await Task.Run(() => registration.Rectify(frame, 3456, 2160), cancellationToken);
+        if (!requireSceneReference)
+        {
+            var processed = await _processor.ProcessAsync(cropped, cancellationToken);
+            if (_disposed || !Capture.IsRunning || Capture.Epoch != frame.Epoch ||
+                _cropRevision != cropRevision || processingRevision != _processingRevision)
+                throw new InvalidOperationException("Camera, crop or processor changed during export. Try again.");
+            cropped = processed.Frame;
+            AcceptProcessorStatus(processed.Status);
+            processingRevision = _processingRevision;
+        }
         var png = await cropped.EncodePngAsync(cancellationToken);
         if (!Capture.IsRunning || Capture.Epoch != frame.Epoch || !ReferenceEquals(registration, _registration) || _cropRevision != cropRevision ||
+            (!requireSceneReference && processingRevision != _processingRevision) ||
             (requireSceneReference && (SafetyHeld || _monitor.Current.SafetyHeld || _monitor.Current.EvidenceRevision != evidenceRevision)))
         {
             CryptographicOperations.ZeroMemory(png);
@@ -431,6 +456,10 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         _previewTimer.Stop();
         _previewTimer.Tick -= PreviewTick;
         try { await Capture.DisposeAsync(); }
-        finally { _lifetime.Dispose(); }
+        finally
+        {
+            try { await DisposeProcessingAsync(); }
+            finally { _lifetime.Dispose(); }
+        }
     }
 }

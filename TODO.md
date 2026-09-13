@@ -16,7 +16,9 @@ validation requirements; mark each feature complete only after those checks pass
   available, so **iOS cannot be claimed as supported at release**; see
   [companion device evidence](docs/companion-device-evidence.md) for the honest wording and the
   borrowed-device checklist.
-- [ ] **CPU/GPU inference selection** — Auto at launch uses a validated GPU or falls back to CPU; retain manual overrides and show a CPU chip or GPU/lightning status indicator (M4/M5).
+- [ ] **CPU/GPU inference selection** — actual Auto/CPU/GPU preprocessing, preference persistence,
+  fallback and effective-backend status are implemented. Packaged-model execution and the full
+  hardware/provider acceptance matrix remain M4/M5; preprocessing is not ML inference.
 - [ ] **Photographed save and rebuild** — the state-only half is implemented (M2): named checkpoints,
   the `PreparingPackAway`/`PackedAway`/`Rebuilding` lifecycle, commit-then-readback validation,
   route-list guided reconstruction and exactly-once resume. Optional encrypted, operator-attested
@@ -78,6 +80,53 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
 - [x] **Manual board-photo export.** A valid live crop can be exported to PNG without a scene
   reference, including while the scene has changed. Fresh-frame and crop/camera identity checks
   remain; encrypted checkpoint-photo capture retains its separate reference checks.
+- [x] **Native-resolution preference and truthful 4K processing.** Prefer an advertised native mode
+  up to 3840 × 2160; try smaller usable modes when necessary, and display the actual delivered
+  dimensions separately from processing output. Shared-read-only inspection confirms the current
+  Pixel UVC connection advertises 1080p at most. Physical native-4K camera acceptance remains open.
+- [x] **CPU/GPU preprocessing implementation.** Real Direct3D 11 compute performs bounded
+  enhancement and aspect-preserving resizing, with Auto/CPU/GPU choices, local preference
+  persistence, validated hardware activation, effective status and CPU fallback. No recognition
+  model is bundled. Locked restore/build, 546 tests and 50 synthetic WPF render cases passed,
+  with no binding warnings/errors; see [camera processing](docs/camera-processing.md).
+- [x] **Experimental empty-board piece outlines.** Capture or load an empty-board crop, compare
+  subsequent frames, and draw white rotated train-candidate rectangles and score-marker squares.
+  Camera/crop/processor changes invalidate references and stale work. Motion, insufficient detail
+  and major scene changes withhold candidates. This is a low-false-positive baseline to evaluate,
+  not a measured accuracy claim or an authority to spend cards, score or commit routes.
+- [x] **Processing and outline automated/image-pair checks.** The integrated automated/UI pass
+  succeeded. The supplied photo pair produced 15 train and 5 marker candidates in raw and enhanced
+  comparisons; an unchanged empty-board comparison produced 0/0. RTX 4080 Laptop preprocessing
+  matched the CPU within one channel level when upscaling and exactly in the native-4K fixture.
+  See the [bounded validation record](docs/evidence/camera-processing-2026-09-12/validation.md).
+- [ ] **Processing and outline physical acceptance.** Measure empty-board false positives and
+  per-piece misses across printed routes, shadows, touching trains and lighting; test live
+  exported-reference reload, jog/return, raw/enhanced preview and native-4K input on actual hardware.
+  Complete adapter/device-loss and preference-switching acceptance. Image enhancement must remain
+  separate from unsharpened checkpoint evidence. A successful photo pair is not general recognition
+  accuracy or a supported native-4K camera claim.
+- [ ] **Controlled glare/reference experiment.** A later enhanced comparison of image `160803`
+  against old empty reference `152343` returned 20 train/19 marker candidates; the comparison
+  without additional enhancement returned 24/19. Visual review sees 15 trains/5 markers, with
+  false candidates on printed score numbers/tracks. Both were Ready, and the cause is
+  unisolated (crop/geometry, lighting or reference age); do not attribute it to glare. Follow the
+  [fixed-camera glare protocol](docs/glare-test.md), using fresh and lighting-matched empty
+  references, and annotate individual misses, false positives and scene holds rather than counts.
+- [x] **First fresh-reference glare series.** With unchanged detector thresholds, the nominal empty
+  reference plus minimal/stronger/strongest glare images produced 8/4, 19/4 and 35/6 train/marker
+  candidates. Overlay review found all 8 actual trains and 4 markers covered, with 0/0, 11/0 and
+  27/2 false outlines. Every result stayed Ready; additional GPU enhancement gave identical counts.
+  The [bounded glare record](docs/glare-test.md#fresh-reference-series-september-12-2026) includes
+  placement and reflection limits. User photographs remain local.
+- [x] **User-reported soft-light check.** After the glare experiment, the user restored soft
+  lighting and reported reliable piece detection on September 12. The camera guide now recommends
+  that setup. This is a user observation for that trial, without a new counted image series;
+  see the [follow-up record](docs/glare-test.md#user-reported-soft-light-follow-up).
+- [ ] **Glare and illumination robustness.** Reduce false printed-board candidates or withhold
+  doubtful results under changed lighting. First finish matching-lighting empty-reference tests
+  and direct glare over actual piece groups; repeat with other colors/placements and live motion.
+  The current series showed false positives, not misses, but does not prove general glare tolerance
+  or reliable scene holds. Keep any future tuning separate from the recorded measurement.
 - [x] **Adjustable photo crop.** Drag any numbered corner during or after selection, or select it
   with 1–4 and nudge with arrows (Shift for larger steps). Invalid geometry keeps all handles editable
   and disables photo capture until corrected. Synthetic view-model and WPF checks cover editing,
@@ -146,12 +195,14 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   standalone fifteen-minute checklist that a borrowed device can be taken through without the game
   UI (docs/companion-device-evidence.md).
 - [ ] **M3: camera completion.** Validate the implemented WinRT acquisition, bounded frame ownership,
-  camera choice, preview and manual crop against the real board. Add printable markers, board
+  camera choice, native-format fallback, preview, CPU/GPU preprocessing and manual crop against
+  the real board. Evaluate the experimental empty-board detector. Add printable markers, board
   landmarks, automatic calibration, detailed quality gates and recording/replay.
 - [ ] **M4: verification.** Implement whole-board recognition, authorized pending evidence,
   board-first human placement, occlusion/unknown foreground rejection, jog/reconnect recovery,
   stale-epoch rejection, wake gesture, and explicit mode-change reconciliation.
-- [ ] **M4/M5: inference.** Default to Auto: detect adapters at launch, validate GPU execution with
+- [ ] **M4/M5: model inference.** Build on the implemented preprocessing preference/status flow.
+  For any required learned recognizer, default to Auto: detect adapters at launch, validate GPU execution with
   the packaged model, and fall back to CPU on absence, incompatibility, timeout, or failure. Retain
   explicit CPU/GPU preferences and distinguish them from the effective backend. Display a chip/CPU
   icon or GPU text with lightning around it, with adapter/fallback details. Package native runtimes

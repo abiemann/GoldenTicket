@@ -16,6 +16,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <Border Style="{StaticResource Card}">
                 <StackPanel>
@@ -36,6 +37,18 @@
                         <TextBlock Style="{StaticResource Caption}" Text="{Binding FormatText}" Margin="0,0,24,0" />
                         <TextBlock Style="{StaticResource Caption}" Text="{Binding ComputeStatus}" ToolTip="{Binding ComputeExplanation}" />
                     </WrapPanel>
+                    <WrapPanel Margin="0,8,0,0">
+                        <ComboBox Width="265" MinHeight="34" ItemsSource="{Binding ProcessorModes}" SelectedItem="{Binding SelectedProcessor}"
+                                  DisplayMemberPath="Label" AutomationProperties.Name="Image processor preference" />
+                        <Button Content="Apply processor" Command="{Binding ApplyProcessorCommand}" Style="{StaticResource SecondaryButton}"
+                                IsEnabled="{Binding CanApplyProcessor}" />
+                    </WrapPanel>
+                    <TextBlock Text="{Binding ProcessingText}" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                    <WrapPanel Margin="0,8,0,0">
+                        <CheckBox Content="Enhanced 4K preview" IsChecked="{Binding UseEnhancedPreview}" Margin="0,0,22,0"
+                                  ToolTip="Uncheck to compare the original camera frame. Analysis continues on the enhanced image." />
+                        <CheckBox Content="Show piece outlines" IsChecked="{Binding ShowPieceOutlines}" />
+                    </WrapPanel>
                 </StackPanel>
             </Border>
             <Border Grid.Row="1" Background="#251A16" CornerRadius="8" Margin="0,12" Padding="8" Height="465">
@@ -51,6 +64,7 @@
                     <TextBlock Text="Camera preview is off" FontSize="22" Foreground="{StaticResource Text.OnDark}"
                                HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"
                                Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}" />
+                    <Canvas x:Name="DetectionOverlay" IsHitTestVisible="False" />
                     <Canvas x:Name="CornerOverlay" IsHitTestVisible="False" />
                 </Grid>
             </Border>
@@ -83,7 +97,20 @@
                     </StackPanel>
                 </Border>
             </Grid>
-            <Expander Grid.Row="3" Header="Camera formats and setup guidance" Margin="0,12,0,0">
+            <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,12,0,0">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource Heading}" Text="Piece outlines" />
+                    <TextBlock TextWrapping="Wrap" Text="Start with a photo of the board without plastic trains or score markers. Capture it here, or load an empty-board crop you exported earlier. White rectangles mark train candidates; white squares mark player score markers. This is a local comparison, with no model training or internet connection." />
+                    <WrapPanel Margin="0,10,0,8">
+                        <Button Content="Capture empty board" Command="{Binding CaptureEmptyBoardCommand}" Style="{StaticResource SecondaryButton}" IsEnabled="{Binding CanExportPhoto}" />
+                        <Button Content="Load empty-board photo…" Command="{Binding LoadEmptyBoardCommand}" Style="{StaticResource SecondaryButton}" IsEnabled="{Binding CanExportPhoto}" />
+                        <Button Content="Clear piece reference" Command="{Binding ClearPieceReferenceCommand}" Style="{StaticResource SecondaryButton}" />
+                    </WrapPanel>
+                    <TextBlock Text="{Binding DetectionText}" TextWrapping="Wrap" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite" />
+                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,0" Text="Clear hands before checking the outlines. Printed tracks, shadows, touching pieces and camera movement can still cause misses or false candidates. Outlines do not confirm route ownership or change the game." />
+                </StackPanel>
+            </Border>
+            <Expander Grid.Row="4" Header="Camera formats and setup guidance" Margin="0,12,0,0">
                 <StackPanel Margin="10">
                     <TextBlock TextWrapping="Wrap" Text="Use a rigid stand, keep the USB cable slack, and fit the board into the image with even lighting. On Pixel, choose Webcam in USB preferences. If another app owns the camera, close it or try Shared mode. No microphone is opened." />
                     <TextBlock Text="Formats reported by this camera:" FontWeight="SemiBold" Margin="0,10,0,6" />

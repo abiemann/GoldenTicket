@@ -28,7 +28,10 @@ public partial class MainWindow : Window
         {
             _model = createModel();
             DataContext = _model;
-            Loaded += async (_, _) => await _model.LoadSavedSessionsAsync();
+            Loaded += async (_, _) =>
+            {
+                await Task.WhenAll(_model.LoadSavedSessionsAsync(), _model.Camera.InitializeProcessingAsync());
+            };
         }
         catch (Exception exception)
         {

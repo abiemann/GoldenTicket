@@ -17,6 +17,15 @@ game phone companion, camera tools, and encrypted board reference photos. Use it
 acceptance checklist and [local phone setup](docs/phone-setup.md). Real-device acceptance remains
 in progress; automatic train recognition is not enabled.
 
+The latest [camera processing update](docs/camera-processing.md) adds native 4K preference with
+source-resolution reporting, actual CPU/GPU image enhancement, and experimental piece outlines
+against an empty-board reference. These outlines are visual candidates; route verification remains
+manual. Locked restore/build, **546 automated tests** and **50 synthetic WPF render cases** passed;
+the render pass reported no binding warnings/errors. A supplied board-photo pair produced 15 train
+and 5 marker candidates, including the enhanced paths; the unchanged empty-board comparison
+produced none. These bounded checks do not complete physical-camera acceptance. See the
+[validation record](docs/evidence/camera-processing-2026-09-12/validation.md).
+
 ## What this build does
 
 This build implements the core game plus initial phone, camera and photo workflows from DESIGN
@@ -56,7 +65,20 @@ This build implements the core game plus initial phone, camera and photo workflo
   board crop with draggable corners during and after selection, and conservative scene-reference
   change/recovery indication. Focus the preview and press **1–4**, then arrow keys, to adjust a
   corner; **Shift** makes larger steps. Invalid crops retain their handles for correction. It identifies camera
-  changes and stale frames, but does not recognize trains or authorize route claims.
+  changes and stale frames, but does not authorize route claims.
+- **4K preferred · best available** capture selects the largest usable advertised mode up to
+  3840 × 2160, falling back to a smaller native mode when needed. The UI distinguishes delivered
+  camera resolution from the enhanced processing size. The connected Pixel's USB webcam currently
+  advertises a maximum of 1920 × 1080; a 4K preview from it is explicitly labeled upscaled.
+- **Auto · prefer GPU**, **CPU only**, and **GPU · CPU fallback** processing, with a remembered
+  preference and the actual backend/adapter shown. A hardware Direct3D 11 compute path validates
+  its output before activation and falls back to CPU on failure. It performs bounded image
+  enhancement and resizing; no learned model or GPU game logic is running.
+- Experimental **Piece outlines** compare the current crop with a captured or loaded empty-board
+  reference. White rotated rectangles show train candidates; white squares show player-marker
+  candidates. Changing the camera, crop or processor clears the reference. Movement and major
+  scene changes suppress candidates. This is a conservative baseline with unmeasured physical
+  false-positive/miss rates, not automatic ownership or route recognition.
 - Optional encrypted, immutable board reference photos attached to validated saved checkpoints.
   Photos are cropped from fresh camera frames and authenticated on readback. They assist manual
   rebuilding; checkpoints retain their explicit state-only provenance.
@@ -71,7 +93,8 @@ These are later milestones in `DESIGN.md`, and nothing here pretends they exist:
 
 - **No automatic camera verification.** Physical placement is confirmed by the operator
   (`VerificationMode.Manual`). Scene similarity does not prove route ownership. Automatic landmarks,
-  train recognition, gesture wakeup, and CPU/GPU inference remain unfinished.
+  reliable train recognition, gesture wakeup, and model inference remain unfinished. CPU/GPU
+  preprocessing and experimental empty-board differencing are implemented separately.
 - **Phone acceptance is incomplete.** The embedded companion is functional and tested with
   automated HTTPS/browser cases, but Android certificate/install/offline acceptance and all Apple
   device acceptance remain outstanding. This slice uses two-second snapshot polling and fresh
@@ -208,6 +231,12 @@ phone connection or local HTTPS setup. Use **Camera** for preview, board crop an
 reference. **Save and pack away** saves the digital game; it does not automatically take a picture.
 **Export board photo** writes a PNG of the current crop and works without a scene reference, even
 when the scene has changed. It needs a fresh camera frame and valid corners; it does not save a match.
+Exports preserve the board's 8:5 shape at 3456 × 2160 and use the selected image processor.
+Checkpoint-reference photos use the same output shape but retain unsharpened camera evidence.
+For a live outline experiment, first remove all trains and score markers and choose **Capture
+empty board**, or load a matching previously exported empty-board crop. Return pieces and clear
+hands to inspect candidates. Uncheck **Enhanced 4K preview** to compare the raw camera image;
+piece analysis continues on the enhanced path. See [camera setup and limits](docs/camera-processing.md).
 Before clearing trains, choose **Add or view board photo**. Use **Camera setup** if prompted,
 select the four crop corners and establish a stable scene reference. Check the live crop, tick the
 board confirmation, then select **Capture reference photo**. Wait for the saved image to appear.
@@ -234,17 +263,20 @@ src/GoldenTicket.Application/   coordinator, command pipeline, computer-seat dri
 src/GoldenTicket.AI/            heuristic opponents and route planning
 src/GoldenTicket.Persistence/   SQLite journal, encryption, restore
 src/GoldenTicket.Desktop/       WPF views and view models
+src/GoldenTicket.Vision/        capture, crop, CPU/GPU preprocessing, experimental piece candidates
+src/GoldenTicket.CompanionHost/ embedded local HTTPS game PWA and controller protocol
 tools/GoldenTicket.Simulator/   headless matches and the data audit
 tools/GoldenTicket.ConnectivitySpike/ standalone local HTTPS/PWA feasibility tool; no game data
+tools/GoldenTicket.CameraDiagnostics/ shared-read-only native camera format inventory
 tests/                          rules fixtures, properties, privacy, persistence, view models
 data/classic-us/                hashed board and ticket manifest; physical audit pending
 shared/theme/                   canonical box-derived theme tokens
 docs/                           rules policy decisions and milestone evidence
 ```
 
-The product projects in DESIGN §18.3 that belong to later milestones (`GoldenTicket.Vision`,
-`GoldenTicket.Windows`, `GoldenTicket.CompanionHost`, `companion/`, `training/`, `models/`) do not
-exist yet. They are deliberately absent rather than present and empty.
+The proposed `GoldenTicket.Windows`, separate `companion/` TypeScript build, `training/`, and
+`models/` directories remain later work. The current companion's plain JavaScript assets are
+bundled with `GoldenTicket.CompanionHost`; no trained recognition weights are shipped.
 
 ## Design correspondence
 
@@ -269,6 +301,7 @@ section. The load-bearing ones:
 ## Not a claim of correctness
 
 DESIGN §23.2 asks for measured results to stay distinguishable from design assumptions. What has
-actually been run is in `docs/evidence/`. Nothing about camera recognition, GPU backends, companion
-devices, or AI strength has passed the required acceptance gates. The connectivity shell and
-state-only rebuild have automated checks; neither establishes real-device PWA or camera support.
+actually been run is in `docs/evidence/` and the current [camera processing report](docs/camera-processing.md).
+The preprocessing hardware probe is narrower than the full camera/model/provider acceptance gates.
+Camera recognition, companion devices and AI strength have not passed their required acceptance
+gates. Automated checks do not establish complete real-device PWA or camera support.

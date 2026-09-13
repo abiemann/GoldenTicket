@@ -70,6 +70,7 @@ internal static class Program
                 await RenderSizes("rebuild", () => new RebuildView { DataContext = model });
                 await RenderSizes("camera-no-device", () => new CameraView { DataContext = model.Camera });
                 await VerifyKeyboardCornerHandler();
+                await VerifyProcessingPresentation();
                 await RenderSizes("connection-off", () => new ConnectionView { DataContext = model.Connection });
                 await model.ShowCheckpointPhotoCommand.ExecuteAsync(null);
                 await RenderSizes("checkpoint-photo", () => new CheckpointPhotoView { DataContext = model.CheckpointPhoto });
@@ -679,6 +680,45 @@ internal static class Program
             if (ReferenceEquals(current, root)) return true;
         }
         return false;
+    }
+
+    private static async Task VerifyProcessingPresentation()
+    {
+        await using var camera = new CameraViewModel();
+        if (camera.SelectedPreference.Value != CameraCapturePreference.HighDetail2160p ||
+            camera.SelectedProcessor.Value != FrameComputeMode.Auto)
+            throw new InvalidOperationException("Camera defaults must request native4K and automatic hardware processing.");
+        camera.Preview = SyntheticCropFixture();
+        camera.IsRunning = true;
+        camera.FormatText = "Camera delivered 1920 × 1080 · synthetic presentation fixture";
+        camera.ProcessingText = "Processing 3840 × 2160 · upscaled from 1920 × 1080; not native 4K";
+        camera.ComputeBadge = "▣ CPU";
+        camera.ComputeStatus = "▣ CPU · synthetic status fixture";
+        camera.DetectionText = "One train candidate and one player marker. Synthetic overlay geometry; no camera opened.";
+        camera.PieceOutlines =
+        [
+            new(false, [new(.2,.25), new(.33,.31), new(.31,.35), new(.18,.29)]),
+            new(true, [new(.6,.6), new(.65,.6), new(.65,.67), new(.6,.67)])
+        ];
+        await RenderSizes("camera-processing-outlines-synthetic", () => new CameraView { DataContext = camera }, view =>
+        {
+            var overlay = (Canvas)view.FindName("DetectionOverlay");
+            var whites = overlay.Children.OfType<System.Windows.Shapes.Polygon>()
+                .Where(shape => shape.Stroke == Brushes.White).ToArray();
+            if (whites.Length != 2 || overlay.IsHitTestVisible)
+                throw new InvalidOperationException("The preview must show two white candidate outlines that cannot intercept corner editing.");
+            var marker = whites[1].Points;
+            if (Math.Abs((marker[1].X - marker[0].X) - (marker[2].Y - marker[1].Y)) > .01)
+                throw new InvalidOperationException("The player-marker outline must remain square after image scaling and letterboxing.");
+            camera.ShowPieceOutlines = false;
+            if (overlay.Children.Count != 0) throw new InvalidOperationException("The outline toggle must hide all candidate geometry.");
+            camera.ShowPieceOutlines = true;
+            if (overlay.Children.Count != 4) throw new InvalidOperationException("The outline toggle must restore white geometry and its dark backing.");
+        });
+        camera.ClearPieceReferenceCommand.Execute(null);
+        if (camera.PieceOutlines.Count != 0 || camera.HasPieceReference)
+            throw new InvalidOperationException("Clearing the piece reference must immediately remove all outlines.");
+        Console.WriteLine("Processing presentation:4K/Auto defaults, white train/player geometry, square marker, toggle and reference clearing passed.");
     }
 
     private static async Task VerifyKeyboardCornerHandler()

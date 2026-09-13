@@ -36,8 +36,8 @@ public sealed class CameraPhotoExportTests
         {
             using var stream = new MemoryStream(photo.PngBytes, writable: false);
             var decoder = new PngBitmapDecoder(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-            Assert.Equal(1920, decoder.Frames[0].PixelWidth);
-            Assert.Equal(1200, decoder.Frames[0].PixelHeight);
+            Assert.Equal(3456, decoder.Frames[0].PixelWidth);
+            Assert.Equal(2160, decoder.Frames[0].PixelHeight);
             Assert.Equal(source.Sequence, photo.FrameSequence);
             Assert.Equal(source.Epoch, photo.CameraEpoch);
             Assert.Equal(source.CapturedAt, photo.CapturedAt);

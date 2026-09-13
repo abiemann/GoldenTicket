@@ -971,6 +971,7 @@ The versions below are researched design baselines, not a tested lockfile. M0 mu
 | Companion UI and build | TypeScript, Vite, HTML/CSS, standard browser APIs; Node.js LTS only on the development machine | TypeScript Apache-2.0; Vite and Node.js MIT with component notices. [TypeScript](https://github.com/microsoft/TypeScript/blob/main/LICENSE.txt), [Vite](https://github.com/vitejs/vite/blob/main/LICENSE), [Node.js](https://github.com/nodejs/node/blob/main/LICENSE) | Exact locked versions, no CDN/runtime Node dependency, Safari/Chrome and real-device testing |
 | MVVM helpers | CommunityToolkit.Mvvm 8.x | MIT. [Project license](https://github.com/CommunityToolkit/dotnet/blob/main/License.md) | Lock tested patch; no paid toolkit dependency |
 | Camera | Windows `MediaCapture` / `MediaFrameReader` | Included Windows APIs; no separate service. [Capture guide](https://learn.microsoft.com/en-us/windows/apps/develop/camera/process-media-frames-with-mediaframereader) | WPF initialization, consent, negotiated formats, sleep/reconnect |
+| Implemented image preprocessing | Vortice.Direct3D11 and Vortice.D3DCompiler 3.8.3; Windows Direct3D 11 compute and a C# CPU reference | Vortice MIT; Windows graphics APIs supplied locally. [Vortice license](https://github.com/amerkoleci/Vortice.Windows/blob/main/LICENSE) | CPU/GPU output comparison, hardware probe, fallback, device loss, accurate backend/source-size reporting; no model runtime required |
 | Native CV wrapper | OpenCvSharp4 4.13.0.20260627 and matching slim Windows runtime | Apache-2.0 wrapper and modern OpenCV; inspect native notices. [Wrapper license](https://github.com/shimat/opencvsharp/blob/main/LICENSE), [OpenCV license](https://opencv.org/license/) | Required marker/warp/image exports and native dependency availability |
 | Model runtime | Microsoft.Windows.AI.MachineLearning 2.3.42, self-contained | Microsoft runtime redistribution terms; no required runtime subscription or service. Bundled ONNX Runtime has MIT notices; the entire package is not MIT. [Package](https://www.nuget.org/packages/Microsoft.Windows.AI.MachineLearning/2.3.42), [License](https://www.nuget.org/packages/Microsoft.Windows.AI.MachineLearning/2.3.42/License) | Offline CPU/DirectML startup, redistribution conditions/notices, model operator support |
 | Local database | Microsoft.Data.Sqlite 10.x plus bundled SQLite native library | Wrapper MIT; SQLite public domain. [Wrapper license](https://github.com/dotnet/efcore/blob/main/LICENSE.txt), [SQLite status](https://www.sqlite.org/copyright.html) | Actual transitive native bundle, transactions, backup/recovery |
@@ -993,7 +994,71 @@ Use the camera's negotiated orientation and mirror metadata consistently. Device
 
 OpenCvSharp supplies image analysis, not capture. Its [slim runtime](https://www.nuget.org/packages/OpenCvSharp4.runtime.win.slim) excludes several modules, so the initial native smoke test must explicitly exercise marker detection, homography, warping, image conversion, and image saving. If a required export is absent, use a verified fuller runtime and audit its dependencies. Do not call `VideoCapture` while assuming a slim package provides it.
 
-### 17.4 CPU/GPU inference
+#### Implemented capture and output policy, September 12, 2026
+
+The current direct WinRT implementation defaults to **4K preferred · best available**. It ranks
+native modes advertised across color Record/Preview sources by pixel area up to 3840 × 2160,
+then proximity to 15 fps within the supported 5–60 fps range. A rejected mode or reader startup
+falls through to another advertised candidate within the startup budget. Balanced mode caps the
+request at 1080p; Shared current mode never changes another camera owner's format. The reader
+does not request an artificial output size. Its actual delivered bitmap dimensions are reported
+separately from negotiated source metadata and subsequent enhancement dimensions.
+
+The processing target preserves aspect ratio inside 3840 × 2160. It does not stretch the 8:5 board:
+an exported board crop is 3456 × 2160. A lower-resolution source is explicitly identified as
+upscaled; interpolation cannot recover missing captured detail. Manual exports use deterministic
+enhancement. Checkpoint photos retain the unsharpened source-derived crop, its camera/crop
+identity and existing evidence checks. Changing the preview toggle does not change the evidence
+source or grant any route-verification authority.
+
+Read-only inspection of the connected Pixel's `Android Webcam` found a current 1920 × 1080,
+15 fps NV12 source and no advertised resolution above 1080p. This describes that UVC connection,
+not the phone's recording sensor. Vendors configure UVC advertised modes independently;
+[Android's webcam documentation](https://source.android.com/docs/core/camera/webcam?hl=en)
+describes those configurations. Native-4K physical input remains untested. Reproduce the format
+inventory using `tools/GoldenTicket.CameraDiagnostics`; it uses SharedReadOnly initialization,
+without setting formats or starting a frame reader. See [camera setup and evidence](docs/camera-processing.md).
+
+### 17.4 CPU/GPU processing and future model inference
+
+#### 17.4.1 Implemented preprocessing
+
+The current build includes actual hardware Direct3D 11 compute for image enhancement/resizing and
+a C# CPU implementation of the same operations. At launch, Auto tests local hardware adapters,
+preferring dedicated video memory and excluding software adapters. A small shader execution must
+match the CPU reference within the accepted two-level channel tolerance before GPU status is
+reported. The ten-second probe budget is cooperative; an individual operating-system driver call
+cannot be forcibly interrupted. GPU execution checks completion and falls back to CPU on supported
+initialization, execution or device-loss failures.
+
+**Auto · prefer GPU**, **CPU only**, and **GPU · CPU fallback** are explicit choices. **Apply
+processor** activates and locally persists the requested mode. The displayed CPU/chip or GPU/lightning
+badge reflects the actual resizing/enhancement backend, with adapter and fallback details in its
+tooltip. Rules, AI and the experimental piece comparison still use CPU. A GPU badge in this build
+therefore means real image-processing shader execution; it does not claim learned inference.
+
+The enhancement is deterministic and nongenerative: a small luminance adjustment smooths weak
+noise and sharpens stronger edges with a bounded correction, followed by bicubic resizing clamped
+to local source-channel limits to avoid ringing. Raw and enhanced previews can be compared through
+**Enhanced 4K preview**; analysis continues on the enhanced path. Frame work is serialized and
+superseded work is dropped. Camera epoch, crop, processor and reference revisions reject stale
+results; changes of crop/camera/processor clear the empty-board reference and candidate overlays.
+
+The experimental recognizer compares equally rectified images against an empty-board reference,
+uses color/shape components, and draws white rotated rectangles for train candidates and squares
+for player-marker candidates. It withholds results on stale frames, insufficient detail, motion
+or substantial image misalignment/change. Returning the camera to the prior view permits further
+comparisons; arbitrary-pose recovery with automatic board registration remains future work.
+This low-false-positive baseline has no measured physical accuracy guarantee. Printed routes,
+shadows, touching pieces, lighting changes, and references containing pieces can cause false
+candidates or missed pieces. It has no authoritative ownership output and cannot commit a move.
+
+Current setup, measured hardware observations, integrated-check status and remaining physical
+acceptance are maintained in [docs/camera-processing.md](docs/camera-processing.md). There is no
+shipped recognition model, Windows ML/ONNX runtime, download, subscription or server dependency in
+this slice. The following model-inference requirements remain a separate conditional M4/M5 step.
+
+#### 17.4.2 Planned learned-model inference
 
 Windows ML's self-contained deployment can include its runtime, ONNX Runtime, and DirectML beside the executable. Select that mode and include all required files. Do not add the aggregate Windows App SDK/runtime packages that switch this setup to an external framework dependency. Do not call execution-provider download/catalog acquisition APIs. [Windows ML deployment](https://learn.microsoft.com/en-us/windows/ai/new-windows-ml/distributing-your-app)
 
@@ -1636,7 +1701,7 @@ The game, physical/digital division, local operation, Windows host, iOS/Android 
 | Item | Why it remains open | Resolution point |
 |---|---|---|
 | Exact board geometry and ticket data audit | Box images identify the edition but are not production calibration data | M1 data manifest review |
-| Physical camera/mount reference configuration | Pixel USB webcam capture was tested at 1920×1080 in a temporary probe; the purchased NEEWER DS009 arm and existing upright still need a mounted stability/lighting test. Exact phone model and complete hardware report remain unrecorded | M0/M3 measured compatibility report |
+| Physical camera/mount reference configuration | Shared-read-only inspection confirms the connected Pixel UVC source currently advertises at most 1920×1080. The NEEWER DS009 arm/existing upright need mounted stability/lighting acceptance; native-4K physical input remains untested. Exact phone model is unrecorded | M0/M3 measured compatibility report and [current camera report](docs/camera-processing.md) |
 | Train appearance generalization | Training on the developer's pieces is permitted, but coverage is unmeasured | M4/M5 held-out evaluation |
 | Actual package/native compatibility | Version research is not a compiled integration test | M0 locked dependency report |
 | Local PWA installation and trust | Secure-context, CA provisioning, local naming, and offline home-screen behavior differ by platform | M0 iPhone/iPad and Android device evidence before declaring support |
@@ -1660,7 +1725,7 @@ The rights item does not prevent designing or testing the application. Use origi
 - Known recognition limits and manual recovery are explained in user-facing terms.
 - Documentation updates are included in the source revision used to build the release before any release tag/artifact is created.
 
-This document specifies the complete intended product. Implemented behavior and executed checks are recorded in the audit and README; the remaining sections must not be read as evidence that a feature exists. Model training, recognition accuracy, GPU compatibility, companion-device support, AI strength, and camera recovery timing remain unverified.
+This document specifies the complete intended product. Implemented behavior and executed checks are recorded in the audit, README and current camera report; the remaining sections must not be read as evidence that a feature exists. A preprocessing GPU probe establishes only that tested operation on that adapter. Model training, physical recognition accuracy, full GPU compatibility, companion-device support, AI strength, and camera recovery timing remain unverified.
 
 ### 24.4 Implementation audit and follow-up status, September 12, 2026
 
@@ -1720,13 +1785,22 @@ image. The rebuild page shows that image above the authoritative route list, and
 messages for missing photos and zero-route positions. A checkpoint with no attachment cannot
 recreate a historical board picture after the physical board has been cleared.
 
+The latest camera slice adds the native-resolution policy and CPU/GPU preprocessing in §17.3–17.4.1,
+including saved processor preference and source-versus-output reporting. Experimental empty-board
+outlines are available from a captured or loaded reference. Manual exports are enhanced 3456 × 2160
+board crops; checkpoint evidence remains unsharpened. Locked restore/build, 546 automated tests,
+50 synthetic WPF render cases and the dependency advisory audit passed. The implementation,
+bounded photo-pair/GPU evidence and remaining physical acceptance are described in
+[the current camera report](docs/camera-processing.md).
+
 Current deviations remain explicit: the PWA uses bundled plain JavaScript and two-second public
 snapshot polling instead of the specified TypeScript/WSS event cursor. Controller sessions are
 process-local and each page reload requires fresh laptop-approved pairing. The device uses a
 30-second reveal timeout and Hide, without hold-to-peek. Photos are operator-attested encrypted
 sidecars to `LogicalStateOnly` checkpoints, not `VerifiedBoardPhoto` evidence. Automatic train/
-landmark/gesture recognition, learned models, CPU/GPU inference selection and measured camera
-recovery are absent. The rebuild target remains a route list rather than a geometry-based diagram.
+landmark/gesture recognition, learned models, model-provider inference selection and measured full
+camera recovery remain absent. Experimental piece candidates and a return-to-reference image
+comparison do not satisfy those requirements. The rebuild target remains a route list rather than a geometry-based diagram.
 Snapshot rows hold validation metadata and state hashes rather than complete encrypted snapshots.
 Physical board-data review, narrated story/audio and installer acceptance remain outstanding.
 The normal developer build is framework-dependent; the offline packaging workflow produces a

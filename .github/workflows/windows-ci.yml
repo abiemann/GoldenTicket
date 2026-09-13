@@ -78,6 +78,11 @@ jobs:
       - name: Render Windows UI
         run: dotnet run --project tools/GoldenTicket.UiSmoke --configuration Release --no-build --no-restore -- artifacts/ci/desktop-ui
 
+      - name: Check local 4K processing and CPU fallback
+        run: |
+          dotnet run --project tools/GoldenTicket.VisionCheck --configuration Release --no-build --no-restore > artifacts/ci/frame-processing.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Exercise actual browser UI with Internet requests blocked
         run: node tests/GoldenTicket.Domain.Tests/CompanionHostBrowserUi.cjs
 
@@ -91,6 +96,7 @@ jobs:
             artifacts/ci/desktop-ui/*.json
             artifacts/ci/desktop-ui/*.log
             artifacts/ci/desktop-ui/*.png
+            artifacts/ci/frame-processing.json
             artifacts/ci/companion-browser/*.json
             artifacts/ci/companion-browser/*.png
           if-no-files-found: warn

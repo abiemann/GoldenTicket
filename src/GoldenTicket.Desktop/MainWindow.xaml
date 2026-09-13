@@ -37,13 +37,16 @@
             <DockPanel>
                 <TextBlock DockPanel.Dock="Left" Text="GoldenTicket" FontWeight="Bold" FontSize="22"
                            Foreground="{StaticResource Action.Primary}" VerticalAlignment="Center" Margin="0,0,24,0" />
-                <StackPanel Orientation="Horizontal">
+                <Button DockPanel.Dock="Right" Content="{Binding Camera.ComputeBadge}" ToolTip="{Binding Camera.ComputeExplanation}"
+                        Command="{Binding ShowCameraCommand}" Style="{StaticResource SecondaryButton}"
+                        AutomationProperties.Name="Image processor status. Open camera settings." />
+                <WrapPanel>
                     <Button Content="Game table" Command="{Binding ShowGameCommand}" Style="{StaticResource SecondaryButton}" />
                     <Button Content="Camera" Command="{Binding ShowCameraCommand}" Style="{StaticResource SecondaryButton}" />
                     <Button Content="Connect phone" Command="{Binding ShowConnectionCommand}" Style="{StaticResource SecondaryButton}"
                             Visibility="{Binding CanConnectPhone, Converter={StaticResource BoolToVisibility}}" />
                     <Button Content="Saved board photo" Command="{Binding ShowCheckpointPhotoCommand}" Style="{StaticResource SecondaryButton}" />
-                </StackPanel>
+                </WrapPanel>
             </DockPanel>
         </Border>
         <Grid Grid.Row="1">
