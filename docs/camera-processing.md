@@ -33,8 +33,12 @@ backend. Rules and game AI remain on the CPU.
 3. Check the reported camera dimensions and processing dimensions separately. A 1920 × 1080
    source enhanced to 3840 × 2160 is explicitly identified as upscaled. Larger output pixels do
    not add captured detail or make that source native 4K.
-4. Choose **Select four board corners** beside the zoom controls, then click the four board
-   corners in clockwise order, including the complete score track. The prompt above the image
+4. With the local [corner model](board-corners-ml.md) installed, ML selects the four outer board
+   corners once when the preview starts, with a small outward margin for score pieces near the
+   edge. The yellow outline shows the crop that will be saved. Check the complete score track
+   and all pieces are inside it; a margin limited by the camera edge needs a wider camera view.
+   **Detect board corners** retries; **Select four board corners** starts manual placement in
+   clockwise order. During manual placement the prompt above the image
    changes to **Click 1: top-left**, then advances with each corner. If selection cannot start,
    its error is shown there too. Drag
    any numbered corner before or after selection to adjust it. Keyboard users press **1–4** and
@@ -66,7 +70,7 @@ image processing or exported photo.
 
 ## Try piece outlines
 
-Select all four board corners, including the complete score track, and enable **Show piece
+Check all four board corners, including the complete score track, and enable **Show piece
 outlines**. Pieces may already be on the board. An empty-board reference is no longer required.
 The local model classifies the current image into trains and score markers; it does not classify
 their colors or assign route ownership. Train candidates appear as white rectangles, and score
@@ -84,8 +88,9 @@ frame/crop identity and your note. It is marked unreviewed. Saving does not trai
 model; examples are reviewed and corrected before a later training round.
 
 Crop, camera, processor and model changes clear old outlines and wait for a current result.
-Reposition the four corners if the camera moves. This experiment has no automatic board
-registration or hand detection. **Camera framing reference** remains a separate scene-safety
+If the camera moves, choose **Detect board corners** again or reposition the handles. Initial
+ML corner selection does not continuously track the board or detect hands.
+**Camera framing reference** remains a separate scene-safety
 check for checkpoint photos; it does not provide the ML detector's input reference.
 
 ## Output and evidence

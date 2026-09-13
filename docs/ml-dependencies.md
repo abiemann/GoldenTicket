@@ -41,5 +41,10 @@ A missing, changed or unloadable local GPU library selects CPU inference with a 
 library stays resident for the process lifetime while ONNX environments may still use it.
 The ML smoke tool records actual native module paths, versions and hashes alongside provider profiles.
 
+The [corner detector](board-corners-ml.md) uses the same pinned runtime and native loader. Its
+small convolutional heatmap network is trained locally from scratch; it does not add a pretrained
+third-party checkpoint or a second native runtime. Its training and deployment files are separate
+from the piece model, and stay under ignored `artifacts/board-corners/`.
+
 See [training setup](../tools/piece-training/README.md) and
 [the experiment record](piece-recognition-ml.md) for reproduction and current limits.

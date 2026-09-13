@@ -42,4 +42,11 @@
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup Condition="Exists('$(RepoRoot)artifacts/board-corners/model/board-corners.onnx')">
+    <Content Include="$(RepoRoot)artifacts/board-corners/model/board-corners.onnx" Link="models/board-corners/board-corners.onnx"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(RepoRoot)artifacts/board-corners/model/manifest.json" Link="models/board-corners/manifest.json"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

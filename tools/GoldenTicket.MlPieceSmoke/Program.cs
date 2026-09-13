@@ -7,11 +7,12 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using GoldenTicket.Vision;
 
-internal static class Program
+internal static partial class Program
 {
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.FirstOrDefault() == "--corners") return RunCorners(args[1..]);
         if (args.Length is < 3 or > 4 || args.Length == 4 && args[3] is not "--cpu" and not "--compare")
         {
             Console.Error.WriteLine("Usage: GoldenTicket.MlPieceSmoke <model-directory> <cropped-board.png> <output-directory> [--cpu|--compare]");

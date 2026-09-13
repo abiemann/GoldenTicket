@@ -11,7 +11,9 @@ The model supplies visual observations only: manual game verification remains in
    these into `models/pieces/` beside the executable. A fresh source checkout has no weights;
    it reports ML unavailable until an appropriate local model is installed. The application
    does not download models.
-2. Start the camera and choose **Select four board corners**. Include the complete score track.
+2. Start the camera. With the separate [corner model](board-corners-ml.md) installed, ML selects
+   the four outer corners automatically. Check the complete score track is inside the outline;
+   adjust the handles, retry **Detect board corners**, or choose **Select four board corners**.
    No empty-board or camera-framing reference is required for outlines. Clear hands and inspect
    the white train rectangles and score-marker squares.
 3. Read the separate **ML** backend/model status under **Piece outlines**. The top CPU/GPU badge

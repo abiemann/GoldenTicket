@@ -44,7 +44,7 @@ public sealed partial class CameraViewModel
     [ObservableProperty] private bool _useEnhancedPreview = true;
     [ObservableProperty] private bool _showPieceOutlines = true;
     [ObservableProperty] private bool _hasPieceReference;
-    [ObservableProperty] private string _detectionText = "Select the four board corners to see ML piece outlines.";
+    [ObservableProperty] private string _detectionText = "Waiting for a board crop before showing ML piece outlines.";
     [ObservableProperty] private IReadOnlyList<PreviewPieceOutline> _pieceOutlines = [];
     public bool CanApplyProcessor => !IsBusy && !IsProcessorBusy && !_disposed;
 
@@ -252,7 +252,7 @@ public sealed partial class CameraViewModel
                 DetectionText = IsModelBusy ? "Loading the local ML model; camera preview remains available." :
                     prepared.Error is { } error ? "ML detection unavailable: " + error :
                     !showOutlines ? "Piece outlines are off." : registration is null ?
-                    "Select the four board corners to see ML piece outlines." : _pieceModel is null ?
+                    "Detect or select the four board corners to see ML piece outlines." : _pieceModel is null ?
                     "ML model unavailable. See the model status below." : "Waiting for a fresh image for ML piece outlines.";
             }
         }

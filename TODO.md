@@ -150,6 +150,16 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   empty boards and lighting changes in held-out evaluation, all colors, crowding, motion and
   occlusion. Measure whole camera-to-outline latency and provider failures on more hardware.
   Color recognition, route assignment and automatic game verification remain separate work.
+- [x] **Experimental learned corner selection.** A separate local corner heatmap model selects
+  the outer board crop once per camera session, with an explicit retry and editable handles.
+  Manual edits, camera changes and stale frames invalidate pending results. Missing or uncertain
+  models preserve manual operation. See [model scope and validation](docs/board-corners-ml.md).
+- [x] **Outer crop margin.** ML corner proposals expand slightly outward before setting the
+  visible handles, preserving score pieces near the border. Padding stays inside the camera
+  image and contains the detected board. Retries do not accumulate it; manual edits remain exact.
+- [ ] **Real corner-model acceptance.** Collect uncropped, independently labeled camera sessions
+  with varied backgrounds, framing, lighting, perspective and occlusion. Synthetic projective
+  training and screenshot diagnostics do not establish real-camera corner accuracy or tracking.
 - [x] **Adjustable photo crop.** Drag any numbered corner during or after selection, or select it
   with 1–4 and nudge with arrows (Shift for larger steps). Invalid geometry keeps all handles editable
   and disables photo capture until corrected. Synthetic view-model and WPF checks cover editing,

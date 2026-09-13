@@ -31,11 +31,15 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     private bool _disposed;
 
     public CameraViewModel(string? processingSettingsPath = null, string? pieceModelDirectory = null,
-        Func<string, bool, IPieceModelDetector>? pieceModelFactory = null)
+        Func<string, bool, IPieceModelDetector>? pieceModelFactory = null,
+        string? boardCornerModelDirectory = null,
+        Func<string, bool, IBoardCornerDetector>? boardCornerModelFactory = null)
     {
         _processingSettingsPath = processingSettingsPath;
         _pieceModelDirectory = pieceModelDirectory ?? Path.Combine(AppContext.BaseDirectory, "models", "pieces");
         _pieceModelFactory = pieceModelFactory ?? ((directory, preferGpu) => LearnedPieceDetector.Load(directory, preferGpu));
+        _boardCornerModelDirectory = boardCornerModelDirectory ?? Path.Combine(AppContext.BaseDirectory, "models", "board-corners");
+        _boardCornerModelFactory = boardCornerModelFactory ?? ((directory, preferGpu) => LearnedBoardCornerDetector.Load(directory, preferGpu));
         Capture = new CameraCaptureService();
         _previewTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -86,6 +90,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(CanExportPhoto));
         OnPropertyChanged(nameof(CanCapturePhoto));
         OnPropertyChanged(nameof(CanApplyProcessor));
+        OnPropertyChanged(nameof(CanDetectBoardCorners));
     }
 
     [RelayCommand]
@@ -128,7 +133,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             FormatText = Capture.NegotiatedFormat?.ToString() ?? "Waiting for first frame";
             AvailableFormats.Clear();
             foreach (var format in Capture.AvailableFormats) AvailableFormats.Add(format.ToString());
-            Status = "Live preview. Select the four board corners to see ML piece outlines, then clear your hands.";
+            Status = "Live preview. Keep the whole board visible and clear your hands. ML will select its four corners.";
             _previewSequence = -1;
             _previewTimer.Start();
         }
@@ -149,6 +154,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     {
         if (IsBusy || _disposed) return;
         IsBusy = true;
+        CancelCornerDetection();
         try
         {
             _previewTimer.Stop();
@@ -211,6 +217,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
                 SceneReferenceState.InsufficientDetail => "Too little visible detail. Check focus, lighting, camera cover and board framing.",
                 _ => "Waiting for fresh camera frames."
             };
+            QueueAutomaticCornerDetection(frame);
             QueueFrameProcessing(frame);
         }
         catch (Exception ex)
@@ -252,6 +259,9 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         try
         {
             var frame = Capture.GetFreshFrame(TimeSpan.FromSeconds(1));
+            CancelCornerDetection();
+            _autoCornerCapture = (frame.Epoch, frame.Width, frame.Height);
+            CornerDetectionStatus = "Manual selection. Click the four outer corners, including the score track.";
             InvalidateCrop();
             _cornerCapture = (frame.Epoch, frame.Width, frame.Height);
             SelectedCorners.Clear();
@@ -265,6 +275,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     public void AddBoardCorner(NormalizedPoint point)
     {
         if (_disposed || IsBusy || !SelectingCorners || SelectedCorners.Count >= 4 || !IsFinite(point) || !CanEditCurrentCapture()) return;
+        CancelCornerDetection();
         InvalidateCrop();
         point = ClampPoint(point);
         SelectedCorners.Add(point);
@@ -277,6 +288,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         if (_disposed || IsBusy || index < 0 || index >= SelectedCorners.Count || !IsFinite(point) || !CanEditCurrentCapture()) return false;
         point = ClampPoint(point);
         if (SelectedCorners[index] == point) return false;
+        CancelCornerDetection();
         // Invalidate before notifying the view or encoding another photo with obsolete geometry.
         InvalidateCrop();
         SelectedCorners[index] = point;
@@ -333,7 +345,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             _registration = registration;
             BoardPreview = preview;
             HasBoardCrop = true;
-            CropText = "Board photo crop selected. Drag any numbered corner to adjust it. Check the preview includes every route and score edge. This is a manual crop, not verified board registration.";
+            CropText = "Board photo crop selected. Drag any numbered corner to adjust it. Check that every route and the complete score track are inside the outline.";
             Problem = null;
         }
         catch (Exception ex)
@@ -429,10 +441,13 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    private const string StartCropInstruction = "Choose Select four board corners, then click the top-left corner in the image. Include the complete score track.";
+    private const string StartCropInstruction = "ML will try to select the four outer board corners when the preview starts. Use Detect board corners to try again, or Select four board corners to place them yourself.";
 
     private void ClearRegistration()
     {
+        CancelCornerDetection();
+        _autoCornerCapture = null;
+        CornerDetectionStatus = "Waiting for a fresh camera image to locate the board.";
         InvalidateCrop();
         _cornerCapture = null;
         SelectingCorners = false;
@@ -463,7 +478,11 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         try { await Capture.DisposeAsync(); }
         finally
         {
-            try { await DisposeProcessingAsync(); }
+            try
+            {
+                await DisposeCornerDetectionAsync();
+                await DisposeProcessingAsync();
+            }
             finally { _lifetime.Dispose(); }
         }
     }

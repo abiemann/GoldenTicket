@@ -33,6 +33,11 @@ reference, using ONNX Runtime on DirectML or CPU. Photos, labels and experimenta
 The [validation record](docs/evidence/ml-preview-2026-09-13/validation.md) separates measured photo
 results from the live-camera and independent-session tests still needed.
 
+The [automatic corner experiment](docs/board-corners-ml.md) adds a separate learned model that
+selects the four outer board corners on camera startup. **Detect board corners** retries it;
+the numbered handles include a small outward crop margin to retain score pieces near the edge,
+and remain editable with the existing zoom and pan controls.
+
 ## What this build does
 
 This build implements the core game plus initial phone, camera and photo workflows from DESIGN
@@ -68,14 +73,15 @@ This build implements the core game plus initial phone, camera and photo workflo
 - A laptop-hosted HTTPS phone PWA with private human cards/tickets, digital draws and route/payment
   choices. One shared controller is paired and explicitly approved on the laptop. Private views
   expire and hide on handoff, backgrounding, or connection loss; the laptop verifies physical moves.
-- A camera screen with Windows video-only capture, resolution selection, preview, manual four-corner
-  board crop with draggable corners during and after selection, and conservative scene-reference
+- A camera screen with Windows video-only capture, resolution selection, preview, ML-assisted four-corner
+  board crop with manual selection and draggable corners, and conservative scene-reference
   change/recovery indication. Focus the preview and press **1–4**, then arrow keys, to adjust a
   corner; **Shift** makes larger steps. Invalid crops retain their handles for correction. It identifies camera
   changes and stale frames, but does not authorize route claims.
 - Camera preview **zoom up to 800%** with + / − or Ctrl + mouse wheel. Drag the zoomed image
-  to move around, or use **Fit** to see the whole image. Choose **Select four board corners**
-  beside the zoom controls first; the prompt above the image shows which corner to click next.
+  to move around, or use **Fit** to see the whole image. ML tries to select the outer corners
+  when capture starts; **Detect board corners** retries. For manual placement, choose
+  **Select four board corners** beside zoom; the prompt shows which corner to click next.
   A click places the next crop corner during selection;
   dragging a numbered handle adjusts that corner. **Pan**, Space + drag and middle-button drag
   are also available. Keys **1–4** bring a crop corner into view; arrow nudges
@@ -90,7 +96,7 @@ This build implements the core game plus initial phone, camera and photo workflo
   enhancement and resizing. ML inference reports its own backend under Piece outlines; game logic
   remains on CPU.
 - Experimental **Piece outlines** use the installed local ML model on the current board crop.
-  Select all four corners; no empty-board reference is needed. White rectangles show trains and
+  Check the four selected corners; no empty-board reference is needed. White rectangles show trains and
   white squares show score markers. Camera/crop/model changes and stale results clear outlines.
   **Reload ML model** reloads the local model; CPU only selects CPU for that reload, otherwise it
   prefers a hardware GPU. Missing/invalid models leave the preview and manual play available.

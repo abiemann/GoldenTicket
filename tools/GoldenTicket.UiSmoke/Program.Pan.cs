@@ -188,10 +188,24 @@ internal static partial class Program
             var area = (Grid)view.FindName("PreviewArea");
             var select = (Button)view.FindName("SelectCornersPreviewButton");
             var prompt = (TextBlock)view.FindName("CornerSelectionPrompt");
+            var detect = (Button)view.FindName("DetectCornersPreviewButton");
+            var cornerStatus = (TextBlock)view.FindName("CornerModelStatus");
             var problem = (TextBlock)view.FindName("PreviewProblemText");
             if (select is null || prompt is null || problem is null ||
                 !ReferenceEquals(select.Command, camera.BeginCornerSelectionCommand))
                 throw new InvalidOperationException("The preview toolbar must expose the bound corner-selection command, current prompt, and local error.");
+            if (detect is null || cornerStatus is null ||
+                !ReferenceEquals(detect.Command, camera.DetectBoardCornersCommand) ||
+                cornerStatus.Text != camera.CornerDetectionStatus)
+                throw new InvalidOperationException("The preview toolbar must expose the ML corner command and its separate bound status.");
+            camera.IsCornerDetectionBusy = true;
+            camera.CornerDetectionStatus = "Locating the four board corners with ML…";
+            await Arrange(view, 1280, 800);
+            if (detect.IsEnabled || !select.IsEnabled || cornerStatus.Text != camera.CornerDetectionStatus)
+                throw new InvalidOperationException("ML corner detection must disable repeat detection while leaving manual selection usable.");
+            camera.IsCornerDetectionBusy = false;
+            await Arrange(view, 1280, 800);
+            checks.Add("ML corner detection exposes a bound retry button and status; manual placement remains enabled during inference.");
             var invoke = new ButtonAutomationPeer(select).GetPattern(PatternInterface.Invoke) as IInvokeProvider
                 ?? throw new InvalidOperationException("The preview corner-selection button must support accessible invocation.");
             async Task SelectCorners()
