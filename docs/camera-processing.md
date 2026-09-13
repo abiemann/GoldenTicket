@@ -31,7 +31,10 @@ resizing/enhancement; rules, AI and the current piece comparison run on the CPU.
 3. Check the reported camera dimensions and processing dimensions separately. A 1920 × 1080
    source enhanced to 3840 × 2160 is explicitly identified as upscaled. Larger output pixels do
    not add captured detail or make that source native 4K.
-4. Select the four board corners in clockwise order, including the complete score track. Drag
+4. Choose **Select four board corners** beside the zoom controls, then click the four board
+   corners in clockwise order, including the complete score track. The prompt above the image
+   changes to **Click 1: top-left**, then advances with each corner. If selection cannot start,
+   its error is shown there too. Drag
    any numbered corner before or after selection to adjust it. Keyboard users press **1–4** and
    arrow keys; hold **Shift** for larger steps. Invalid corners remain editable.
 5. Use **Auto · prefer GPU**, **CPU only**, or **GPU · CPU fallback**, then **Apply processor** to
@@ -45,7 +48,9 @@ analysis continues on the enhanced path. **Show piece outlines** controls the ov
 
 Use **+** and **−**, or hold **Ctrl** while scrolling over the image, to zoom from **Fit (100%)**
 up to **800%**. Ctrl-scroll keeps the image point beneath the pointer in place. To move around a
-zoomed image, drag it with the left mouse button. You can do this while selecting crop corners:
+zoomed image, drag it with the left mouse button. First choose **Select four board corners** to
+enable corner placement; without selection, dragging still pans but clicks do not add corners.
+You can pan while selecting crop corners:
 a click places the next corner, while a drag moves the view. Dragging a numbered handle adjusts
 that corner. **Pan**, **Space** while dragging and the middle mouse button also let you pan.
 Select **Fit** or press **0** while the preview has focus to return to the whole image.

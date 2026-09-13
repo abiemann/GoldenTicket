@@ -67,7 +67,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string _status = "Camera stopped. Connect a USB camera, or enable USB webcam mode on your Pixel, then refresh the list.";
     [ObservableProperty] private string _formatText = "No camera format negotiated";
     [ObservableProperty] private string _comparisonText = "No scene reference. Route placement uses manual whole-board confirmation.";
-    [ObservableProperty] private string _cropText = "Select all four outer board corners to crop reference photos.";
+    [ObservableProperty] private string _cropText = StartCropInstruction;
     [ObservableProperty] private string? _problem;
     [ObservableProperty] private string? _lastExportPath;
     public bool CanExportPhoto => IsRunning && HasBoardCrop && !IsBusy && !_disposed;
@@ -426,6 +426,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    private const string StartCropInstruction = "Choose Select four board corners, then click the top-left corner in the image. Include the complete score track.";
+
     private void ClearRegistration()
     {
         InvalidateCrop();
@@ -435,7 +437,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         BoardPreview = null;
         _monitor.Clear();
         SafetyHeld = true;
-        CropText = "Select all four outer board corners to crop reference photos.";
+        CropText = StartCropInstruction;
         ComparisonText = "Camera registration and scene reference need to be set for this capture session.";
     }
 

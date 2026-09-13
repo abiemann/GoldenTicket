@@ -150,7 +150,9 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   with the overhead camera remains to be checked.
 - [x] **Precise crop preview zoom.** Fit through 800%, pointer-anchored Ctrl + wheel, + / −,
   and automatic left-drag panning on the zoomed image. A click places the next corner during
-  selection; dragging a numbered handle adjusts it. Pan/Space/middle-button dragging remain
+  explicit selection; the selection button, next-corner prompt and errors sit beside zoom so the
+  current mode remains visible while scrolled to the image. Dragging a numbered handle adjusts it.
+  Pan/Space/middle-button dragging remain
   available. Number keys reveal offscreen corners and zoom makes
   arrow nudges finer. Crop coordinates, references and export processing do not change with
   preview zoom. Synthetic WPF checks cover transforms, overlays, bounds, keyboard behavior,

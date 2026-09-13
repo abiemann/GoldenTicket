@@ -1,6 +1,8 @@
 using System.IO;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Input;
 using GoldenTicket.Desktop.ViewModels;
@@ -11,6 +13,7 @@ internal static partial class Program
 {
     private static async Task VerifyPreviewPanGestures()
     {
+        await VerifyCornerSelectionEntry();
         BindingLog.Context = "camera-pan-gestures";
         await using var camera = new CameraViewModel
         {
@@ -166,5 +169,131 @@ internal static partial class Program
             view.RaiseEvent(new RoutedEventArgs(FrameworkElement.UnloadedEvent));
             view.DataContext = null;
         }
+    }
+
+    private static async Task VerifyCornerSelectionEntry()
+    {
+        BindingLog.Context = "camera-corner-selection-entry";
+        await using var camera = new CameraViewModel
+        {
+            Preview = SyntheticCropFixture(), IsRunning = true
+        };
+        var view = new CameraView { DataContext = camera };
+        var checks = new List<string>();
+        try
+        {
+            await Arrange(view, 1280, 800);
+            view.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+            await Arrange(view, 1280, 800);
+            var area = (Grid)view.FindName("PreviewArea");
+            var select = (Button)view.FindName("SelectCornersPreviewButton");
+            var prompt = (TextBlock)view.FindName("CornerSelectionPrompt");
+            var problem = (TextBlock)view.FindName("PreviewProblemText");
+            if (select is null || prompt is null || problem is null ||
+                !ReferenceEquals(select.Command, camera.BeginCornerSelectionCommand))
+                throw new InvalidOperationException("The preview toolbar must expose the bound corner-selection command, current prompt, and local error.");
+            var invoke = new ButtonAutomationPeer(select).GetPattern(PatternInterface.Invoke) as IInvokeProvider
+                ?? throw new InvalidOperationException("The preview corner-selection button must support accessible invocation.");
+            async Task SelectCorners()
+            {
+                invoke.Invoke();
+                await Arrange(view, 1280, 800);
+            }
+            bool Begin(Point point) => (bool)(ZoomCall(view, "BeginBackgroundPress", point) ?? false);
+            bool Release(Point point) => (bool)(ZoomCall(view, "CompletePanGesture", point, MouseButton.Left) ?? false);
+            void VerifyLocalFailure(string state)
+            {
+                if (camera.SelectingCorners || camera.SelectedCorners.Count != 0 ||
+                    string.IsNullOrWhiteSpace(camera.Problem) || problem.Text != camera.Problem ||
+                    problem.Visibility != Visibility.Visible)
+                    throw new InvalidOperationException($"A {state} camera must keep selection inactive and show the command failure beside the preview.");
+            }
+
+            if (camera.SelectingCorners || camera.SelectedCorners.Count != 0 ||
+                Label(select) != "Select four board corners" || prompt.Text != camera.CropText ||
+                !prompt.Text.Contains("Select four board corners", StringComparison.Ordinal))
+                throw new InvalidOperationException("A new camera view must explicitly instruct the user to activate selection before placing corners.");
+            var center = new Point(area.ActualWidth / 2, area.ActualHeight / 2);
+            ZoomCall(view, "SetZoom", 2.44d, center);
+            await Arrange(view, 1280, 800);
+            if (!Begin(center) || !Release(center) || camera.SelectedCorners.Count != 0)
+                throw new InvalidOperationException("An inactive zoomed click must leave the crop unchanged while the visible prompt explains how to start selection.");
+            checks.Add("At 244% with no selection, a click leaves the crop unchanged and the preview toolbar explicitly names the selection button.");
+
+            // Seed owned frames only. No capture reader, native camera, or preview timer is started.
+            await SelectCorners();
+            VerifyLocalFailure("stopped");
+            checks.Add("The actual bound selection button reports a stopped capture beside the preview instead of silently ignoring it.");
+            var clock = new CornerSelectionFixtureClock();
+            var pixels = new byte[camera.Preview!.PixelWidth * camera.Preview.PixelHeight * 4];
+            camera.Preview.CopyPixels(pixels, camera.Preview.PixelWidth * 4, 0);
+            CameraFrame Frame(long sequence) => CameraFrame.CopyFromBgra32(camera.Preview.PixelWidth,
+                camera.Preview.PixelHeight, pixels, sequence: sequence, epoch: 74, clock: clock);
+            ZoomField(camera.Capture, "_epoch", 74L);
+            ZoomField(camera.Capture, "_latest", Frame(1));
+            ZoomField(camera.Capture, "_running", true);
+            clock.Advance(TimeSpan.FromSeconds(3));
+            await SelectCorners();
+            VerifyLocalFailure("stale");
+            checks.Add("A deterministically stale owned frame also leaves selection inactive and exposes the freshness error locally.");
+
+            ZoomField(camera.Capture, "_latest", Frame(2));
+            await SelectCorners();
+            if (!camera.SelectingCorners || camera.SelectedCorners.Count != 0 ||
+                !string.IsNullOrEmpty(problem.Text) || prompt.Text != camera.CropText ||
+                !prompt.Text.StartsWith("Click 1:", StringComparison.Ordinal) ||
+                Label(select) != "Restart corner selection")
+                throw new InvalidOperationException("With a fresh frame, invoking the actual selection button must arm placement, show Click 1, clear its error, and offer Restart.");
+            ZoomNear(ZoomField<double>(view, "_previewZoom"), 2.44,
+                "Starting corner selection must preserve the precise zoom already chosen by the user.");
+            var expected = ZoomMap(view, center, false)!.Value;
+            if (!Begin(center) || camera.SelectedCorners.Count != 0 || !Release(center) || camera.SelectedCorners.Count != 1)
+                throw new InvalidOperationException("After public-command activation, a zoomed background click must place exactly one corner on release.");
+            ZoomPoint(camera.SelectedCorners[0], expected, "Public-command placement must use the zoomed source coordinates.");
+            await Arrange(view, 1280, 800);
+            if (prompt.Text != camera.CropText || !prompt.Text.StartsWith("Click 2:", StringComparison.Ordinal))
+                throw new InvalidOperationException("The prompt beside the image must advance to the next corner immediately after placement.");
+            checks.Add("Fresh capture plus actual button invocation arms selection; a production zoom gesture places one correctly mapped corner and advances the nearby prompt to Click 2.");
+
+            var dragStart = center + new Vector(125, 40);
+            var dragDelta = new Vector(SystemParameters.MinimumHorizontalDragDistance + 30,
+                SystemParameters.MinimumVerticalDragDistance + 10);
+            var beforeDrag = ZoomRectangle(view);
+            if (!Begin(dragStart) ||
+                !(bool)(ZoomCall(view, "UpdatePanGesture", dragStart + dragDelta, MouseButtonState.Pressed, MouseButtonState.Released) ?? false) ||
+                !Release(dragStart + dragDelta) || camera.SelectedCorners.Count != 1)
+                throw new InvalidOperationException("Dragging after public-command selection must pan without adding the next crop corner.");
+            ZoomNear(ZoomRectangle(view).Left, beforeDrag.Left + dragDelta.X,
+                "Dragging during actual selection must still move the image.");
+            checks.Add("An ordinary drag in the same command-started selection pans without placing an extra corner.");
+
+            if (!Begin(dragStart)) throw new InvalidOperationException("The restart fixture must begin a pending background click.");
+            await SelectCorners();
+            if (!camera.SelectingCorners || camera.SelectedCorners.Count != 0 || Release(dragStart) ||
+                !prompt.Text.StartsWith("Click 1:", StringComparison.Ordinal))
+                throw new InvalidOperationException("The bound Restart action must clear existing corners, cancel a pending click, and return to the first-corner prompt.");
+            checks.Add("Invoking Restart clears prior corners, cancels a pending click, and restores the first-corner prompt without losing zoom.");
+
+            Results.Add(new { View = "camera-corner-selection-entry-synthetic", width = 1280, height = 800, Checks = checks.Count, Passed = true });
+            await File.WriteAllTextAsync(Path.Combine(Output, "camera-corner-selection-entry.json"), JsonSerializer.Serialize(new
+            {
+                Fixture = "Detached WPF view, accessible invocation of its actual bound button, owned synthetic capture frames, and production zoom gesture helpers. Native pointer delivery and mouse capture are not exercised.",
+                Checks = checks, Passed = true
+            }, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine("Camera corner selection entry: visible activation, stopped/stale errors, fresh command activation, deferred zoom click, pan, and restart passed.");
+        }
+        finally
+        {
+            view.RaiseEvent(new RoutedEventArgs(FrameworkElement.UnloadedEvent));
+            view.DataContext = null;
+        }
+    }
+
+    private sealed class CornerSelectionFixtureClock : TimeProvider
+    {
+        private long _timestamp;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => _timestamp;
+        public void Advance(TimeSpan elapsed) => _timestamp += elapsed.Ticks;
     }
 }

@@ -1775,6 +1775,10 @@ The camera preview supports view-only zoom from Fit (100%) through 800%, with + 
 Ctrl + mouse wheel anchored at the pointer, and 0 or Fit to reset. An ordinary left drag on the
 zoomed image moves the view within bounded limits, including while selecting crop corners.
 A click places the next corner during selection; dragging a numbered handle edits that corner.
+The selection button is available beside the zoom controls, with the current corner prompt and
+camera error immediately above the image. Before selection starts, the prompt names the required
+button; active selection changes its label to Restart corner selection. Plain background clicks
+outside selection do not create or reset a crop.
 Background input distinguishes a click from a drag before placing a corner, so panning does not
 add a corner. Pan mode, Space + left drag and middle-button drag remain available for explicit
 panning. The viewport clips the

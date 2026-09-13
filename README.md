@@ -73,7 +73,9 @@ This build implements the core game plus initial phone, camera and photo workflo
   corner; **Shift** makes larger steps. Invalid crops retain their handles for correction. It identifies camera
   changes and stale frames, but does not authorize route claims.
 - Camera preview **zoom up to 800%** with + / − or Ctrl + mouse wheel. Drag the zoomed image
-  to move around, or use **Fit** to see the whole image. A click places the next crop corner;
+  to move around, or use **Fit** to see the whole image. Choose **Select four board corners**
+  beside the zoom controls first; the prompt above the image shows which corner to click next.
+  A click places the next crop corner during selection;
   dragging a numbered handle adjusts that corner. **Pan**, Space + drag and middle-button drag
   are also available. Keys **1–4** bring a crop corner into view; arrow nudges
   become finer when zoomed. Zooming leaves the crop, camera references and exported image unchanged.
