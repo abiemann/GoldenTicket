@@ -45,9 +45,10 @@ analysis continues on the enhanced path. **Show piece outlines** controls the ov
 
 Use **+** and **−**, or hold **Ctrl** while scrolling over the image, to zoom from **Fit (100%)**
 up to **800%**. Ctrl-scroll keeps the image point beneath the pointer in place. To move around a
-zoomed image, enable **Pan** and drag with the left mouse button, hold **Space** while dragging,
-or drag with the middle mouse button. Select **Fit** or press **0** while the preview has focus
-to return to the whole image.
+zoomed image, drag it with the left mouse button. You can do this while selecting crop corners:
+a click places the next corner, while a drag moves the view. Dragging a numbered handle adjusts
+that corner. **Pan**, **Space** while dragging and the middle mouse button also let you pan.
+Select **Fit** or press **0** while the preview has focus to return to the whole image.
 
 Numbered corner handles keep the same screen size and remain adjustable before or after selecting
 the crop. With the preview focused, press **1–4** to select a corner and bring it into view when

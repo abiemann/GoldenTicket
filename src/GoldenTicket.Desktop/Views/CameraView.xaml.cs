@@ -56,6 +56,7 @@ public partial class CameraView : UserControl
 
     private void CornersChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        EndPan();
         if (e.Action != NotifyCollectionChangedAction.Replace)
         {
             EndDrag();
@@ -70,6 +71,7 @@ public partial class CameraView : UserControl
     {
         if (e.PropertyName == nameof(CameraViewModel.SelectingCorners))
         {
+            EndPan();
             _showKeyboardPoint = false;
             ResetKeyboardPoint();
             if (_subscribed?.SelectingCorners == true)
@@ -87,6 +89,7 @@ public partial class CameraView : UserControl
             UpdateViewport();
         }
         else if (e.PropertyName == nameof(CameraViewModel.HasBoardCrop)) DrawCorners();
+        else if (e.PropertyName == nameof(CameraViewModel.IsBusy) && _subscribed?.IsBusy == true) EndPan();
         else if (e.PropertyName is nameof(CameraViewModel.PieceOutlines) or nameof(CameraViewModel.ShowPieceOutlines)) DrawDetections();
     }
 
@@ -97,7 +100,12 @@ public partial class CameraView : UserControl
             0 => new(.05, .05), 1 => new(.95, .05), 2 => new(.95, .95), _ => new(.05, .95)
         };
     }
-    private void PreviewArea_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateViewport();
+    private void PreviewArea_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        EndPan();
+        EndDrag();
+        UpdateViewport();
+    }
 
     private Rect FitImageRectangle()
     {
@@ -122,7 +130,7 @@ public partial class CameraView : UserControl
     private void PreviewImage_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         HideKeyboardPoint();
-        if (_panning || PanRequested) return;
+        if (_panning || _backgroundPress is not null || PanRequested) return;
         if (DataContext is not CameraViewModel { IsBusy: false } vm) return;
         var position = e.GetPosition(PreviewArea);
         // Image is not a Control, so clicking plain image pixels does not focus it
@@ -139,6 +147,12 @@ public partial class CameraView : UserControl
             // Capture the viewport, which stays in place while the image is zoomed or panned.
             if (PreviewArea.CaptureMouse()) _draggedCorner = corner;
             DrawCorners();
+        }
+        else if (BeginBackgroundPress(position))
+        {
+            // Capture only after focus is established. Failure cancels the gesture;
+            // it must never fall through and accidentally place a crop corner.
+            if (!PreviewArea.CaptureMouse()) EndPan();
         }
         else if (vm.SelectingCorners && PointInImage(position, false) is { } point)
         {
@@ -183,15 +197,9 @@ public partial class CameraView : UserControl
     {
         HideKeyboardPoint();
         var position = e.GetPosition(PreviewArea);
-        if (_panning)
+        if (UpdatePanGesture(position, e.LeftButton, e.MiddleButton))
         {
-            if ((_panButton == MouseButton.Middle ? e.MiddleButton : e.LeftButton) != MouseButtonState.Pressed) EndPan();
-            else
-            {
-                PanBy(position - _lastPanPosition);
-                _lastPanPosition = position;
-                e.Handled = true;
-            }
+            e.Handled = true;
             UpdatePreviewCursor();
             return;
         }
@@ -210,7 +218,8 @@ public partial class CameraView : UserControl
     private Cursor CursorAt(Point position) =>
         _panning || (PanRequested && _previewZoom > 1) ? Cursors.Hand :
         _draggedCorner >= 0 || HitCorner(position) >= 0 ? Cursors.SizeAll :
-        _subscribed?.SelectingCorners == true && PointInImage(position, false) is not null ? Cursors.Cross : Cursors.Arrow;
+        _subscribed?.SelectingCorners == true && PointInImage(position, false) is not null ? Cursors.Cross :
+        _previewZoom > 1 && PointInImage(position, false) is not null ? Cursors.Hand : Cursors.Arrow;
 
     private void MoveDraggedCorner(Point position)
     {
@@ -240,7 +249,7 @@ public partial class CameraView : UserControl
     {
         _draggedCorner = -1;
         if (PreviewArea is null) return;
-        if (!_panning && PreviewArea.IsMouseCaptured) PreviewArea.ReleaseMouseCapture();
+        if (!_panning && _backgroundPress is null && PreviewArea.IsMouseCaptured) PreviewArea.ReleaseMouseCapture();
         UpdatePreviewCursor();
     }
 

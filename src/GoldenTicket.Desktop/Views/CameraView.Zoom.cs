@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Vision;
 
 namespace GoldenTicket.Desktop.Views;
@@ -18,6 +19,9 @@ public partial class CameraView
     private bool _spacePanning;
     private MouseButton _panButton;
     private Point _lastPanPosition;
+    private Point? _backgroundPress;
+    private NormalizedPoint? _backgroundClick;
+    private bool _panUsesSpace;
     private bool PanRequested => _spacePanning || PanPreviewToggle?.IsChecked == true;
 
     private void PreviewImage_TargetUpdated(object sender, DataTransferEventArgs e)
@@ -152,6 +156,7 @@ public partial class CameraView
     {
         if (_previewZoom <= 1 || ImageRectangle().IsEmpty ||
             !(e.ChangedButton == MouseButton.Middle || (e.ChangedButton == MouseButton.Left && PanRequested))) return;
+        EndPan();
         EndDrag();
         PreviewImage.Focus();
         HideKeyboardPoint();
@@ -159,6 +164,7 @@ public partial class CameraView
         {
             _panning = true;
             _panButton = e.ChangedButton;
+            _panUsesSpace = _spacePanning && PanPreviewToggle.IsChecked != true;
             _lastPanPosition = e.GetPosition(PreviewArea);
         }
         UpdatePreviewCursor();
@@ -168,15 +174,71 @@ public partial class CameraView
 
     private void PreviewArea_MouseUp(object sender, MouseButtonEventArgs e)
     {
-        if (!_panning || e.ChangedButton != _panButton) return;
-        PanBy(e.GetPosition(PreviewArea) - _lastPanPosition);
+        if (CompletePanGesture(e.GetPosition(PreviewArea), e.ChangedButton)) e.Handled = true;
+    }
+
+    // Delay a zoomed background click until release. Crossing the system drag
+    // threshold turns it into a pan, including while the next corner is being placed.
+    private bool BeginBackgroundPress(Point position)
+    {
+        if (_previewZoom <= 1 || PanRequested || _panning || _draggedCorner >= 0 ||
+            DataContext is not CameraViewModel { IsBusy: false, Preview: not null } vm ||
+            HitCorner(position) >= 0 || PointInImage(position, false) is not { } point) return false;
+        _backgroundPress = position;
+        _backgroundClick = vm.SelectingCorners ? point : null;
+        return true;
+    }
+
+    private bool UpdatePanGesture(Point position, MouseButtonState left, MouseButtonState middle)
+    {
+        if (_backgroundPress is { } start)
+        {
+            if (left != MouseButtonState.Pressed) { EndPan(); return true; }
+            var movement = position - start;
+            if (Math.Abs(movement.X) < SystemParameters.MinimumHorizontalDragDistance &&
+                Math.Abs(movement.Y) < SystemParameters.MinimumVerticalDragDistance) return true;
+            _backgroundPress = null;
+            _backgroundClick = null;
+            _panning = true;
+            _panButton = MouseButton.Left;
+            _panUsesSpace = false;
+            _lastPanPosition = start;
+        }
+        if (!_panning) return false;
+        if ((_panButton == MouseButton.Middle ? middle : left) != MouseButtonState.Pressed) EndPan();
+        else
+        {
+            PanBy(position - _lastPanPosition);
+            _lastPanPosition = position;
+        }
+        return true;
+    }
+
+    private bool CompletePanGesture(Point position, MouseButton button)
+    {
+        if (_backgroundPress is not null)
+        {
+            if (button != MouseButton.Left) return false;
+            // The release can arrive without an intermediate mouse-move event.
+            UpdatePanGesture(position, MouseButtonState.Pressed, MouseButtonState.Released);
+            var click = _backgroundClick;
+            EndPan();
+            if (click is { } point && DataContext is CameraViewModel { IsBusy: false, SelectingCorners: true, Preview: not null } vm)
+                vm.AddBoardCorner(point);
+            return true;
+        }
+        if (!_panning || button != _panButton) return false;
+        PanBy(position - _lastPanPosition);
         EndPan();
-        e.Handled = true;
+        return true;
     }
 
     private void EndPan()
     {
         _panning = false;
+        _backgroundPress = null;
+        _backgroundClick = null;
+        _panUsesSpace = false;
         if (PreviewArea is null) return;
         if (_draggedCorner < 0 && PreviewArea.IsMouseCaptured) PreviewArea.ReleaseMouseCapture();
         UpdatePreviewCursor();
@@ -199,10 +261,10 @@ public partial class CameraView
             case Key.Subtract: case Key.OemMinus: SetZoom(_previewZoom / 1.25, ZoomAnchor()); break;
             case Key.D0: case Key.NumPad0: ResetZoom(); break;
             case Key.Space:
-                if (_previewZoom > 1) { EndDrag(); _spacePanning = true; UpdatePreviewCursor(); }
+                if (_previewZoom > 1 && !_spacePanning) { EndPan(); EndDrag(); _spacePanning = true; UpdatePreviewCursor(); }
                 break;
             case Key.Escape:
-                if (!_panning && !PanRequested && _draggedCorner < 0) return false;
+                if (!_panning && _backgroundPress is null && !PanRequested && _draggedCorner < 0) return false;
                 _spacePanning = false;
                 EndPan();
                 EndDrag();
@@ -218,7 +280,7 @@ public partial class CameraView
     {
         if (e.Key != Key.Space) return;
         _spacePanning = false;
-        if (_panning && _panButton == MouseButton.Left && PanPreviewToggle.IsChecked != true) EndPan();
+        if (_panning && _panUsesSpace && _panButton == MouseButton.Left && PanPreviewToggle.IsChecked != true) EndPan();
         UpdatePreviewCursor();
         e.Handled = true;
     }

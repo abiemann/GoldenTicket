@@ -147,9 +147,12 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   crop invalidation, image-edge clamping and camera-session changes; physical mouse-drag acceptance
   with the overhead camera remains to be checked.
 - [x] **Precise crop preview zoom.** Fit through 800%, pointer-anchored Ctrl + wheel, + / −,
-  and Pan/Space/middle-button dragging. Number keys reveal offscreen corners and zoom makes
+  and automatic left-drag panning on the zoomed image. A click places the next corner during
+  selection; dragging a numbered handle adjusts it. Pan/Space/middle-button dragging remain
+  available. Number keys reveal offscreen corners and zoom makes
   arrow nudges finer. Crop coordinates, references and export processing do not change with
-  preview zoom. Synthetic WPF checks cover transforms, overlays, bounds and keyboard behavior;
+  preview zoom. Synthetic WPF checks cover transforms, overlays, bounds, keyboard behavior,
+  click-versus-drag handling and cancelled gestures;
   real mouse/trackpad and overhead-camera acceptance remains to be checked.
 - [x] **Visible photo capture and rebuild status.** Distinguish a digital save, a live unsaved crop
   and an attached photo. Explain disabled capture prerequisites, offer Camera setup from the photo

@@ -72,8 +72,10 @@ This build implements the core game plus initial phone, camera and photo workflo
   change/recovery indication. Focus the preview and press **1–4**, then arrow keys, to adjust a
   corner; **Shift** makes larger steps. Invalid crops retain their handles for correction. It identifies camera
   changes and stale frames, but does not authorize route claims.
-- Camera preview **zoom up to 800%** with + / − or Ctrl + mouse wheel, **Pan** and drag,
-  and **Fit** to see the whole image. Keys **1–4** bring a crop corner into view; arrow nudges
+- Camera preview **zoom up to 800%** with + / − or Ctrl + mouse wheel. Drag the zoomed image
+  to move around, or use **Fit** to see the whole image. A click places the next crop corner;
+  dragging a numbered handle adjusts that corner. **Pan**, Space + drag and middle-button drag
+  are also available. Keys **1–4** bring a crop corner into view; arrow nudges
   become finer when zoomed. Zooming leaves the crop, camera references and exported image unchanged.
 - **4K preferred · best available** capture selects the largest usable advertised mode up to
   3840 × 2160, falling back to a smaller native mode when needed. The UI distinguishes delivered

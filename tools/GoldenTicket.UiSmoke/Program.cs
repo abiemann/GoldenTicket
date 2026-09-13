@@ -72,6 +72,7 @@ internal static partial class Program
                 await VerifyKeyboardCornerHandler();
                 await VerifyProcessingPresentation();
                 await VerifyPreviewZoom();
+                await VerifyPreviewPanGestures();
                 await RenderSizes("connection-off", () => new ConnectionView { DataContext = model.Connection });
                 await model.ShowCheckpointPhotoCommand.ExecuteAsync(null);
                 await RenderSizes("checkpoint-photo", () => new CheckpointPhotoView { DataContext = model.CheckpointPhoto });

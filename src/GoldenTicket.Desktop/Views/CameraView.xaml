@@ -63,10 +63,10 @@
                             AutomationProperties.Name="Fit whole camera image" ToolTip="Show the whole camera image (0)" />
                     <CheckBox x:Name="PanPreviewToggle" Content="Pan" VerticalAlignment="Center" Margin="12,0"
                               Checked="PanPreview_Changed" Unchecked="PanPreview_Changed"
-                              ToolTip="Drag the zoomed image without moving crop corners" />
+                              ToolTip="Always pan when dragging, including over numbered crop corners" />
                 </WrapPanel>
                 <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8" TextWrapping="Wrap"
-                           Text="Zoom: + / − or Ctrl + mouse wheel. Move around: Pan and drag, hold Space and drag, or use the middle mouse button. Fit shows the whole image. Press 1–4 to find a crop corner; arrows adjust it more finely as you zoom in." />
+                           Text="When zoomed in, drag the image to move around. Click to place a corner; drag a numbered handle to adjust it. Pan mode, Space + drag, or the middle mouse button can pan over handles too. Zoom: + / − or Ctrl + mouse wheel. Fit shows the whole image. Press 1–4 to find a corner." />
                 <Border Background="#251A16" CornerRadius="8" Padding="8" Height="465">
                 <Grid x:Name="PreviewArea" SizeChanged="PreviewArea_SizeChanged" ClipToBounds="True" Background="Transparent"
                       PreviewMouseWheel="PreviewArea_MouseWheel"
@@ -79,7 +79,7 @@
                            Focusable="True" KeyboardNavigation.IsTabStop="True"
                            KeyDown="PreviewImage_KeyDown"
                            KeyUp="PreviewImage_KeyUp" LostKeyboardFocus="PreviewImage_LostKeyboardFocus"
-                           AutomationProperties.Name="Live overhead camera preview. Zoom with plus or minus, or Ctrl and mouse wheel. Zero fits the whole image. Hold Space and drag to pan. Drag numbered corners at any time. Press 1 to 4 to find a corner, then arrow keys to adjust it. Hold Shift for larger steps. During selection, Enter leaves corner editing; use arrows and Enter to place the next corner." />
+                           AutomationProperties.Name="Live overhead camera preview. Zoom with plus or minus, or Ctrl and mouse wheel. Zero fits the whole image. When zoomed in, drag the image to pan. Click to place the next corner. Drag numbered corners to adjust them, or hold Space and drag to pan over them. Press 1 to 4 to find a corner, then arrow keys to adjust it. Hold Shift for larger steps. During selection, Enter leaves corner editing; use arrows and Enter to place the next corner." />
                     <TextBlock Text="Camera preview is off" FontSize="22" Foreground="{StaticResource Text.OnDark}"
                                HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"
                                Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}" />

@@ -1772,8 +1772,12 @@ Every geometry edit invalidates previous photo geometry before notifying the vie
 or frame-size change clears the selection; crop editing alone does not reset the scene reference.
 
 The camera preview supports view-only zoom from Fit (100%) through 800%, with + / − buttons,
-Ctrl + mouse wheel anchored at the pointer, and 0 or Fit to reset. Pan mode, Space + left drag,
-or middle-button drag moves the enlarged image within bounded limits. The viewport clips the
+Ctrl + mouse wheel anchored at the pointer, and 0 or Fit to reset. An ordinary left drag on the
+zoomed image moves the view within bounded limits, including while selecting crop corners.
+A click places the next corner during selection; dragging a numbered handle edits that corner.
+Background input distinguishes a click from a drag before placing a corner, so panning does not
+add a corner. Pan mode, Space + left drag and middle-button drag remain available for explicit
+panning. The viewport clips the
 image and overlays together; corner handles retain their screen size. Normalized corner input
 and detection overlays use the same displayed-image transform. Keys 1–4 reveal the chosen
 corner when it is offscreen, and arrow movement scales inversely with zoom for finer adjustment.
