@@ -87,8 +87,10 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
 - [x] **CPU/GPU preprocessing implementation.** Real Direct3D 11 compute performs bounded
   enhancement and aspect-preserving resizing, with Auto/CPU/GPU choices, local preference
   persistence, validated hardware activation, effective status and CPU fallback. No recognition
-  model is bundled. Locked restore/build, 546 tests and 50 synthetic WPF render cases passed,
+  model is bundled. Local build, 558 tests and 53 synthetic WPF render cases passed,
   with no binding warnings/errors; see [camera processing](docs/camera-processing.md).
+  Software-adapter checks now cover missing flags on Microsoft Basic Render Driver. Controlled
+  frame-clock tests retain the two-second stale-evidence limit without depending on CI speed.
 - [x] **Experimental empty-board piece outlines.** Capture or load an empty-board crop, compare
   subsequent frames, and draw white rotated train-candidate rectangles and score-marker squares.
   Camera/crop/processor changes invalidate references and stale work. Motion, insufficient detail

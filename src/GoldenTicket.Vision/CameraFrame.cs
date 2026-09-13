@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
 
@@ -10,6 +9,7 @@ public sealed class CameraFrame
     public const int MaximumWidth = 3840;
     public const int MaximumHeight = 2160;
     private readonly byte[] _pixels;
+    private TimeProvider Clock { get; init; } = TimeProvider.System;
 
     private CameraFrame(int width, int height, byte[] pixels, long sequence, long epoch,
         DateTimeOffset capturedAt, long monotonicTimestamp)
@@ -32,19 +32,26 @@ public sealed class CameraFrame
     public DateTimeOffset CapturedAt { get; }
     public long MonotonicTimestamp { get; }
     public ReadOnlyMemory<byte> Bgra32 => _pixels;
-    public TimeSpan Age => Stopwatch.GetElapsedTime(MonotonicTimestamp);
+    public TimeSpan Age => Clock.GetElapsedTime(MonotonicTimestamp);
+    internal TimeSpan CaptureElapsed => Clock.GetElapsedTime(0, MonotonicTimestamp);
 
     public static CameraFrame CopyFromBgra32(int width, int height, ReadOnlySpan<byte> pixels,
-        long sequence = 1, long epoch = 1, DateTimeOffset? capturedAt = null)
+        long sequence = 1, long epoch = 1, DateTimeOffset? capturedAt = null, TimeProvider? clock = null)
     {
         ValidateSize(width, height, pixels.Length);
+        clock ??= TimeProvider.System;
         return new(width, height, pixels.ToArray(), sequence, epoch,
-            capturedAt ?? DateTimeOffset.UtcNow, Stopwatch.GetTimestamp());
+            capturedAt ?? clock.GetUtcNow(), clock.GetTimestamp()) { Clock = clock };
     }
 
     internal static CameraFrame TakeOwnership(int width, int height, byte[] pixels,
         long sequence, long epoch, DateTimeOffset capturedAt, long monotonicTimestamp) =>
         new(width, height, pixels, sequence, epoch, capturedAt, monotonicTimestamp);
+
+    // Enhancement and rectification own their output buffer, but must retain the
+    // source clock and timestamp: processing must never make old evidence fresh.
+    internal CameraFrame Derive(int width, int height, byte[] pixels) =>
+        new(width, height, pixels, Sequence, Epoch, CapturedAt, MonotonicTimestamp) { Clock = Clock };
 
     internal static void ValidateSize(int width, int height, int bytes)
     {

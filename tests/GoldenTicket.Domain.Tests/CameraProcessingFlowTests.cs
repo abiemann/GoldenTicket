@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Reflection;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Vision;
@@ -104,6 +103,9 @@ public sealed class CameraProcessingFlowTests
     private sealed class Fixture : IAsyncDisposable
     {
         private long _sequence;
+        // These are flow/identity checks, not hosted-runner speed benchmarks.
+        // Advance time explicitly for stale evidence; retain the real CPU pipeline.
+        private readonly ManualFrameTimeProvider _clock = new();
         public CameraViewModel Camera { get; } = new();
         public CameraFrame Frame => Camera.Capture.LatestFrame!;
         public Fixture()
@@ -136,10 +138,8 @@ public sealed class CameraProcessingFlowTests
                 bytes[i] = bytes[i + 1] = bytes[i + 2] = value;
                 bytes[i + 3] = 255;
             }
-            var frame = CameraFrame.CopyFromBgra32(width, height, bytes, ++_sequence, 1);
-            if (stale)
-                frame = (CameraFrame)typeof(CameraFrame).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single()
-                    .Invoke([width,height,bytes,_sequence,1L,DateTimeOffset.UtcNow.AddSeconds(-5),Stopwatch.GetTimestamp() - 5 * Stopwatch.Frequency]);
+            var frame = CameraFrame.CopyFromBgra32(width, height, bytes, ++_sequence, 1, clock: _clock);
+            if (stale) _clock.Advance(TimeSpan.FromSeconds(5));
             Set("_epoch", 1L);
             Set("_running", true);
             Set("_latest", frame);

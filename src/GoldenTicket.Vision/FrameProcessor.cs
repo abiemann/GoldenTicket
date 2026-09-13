@@ -114,8 +114,7 @@ public sealed class FrameProcessor : IAsyncDisposable
         }
         else output = FrameProcessingKernel.Process(frame, width, height, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        var result = CameraFrame.TakeOwnership(width, height, output, frame.Sequence, frame.Epoch,
-            frame.CapturedAt, frame.MonotonicTimestamp);
+        var result = frame.Derive(width, height, output);
         return new(result, Status, Stopwatch.GetElapsedTime(started), frame.Width, frame.Height);
     }
 

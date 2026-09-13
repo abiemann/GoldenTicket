@@ -1,4 +1,5 @@
 using GoldenTicket.Vision;
+using Vortice.DXGI;
 
 namespace GoldenTicket.Domain.Tests;
 
@@ -121,6 +122,29 @@ public sealed class FrameProcessorTests
         var cpu = await processor.InitializeAsync(FrameComputeMode.Cpu, Token);
         Assert.Equal(FrameProcessingBackend.Cpu, cpu.Backend);
         Assert.Null(cpu.FallbackReason);
+    }
+
+    [Theory]
+    [InlineData(0x1414, 0x008c, AdapterFlags.None, "Localized software adapter", true)]
+    [InlineData(0, 0, AdapterFlags.None, "Microsoft Basic Render Driver", true)]
+    [InlineData(0, 0, AdapterFlags.None, " microsoft basic render driver\0", true)]
+    [InlineData(0x10de, 1, AdapterFlags.Software, "Software adapter", true)]
+    [InlineData(0x1414, 0x008c, AdapterFlags.Software, "Microsoft Basic Render Driver", true)]
+    [InlineData(0x1414, 0x0001, AdapterFlags.None, "Microsoft hardware adapter", false)]
+    [InlineData(0x10de, 0x008c, AdapterFlags.None, "Hardware adapter", false)]
+    [InlineData(0x8086, 1, AdapterFlags.None, "Integrated graphics", false)]
+    [InlineData(0x10de, 1, AdapterFlags.None, "Microsoft Basic Display Adapter", false)]
+    public void Software_adapter_detection_rejects_missing_flag_fallbacks_without_blocking_hardware(
+        int vendor, int device, AdapterFlags flags, string description, bool expected)
+    {
+        var adapter = new AdapterDescription1
+        {
+            VendorId = (uint)vendor,
+            DeviceId = (uint)device,
+            Flags = flags,
+            Description = description
+        };
+        Assert.Equal(expected, D3D11FrameBackend.IsSoftwareAdapter(adapter));
     }
 
     [Fact]

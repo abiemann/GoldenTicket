@@ -114,6 +114,6 @@ public sealed class BoardRegistration
             }
             output[destination + 3] = 255;
         }
-        return CameraFrame.TakeOwnership(width, height, output, frame.Sequence, frame.Epoch, frame.CapturedAt, frame.MonotonicTimestamp);
+        return frame.Derive(width, height, output);
     }
 }

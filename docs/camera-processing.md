@@ -120,7 +120,9 @@ resizing clamps interpolation to local source-channel bounds to limit ringing. T
 generative super-resolution, learned sharpening model or reconstruction of missing detail.
 
 Auto enumerates local hardware adapters, prefers larger dedicated video memory, and excludes
-software adapters. A synthetic 17 × 11 to 31 × 19 shader execution must agree with the CPU
+software adapters. Microsoft Basic Render Driver is excluded by its software flag, documented
+adapter identity or driver name, including on hosted Windows machines with incomplete flags.
+A synthetic 17 × 11 to 31 × 19 shader execution must agree with the CPU
 reference within two levels per channel before GPU status is enabled. Probe work has a ten-second
 cooperative budget; GPU readback waits are bounded at three seconds. An individual native driver
 call cannot be forcibly interrupted. Expected GPU initialization/execution failures fall back to
@@ -131,6 +133,11 @@ epoch, age, crop, processor and reference revisions before displaying results. A
 invalidates the detector reference. Published outlines expire after two seconds independently of
 whether the camera continues supplying fresh frames, so stalled processing cannot leave an old
 overlay presented as current. No stale result is allowed to become a game command.
+
+Derived frames retain the source capture timestamp and monotonic clock through enhancement and
+rectification. Production capture uses the system clock. Camera flow tests use an explicitly
+advanced clock so slow CI processing does not accidentally turn a fresh-frame test into a stale
+one; separate tests verify the unchanged two-second expiry and scene-stability timing.
 
 `PieceCandidateDetector` samples equally rectified images, aligns small reference translations,
 rejects major scene changes/motion, and evaluates changed color components by shape. Its sampling

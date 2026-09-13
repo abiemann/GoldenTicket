@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 namespace GoldenTicket.Vision;
 
 public enum SceneReferenceState { NoReference, Stabilizing, SimilarToReference, SceneChanged, CameraRestarted, Stale, InsufficientDetail }
@@ -57,7 +55,7 @@ public sealed class SceneReferenceMonitor
     }
 
     public SceneComparison Observe(CameraFrame frame) => ObserveSample(Sample(frame), frame.Epoch, frame.Sequence,
-        frame.Width, frame.Height, TimeSpan.FromSeconds((double)frame.MonotonicTimestamp / Stopwatch.Frequency));
+        frame.Width, frame.Height, frame.CaptureElapsed);
 
     /// <summary>Public for deterministic recording replay; samples have an exact versioned 96×60 luminance shape.</summary>
     public SceneComparison ObserveSample(ReadOnlySpan<byte> sample, long epoch, long sequence, int width, int height, TimeSpan timestamp)

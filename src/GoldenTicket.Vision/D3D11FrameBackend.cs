@@ -60,7 +60,7 @@ internal sealed class D3D11FrameBackend : IDisposable
             for (uint index = 0; index < 32 && factory.EnumAdapters1(index, out var adapter).Success; index++)
             {
                 if (probeToken.IsCancellationRequested) { adapter.Dispose(); probeToken.ThrowIfCancellationRequested(); }
-                if ((adapter.Description1.Flags & AdapterFlags.Software) != 0) adapter.Dispose();
+                if (IsSoftwareAdapter(adapter.Description1)) adapter.Dispose();
                 else adapters.Add(adapter);
             }
             foreach (var adapter in adapters.OrderByDescending(candidate => candidate.Description1.DedicatedVideoMemory))
@@ -100,6 +100,18 @@ internal sealed class D3D11FrameBackend : IDisposable
             throw new TimeoutException("Hardware image processing validation exceeded its ten-second budget.");
         }
         finally { foreach (var adapter in adapters) adapter.Dispose(); }
+    }
+
+    internal static bool IsSoftwareAdapter(AdapterDescription1 description)
+    {
+        // Some hosted Windows adapters omit the software flag. DXGI documents the
+        // Basic Render Driver's exact vendor/device pair; do not reject Microsoft
+        // adapters generally or hardware using the separate Basic Display driver.
+        // https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/d3d10-graphics-programming-guide-dxgi
+        return (description.Flags & AdapterFlags.Software) != 0 ||
+            (description.VendorId == 0x1414 && description.DeviceId == 0x008c) ||
+            string.Equals(description.Description?.TrimEnd('\0').Trim(),
+                "Microsoft Basic Render Driver", StringComparison.OrdinalIgnoreCase);
     }
 
     internal byte[] Process(CameraFrame frame, int width, int height, CancellationToken token)
