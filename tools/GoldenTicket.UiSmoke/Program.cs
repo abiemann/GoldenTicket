@@ -22,7 +22,7 @@ using GoldenTicket.Domain.Model;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Vision;
 
-internal static class Program
+internal static partial class Program
 {
     private static readonly List<object> Results = [];
     private static readonly BindingListener BindingLog = new();
@@ -71,6 +71,7 @@ internal static class Program
                 await RenderSizes("camera-no-device", () => new CameraView { DataContext = model.Camera });
                 await VerifyKeyboardCornerHandler();
                 await VerifyProcessingPresentation();
+                await VerifyPreviewZoom();
                 await RenderSizes("connection-off", () => new ConnectionView { DataContext = model.Connection });
                 await model.ShowCheckpointPhotoCommand.ExecuteAsync(null);
                 await RenderSizes("checkpoint-photo", () => new CheckpointPhotoView { DataContext = model.CheckpointPhoto });

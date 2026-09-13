@@ -138,6 +138,12 @@ Local JSON/overlay outputs are under `artifacts/glare-test-1643/` in `minimal`, 
 Independent per-object review confirmed all piece coverage and false-outline counts. The local
 `artifacts/glare-test-1643/summary.json` records input/source SHA-256 hashes, results and limitations.
 
+In a subsequent user-reported trial, the board was cleared and lights were positioned with some
+glare before **Capture empty board**. Pieces added under that unchanged lighting were reportedly
+detected reliably. This is evidence for the matching-lighting workflow, separate from the counted
+image series above. No new images or per-object counts were supplied for this follow-up. See the
+[matching-lighting observation](../../glare-test.md#user-reported-matching-lighting-glare-follow-up).
+
 To reproduce with your own equally cropped board images, set the two paths before running:
 
 ```powershell

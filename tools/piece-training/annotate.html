@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src blob: data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>GoldenTicket · Piece annotations</title>
+  <link rel="stylesheet" href="annotate.css">
+  <script src="annotate.js" defer></script>
+</head>
+<body>
+  <header>
+    <p class="brand">GoldenTicket</p>
+    <h1>Piece annotation workbench</h1>
+    <p>Developer tool for preparing training labels. No ML model is running here. Photos and labels stay in this browser; nothing is uploaded.</p>
+  </header>
+  <main>
+    <section class="panel controls" aria-label="Files and exports">
+      <div>
+        <label for="image-files">1 · Open board photos</label>
+        <input id="image-files" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" multiple>
+        <p class="help">PNG or JPEG, up to 48 MB each and 16,384 pixels per side. Use upright photos without EXIF rotation, private cards, or annotation outlines.</p>
+      </div>
+      <div>
+        <label for="label-file">Import saved labels</label>
+        <input id="label-file" type="file" accept="application/json,.json">
+        <p class="help">Open every matching photo first. Import replaces labels for the photos in the file after all entries pass validation. Drafts may have unfinished groups or reviews.</p>
+      </div>
+      <div class="export-controls">
+        <button id="export-labels" type="button" disabled>Export labels JSON</button>
+        <button id="clear-images" class="secondary" type="button" disabled>Clear workbench</button>
+        <p id="save-state" class="help">Labels are held in memory. Export before closing; there is no autosave.</p>
+      </div>
+    </section>
+    <p id="status" role="status" aria-live="polite">Open board photos to begin.</p>
+    <p id="error" role="alert" hidden></p>
+    <div class="workspace">
+      <aside class="panel image-panel">
+        <h2>Photos</h2>
+        <p id="image-count" class="help">No photos open.</p>
+        <ul id="image-list" class="selection-list" aria-label="Board photos"></ul>
+      </aside>
+      <section class="panel annotation-panel" aria-labelledby="photo-heading">
+        <h2 id="photo-heading">2 · Outline each physical piece</h2>
+        <p class="help">Choose a kind and color, then drag a tight box around one train or score marker. Printed tracks are background. Select an existing box in the list to change its kind or color.</p>
+        <div class="box-tools">
+          <div><label for="piece-kind">Piece kind</label><select id="piece-kind"><option value="train">Train</option><option value="player-marker">Player score marker</option></select></div>
+          <div><label for="piece-color">Physical piece color</label><select id="piece-color"><option value="unknown">Unknown</option><option value="black">Black</option><option value="blue">Blue</option><option value="green">Green</option><option value="red">Red</option><option value="yellow">Yellow</option></select></div>
+          <button id="deselect-box" class="secondary" type="button" disabled>New box</button>
+          <button id="delete-box" class="secondary" type="button" disabled>Delete selected box</button>
+        </div>
+        <div class="canvas-area">
+          <canvas id="annotation-canvas" width="800" height="500" tabindex="0" aria-label="Board photo. Drag to draw a piece box. Escape cancels a drag. Delete removes the selected box when this canvas has focus."></canvas>
+          <p id="canvas-placeholder">Your selected board photo appears here.</p>
+        </div>
+        <p id="photo-details" class="help">Boxes are exported in original photo pixels, regardless of preview size.</p>
+        <p class="help">Escape cancels drawing. Delete removes the selected box only when the photo has keyboard focus. Drawing uses a mouse, pen, or touch.</p>
+      </section>
+      <aside class="panel review-panel">
+        <h2>3 · Group and review</h2>
+        <label for="capture-group">Capture group</label>
+        <input id="capture-group" type="text" maxlength="128" placeholder="Example: session-01-layout-a" disabled>
+        <p class="help">Required for training. Keep photos from the same capture session or repeated layout together, including lighting variants. Use the same group and split to avoid training/test leakage. You can export unfinished drafts.</p>
+        <label for="dataset-split">Dataset split</label>
+        <select id="dataset-split" disabled><option value="train">Train</option><option value="validation">Validation</option><option value="test">Test</option></select>
+        <label class="review-check" for="image-reviewed"><input id="image-reviewed" type="checkbox" disabled><span>I checked every physical piece and every box in this photo.</span></label>
+        <p class="help">An empty photo can be reviewed with zero boxes. Box, group, and split edits clear this checkmark. Reviewing labels does not establish model accuracy.</p>
+        <h2>Piece boxes</h2>
+        <p id="box-count" class="help">No photo selected.</p>
+        <ol id="box-list" class="selection-list" aria-label="Piece boxes"></ol>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>

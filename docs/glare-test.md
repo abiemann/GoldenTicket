@@ -111,3 +111,29 @@ that reported trial. No new photo series, per-object counts or test duration acc
 report, so it is recorded separately from the measured image-pair results above. Recommend soft,
 even lighting and avoiding bright board reflections for current use. Glare/illumination
 robustness and broader physical acceptance remain open.
+
+## User-reported matching-lighting glare follow-up
+
+The user subsequently reported this successful sequence: clear the board, position the lights
+with some glare, select **Capture empty board**, then add pieces without changing the lighting.
+Piece detection was reported as reliable even with that glare. No new image pair, per-object
+counts, exposure measurements or test duration accompanied this report.
+
+This observation supports sensitivity to differences between reference and playing illumination:
+a stable reflection included in the empty-board reference may produce less difference than a
+reflection introduced afterward. The earlier measured series changed lighting after a nominal
+reference, so it tested both glare and a reference-lighting mismatch. It did not establish that
+all glare prevents detection. The successful matching-lighting trial is user-reported evidence;
+the full counted matrix and direct-glare-on-piece checks remain open.
+
+Setup guidance is now: position camera and lights, capture the empty board, then add pieces and
+keep the lighting stable. Soft, even light remains useful for preserving visible detail.
+Handling lighting changes during play remains a separate detector improvement.
+
+The subsequent two-spotlight screenshot showed two train outlines near Kansas City/Saint Louis
+and one marker outline on the right score track, with no obvious spurious boxes in the glare
+areas. The user also confirmed that turning the second spotlight off after reference capture
+causes false positives. This extends the observation to lighting removed as well as added;
+it remains a screenshot/user-report check without a new labelled reference/current pair.
+The [learned-recognition sequence](piece-recognition-ml.md) now includes these changing-light
+conditions in grouped training and held-out evaluation data.

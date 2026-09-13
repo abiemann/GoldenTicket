@@ -745,7 +745,9 @@ Use the baseline to establish failure cases. Introduce a small targeted learned 
 
 ### 12.3 Model candidate
 
-A practical starting candidate is a compact batched patch classifier using local appearance plus a small context margin around each segment. Inputs and output classes are versioned. A segmentation head is an alternative if per-patch classification cannot distinguish neighboring trains or displaced pieces.
+A compact batched patch classifier remains a candidate once measured route-segment geometry is available. The current manifest does not yet contain production pixel geometry, so the first learned preview experiment will instead use independent tiled object detection for individual trains and player score markers. It must find pieces without an empty-board reference; filtering only subtraction candidates would retain the baseline's blind spots. Inputs, tile geometry and output classes are versioned. A segmentation head is an alternative if bounding boxes cannot separate touching or neighboring pieces.
+
+The [ML implementation sequence](docs/piece-recognition-ml.md) specifies developer-only annotation, grouped training/evaluation data, a small YOLOX experiment, ONNX export, and eventual offline CPU/GPU integration. The [local annotation and COCO export tools](tools/piece-training/README.md) implement data preparation only. No trained model is bundled yet. Physical color is annotation metadata until separately trained and evaluated; neither object class nor printed route hue establishes ownership.
 
 Do not select an architecture solely because it achieves a high frame-level accuracy number. Evaluate complete claimed routes, previously occupied routes, and unknown-foreground detection. A model that confidently mistakes one black train for a shadow can corrupt a whole match.
 
@@ -1768,6 +1770,16 @@ crosshair appears only after explicit keyboard input and hides when mouse intera
 overlapping or undersized crops retain the handles for correction and disable photo capture.
 Every geometry edit invalidates previous photo geometry before notifying the view. A camera-session
 or frame-size change clears the selection; crop editing alone does not reset the scene reference.
+
+The camera preview supports view-only zoom from Fit (100%) through 800%, with + / − buttons,
+Ctrl + mouse wheel anchored at the pointer, and 0 or Fit to reset. Pan mode, Space + left drag,
+or middle-button drag moves the enlarged image within bounded limits. The viewport clips the
+image and overlays together; corner handles retain their screen size. Normalized corner input
+and detection overlays use the same displayed-image transform. Keys 1–4 reveal the chosen
+corner when it is offscreen, and arrow movement scales inversely with zoom for finer adjustment.
+Fresh frames retain the view; stopping the preview resets it. Zoom/pan never changes source
+pixels, board registration, crop/reference revisions, or export/processing dimensions.
+
 **Export board photo** uses the current fresh frame and valid manual crop independently of the
 scene reference. A missing reference, stabilization or scene-change hold must not disable manual
 PNG export. Missing/stale frames, invalid geometry and camera/crop changes during encoding still

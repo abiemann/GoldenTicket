@@ -3,6 +3,9 @@ bin/
 obj/
 artifacts/
 node_modules/
+__pycache__/
+*.py[cod]
+.venv/
 
 # Visual Studio / Rider
 .vs/

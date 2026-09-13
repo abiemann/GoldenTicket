@@ -41,13 +41,36 @@ resizing/enhancement; rules, AI and the current piece comparison run on the CPU.
 **Enhanced 4K preview** is enabled by default. Uncheck it to compare the original camera image;
 analysis continues on the enhanced path. **Show piece outlines** controls the overlay visibility.
 
+### Zoom and position the preview
+
+Use **+** and **−**, or hold **Ctrl** while scrolling over the image, to zoom from **Fit (100%)**
+up to **800%**. Ctrl-scroll keeps the image point beneath the pointer in place. To move around a
+zoomed image, enable **Pan** and drag with the left mouse button, hold **Space** while dragging,
+or drag with the middle mouse button. Select **Fit** or press **0** while the preview has focus
+to return to the whole image.
+
+Numbered corner handles keep the same screen size and remain adjustable before or after selecting
+the crop. With the preview focused, press **1–4** to select a corner and bring it into view when
+zoomed. Arrow keys make finer adjustments at higher zoom; **Shift** still increases the step.
+Zooming and panning only change the view. They do not change the selected crop, source resolution,
+image processing or exported photo.
+
 ## Try piece outlines
 
 For the first experiment, start with the board empty of plastic trains and scoring markers.
-After framing and crop selection, use **Capture empty board**. This reference is a local image
+Finish positioning the camera and lights, let the image settle, then select the crop and use
+**Capture empty board**. Keep that lighting in place when adding pieces and playing. This reference is a local image
 comparison baseline, not model training. It must contain the complete board, including its score
 track, and no hands or private cards. Capturing the current empty board is the preferred way to
 match the live framing and lighting.
+
+The user also reported reliable detection with some glare when that same glare was present
+during empty-board capture, before adding pieces. This supports treating lighting mismatch as
+a source of false candidates; it does not establish general glare tolerance. See the
+[matching-lighting follow-up](glare-test.md#user-reported-matching-lighting-glare-follow-up).
+If lighting changes after capture, restore the reference lighting or capture a new reference
+with the board empty. Capturing a new empty-board reference while pieces remain will make those
+unchanged pieces part of the comparison baseline.
 
 Alternatively, use **Load empty-board photo…** with an upright, matching empty-board crop
 previously exported by GoldenTicket. The loader accepts one PNG/JPEG with an approximately 8:5

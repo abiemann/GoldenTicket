@@ -72,6 +72,13 @@ jobs:
       - name: Test companion privacy and LAN-only behavior
         run: node --test tests/GoldenTicket.ConnectivitySpike.Tests/shell.test.cjs tests/GoldenTicket.Domain.Tests/CompanionHostClient.test.cjs
 
+      - name: Check local ML dataset preparation tools
+        run: |
+          python -m unittest discover -s tools/piece-training -p "test_*.py"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tools/piece-training/annotation-smoke.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Simulate complete matches and replay saves
         run: dotnet run --project tools/GoldenTicket.Simulator --configuration Release --no-build --no-restore -- simulate --games 20 --seats 4
 
@@ -99,5 +106,8 @@ jobs:
             artifacts/ci/frame-processing.json
             artifacts/ci/companion-browser/*.json
             artifacts/ci/companion-browser/*.png
+            artifacts/piece-annotation-smoke/results.json
+            artifacts/piece-annotation-smoke/desktop.png
+            artifacts/piece-annotation-smoke/narrow.png
           if-no-files-found: warn
           retention-days: 7

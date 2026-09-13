@@ -122,16 +122,35 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   lighting and reported reliable piece detection on September 12. The camera guide now recommends
   that setup. This is a user observation for that trial, without a new counted image series;
   see the [follow-up record](docs/glare-test.md#user-reported-soft-light-follow-up).
+- [x] **User-reported matching-lighting glare check.** The user cleared the board, set lights with
+  some glare, captured the empty-board reference, then added pieces and reported reliable detection.
+  Setup guidance now puts camera/light positioning before reference capture and keeps lighting
+  stable afterward. This is an uncounted user observation; see the
+  [matching-lighting report](docs/glare-test.md#user-reported-matching-lighting-glare-follow-up).
 - [ ] **Glare and illumination robustness.** Reduce false printed-board candidates or withhold
-  doubtful results under changed lighting. First finish matching-lighting empty-reference tests
+  doubtful results under changed lighting. Complete the counted matching-lighting reference matrix
   and direct glare over actual piece groups; repeat with other colors/placements and live motion.
   The current series showed false positives, not misses, but does not prove general glare tolerance
   or reliable scene holds. Keep any future tuning separate from the recorded measurement.
+- [x] **Developer ML data preparation.** Add a local browser annotation workbench and bounded,
+  reviewed-label COCO exporter with source hashes and capture-group split isolation. The
+  [ML sequence](docs/piece-recognition-ml.md) starts with independent image detection; no trained
+  model, inference runtime or recognition accuracy gain is included in this step.
+- [ ] **Train and validate learned piece detection.** Collect varied physical layouts and capture
+  sessions, review per-piece labels, train/export a reproducible ONNX detector, and compare misses
+  and false positives against the current baseline on held-out sessions. Include lighting added
+  and removed, all plastic colors, empty boards and crowded routes. Integrate offline CPU/GPU
+  inference only with measured model evidence; keep manual game verification until its own gates pass.
 - [x] **Adjustable photo crop.** Drag any numbered corner during or after selection, or select it
   with 1–4 and nudge with arrows (Shift for larger steps). Invalid geometry keeps all handles editable
   and disables photo capture until corrected. Synthetic view-model and WPF checks cover editing,
   crop invalidation, image-edge clamping and camera-session changes; physical mouse-drag acceptance
   with the overhead camera remains to be checked.
+- [x] **Precise crop preview zoom.** Fit through 800%, pointer-anchored Ctrl + wheel, + / −,
+  and Pan/Space/middle-button dragging. Number keys reveal offscreen corners and zoom makes
+  arrow nudges finer. Crop coordinates, references and export processing do not change with
+  preview zoom. Synthetic WPF checks cover transforms, overlays, bounds and keyboard behavior;
+  real mouse/trackpad and overhead-camera acceptance remains to be checked.
 - [x] **Visible photo capture and rebuild status.** Distinguish a digital save, a live unsaved crop
   and an attached photo. Explain disabled capture prerequisites, offer Camera setup from the photo
   page, display the saved photo inline during rebuilding, and explain zero-route saved positions.

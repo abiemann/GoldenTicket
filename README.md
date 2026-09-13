@@ -26,6 +26,12 @@ and 5 marker candidates, including the enhanced paths; the unchanged empty-board
 produced none. These bounded checks do not complete physical-camera acceptance. See the
 [validation record](docs/evidence/camera-processing-2026-09-12/validation.md).
 
+Developer preparation for learned recognition now includes a [local annotation workbench and
+validated COCO dataset exporter](tools/piece-training/README.md). Photos stay local; reviewed labels
+and capture groups prepare a measurable training experiment. The [ML sequence](docs/piece-recognition-ml.md)
+keeps model training, inference integration and accuracy validation outstanding. This tooling does
+not change the detector running in the Windows application.
+
 ## What this build does
 
 This build implements the core game plus initial phone, camera and photo workflows from DESIGN
@@ -66,6 +72,9 @@ This build implements the core game plus initial phone, camera and photo workflo
   change/recovery indication. Focus the preview and press **1–4**, then arrow keys, to adjust a
   corner; **Shift** makes larger steps. Invalid crops retain their handles for correction. It identifies camera
   changes and stale frames, but does not authorize route claims.
+- Camera preview **zoom up to 800%** with + / − or Ctrl + mouse wheel, **Pan** and drag,
+  and **Fit** to see the whole image. Keys **1–4** bring a crop corner into view; arrow nudges
+  become finer when zoomed. Zooming leaves the crop, camera references and exported image unchanged.
 - **4K preferred · best available** capture selects the largest usable advertised mode up to
   3840 × 2160, falling back to a smaller native mode when needed. The UI distinguishes delivered
   camera resolution from the enhanced processing size. The connected Pixel's USB webcam currently

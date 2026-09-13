@@ -51,23 +51,43 @@
                     </WrapPanel>
                 </StackPanel>
             </Border>
-            <Border Grid.Row="1" Background="#251A16" CornerRadius="8" Margin="0,12" Padding="8" Height="465">
-                <Grid x:Name="PreviewArea" SizeChanged="PreviewArea_SizeChanged">
-                    <Image x:Name="PreviewImage" Source="{Binding Preview}" Stretch="Uniform"
+            <StackPanel Grid.Row="1" Margin="0,12">
+                <WrapPanel Margin="0,0,0,4">
+                    <Button x:Name="ZoomOutButton" Content="−" Click="ZoomOut_Click" Style="{StaticResource SecondaryButton}"
+                            AutomationProperties.Name="Zoom out camera preview" ToolTip="Zoom out (−)" />
+                    <TextBlock x:Name="ZoomText" Text="100%" MinWidth="64" VerticalAlignment="Center" TextAlignment="Center"
+                               AutomationProperties.Name="Camera preview zoom" />
+                    <Button x:Name="ZoomInButton" Content="+" Click="ZoomIn_Click" Style="{StaticResource SecondaryButton}"
+                            AutomationProperties.Name="Zoom in camera preview" ToolTip="Zoom in (+)" />
+                    <Button x:Name="FitPreviewButton" Content="Fit" Click="FitPreview_Click" Style="{StaticResource SecondaryButton}"
+                            AutomationProperties.Name="Fit whole camera image" ToolTip="Show the whole camera image (0)" />
+                    <CheckBox x:Name="PanPreviewToggle" Content="Pan" VerticalAlignment="Center" Margin="12,0"
+                              Checked="PanPreview_Changed" Unchecked="PanPreview_Changed"
+                              ToolTip="Drag the zoomed image without moving crop corners" />
+                </WrapPanel>
+                <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8" TextWrapping="Wrap"
+                           Text="Zoom: + / − or Ctrl + mouse wheel. Move around: Pan and drag, hold Space and drag, or use the middle mouse button. Fit shows the whole image. Press 1–4 to find a crop corner; arrows adjust it more finely as you zoom in." />
+                <Border Background="#251A16" CornerRadius="8" Padding="8" Height="465">
+                <Grid x:Name="PreviewArea" SizeChanged="PreviewArea_SizeChanged" ClipToBounds="True" Background="Transparent"
+                      PreviewMouseWheel="PreviewArea_MouseWheel"
+                      PreviewMouseDown="PreviewArea_MouseDown" PreviewMouseUp="PreviewArea_MouseUp"
+                      MouseLeftButtonDown="PreviewImage_MouseLeftButtonDown"
+                      MouseMove="PreviewImage_MouseMove" MouseLeftButtonUp="PreviewImage_MouseLeftButtonUp"
+                      LostMouseCapture="PreviewImage_LostMouseCapture">
+                    <Image x:Name="PreviewImage" Source="{Binding Preview, NotifyOnTargetUpdated=True}" Stretch="Uniform" RenderTransformOrigin="0.5,0.5"
+                           TargetUpdated="PreviewImage_TargetUpdated"
                            Focusable="True" KeyboardNavigation.IsTabStop="True"
-                           MouseLeftButtonDown="PreviewImage_MouseLeftButtonDown"
-                           MouseMove="PreviewImage_MouseMove"
-                           MouseLeftButtonUp="PreviewImage_MouseLeftButtonUp"
-                           LostMouseCapture="PreviewImage_LostMouseCapture"
                            KeyDown="PreviewImage_KeyDown"
-                           AutomationProperties.Name="Live overhead camera preview. Drag numbered corners at any time. Press 1 to 4 to select a corner, then arrow keys to adjust it. Hold Shift for larger steps. During selection, Enter leaves corner editing; use arrows and Enter to place the next corner." />
+                           KeyUp="PreviewImage_KeyUp" LostKeyboardFocus="PreviewImage_LostKeyboardFocus"
+                           AutomationProperties.Name="Live overhead camera preview. Zoom with plus or minus, or Ctrl and mouse wheel. Zero fits the whole image. Hold Space and drag to pan. Drag numbered corners at any time. Press 1 to 4 to find a corner, then arrow keys to adjust it. Hold Shift for larger steps. During selection, Enter leaves corner editing; use arrows and Enter to place the next corner." />
                     <TextBlock Text="Camera preview is off" FontSize="22" Foreground="{StaticResource Text.OnDark}"
                                HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"
                                Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}" />
                     <Canvas x:Name="DetectionOverlay" IsHitTestVisible="False" />
                     <Canvas x:Name="CornerOverlay" IsHitTestVisible="False" />
                 </Grid>
-            </Border>
+                </Border>
+            </StackPanel>
             <Grid Grid.Row="2">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                 <Border Style="{StaticResource Card}" Margin="0,0,12,0">

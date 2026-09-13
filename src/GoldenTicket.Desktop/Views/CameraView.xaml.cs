@@ -36,12 +36,14 @@ public partial class CameraView : UserControl
             _subscribed.SelectedCorners.CollectionChanged += CornersChanged;
             _subscribed.PropertyChanged += CameraPropertyChanged;
         }
-        DrawCorners();
+        UpdateViewport();
     }
 
     private void Unsubscribe()
     {
+        EndPan();
         EndDrag();
+        _spacePanning = false;
         _activeCorner = -1;
         _showKeyboardPoint = false;
         if (_subscribed is not null)
@@ -72,16 +74,17 @@ public partial class CameraView : UserControl
             ResetKeyboardPoint();
             if (_subscribed?.SelectingCorners == true)
             {
+                PanPreviewToggle.IsChecked = false;
                 _activeCorner = -1;
                 PreviewImage.Focus();
             }
             DrawCorners();
-            PreviewImage.Cursor = CursorAt(Mouse.GetPosition(PreviewArea));
+            UpdatePreviewCursor();
         }
         else if (e.PropertyName == nameof(CameraViewModel.Preview))
         {
-            if (_subscribed?.Preview is null) EndDrag();
-            DrawCorners();
+            if (_subscribed?.Preview is null) { EndDrag(); EndPan(); ResetZoom(); }
+            UpdateViewport();
         }
         else if (e.PropertyName == nameof(CameraViewModel.HasBoardCrop)) DrawCorners();
         else if (e.PropertyName is nameof(CameraViewModel.PieceOutlines) or nameof(CameraViewModel.ShowPieceOutlines)) DrawDetections();
@@ -94,9 +97,9 @@ public partial class CameraView : UserControl
             0 => new(.05, .05), 1 => new(.95, .05), 2 => new(.95, .95), _ => new(.05, .95)
         };
     }
-    private void PreviewArea_SizeChanged(object sender, SizeChangedEventArgs e) => DrawCorners();
+    private void PreviewArea_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateViewport();
 
-    private Rect ImageRectangle()
+    private Rect FitImageRectangle()
     {
         if (PreviewImage.Source is not { } source || source.Width <= 0 || source.Height <= 0 ||
             PreviewArea.ActualWidth <= 0 || PreviewArea.ActualHeight <= 0) return Rect.Empty;
@@ -106,11 +109,25 @@ public partial class CameraView : UserControl
         return new Rect((PreviewArea.ActualWidth - width) / 2, (PreviewArea.ActualHeight - height) / 2, width, height);
     }
 
+    private Rect ImageRectangle()
+    {
+        var fit = FitImageRectangle();
+        if (fit.IsEmpty) return fit;
+        var width = fit.Width * _previewZoom;
+        var height = fit.Height * _previewZoom;
+        return new Rect((PreviewArea.ActualWidth - width) / 2 + _previewPan.X,
+            (PreviewArea.ActualHeight - height) / 2 + _previewPan.Y, width, height);
+    }
+
     private void PreviewImage_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         HideKeyboardPoint();
+        if (_panning || PanRequested) return;
         if (DataContext is not CameraViewModel { IsBusy: false } vm) return;
         var position = e.GetPosition(PreviewArea);
+        // Image is not a Control, so clicking plain image pixels does not focus it
+        // automatically after using a toolbar button.
+        if (PointInImage(position, false) is not null) PreviewImage.Focus();
         var corner = HitCorner(position);
         if (corner >= 0)
         {
@@ -119,8 +136,8 @@ public partial class CameraView : UserControl
             var rectangle = ImageRectangle();
             var point = vm.SelectedCorners[corner];
             _dragOffset = position - new Point(rectangle.Left + point.X * rectangle.Width, rectangle.Top + point.Y * rectangle.Height);
-            // Capture the stable image, since live frames replace the overlay's marker visuals.
-            if (PreviewImage.CaptureMouse()) _draggedCorner = corner;
+            // Capture the viewport, which stays in place while the image is zoomed or panned.
+            if (PreviewArea.CaptureMouse()) _draggedCorner = corner;
             DrawCorners();
         }
         else if (vm.SelectingCorners && PointInImage(position, false) is { } point)
@@ -129,7 +146,7 @@ public partial class CameraView : UserControl
             vm.AddBoardCorner(point);
         }
         else return;
-        PreviewImage.Cursor = CursorAt(position);
+        UpdatePreviewCursor();
         e.Handled = true;
     }
 
@@ -166,6 +183,18 @@ public partial class CameraView : UserControl
     {
         HideKeyboardPoint();
         var position = e.GetPosition(PreviewArea);
+        if (_panning)
+        {
+            if ((_panButton == MouseButton.Middle ? e.MiddleButton : e.LeftButton) != MouseButtonState.Pressed) EndPan();
+            else
+            {
+                PanBy(position - _lastPanPosition);
+                _lastPanPosition = position;
+                e.Handled = true;
+            }
+            UpdatePreviewCursor();
+            return;
+        }
         if (_draggedCorner >= 0)
         {
             if (e.LeftButton != MouseButtonState.Pressed) EndDrag();
@@ -175,10 +204,11 @@ public partial class CameraView : UserControl
                 e.Handled = true;
             }
         }
-        PreviewImage.Cursor = CursorAt(position);
+        UpdatePreviewCursor();
     }
 
     private Cursor CursorAt(Point position) =>
+        _panning || (PanRequested && _previewZoom > 1) ? Cursors.Hand :
         _draggedCorner >= 0 || HitCorner(position) >= 0 ? Cursors.SizeAll :
         _subscribed?.SelectingCorners == true && PointInImage(position, false) is not null ? Cursors.Cross : Cursors.Arrow;
 
@@ -197,7 +227,7 @@ public partial class CameraView : UserControl
         e.Handled = true;
     }
 
-    private void PreviewImage_LostMouseCapture(object sender, MouseEventArgs e) => EndDrag();
+    private void PreviewImage_LostMouseCapture(object sender, MouseEventArgs e) { EndDrag(); EndPan(); }
 
     private void HideKeyboardPoint()
     {
@@ -209,13 +239,14 @@ public partial class CameraView : UserControl
     private void EndDrag()
     {
         _draggedCorner = -1;
-        if (PreviewImage is null) return;
-        if (PreviewImage.IsMouseCaptured) PreviewImage.ReleaseMouseCapture();
-        PreviewImage.Cursor = CursorAt(Mouse.GetPosition(PreviewArea));
+        if (PreviewArea is null) return;
+        if (!_panning && PreviewArea.IsMouseCaptured) PreviewArea.ReleaseMouseCapture();
+        UpdatePreviewCursor();
     }
 
     private void PreviewImage_KeyDown(object sender, KeyEventArgs e)
     {
+        if (HandleViewportKey(e)) return;
         if (DataContext is not CameraViewModel { IsBusy: false, Preview: not null } vm ||
             (!vm.SelectingCorners && vm.SelectedCorners.Count == 0)) return;
         var selected = e.Key switch
@@ -225,14 +256,18 @@ public partial class CameraView : UserControl
         };
         if (selected >= 0)
         {
-            if (selected < vm.SelectedCorners.Count) _activeCorner = selected;
+            if (selected < vm.SelectedCorners.Count)
+            {
+                _activeCorner = selected;
+                RevealPoint(vm.SelectedCorners[selected]);
+            }
             DrawCorners();
             e.Handled = true;
             return;
         }
         if (_activeCorner >= vm.SelectedCorners.Count) _activeCorner = -1;
         if (!vm.SelectingCorners && _activeCorner < 0) _activeCorner = 0;
-        var step = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? .025 : .0025;
+        var step = ((Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? .025 : .0025) / _previewZoom;
         var point = _activeCorner >= 0 ? vm.SelectedCorners[_activeCorner] : _keyboardPoint;
         switch (e.Key)
         {
@@ -246,6 +281,7 @@ public partial class CameraView : UserControl
                     if (_activeCorner >= 0) { _activeCorner = -1; ResetKeyboardPoint(); }
                     else vm.AddBoardCorner(_keyboardPoint);
                     _showKeyboardPoint = vm.SelectingCorners;
+                    if (vm.SelectingCorners) RevealPoint(_keyboardPoint);
                 }
                 DrawCorners();
                 e.Handled = true;
@@ -258,6 +294,7 @@ public partial class CameraView : UserControl
             _keyboardPoint = point;
             _showKeyboardPoint = true;
         }
+        RevealPoint(point);
         DrawCorners();
         e.Handled = true;
     }
