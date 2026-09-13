@@ -8,6 +8,10 @@ The annotation workbench needs only a local browser. The exporter needs Python 3
 and uses the standard library only. Neither tool uploads files, downloads packages, or runs a
 server. Python and the workbench are not application runtime dependencies.
 
+The separate `train_piece_detector.py` now runs an explicitly requested local GPU experiment
+and exports the model used by the experimental ML preview. It never trains merely because
+an image is annotated. See **Train and evaluate locally** below.
+
 ## Annotate photos
 
 1. Open `tools/piece-training/annotate.html` in Edge or Chrome. Opening the local file directly
@@ -104,7 +108,7 @@ The browser check uses the project's existing locked Playwright development depe
 installed Edge. Set `GOLDENTICKET_TEST_BROWSER` to another compatible Chromium executable if
 needed. It uses synthetic PNGs and an offline browser context. Its screenshots and report go
 to ignored `artifacts/piece-annotation-smoke/`. It does not open a camera or read user photos.
-The .NET Windows app is unchanged by this tooling.
+The annotation browser check itself does not alter the .NET Windows app.
 
 ## Verified first slice · September 12, 2026
 
@@ -120,3 +124,103 @@ The .NET Windows app is unchanged by this tooling.
   `artifacts/piece-training/starter-labels.json`, with hashes and one conservative capture group.
   Every entry is unreviewed; no ground-truth boxes were inferred from detector output. The images
   and starter project are not committed. No .NET runtime changes or model training occurred.
+
+## Train and evaluate locally
+
+This first experiment uses the official [YOLOX](https://github.com/Megvii-BaseDetection/YOLOX)
+Nano architecture (Apache-2.0 source), with two classes: `train`, `player-marker`.
+It transfers the official COCO checkpoint into a new two-class head. Color labels remain
+evaluation metadata; this model does not infer player color, routes, ownership, or legal moves.
+The training loop, augmentation and diagnostics run locally with no telemetry or network calls.
+Package/source/starting-weight downloads happen separately during environment setup.
+
+Use an isolated Python 3.12 environment under ignored `artifacts/piece-training/.venv`.
+Install `torch==2.8.0` and `torchvision==0.23.0` from the official CUDA 12.8 wheel index
+(`https://download.pytorch.org/whl/cu128`), then install `requirements-training.txt`.
+The experiment verifies CUDA before training. Record the complete environment with `pip freeze`;
+each run writes its own `environment-lock.txt` automatically. The local CUDA setup is not an
+application deployment dependency.
+
+Download the official repository, check out exactly
+`6ddff4824372906469a7fae2dc3206c7aa4bbaee`, and place it at
+`artifacts/piece-training/vendor/YOLOX`. Download
+[the official Nano checkpoint](https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.pth)
+to `artifacts/piece-training/pretrained/yolox_nano.pth`; its required SHA-256 is
+`cd28f55fbbc1829f99d9ac9b38a16d259a22889739c8728ea877610201feff7b`.
+The trainer refuses a different source revision or pretrained hash. It also verifies every
+original photo's label hash/dimensions before decoding, and verifies the originals and label
+file again after export. No source image is modified.
+
+The recorded first run used 18 September 12 photos for training (179 trains, 64 markers,
+including four empty boards) and 11 September 13 photos for validation (656 trains, 55 markers).
+It kept the two capture groups intact. Dates from one physical camera/board setup are only a
+provisional separation: these results are validation used for model and threshold selection,
+not an untouched independent test. There are no empty or explicit glare examples in validation.
+
+Run from the repository root, using new output directories for future experiments:
+
+```powershell
+& 'artifacts/piece-training/.venv/Scripts/python.exe' tools/piece-training/train_piece_detector.py --labels artifacts/piece-training/annotation-progress-01.json --images C:/temp --yolox-source artifacts/piece-training/vendor/YOLOX --pretrained artifacts/piece-training/pretrained/yolox_nano.pth --output artifacts/piece-training/runs/baseline-session-01 --epochs 40 --samples-per-epoch 256 --batch-size 16
+```
+
+The source crops are normalized to 1920 x 1200 with OpenCV `INTER_LINEAR` (half-pixel
+bilinear). Training samples 640 x 640 tiles with random 512..768 source crop sizes, flips,
+quarter-turn rotations, exposure changes and occasional gentle blur. Samples include both
+positive-focused crops and random background. There is no empty-reference image input.
+The 40-epoch baseline selected its best checkpoint at epoch 20; seed, commands, source image
+hashes, splits, optimizer and environment are recorded in `run.json` and `history.json`.
+
+Export the selected local checkpoint with the preview's overlap handling and operating point:
+
+```powershell
+& 'artifacts/piece-training/.venv/Scripts/python.exe' tools/piece-training/train_piece_detector.py --labels artifacts/piece-training/annotation-progress-01.json --images C:/temp --yolox-source artifacts/piece-training/vendor/YOLOX --pretrained artifacts/piece-training/pretrained/yolox_nano.pth --output artifacts/piece-training/model --epochs 40 --samples-per-epoch 256 --batch-size 16 --export-checkpoint artifacts/piece-training/runs/baseline-session-01/best.pth --tile-ownership --confidence 0.30
+```
+
+The manifest fixes input `images` float32 BGR, raw 0..255, NCHW `[1,3,640,640]`; output
+`detections` `[1,8400,7]` contains decoded center-x, center-y, width, height, objectness,
+train probability and marker probability. The exporter uses ONNX opset 17 and verifies it
+with ONNX checker and ONNX Runtime CPU against PyTorch CPU. Fixed-point OpenCV resizing and
+the app's floating bilinear resize can differ by one byte; a pre-resized local parity fixture
+is supplied separately from the app's original-resolution resize check.
+
+Inference tiles use stride 512 with the last tile anchored to the far edge: x starts
+`[0,512,1024,1280]`, y starts `[0,512,560]`. Box coordinates are clipped to each tile first.
+Keep a box only if its center belongs to that tile's overlap midpoint region, then apply
+per-class NMS at IoU 0.45. This removes partial duplicate boxes at tile boundaries. Keep at
+most 4096 proposals before NMS and 512 detections afterwards; reject boxes below one pixel.
+Train outlines remain rectangles; marker squares are a display choice after evaluation.
+
+At confidence 0.30, the first local model matched **693 of 711** reviewed validation objects
+at IoU >= 0.50, with **3 false positives and 18 misses**: precision 99.57%, recall 97.47%.
+All 55 validation score markers matched; the misses were trains. This threshold was chosen
+using the validation sweep plus the known empty-board diagnostic, which has zero false
+positives at 0.30. Those four empty boards were training images, so this is not an independent
+empty-board score. The paired historical-reference comparison produced 371 matches,
+398 false positives and 340 misses; four of eleven frames were held as `SceneChanged` and
+counted as no visible predictions. That comparison uses an older empty reference, not a
+new lighting-matched reference, and scores bounding rectangles of its rotated outlines.
+
+After recording legacy outputs with `GoldenTicket.PieceDetectionSmoke`, the paired report is
+reproducible using the same labels and final ML evaluation:
+
+```powershell
+& 'artifacts/piece-training/.venv/Scripts/python.exe' tools/piece-training/compare_piece_detectors.py --labels artifacts/piece-training/annotation-progress-01.json --images C:/temp --legacy-results artifacts/piece-training/comparison-baseline --ml-evaluation artifacts/piece-training/model/evaluation.json --output artifacts/piece-training/model/comparison-report.json
+```
+
+Local output includes `piece-detector.onnx`, `manifest.json`, per-object `evaluation.json`,
+`empty-board-diagnostic.json`, and `review/*-review.png`. The diagnostic images show reviewed
+boxes on the left; matches, false positives and missed labels on the right. Photos, labels,
+weights and review artifacts stay ignored and are not automatically committed or uploaded.
+Preserve this baseline and use newly captured layouts to record genuine new failures before
+changing training data. `--all-reviewed` exists only for explicitly labelled all-data experiments;
+its output identifies all validation numbers as in-sample diagnostics.
+
+Run training geometry and matching checks in the isolated environment:
+
+```powershell
+& 'artifacts/piece-training/.venv/Scripts/python.exe' -m unittest discover -s tools/piece-training -p test_training_geometry.py -v
+```
+
+These verify labels stay attached to pixels through crop/resize/rotation augmentation,
+overlap ownership covers every board point once, and duplicate predictions cannot inflate
+true positives. Standard-library-only test environments skip these optional training checks.

@@ -747,7 +747,7 @@ Use the baseline to establish failure cases. Introduce a small targeted learned 
 
 A compact batched patch classifier remains a candidate once measured route-segment geometry is available. The current manifest does not yet contain production pixel geometry, so the first learned preview experiment will instead use independent tiled object detection for individual trains and player score markers. It must find pieces without an empty-board reference; filtering only subtraction candidates would retain the baseline's blind spots. Inputs, tile geometry and output classes are versioned. A segmentation head is an alternative if bounding boxes cannot separate touching or neighboring pieces.
 
-The [ML implementation sequence](docs/piece-recognition-ml.md) specifies developer-only annotation, grouped training/evaluation data, a small YOLOX experiment, ONNX export, and eventual offline CPU/GPU integration. The [local annotation and COCO export tools](tools/piece-training/README.md) implement data preparation only. No trained model is bundled yet. Physical color is annotation metadata until separately trained and evaluated; neither object class nor printed route hue establishes ownership.
+The [ML implementation sequence](docs/piece-recognition-ml.md) now includes developer-only annotation, grouped training/evaluation data, a trained YOLOX-Nano experiment, ONNX export and offline CPU/DirectML preview integration. The local development build copies the verified experimental weights from ignored artifacts; weights and photos are not committed. Piece outlines uses independent current-image detection and records failures through local review ZIPs. Production acceptance remains open. Physical color is annotation metadata until separately trained and evaluated; neither object class nor printed route hue establishes ownership.
 
 Do not select an architecture solely because it achieves a high frame-level accuracy number. Evaluate complete claimed routes, previously occupied routes, and unknown-foreground detection. A model that confidently mistakes one black train for a shadow can corrupt a whole match.
 
@@ -1036,7 +1036,7 @@ initialization, execution or device-loss failures.
 **Auto · prefer GPU**, **CPU only**, and **GPU · CPU fallback** are explicit choices. **Apply
 processor** activates and locally persists the requested mode. The displayed CPU/chip or GPU/lightning
 badge reflects the actual resizing/enhancement backend, with adapter and fallback details in its
-tooltip. Rules, AI and the experimental piece comparison still use CPU. A GPU badge in this build
+tooltip. Rules, AI and the historical piece comparison use CPU. A GPU enhancement badge
 therefore means real image-processing shader execution; it does not claim learned inference.
 
 The enhancement is deterministic and nongenerative: a small luminance adjustment smooths weak
@@ -1046,7 +1046,7 @@ to local source-channel limits to avoid ringing. Raw and enhanced previews can b
 superseded work is dropped. Camera epoch, crop, processor and reference revisions reject stale
 results; changes of crop/camera/processor clear the empty-board reference and candidate overlays.
 
-The experimental recognizer compares equally rectified images against an empty-board reference,
+The September 12 baseline recognizer compares equally rectified images against an empty-board reference,
 uses color/shape components, and draws white rotated rectangles for train candidates and squares
 for player-marker candidates. It withholds results on stale frames, insufficient detail, motion
 or substantial image misalignment/change. Returning the camera to the prior view permits further
@@ -1056,11 +1056,29 @@ shadows, touching pieces, lighting changes, and references containing pieces can
 candidates or missed pieces. It has no authoritative ownership output and cannot commit a move.
 
 Current setup, measured hardware observations, integrated-check status and remaining physical
-acceptance are maintained in [docs/camera-processing.md](docs/camera-processing.md). There is no
-shipped recognition model, Windows ML/ONNX runtime, download, subscription or server dependency in
-this slice. The following model-inference requirements remain a separate conditional M4/M5 step.
+acceptance are maintained in [docs/camera-processing.md](docs/camera-processing.md). That original
+preprocessing slice had no learned model/runtime dependency. The September 13 experiment below
+now replaces its live outlines with local ONNX inference; the difference implementation remains
+available for baseline comparison.
 
 #### 17.4.2 Planned learned-model inference
+
+September 13 experimental implementation: `LearnedPieceDetector` uses the pinned
+`Microsoft.ML.OnnxRuntime.DirectML` 1.24.4 package (including CPU fallback) for this local
+preview trial. This is an explicit narrow implementation choice; the broader Windows ML
+deployment investigation below remains planned, not reported as a failed or completed spike.
+The model contract is fixed FP32 opset 17, 640-pixel tiles with stride 512 on a 1920 × 1200 board,
+BGR 0–255 input, two decoded classes, midpoint ownership of overlap regions, and classwise NMS.
+Model hash/graph/tensor validation and a real warm-up precede inference. Hardware adapter
+selection prefers dedicated memory and excludes software adapters; provider diagnostics record
+actual operator assignment. One frame worker preserves source age and checks camera, crop,
+processing and model revisions before publishing. Results older than two seconds expire.
+The camera is rectified and enhanced in the same order as training exports. Review ZIPs contain
+that exact unpainted crop and unreviewed predictions, not a later frame. The separate enhancement
+badge does not imply ML GPU execution. See [current evidence](docs/evidence/ml-preview-2026-09-13/validation.md).
+
+The requirements below describe the full deployment target; hardware coverage, initialization
+timeouts, live physical acceptance and automatic route verification are not completed by this trial.
 
 Windows ML's self-contained deployment can include its runtime, ONNX Runtime, and DirectML beside the executable. Select that mode and include all required files. Do not add the aggregate Windows App SDK/runtime packages that switch this setup to an external framework dependency. Do not call execution-provider download/catalog acquisition APIs. [Windows ML deployment](https://learn.microsoft.com/en-us/windows/ai/new-windows-ml/distributing-your-app)
 

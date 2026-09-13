@@ -106,7 +106,7 @@ public sealed class CameraProcessingFlowTests
         // These are flow/identity checks, not hosted-runner speed benchmarks.
         // Advance time explicitly for stale evidence; retain the real CPU pipeline.
         private readonly ManualFrameTimeProvider _clock = new();
-        public CameraViewModel Camera { get; } = new();
+        public CameraViewModel Camera { get; } = new(pieceModelDirectory: Path.Combine(Path.GetTempPath(), "GoldenTicket-no-model-flow-fixture"));
         public CameraFrame Frame => Camera.Capture.LatestFrame!;
         public Fixture()
         {

@@ -1,166 +1,108 @@
 # Learning to recognize physical pieces
 
-Status: developer data preparation, September 12, 2026. No trained recognition model is
-bundled or running yet. The Windows preview still uses `PieceCandidateDetector` and manual
-game verification. The tools in [piece-training](../tools/piece-training/README.md) prepare
-human-reviewed data; they do not improve recognition by themselves.
+Updated September 13, 2026. **Piece outlines now uses a locally trained ML detector** when the
+experimental model is installed. This replaces empty-board differencing in the camera preview.
+The model supplies visual observations only: manual game verification remains in force.
 
-## Why change the detector
+## Try it in the camera preview
 
-The current detector compares colors and shapes against an empty-board photograph. Its
-lighting sensitivity is demonstrated by the [glare experiments](glare-test.md): the same
-8 trains and 4 score markers produced 8/4, 19/4, and 35/6 candidate counts as lighting changed.
-All real pieces were covered in those reviewed images, but printed routes gained false boxes.
-The user subsequently found that capturing the empty board under the new lighting removes
-false positives, including with two spotlights. Switching a spotlight off afterward also
-produces false positives. These latter observations are user reports, not a new counted dataset.
+1. Build the desktop project with the local model deployment pair present under
+   `artifacts/piece-training/model/`: `piece-detector.onnx` and `manifest.json`. The project copies
+   these into `models/pieces/` beside the executable. A fresh source checkout has no weights;
+   it reports ML unavailable until an appropriate local model is installed. The application
+   does not download models.
+2. Start the camera and choose **Select four board corners**. Include the complete score track.
+   No empty-board or camera-framing reference is required for outlines. Clear hands and inspect
+   the white train rectangles and score-marker squares.
+3. Read the separate **ML** backend/model status under **Piece outlines**. The top CPU/GPU badge
+   describes image enhancement. **Reload ML model** reloads the locally installed pair and
+   prefers GPU, unless **CPU only** is selected above. Changing enhancement alone does not
+   silently replace the inference session.
+4. Enter an optional note about a missing, extra or merged outline and choose **Save detection
+   example…**. The ZIP contains the exact analyzed, unpainted board image and `predictions.json`,
+   including model SHA-256, confidence, source identity, explicit coordinate units and your note.
+   Capture continues; the saved image and predictions stay paired. Existing files are not replaced.
+   Predictions are marked unreviewed and are never automatically treated as training labels.
 
-An independently trained object detector should learn the appearance of plastic trains and
-physical score markers from the current image. It must distinguish them from flat route
-artwork, printed score numbers, shadows, seams, and reflections. This is the proposed
-improvement, not a guarantee of glare immunity. Clipped highlights and occlusion can remove
-the evidence needed to identify a piece; such regions must remain uncertain.
+Disabling outlines stops inference for subsequent frames and clears old predictions. Camera,
+crop, processing or model changes invalidate in-flight results. Published outlines expire after
+two seconds even while the camera is still supplying newer frames. Loading/inference failures
+leave the normal preview and manual game available and report the ML failure.
 
-Do not limit ML to accepting or rejecting the current subtraction candidates. That would
-inherit the comparator's missing candidates and empty-reference requirement. Use subtraction
-as an optional diagnostic signal; train and evaluate independent image detection.
+## First training experiment
 
-## First model experiment
+The reviewed collection contains **29 photos and 954 labels: 835 trains and 119 score markers**.
+Each individual train is boxed, including touching trains. Four photos are reviewed empty boards.
+Original photographs and labels are read-only inputs; their hashes are rechecked after training.
 
-Start with two detection classes: `train` and `player-marker`. Each physical train receives
-its own bounding box, including touching trains. Record the physical plastic color separately
-as `black`, `blue`, `green`, `red`, `yellow`, or `unknown`. Color metadata is available for
-coverage and error analysis; a two-class detector does not automatically learn player color
-or ownership. Printed route color is not the owning player's train color.
+The original capture-date split is preserved: 18 September 12 photos / 243 objects train the
+model; 11 September 13 photos / 711 objects are used for validation and threshold selection.
+All five physical colors occur in both groups. The dates share the same camera/board setup,
+and all empty-board and glare examples are in training. **There is no untouched independent
+test session.** Validation here is tuning evidence, not a general accuracy or glare guarantee.
 
-Evaluate a small YOLOX model as the initial experiment. Its source is Apache-2.0 and its
-official workflow supports custom COCO datasets and ONNX export. The exact source revision,
-training environment, and any starting weights must be pinned and their redistribution
-provenance recorded before training a distributable model. Generic pretrained object weights
-alone are not a model of these game pieces. [YOLOX source and license](https://github.com/Megvii-BaseDetection/YOLOX),
-[custom training](https://yolox.readthedocs.io/en/latest/train_custom_data.html),
-[ONNX export](https://yolox.readthedocs.io/en/latest/demo/onnx_readme.html).
+The experiment fine-tunes official YOLOX-Nano COCO weights into two classes, `train` and
+`player-marker`. Source revision, starting weights, seed, optimizer, commands, source hashes and
+installed Python packages are recorded in the local run. Forty epochs of 256 random tiles were
+run; the best validation checkpoint was selected. The fixed runtime contract is:
 
-Prefer overlapping tiles from the unannotated, rectified native camera image, with tile size
-and overlap fixed in the model manifest. Benchmark candidate tile sizes such as 640 and 960
-pixels rather than shrinking the entire board to a tiny network input. Merge predictions in
-board coordinates and remove duplicate boxes at tile boundaries. Preserve individual touching
-trains. Native 4K can supply additional captured detail; upscaling a 1080p frame cannot recover
-missing evidence. Compare raw and gently enhanced inputs on validation data and use exactly
-the chosen preprocessing during both training and inference.
+- A complete 8:5 board is normalized to 1920 × 1200 with half-pixel bilinear resizing.
+- Twelve overlapping 640 × 640 tiles, stride 512 with edge-anchored final tiles, use BGR float32
+  values 0–255 in NCHW order. No additional mean/variance normalization is applied.
+- The ONNX opset 17 graph decodes `[1,8400,7]` rows containing box geometry, objectness and the two
+  class probabilities. Confidence is objectness multiplied by the strongest class probability.
+- Midpoints of tile overlaps assign each detection center to one tile region. This avoids
+  partial boxes from cut-off pieces at tile edges. Global classwise NMS uses IoU 0.45.
+- The selected preview threshold is 0.30. Selection considers validation performance and the
+  explicitly in-sample empty-board diagnostic. These selection data are not a final test set.
 
-Axis-aligned boxes are sufficient for the first detection experiment. Rotated train outlines
-or instance masks require further labels/model output; do not report them as learned from
-axis-aligned labels. The display can draw white rectangles and square marker outlines while
-preserving the detector's original boxes in evaluation output.
+For the live model input, the raw camera frame is rectified to 3456 × 2160, then gently enhanced
+using the same processing order as the exported training photographs. The detector subsequently
+normalizes that crop as above. Unchecking **Enhanced 4K preview** changes display only. This first
+model does not exploit every pixel of native 4K; the camera/export path retains 4K dimensions.
+Upscaling cannot recover missing sensor detail. Future native 4K/tile-size comparisons require
+new measurements and a versioned manifest.
 
-## Local annotation workflow implemented now
+Physical plastic colors are annotation metadata used to break down errors. This two-class
+model **does not recognize player color or ownership**. Its axis-aligned boxes do not establish
+learned rotation or segmentation. Marker squares are a display transform; evaluation and exports
+retain the detector's original geometry.
 
-Open [the annotation workbench](../tools/piece-training/annotate.html) in Edge or Chrome.
-It reads only image files explicitly selected by the developer. There is no server, upload,
-account, CDN, analytics, or cloud annotation service. The workbench uses source-image pixel
-coordinates regardless of its on-screen scale. Exported label JSON is saved through the
-browser's normal download flow; keep a copy before closing the page.
+## Results and the next review loop
 
-For each image:
+At the selected threshold, the Python validation path matches 693 of 711 labeled pieces at
+IoU 0.50, with 18 misses and 3 false positives: 99.6% precision and 97.5% recall. All 55 validation
+score markers are matched; most misses are yellow trains. Known empty training photos produce
+zero detections at this threshold. See the [validation record](evidence/ml-preview-2026-09-13/validation.md)
+for C# provider parity, timing, the reference-comparison baseline, and the limits of these checks.
 
-1. Select its capture group and train/validation/test split.
-2. Draw a tight box around every visible physical train and score marker. Include the body,
-   excluding cast shadows. Assign the piece type and physical color.
-3. Review the whole image for missed, duplicate, and false labels. Mark the image reviewed
-   only when every visible piece is labelled. An empty board is a reviewed image with zero
-   boxes, not an image omitted from the dataset.
-4. Export the label project. Build the dataset with `prepare_dataset.py` as described in the
-   [tool instructions](../tools/piece-training/README.md).
+Use the running preview on new layouts and lighting. Save failures with a short note, review
+the complete image and correct labels, then add useful examples to a new recorded training run.
+Keep entire sessions, repeated layouts and lighting variants together. Reserve new independent
+test sessions before tuning. Compare each candidate model on the same fixed evaluation set,
+including misses, duplicates and false detections per board, rather than counts alone.
 
-The exporter checks reviewed status, image dimensions and hashes, finite in-bounds boxes,
-safe filenames, and capture-group isolation before creating a new COCO dataset directory.
-It copies source photographs unchanged. Player color is retained as annotation metadata.
-All photographs, labels, and generated datasets should remain under ignored `artifacts/` or
-another explicitly selected private data directory. Do not commit user photographs or trained
-weights automatically.
+The current difference detector remains available to developer diagnostics for comparison;
+the live Piece outlines feature no longer calls it. The old lighting failure observations are
+preserved in [the glare record](glare-test.md).
 
-## Capture plan
+## Runtime and remaining acceptance
 
-Existing photos are useful starting examples, but represent very few physical layouts. They
-cannot establish that a model works on an unseen game. An initial collection target is roughly
-200–500 distinct photographs across at least 30 varied layouts and several separate setup
-sessions. This is a planning estimate, not a promised sample count for acceptable accuracy.
-Expand the collection based on errors on validation sessions.
+`LearnedPieceDetector` loads only local verified model bytes. It checks the manifest, hash,
+standard operator allowlist, embedded tensor restriction and fixed input/output shapes before
+inference. ONNX Runtime DirectML 1.24.4 prefers the hardware adapter with most dedicated memory;
+CPU fallback is included in the same package. A warm-up runs before activation. DirectML uses
+sequential sessions without memory-pattern optimization. Runtime telemetry events are disabled.
+Provider status is reported separately from image enhancement, and diagnostics record actual
+kernel assignment.
 
-- Cover all five plastic colors, especially black trains on printed black routes and markers
-  on dark score-track numbers. Include every board region and score-track corner.
-- Include isolated trains, touching trains, partial routes, dense neighboring routes, and a
-  nearly full board. A group of three trains needs three labels.
-- Capture empty boards under soft light and one/two spotlights as negative examples. Include
-  changing-light populated scenes, not only glare matched to an empty-board reference.
-- Repeat layouts with modest camera angles, focus/exposure variation, shadows and ordinary
-  room lighting. Record native source resolution; exported/upscaled pixel dimensions are not
-  proof of native 4K capture.
-- Keep the whole board visible and hands clear for this initial detector dataset. Collect
-  hand/occlusion and genuinely unrecognizable glare scenes separately for the later uncertainty
-  policy; do not silently treat hidden pieces as reviewed background.
+The view model has one active frame job, background inference, cancellation, source-clock
+preservation, revision checks, and orderly disposal. Review files are local only. End users do
+not install Python or train models. See [dependency notices](ml-dependencies.md),
+[training commands](../tools/piece-training/README.md), and [DESIGN §17.4.2](../DESIGN.md#1742-planned-learned-model-inference).
 
-Keep every frame from a capture session, its empty reference, lighting variants, and near
-duplicates in the same capture group and split. In particular, `164319`, `164557`, `164624`,
-and `164718` from September 12 must not be split across training and evaluation. A new light
-setting on the same layout is not an independent test game. Choose the split before training;
-keep final test sessions untouched while choosing thresholds or preprocessing.
-
-Do not generate ground truth by trusting the current detector. Its useful suggestions still
-need review, especially on glare images where its false boxes are already known.
-
-## Training and acceptance still required
-
-Training runs on the developer's machine. End users receive a tested, bundled ONNX model;
-they do not label pieces, install Python, train, or download models. The existing game
-**Training mode** is story guidance and remains unrelated to developer ML training.
-
-Before activating ML in the application:
-
-1. Lock a reproducible local training environment and reviewed data manifest. Include source
-   hashes, group splits, seed, class order, tile geometry, preprocessing, model source revision,
-   starting-weight provenance, and training/export commands in the model record.
-2. Measure per-object precision/recall at stated overlap thresholds, misses, duplicate boxes,
-   and false positives per board image, including empty boards. Break results down by color,
-   score marker/train, lighting, board region, and source resolution. Counts alone can hide a
-   missed piece replaced by a false positive.
-3. Compare the learned detector with the current baseline on the exact same held-out images.
-   Include lights added and removed, both with and without an empty-board reference. Require a
-   measured reduction in false positives without an unacceptable increase in missed pieces;
-   record thresholds before evaluating the final test set.
-4. Export and validate ONNX inference on CPU and GPU with the same labelled images. Report
-   cold startup, per-frame latency including tiling/transfers/merging, memory, and fallback.
-5. Run live camera tests for occlusion, motion, camera jog/recovery, stopped capture, stale
-   results and crowded boards. Static-photo detection is not automatic move verification.
-
-No trained weights, training run, ML accuracy gain, or general glare tolerance is claimed by
-the annotation-tool checks. Dataset preparation is the completed first dependency; the items
-above remain open.
-
-## Runtime integration contract
-
-Keep the self-contained Windows ML/ONNX provider plan in [DESIGN §17.4.2](../DESIGN.md#1742-planned-learned-model-inference).
-All model/runtime/provider files must ship locally. Never acquire execution providers or models
-from the Internet at launch. A pinned DirectML ONNX Runtime package remains the documented
-fallback if the Windows ML spike fails. C# and DirectML inference are supported by ONNX Runtime;
-DirectML has sequential-session constraints and is in sustained engineering, so use the current
-Windows ML guidance when selecting the final runtime. [C# runtime](https://onnxruntime.ai/docs/get-started/with-csharp.html),
-[DirectML constraints](https://onnxruntime.ai/docs/execution-providers/DirectML-ExecutionProvider.html),
-[current installation guidance](https://onnxruntime.ai/docs/install/).
-
-The future detector receives a fresh unannotated board image and returns normalized outlines,
-class scores and model identity. It must work without `HasPieceReference`. Add a model revision
-to the existing camera epoch, crop revision and processing revision checks. Drop work older
-than two seconds and clear stale outlines. Preserve one active frame job, bounded buffers,
-cancellation and orderly model disposal. Do not publish results from a replaced model or crop.
-
-Report inference backend separately from image enhancement: a GPU enhancement badge alone
-does not prove the model ran on GPU. Validate the loaded model's hash, bounded input/output
-contract, allowed classes and operators; do not expose arbitrary ONNX loading through the PWA.
-Inference failures should preserve manual gameplay and show the actual fallback or unavailable
-state rather than quietly claiming learned detection succeeded.
-
-Piece detection still supplies observations only. Assigning those observations to routes,
-recognizing player color, temporal confirmation, and complete-board rule verification are
-separate acceptance gates. The current board manifest has no production pixel geometry yet.
+Remaining work includes independent capture-session testing; held-out empty boards and direct
+glare; hands/occlusion, focus and motion; complete camera-to-outline timing; other GPU/CPU
+hardware, timeout and device-loss behavior; and clean-machine offline distribution. Model
+performance does not prove automatic route assignment, color/owner recognition, temporal
+confirmation, or whole-board rule verification. Those gates remain separate.

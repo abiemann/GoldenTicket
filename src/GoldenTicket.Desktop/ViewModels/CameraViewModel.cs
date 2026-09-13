@@ -30,9 +30,12 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     private long _cropRevision;
     private bool _disposed;
 
-    public CameraViewModel(string? processingSettingsPath = null)
+    public CameraViewModel(string? processingSettingsPath = null, string? pieceModelDirectory = null,
+        Func<string, bool, IPieceModelDetector>? pieceModelFactory = null)
     {
         _processingSettingsPath = processingSettingsPath;
+        _pieceModelDirectory = pieceModelDirectory ?? Path.Combine(AppContext.BaseDirectory, "models", "pieces");
+        _pieceModelFactory = pieceModelFactory ?? ((directory, preferGpu) => LearnedPieceDetector.Load(directory, preferGpu));
         Capture = new CameraCaptureService();
         _previewTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -125,7 +128,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             FormatText = Capture.NegotiatedFormat?.ToString() ?? "Waiting for first frame";
             AvailableFormats.Clear();
             foreach (var format in Capture.AvailableFormats) AvailableFormats.Add(format.ToString());
-            Status = "Live preview. Select the board corners, then capture or load an empty-board reference to outline pieces.";
+            Status = "Live preview. Select the four board corners to see ML piece outlines, then clear your hands.";
             _previewSequence = -1;
             _previewTimer.Start();
         }

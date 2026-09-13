@@ -87,15 +87,16 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
 - [x] **CPU/GPU preprocessing implementation.** Real Direct3D 11 compute performs bounded
   enhancement and aspect-preserving resizing, with Auto/CPU/GPU choices, local preference
   persistence, validated hardware activation, effective status and CPU fallback. No recognition
-  model is bundled. Local build, 558 tests and 53 synthetic WPF render cases passed,
+  model was bundled with the September 12 preprocessing step. Local build, 558 tests and 53 synthetic WPF render cases passed,
   with no binding warnings/errors; see [camera processing](docs/camera-processing.md).
   Software-adapter checks now cover missing flags on Microsoft Basic Render Driver. Controlled
   frame-clock tests retain the two-second stale-evidence limit without depending on CI speed.
-- [x] **Experimental empty-board piece outlines.** Capture or load an empty-board crop, compare
+- [x] **Historical empty-board piece baseline.** Capture or load an empty-board crop, compare
   subsequent frames, and draw white rotated train-candidate rectangles and score-marker squares.
   Camera/crop/processor changes invalidate references and stale work. Motion, insufficient detail
   and major scene changes withhold candidates. This is a low-false-positive baseline to evaluate,
-  not a measured accuracy claim or an authority to spend cards, score or commit routes.
+  not a measured accuracy claim or an authority to spend cards, score or commit routes. The
+  September 13 ML experiment supersedes this baseline in the live preview; comparison tooling remains.
 - [x] **Processing and outline automated/image-pair checks.** The integrated automated/UI pass
   succeeded. The supplied photo pair produced 15 train and 5 marker candidates in raw and enhanced
   comparisons; an unchanged empty-board comparison produced 0/0. RTX 4080 Laptop preprocessing
@@ -103,7 +104,8 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   See the [bounded validation record](docs/evidence/camera-processing-2026-09-12/validation.md).
 - [ ] **Processing and outline physical acceptance.** Measure empty-board false positives and
   per-piece misses across printed routes, shadows, touching trains and lighting; test live
-  exported-reference reload, jog/return, raw/enhanced preview and native-4K input on actual hardware.
+  raw/enhanced preview and native-4K input on actual hardware. Exported-reference reload and
+  jog/return checks apply only when explicitly comparing the historical difference baseline.
   Complete adapter/device-loss and preference-switching acceptance. Image enhancement must remain
   separate from unsharpened checkpoint evidence. A successful photo pair is not general recognition
   accuracy or a supported native-4K camera claim.
@@ -138,11 +140,16 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   reviewed-label COCO exporter with source hashes and capture-group split isolation. The
   [ML sequence](docs/piece-recognition-ml.md) starts with independent image detection; no trained
   model, inference runtime or recognition accuracy gain is included in this step.
-- [ ] **Train and validate learned piece detection.** Collect varied physical layouts and capture
-  sessions, review per-piece labels, train/export a reproducible ONNX detector, and compare misses
-  and false positives against the current baseline on held-out sessions. Include lighting added
-  and removed, all plastic colors, empty boards and crowded routes. Integrate offline CPU/GPU
-  inference only with measured model evidence; keep manual game verification until its own gates pass.
+- [x] **First learned piece-outline experiment.** Audit 29 local photos / 954 labels, preserve
+  capture-date groups, train and export a two-class YOLOX-Nano detector, and integrate independent
+  ONNX CPU/DirectML inference into the preview. Empty-board capture is no longer a prerequisite.
+  Add exact-frame review ZIPs with model hashes and notes. See the
+  [experiment and validation](docs/piece-recognition-ml.md); this is experimental visual feedback.
+- [ ] **Independent ML acceptance and error-driven training.** Review saved failures, correct
+  labels, retrain with recorded provenance and evaluate untouched new capture sessions. Include
+  empty boards and lighting changes in held-out evaluation, all colors, crowding, motion and
+  occlusion. Measure whole camera-to-outline latency and provider failures on more hardware.
+  Color recognition, route assignment and automatic game verification remain separate work.
 - [x] **Adjustable photo crop.** Drag any numbered corner during or after selection, or select it
   with 1–4 and nudge with arrows (Shift for larger steps). Invalid geometry keeps all handles editable
   and disables photo capture until corrected. Synthetic view-model and WPF checks cover editing,

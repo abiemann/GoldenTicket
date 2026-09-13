@@ -697,12 +697,16 @@ internal static partial class Program
         camera.ComputeBadge = "▣ CPU";
         camera.ComputeStatus = "▣ CPU · synthetic status fixture";
         camera.DetectionText = "One train candidate and one player marker. Synthetic overlay geometry; no camera opened.";
-        camera.PieceOutlines =
+        PreviewPieceOutline[] syntheticOutlines =
         [
             new(false, [new(.2,.25), new(.33,.31), new(.31,.35), new(.18,.29)]),
             new(true, [new(.6,.6), new(.65,.6), new(.65,.67), new(.6,.67)])
         ];
-        await RenderSizes("camera-processing-outlines-synthetic", () => new CameraView { DataContext = camera }, view =>
+        await RenderSizes("camera-processing-outlines-synthetic", () =>
+        {
+            camera.PieceOutlines = syntheticOutlines;
+            return new CameraView { DataContext = camera };
+        }, view =>
         {
             var overlay = (Canvas)view.FindName("DetectionOverlay");
             var whites = overlay.Children.OfType<System.Windows.Shapes.Polygon>()
@@ -715,7 +719,7 @@ internal static partial class Program
             camera.ShowPieceOutlines = false;
             if (overlay.Children.Count != 0) throw new InvalidOperationException("The outline toggle must hide all candidate geometry.");
             camera.ShowPieceOutlines = true;
-            if (overlay.Children.Count != 4) throw new InvalidOperationException("The outline toggle must restore white geometry and its dark backing.");
+            if (overlay.Children.Count != 0) throw new InvalidOperationException("Re-enabling ML outlines must wait for a fresh result instead of restoring old detections.");
         });
         camera.ClearPieceReferenceCommand.Execute(null);
         if (camera.PieceOutlines.Count != 0 || camera.HasPieceReference)

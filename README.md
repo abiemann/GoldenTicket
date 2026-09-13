@@ -18,19 +18,20 @@ acceptance checklist and [local phone setup](docs/phone-setup.md). Real-device a
 in progress; automatic train recognition is not enabled.
 
 The latest [camera processing update](docs/camera-processing.md) adds native 4K preference with
-source-resolution reporting, actual CPU/GPU image enhancement, and experimental piece outlines
-against an empty-board reference. These outlines are visual candidates; route verification remains
+source-resolution reporting, actual CPU/GPU image enhancement, and the original comparison baseline.
+Those outlines are visual candidates; route verification remains
 manual. Locked restore/build, **546 automated tests** and **50 synthetic WPF render cases** passed;
 the render pass reported no binding warnings/errors. A supplied board-photo pair produced 15 train
 and 5 marker candidates, including the enhanced paths; the unchanged empty-board comparison
 produced none. These bounded checks do not complete physical-camera acceptance. See the
 [validation record](docs/evidence/camera-processing-2026-09-12/validation.md).
 
-Developer preparation for learned recognition now includes a [local annotation workbench and
-validated COCO dataset exporter](tools/piece-training/README.md). Photos stay local; reviewed labels
-and capture groups prepare a measurable training experiment. The [ML sequence](docs/piece-recognition-ml.md)
-keeps model training, inference integration and accuracy validation outstanding. This tooling does
-not change the detector running in the Windows application.
+The September 13 [ML preview experiment](docs/piece-recognition-ml.md) replaces live Piece outlines
+with a locally trained two-class detector. It finds trains and score markers without an empty-board
+reference, using ONNX Runtime on DirectML or CPU. Photos, labels and experimental weights stay local.
+**Save detection example…** records the analyzed image, predictions and a note for later review.
+The [validation record](docs/evidence/ml-preview-2026-09-13/validation.md) separates measured photo
+results from the live-camera and independent-session tests still needed.
 
 ## What this build does
 
@@ -86,12 +87,17 @@ This build implements the core game plus initial phone, camera and photo workflo
 - **Auto · prefer GPU**, **CPU only**, and **GPU · CPU fallback** processing, with a remembered
   preference and the actual backend/adapter shown. A hardware Direct3D 11 compute path validates
   its output before activation and falls back to CPU on failure. It performs bounded image
-  enhancement and resizing; no learned model or GPU game logic is running.
-- Experimental **Piece outlines** compare the current crop with a captured or loaded empty-board
-  reference. White rotated rectangles show train candidates; white squares show player-marker
-  candidates. Changing the camera, crop or processor clears the reference. Movement and major
-  scene changes suppress candidates. This is a conservative baseline with unmeasured physical
-  false-positive/miss rates, not automatic ownership or route recognition.
+  enhancement and resizing. ML inference reports its own backend under Piece outlines; game logic
+  remains on CPU.
+- Experimental **Piece outlines** use the installed local ML model on the current board crop.
+  Select all four corners; no empty-board reference is needed. White rectangles show trains and
+  white squares show score markers. Camera/crop/model changes and stale results clear outlines.
+  **Reload ML model** reloads the local model; CPU only selects CPU for that reload, otherwise it
+  prefers a hardware GPU. Missing/invalid models leave the preview and manual play available.
+- **Save detection example…** exports one local ZIP containing the exact analyzed board PNG,
+  model hash, predictions and your optional review note. Predictions are marked unreviewed;
+  saving an example does not automatically add it to training. Colors and route ownership are
+  not inferred by this two-class model.
 - Optional encrypted, immutable board reference photos attached to validated saved checkpoints.
   Photos are cropped from fresh camera frames and authenticated on readback. They assist manual
   rebuilding; checkpoints retain their explicit state-only provenance.
@@ -106,8 +112,8 @@ These are later milestones in `DESIGN.md`, and nothing here pretends they exist:
 
 - **No automatic camera verification.** Physical placement is confirmed by the operator
   (`VerificationMode.Manual`). Scene similarity does not prove route ownership. Automatic landmarks,
-  reliable train recognition, gesture wakeup, and model inference remain unfinished. CPU/GPU
-  preprocessing and experimental empty-board differencing are implemented separately.
+  production-quality recognition and gesture wakeup remain unfinished. Experimental local model
+  inference is implemented for visual evaluation; it does not authorize game moves.
 - **Phone acceptance is incomplete.** The embedded companion is functional and tested with
   automated HTTPS/browser cases, but Android certificate/install/offline acceptance and all Apple
   device acceptance remain outstanding. This slice uses two-second snapshot polling and fresh
@@ -281,15 +287,18 @@ src/GoldenTicket.CompanionHost/ embedded local HTTPS game PWA and controller pro
 tools/GoldenTicket.Simulator/   headless matches and the data audit
 tools/GoldenTicket.ConnectivitySpike/ standalone local HTTPS/PWA feasibility tool; no game data
 tools/GoldenTicket.CameraDiagnostics/ shared-read-only native camera format inventory
+tools/GoldenTicket.MlPieceSmoke/ offline CPU/GPU model evaluation and outlined board images
+tools/piece-training/           local annotation, training, export and comparison tools
 tests/                          rules fixtures, properties, privacy, persistence, view models
 data/classic-us/                hashed board and ticket manifest; physical audit pending
 shared/theme/                   canonical box-derived theme tokens
 docs/                           rules policy decisions and milestone evidence
 ```
 
-The proposed `GoldenTicket.Windows`, separate `companion/` TypeScript build, `training/`, and
-`models/` directories remain later work. The current companion's plain JavaScript assets are
-bundled with `GoldenTicket.CompanionHost`; no trained recognition weights are shipped.
+The proposed `GoldenTicket.Windows` and separate `companion/` TypeScript build remain later
+work. The current companion's plain JavaScript assets are bundled with `GoldenTicket.CompanionHost`.
+Experimental training data and weights live under ignored `artifacts/piece-training/`; local
+builds copy the ONNX model and manifest to `models/pieces/` beside the executable when present.
 
 ## Design correspondence
 

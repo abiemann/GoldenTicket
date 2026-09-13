@@ -134,14 +134,24 @@
             <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,12,0,0">
                 <StackPanel>
                     <TextBlock Style="{StaticResource Heading}" Text="Piece outlines" />
-                    <TextBlock TextWrapping="Wrap" Text="Start with a photo of the board without plastic trains or score markers. Capture it here, or load an empty-board crop you exported earlier. White rectangles mark train candidates; white squares mark player score markers. This is a local comparison, with no model training or internet connection." />
+                    <TextBlock TextWrapping="Wrap" Text="Select the four board corners and clear your hands. The local ML model finds pieces in the current image. White rectangles mark trains; white squares mark score markers. An empty-board photo is not needed." />
                     <WrapPanel Margin="0,10,0,8">
-                        <Button Content="Capture empty board" Command="{Binding CaptureEmptyBoardCommand}" Style="{StaticResource SecondaryButton}" IsEnabled="{Binding CanExportPhoto}" />
-                        <Button Content="Load empty-board photo…" Command="{Binding LoadEmptyBoardCommand}" Style="{StaticResource SecondaryButton}" IsEnabled="{Binding CanExportPhoto}" />
-                        <Button Content="Clear piece reference" Command="{Binding ClearPieceReferenceCommand}" Style="{StaticResource SecondaryButton}" />
+                        <Button Content="Reload ML model" Command="{Binding ReloadPieceModelCommand}" Style="{StaticResource SecondaryButton}" IsEnabled="{Binding CanReloadPieceModel}"
+                                ToolTip="Reload the installed local model. Uses CPU when CPU only is selected above; otherwise prefers GPU." />
                     </WrapPanel>
+                    <TextBlock x:Name="PieceModelStatus" Text="{Binding ModelStatus}" TextWrapping="Wrap" Margin="0,0,0,6" />
                     <TextBlock Text="{Binding DetectionText}" TextWrapping="Wrap" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite" />
-                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,0" Text="Clear hands before checking the outlines. Printed tracks, shadows, touching pieces and camera movement can still cause misses or false candidates. Outlines do not confirm route ownership or change the game." />
+                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,0" Text="This is an experimental model. Check for missing, extra or merged outlines, especially on touching pieces and glare. It detects piece type, not player color or route ownership. Outlines do not change the game." />
+                    <TextBlock Text="Review note (optional)" Margin="0,12,0,4" />
+                    <TextBox x:Name="DetectionReviewNoteBox" Text="{Binding DetectionReviewNote, UpdateSourceTrigger=PropertyChanged}"
+                             MaxLength="2000" TextWrapping="Wrap" MinHeight="44" AcceptsReturn="True"
+                             AutomationProperties.Name="What did the ML outlines miss or get wrong?" />
+                    <WrapPanel Margin="0,8,0,0">
+                        <Button x:Name="SaveDetectionExampleButton" Content="Save detection example…" Command="{Binding SaveDetectionExampleCommand}"
+                                IsEnabled="{Binding CanSaveDetectionExample}" Style="{StaticResource SecondaryButton}" />
+                    </WrapPanel>
+                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Text="Saves the exact analyzed board image, model predictions and your note in one local ZIP for review. Nothing is uploaded or automatically added to training." />
+                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Text="{Binding LastDetectionExamplePath}" Margin="0,4,0,0" />
                 </StackPanel>
             </Border>
             <Expander Grid.Row="4" Header="Camera formats and setup guidance" Margin="0,12,0,0">

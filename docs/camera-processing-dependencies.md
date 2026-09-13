@@ -1,5 +1,8 @@
 # Offline camera processing dependencies
 
+This inventory covers image enhancement. The separate learned piece detector and its license
+notices are listed in [ML dependencies](ml-dependencies.md).
+
 The GPU preprocessing path uses Direct3D 11 compute shaders through the following
 NuGet packages. Package versions and content hashes are recorded in the committed
 development and `win-x64` lock files. All listed libraries declare the MIT license;

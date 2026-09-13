@@ -44,7 +44,7 @@ public sealed partial class CameraViewModel
     [ObservableProperty] private bool _useEnhancedPreview = true;
     [ObservableProperty] private bool _showPieceOutlines = true;
     [ObservableProperty] private bool _hasPieceReference;
-    [ObservableProperty] private string _detectionText = "Select the four board corners, then capture or load a photo of the empty board to find pieces.";
+    [ObservableProperty] private string _detectionText = "Select the four board corners to see ML piece outlines.";
     [ObservableProperty] private IReadOnlyList<PreviewPieceOutline> _pieceOutlines = [];
     public bool CanApplyProcessor => !IsBusy && !IsProcessorBusy && !_disposed;
 
@@ -56,7 +56,14 @@ public sealed partial class CameraViewModel
         if (frame is not null) Preview = ToBitmap(frame);
     }
 
-    partial void OnShowPieceOutlinesChanged(bool value) => OnPropertyChanged(nameof(PieceOutlines));
+    partial void OnShowPieceOutlinesChanged(bool value)
+    {
+        // Invalidate work already in flight even if the user quickly turns outlines back on.
+        _modelRevision++;
+        ClearDetectionPreview();
+        DetectionText = value ? "Waiting for a fresh image for ML piece outlines." : "Piece outlines are off.";
+        _previewSequence = -1;
+    }
 
     /// <summary>Called by the window at launch; unit fixtures do not initialize real hardware implicitly.</summary>
     public Task InitializeProcessingAsync()
@@ -77,6 +84,7 @@ public sealed partial class CameraViewModel
             if (_disposed) return;
             _processorReady = true;
             UpdateProcessorStatus(status);
+            await EnsurePieceModelAsync();
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         catch (Exception ex)
@@ -113,8 +121,8 @@ public sealed partial class CameraViewModel
         ComputeBadge = gpu ? "ϟ GPU ϟ" : "▣ CPU";
         ComputeStatus = ComputeBadge + " · image processing";
         ComputeExplanation = $"Requested: {status.RequestedMode}. Active: {status.AdapterName}. " +
-            "Resizing and enhancement use this processor. Piece comparison and game rules use CPU. " +
-            (status.FallbackReason is { Length: > 0 } reason ? "CPU fallback: " + reason : "No learned recognition model is running.");
+            "Resizing and enhancement use this processor. ML inference has its own status under Piece outlines. " +
+            (status.FallbackReason is { Length: > 0 } reason ? "CPU fallback: " + reason : "Game rules run on CPU.");
     }
 
     // Call only after validating the operation's captured revisions. A backend transition
@@ -126,7 +134,7 @@ public sealed partial class CameraViewModel
         {
             _processingRevision++;
             ResetPieceReference();
-            DetectionText = "The processor changed. Capture or load the empty-board reference again before outlining pieces.";
+            DetectionText = "The processor changed. Waiting for a fresh image for ML piece outlines.";
         }
         UpdateProcessorStatus(status);
         return changed;
@@ -145,6 +153,8 @@ public sealed partial class CameraViewModel
         var cropRevision = _cropRevision;
         var processingRevision = _processingRevision;
         var referenceRevision = _referenceRevision;
+        var modelRevision = _modelRevision;
+        var showOutlines = ShowPieceOutlines;
         try
         {
             await InitializeProcessingAsync();
@@ -154,32 +164,61 @@ public sealed partial class CameraViewModel
                 cropRevision != _cropRevision || processingRevision != _processingRevision ||
                 referenceRevision != _referenceRevision) return;
             if (AcceptProcessorStatus(result.Status)) return;
+            // Match the training-photo export order: rectify the source, then enhance the crop.
+            // Resizing/tiling into the network's tensor is defined by the model manifest.
+            CameraFrame? board = null;
+            if (registration is not null && showOutlines && !IsModelBusy && _pieceModel is not null)
+            {
+                var crop = await Task.Run(() => registration.Rectify(frame, 3456, 2160), _lifetime.Token);
+                var processedBoard = await _processor.ProcessAsync(crop, _lifetime.Token);
+                if (_disposed || cropRevision != _cropRevision || processingRevision != _processingRevision ||
+                    modelRevision != _modelRevision || !Capture.IsRunning || frame.Epoch != Capture.Epoch) return;
+                if (AcceptProcessorStatus(processedBoard.Status)) return;
+                board = processedBoard.Frame;
+            }
             var prepared = await Task.Run(() =>
             {
-                CameraFrame? board = registration is null ? null : RectifyForDetection(result.Frame, registration);
-                PieceDetectionResult? detection = null;
-                if (board is not null)
+                LearnedPieceDetection? detection = null;
+                string? detectionError = null;
+                if (board is not null && frame.Age <= TimeSpan.FromSeconds(2))
                 {
-                    lock (_detectionGate)
+                    try
                     {
-                        if (referenceRevision == _referenceRevision)
-                            detection = _pieceDetector.Detect(board, _lifetime.Token);
+                        lock (_modelGate)
+                        {
+                            if (!IsModelBusy && modelRevision == _modelRevision)
+                                detection = _pieceModel?.Detect(board, _lifetime.Token);
+                        }
                     }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception error) { detectionError = error.Message; }
                 }
                 return (Enhanced: ToBitmap(result.Frame), Raw: ToBitmap(frame),
-                    Board: board is null ? null : ToBitmap(board), Detection: detection);
+                    Board: board is null ? null : ToBitmap(board), Detection: detection, Error: detectionError);
             }, _lifetime.Token);
 
             if (_disposed || !Capture.IsRunning || frame.Epoch != Capture.Epoch ||
                 cropRevision != _cropRevision ||
-                processingRevision != _processingRevision || referenceRevision != _referenceRevision)
+                processingRevision != _processingRevision || referenceRevision != _referenceRevision ||
+                modelRevision != _modelRevision)
             {
                 return;
             }
             if (frame.Age > TimeSpan.FromSeconds(2))
             {
                 ClearDetectionPreview();
-                DetectionText = "Waiting for a fresh processed image before outlining pieces.";
+                DetectionText = "Waiting for a fresh processed image before outlining pieces. ML results older than two seconds are discarded.";
+                // Slow ML must not freeze the camera while capture continues. The old result and
+                // enhanced image stay discarded; display a current raw frame with its own identity.
+                if (Capture.LatestFrame is { } current && Capture.IsRunning &&
+                    current.Epoch == Capture.Epoch && current.Epoch == frame.Epoch &&
+                    current.Age <= TimeSpan.FromSeconds(2))
+                {
+                    _lastRawPreview = current;
+                    _lastEnhancedPreview = null;
+                    Preview = ToBitmap(current);
+                    ProcessingText = "Showing current camera image while ML catches up.";
+                }
                 return;
             }
             _lastRawPreview = frame;
@@ -192,25 +231,36 @@ public sealed partial class CameraViewModel
             ProcessingText = $"Processing {result.Frame.Width} × {result.Frame.Height}" +
                 (result.IsUpscaled ? $" · upscaled from {frame.Width} × {frame.Height}; not native 4K" : " · native source resolution") +
                 $" · {result.ProcessingTime.TotalMilliseconds:0} ms. Enhancement adds no new captured detail.";
-            if (prepared.Detection is { } detection && registration is not null)
+            if (prepared.Detection is { } detection && registration is not null && !IsModelBusy)
             {
                 _outlinedFrame = frame;
                 PieceOutlines = detection.Candidates.Select(candidate => new PreviewPieceOutline(
                     candidate.Kind == PieceCandidateKind.PlayerMarker,
                     candidate.Outline.Select(point => registration.MapToSensor(point.X, point.Y)).ToArray())).ToArray();
-                DetectionText = HasPieceReference
-                    ? $"{detection.Candidates.Count(candidate => candidate.Kind == PieceCandidateKind.Train)} train candidates · " +
-                      $"{detection.Candidates.Count(candidate => candidate.Kind == PieceCandidateKind.PlayerMarker)} player markers. {DetectionStateText(detection.State)} " +
-                      "Outlines are experimental; confirm game moves yourself."
-                    : "Capture or load the empty-board reference to outline pieces.";
+                ModelStatus = $"ML · {detection.Backend} · {detection.ModelId}" +
+                    (_pieceModel?.FallbackReason is { Length: > 0 } reason ? " · " + reason : "");
+                DetectionText = $"{detection.Candidates.Count(candidate => candidate.Kind == PieceCandidateKind.Train)} trains · " +
+                    $"{detection.Candidates.Count(candidate => candidate.Kind == PieceCandidateKind.PlayerMarker)} score markers · " +
+                    $"{detection.Elapsed.TotalMilliseconds:0} ms inference. Experimental ML outlines; check for missed or extra pieces.";
+                _reviewDetection = new(board!, detection, frame.Width, frame.Height, cropRevision,
+                    processingRevision, modelRevision, registration.Corners.ToArray());
+                OnPropertyChanged(nameof(CanSaveDetectionExample));
             }
-            else ClearDetectionPreview();
+            else
+            {
+                ClearDetectionPreview();
+                DetectionText = IsModelBusy ? "Loading the local ML model; camera preview remains available." :
+                    prepared.Error is { } error ? "ML detection unavailable: " + error :
+                    !showOutlines ? "Piece outlines are off." : registration is null ?
+                    "Select the four board corners to see ML piece outlines." : _pieceModel is null ?
+                    "ML model unavailable. See the model status below." : "Waiting for a fresh image for ML piece outlines.";
+            }
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         catch (Exception ex)
         {
             if (!_disposed && frame.Epoch == Capture.Epoch && cropRevision == _cropRevision &&
-                processingRevision == _processingRevision && referenceRevision == _referenceRevision)
+                processingRevision == _processingRevision && referenceRevision == _referenceRevision && modelRevision == _modelRevision)
             {
                 ClearDetectionPreview();
                 if (Capture.IsRunning && frame.Epoch == Capture.Epoch && frame.Age < TimeSpan.FromSeconds(2))
@@ -238,7 +288,9 @@ public sealed partial class CameraViewModel
     private void ClearDetectionPreview()
     {
         _outlinedFrame = null;
+        _reviewDetection = null;
         PieceOutlines = [];
+        OnPropertyChanged(nameof(CanSaveDetectionExample));
     }
 
     private void ResetPieceReference()
@@ -249,7 +301,7 @@ public sealed partial class CameraViewModel
         ClearDetectionPreview();
         _lastRawPreview = null;
         _lastEnhancedPreview = null;
-        DetectionText = "Select the board corners, then capture or load an empty-board reference. Changing the crop or processor clears this reference.";
+        DetectionText = "Select the board corners to see ML piece outlines. No empty-board reference is needed.";
     }
 
     [RelayCommand]
@@ -354,8 +406,14 @@ public sealed partial class CameraViewModel
     {
         if (_initialization is not null) await _initialization;
         await _frameWork;
+        if (_modelInitialization is not null) await _modelInitialization;
         await _processor.DisposeAsync();
         lock (_detectionGate) _pieceDetector.Clear();
+        lock (_modelGate)
+        {
+            _pieceModel?.Dispose();
+            _pieceModel = null;
+        }
         ClearDetectionPreview();
         _lastRawPreview = null;
         _lastEnhancedPreview = null;

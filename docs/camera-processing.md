@@ -1,19 +1,21 @@
 # Camera processing and experimental piece outlines
 
-Updated September 12, 2026. This describes the current implementation, its measured hardware
+Updated September 13, 2026. This describes the current implementation, its measured hardware
 observations and the acceptance work still needed. It supplements [DESIGN §17.3–17.4](../DESIGN.md)
 and [TODO](../TODO.md); it does not replace the full automatic-verification requirements.
 
 ## What is available
 
 The Windows app can prefer a native 4K camera mode, process images on the CPU or a validated
-hardware GPU, compare raw and enhanced previews, and outline experimental piece candidates
-against an empty-board reference. All of this runs locally. No trained model, cloud service,
-subscription, Internet connection or runtime asset download is involved.
+hardware GPU, compare raw and enhanced previews, and outline trains and score markers using a
+locally trained ONNX model. The current ML experiment replaces live empty-board differencing.
+Inference runs locally without a cloud service, subscription, Internet connection or runtime
+asset download. The reviewed photos and experimental weights remain local development artifacts.
 
 The game still uses explicit manual verification. Outlines never spend cards, claim a route,
 identify its owner, score points or advance a turn. The CPU/GPU indicator describes actual image
-resizing/enhancement; rules, AI and the current piece comparison run on the CPU.
+resizing/enhancement. The Piece outlines card separately reports the ML model and actual inference
+backend. Rules and game AI remain on the CPU.
 
 ## Set up the camera
 
@@ -42,7 +44,8 @@ resizing/enhancement; rules, AI and the current piece comparison run on the CPU.
    report the active adapter and any fallback, separately from the selected preference.
 
 **Enhanced 4K preview** is enabled by default. Uncheck it to compare the original camera image;
-analysis continues on the enhanced path. **Show piece outlines** controls the overlay visibility.
+analysis continues on the enhanced path. **Show piece outlines** enables ML inference and its
+overlay. Turning it off clears the current result; turning it on waits for a fresh result.
 
 ### Zoom and position the preview
 
@@ -63,38 +66,27 @@ image processing or exported photo.
 
 ## Try piece outlines
 
-For the first experiment, start with the board empty of plastic trains and scoring markers.
-Finish positioning the camera and lights, let the image settle, then select the crop and use
-**Capture empty board**. Keep that lighting in place when adding pieces and playing. This reference is a local image
-comparison baseline, not model training. It must contain the complete board, including its score
-track, and no hands or private cards. Capturing the current empty board is the preferred way to
-match the live framing and lighting.
+Select all four board corners, including the complete score track, and enable **Show piece
+outlines**. Pieces may already be on the board. An empty-board reference is no longer required.
+The local model classifies the current image into trains and score markers; it does not classify
+their colors or assign route ownership. Train candidates appear as white rectangles, and score
+markers as white squares. Counts describe the current prediction, not a verified inventory.
 
-The user also reported reliable detection with some glare when that same glare was present
-during empty-board capture, before adding pieces. This supports treating lighting mismatch as
-a source of false candidates; it does not establish general glare tolerance. See the
-[matching-lighting follow-up](glare-test.md#user-reported-matching-lighting-glare-follow-up).
-If lighting changes after capture, restore the reference lighting or capture a new reference
-with the board empty. Capturing a new empty-board reference while pieces remain will make those
-unchanged pieces part of the comparison baseline.
+The model loads from `models/pieces/` beside the executable. This source checkout copies the
+locally trained model there when building. A fresh checkout without those ignored weights shows
+an explicit ML-unavailable status. See [ML setup and validation](piece-recognition-ml.md) for the
+reproducible training and deployment path. **Reload ML model** reloads local weights and applies
+the current CPU/GPU preference to inference; **Apply processor** changes image processing.
 
-Alternatively, use **Load empty-board photo…** with an upright, matching empty-board crop
-previously exported by GoldenTicket. The loader accepts one PNG/JPEG with an approximately 8:5
-shape, at least 640 × 400 pixels and within 3840 × 2160, with a 48 MB file limit. It does not accept
-a screenshot of the application as a board crop. An imported reference is resized without a
-second enhancement pass. Different lighting, crop framing or prior processing can still affect
-the comparison; reuse remains experimental.
+When an outline is wrong, enter a short description and choose **Save detection example…**.
+The ZIP saves the exact analyzed board image and its predictions, confidence values, model hash,
+frame/crop identity and your note. It is marked unreviewed. Saving does not train or modify the
+model; examples are reviewed and corrected before a later training round.
 
-Add one or more trains or score markers, then clear hands and let the image settle. Train
-candidates appear as white rotated rectangles; player-marker candidates appear as white squares.
-The count describes candidates in that frame. It is not a verified inventory of trains on routes.
-A reference containing a piece cannot identify that unchanged piece by differencing later.
-
-Changing the crop, camera session or processor clears the piece reference and outlines. Capture
-or load an appropriate empty-board reference again. A temporary camera jog suppresses candidates
-when alignment or scene-change checks fail. Return it to its previous view and let the scene
-settle to resume comparisons. Automatic registration at an arbitrary new usable pose remains
-future work. The framing reference used for checkpoint capture is a separate scene-safety check.
+Crop, camera, processor and model changes clear old outlines and wait for a current result.
+Reposition the four corners if the camera moves. This experiment has no automatic board
+registration or hand detection. **Camera framing reference** remains a separate scene-safety
+check for checkpoint photos; it does not provide the ML detector's input reference.
 
 ## Output and evidence
 
@@ -134,8 +126,8 @@ call cannot be forcibly interrupted. Expected GPU initialization/execution failu
 CPU and disclose the active backend; explicit CPU mode avoids GPU initialization.
 
 The camera pipeline processes one frame at a time and drops superseded work. It checks camera
-epoch, age, crop, processor and reference revisions before displaying results. A backend change
-invalidates the detector reference. Published outlines expire after two seconds independently of
+epoch, age, crop, processor and model revisions before displaying results. A backend change
+invalidates current outlines. Published outlines expire after two seconds independently of
 whether the camera continues supplying fresh frames, so stalled processing cannot leave an old
 overlay presented as current. No stale result is allowed to become a game command.
 
@@ -144,7 +136,8 @@ rectification. Production capture uses the system clock. Camera flow tests use a
 advanced clock so slow CI processing does not accidentally turn a fresh-frame test into a stale
 one; separate tests verify the unchanged two-second expiry and scene-stability timing.
 
-`PieceCandidateDetector` samples equally rectified images, aligns small reference translations,
+The historical `PieceCandidateDetector` remains available to baseline tests and the comparison
+tool. It is no longer called by the live outline pipeline. It samples equally rectified images, aligns small reference translations,
 rejects major scene changes/motion, and evaluates changed color components by shape. Its sampling
 is bounded at 960 × 640 and area-averages pixels; it does not treat interpolation as additional
 sensor evidence. This is an experimental baseline designed to withhold doubtful results, with
@@ -153,10 +146,14 @@ no calibrated confidence or measured physical false-positive guarantee.
 The graphics bindings are pinned to `Vortice.Direct3D11` and `Vortice.D3DCompiler` **3.8.3** under
 the [Vortice MIT license](https://github.com/amerkoleci/Vortice.Windows/blob/main/LICENSE).
 Direct3D 11 is a local Windows API. Dependency inventory and notices are tracked in
-[camera processing dependencies](camera-processing-dependencies.md). Windows ML/ONNX inference
-remains the conditional future model path in DESIGN §17.4.2, separate from this implementation.
+[camera processing dependencies](camera-processing-dependencies.md). ML uses ONNX Runtime 1.24.4
+with DirectML and CPU fallback, documented separately in [ML dependencies](ml-dependencies.md).
+The trained YOLOX-Nano model analyzes overlapping 640-pixel tiles of a 1920 × 1200 normalized
+board. The live pipeline rectifies the raw frame, enhances that crop in the same order as the
+training-photo export, and then runs inference. See the [ML record](piece-recognition-ml.md)
+for the fixed input contract and measured validation results.
 
-## Measured observations
+## Historical preprocessing and difference-baseline observations (September 12)
 
 | Check | Result | Limit of the evidence |
 |---|---|---|
@@ -194,20 +191,18 @@ can request.
 
 ## Physical acceptance still required
 
-Use the [controlled glare protocol](glare-test.md) to separate lighting/reference mismatch from
-glare-related misses. Its first fresh-reference series is recorded, with false positives under
-stronger lighting despite coverage of all actual pieces. Matching-lighting empty references and
-direct reflections over the black train groups remain untested. Compare individual outlines and
-scene holds, not just candidate totals.
+The [September 13 ML validation](evidence/ml-preview-2026-09-13/validation.md) is a tuned
+development result. Mounted-camera acceptance remains separate. Preserve the historical
+[controlled glare protocol](glare-test.md) when comparing with the difference baseline; for ML,
+evaluate the current image independently and count misses and false positives.
 
-- Confirm an unchanged empty board produces no train or marker candidates across normal focus,
-  exposure and lighting conditions; repeat after loading its exported reference.
+- Confirm empty boards produce no train or marker candidates across normal focus, exposure and
+  lighting conditions without supplying an empty reference.
 - Place each supported train color at varied angles and board locations, including near matching
   printed tracks. Count misses and false candidates. Test touching trains, glare, shadows,
   scoring markers, partial occlusion and hands entering/leaving the image.
-- Jog the camera, verify outlines are withheld, return it to the reference view, and verify fresh
-  results. Then test crop changes, stop/restart, resolution changes, and processor changes; each
-  must require an appropriate new reference and reject stale overlays.
+- Test crop changes, stop/restart, resolution changes, processor changes and model reloads; each
+  must reject stale overlays. After moving the camera, adjust the crop and evaluate fresh results.
 - Compare raw/enhanced views and CPU/GPU outputs on the mounted board. Check responsiveness over
   a complete game; the synthetic microbenchmark is not an end-to-end frame-rate promise.
 - Test actual GPU failure/fallback and additional integrated/discrete adapter families. Confirm
@@ -219,5 +214,5 @@ scene holds, not just candidate totals.
 
 Printed artwork, shadows, color similarity and touching pieces remain known sources of ambiguity.
 There is no claim of reliable whole-board inventory, automatic route ownership, general camera
-reorientation, gesture wakeup, or a production-trained recognition model. Those remain tracked
+reorientation, gesture wakeup, or production acceptance of this experimental model. Those remain tracked
 in [TODO](../TODO.md).

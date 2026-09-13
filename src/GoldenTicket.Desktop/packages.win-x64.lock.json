@@ -8,12 +8,25 @@
         "resolved": "8.4.2",
         "contentHash": "WadCzGEc2U+3e20avRLng4qNtt4zoOGWrdUISqJWrHe3/FSnrYjuM5Sb4yQb09LhkBXrrI4Zt3dLKgRMbItsrg=="
       },
+      "Microsoft.AI.DirectML": {
+        "type": "Transitive",
+        "resolved": "1.15.4",
+        "contentHash": "UblWBtQxcXcxwcn+jh0pfbq4zv2b6w7ThJ35qUV9gd8niGofrFWzVqZ6yqYDMiE+IJf8LRpG+H1cZpswceOeiA=="
+      },
       "Microsoft.Data.Sqlite.Core": {
         "type": "Transitive",
         "resolved": "10.0.12",
         "contentHash": "2aL9eL5HQr0V4b8V909SD+jQAx6qnTTl7sT/v3D8dIvmr2UGdpZIQxqm1pj2Js3e4EYTvpw0oMH7DjapJJuPPw==",
         "dependencies": {
           "SQLitePCLRaw.core": "2.1.12"
+        }
+      },
+      "Microsoft.ML.OnnxRuntime.Managed": {
+        "type": "Transitive",
+        "resolved": "1.24.4",
+        "contentHash": "e5jsEo0HcCKDMkuRsMSievKoMv10Odv4MGmxbCin8SEm4Pto1qTpwti47xRwMtk9I/zVvfAiFIWquOq/0+22DA==",
+        "dependencies": {
+          "System.Numerics.Tensors": "9.0.0"
         }
       },
       "SharpGen.Runtime": {
@@ -55,6 +68,11 @@
         "dependencies": {
           "SQLitePCLRaw.core": "2.1.12"
         }
+      },
+      "System.Numerics.Tensors": {
+        "type": "Transitive",
+        "resolved": "9.0.0",
+        "contentHash": "hyJB4UlpAi19Xr9AXzu2NuagKC4lPfHObNMEAA0HmqFz2rX7wKgzeYzO/jM/eBHDhnUGFFEjk5cOoJaxqg5J4A=="
       },
       "Vortice.DirectX": {
         "type": "Transitive",
@@ -112,6 +130,7 @@
       "goldenticket.vision": {
         "type": "Project",
         "dependencies": {
+          "Microsoft.ML.OnnxRuntime.DirectML": "[1.24.4, )",
           "Vortice.D3DCompiler": "[3.8.3, )",
           "Vortice.Direct3D11": "[3.8.3, )"
         }
@@ -125,6 +144,16 @@
           "Microsoft.Data.Sqlite.Core": "10.0.12",
           "SQLitePCLRaw.bundle_e_sqlite3": "2.1.12",
           "SQLitePCLRaw.core": "2.1.12"
+        }
+      },
+      "Microsoft.ML.OnnxRuntime.DirectML": {
+        "type": "CentralTransitive",
+        "requested": "[1.24.4, )",
+        "resolved": "1.24.4",
+        "contentHash": "rXEy9biJdgr55TdDaHrhl35K0FRXRCbvyRUv4S4C3jTxyxrqSh8YcEp5bzw4S9UlcqQKNfpb3sE+VWvO2DZY6A==",
+        "dependencies": {
+          "Microsoft.AI.DirectML": "1.15.4",
+          "Microsoft.ML.OnnxRuntime.Managed": "1.24.4"
         }
       },
       "Vortice.D3DCompiler": {
@@ -153,6 +182,16 @@
         "type": "Transitive",
         "resolved": "2.1.12",
         "contentHash": "fWi8Dbknuhgg72fWinIdjXVaqO1hHL4YBBwVLnr7e1c9TAZwJ0QE38j9syW1hwx6HaqEVTwI+O07WPdZn8Rp0w=="
+      },
+      "Microsoft.ML.OnnxRuntime.DirectML": {
+        "type": "CentralTransitive",
+        "requested": "[1.24.4, )",
+        "resolved": "1.24.4",
+        "contentHash": "rXEy9biJdgr55TdDaHrhl35K0FRXRCbvyRUv4S4C3jTxyxrqSh8YcEp5bzw4S9UlcqQKNfpb3sE+VWvO2DZY6A==",
+        "dependencies": {
+          "Microsoft.AI.DirectML": "1.15.4",
+          "Microsoft.ML.OnnxRuntime.Managed": "1.24.4"
+        }
       }
     }
   }

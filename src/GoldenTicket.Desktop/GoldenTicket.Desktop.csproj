@@ -31,4 +31,15 @@
     <ProjectReference Include="..\GoldenTicket.Vision\GoldenTicket.Vision.csproj" />
   </ItemGroup>
 
+  <!-- Local experiment weights stay outside source control. Copy only the reviewed deployment
+       pair; no training photos, Python environment, or network acquisition enter the app. -->
+  <ItemGroup Condition="Exists('$(RepoRoot)artifacts/piece-training/model/piece-detector.onnx')">
+    <Content Include="$(RepoRoot)artifacts/piece-training/model/piece-detector.onnx" Link="models/pieces/piece-detector.onnx"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(RepoRoot)artifacts/piece-training/model/manifest.json" Link="models/pieces/manifest.json"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(RepoRoot)docs/licenses/ml/yolox-LICENSE.txt" Link="models/pieces/LICENSE.YOLOX.txt"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
