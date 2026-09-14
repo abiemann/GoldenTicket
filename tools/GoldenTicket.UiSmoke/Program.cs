@@ -402,9 +402,10 @@ internal static partial class Program
         }
     }
 
-    private static async Task RenderSizes(string name, Func<UserControl> make, Action<UserControl>? verify = null)
+    private static async Task RenderSizes(string name, Func<UserControl> make, Action<UserControl>? verify = null,
+        IReadOnlyList<(int width, int height)>? sizes = null)
     {
-        foreach (var (width, height) in new[] { (1280, 800), (1000, 620) })
+        foreach (var (width, height) in sizes ?? [(1280, 800), (1000, 620)])
         {
             BindingLog.Context = $"{name}-{width}x{height}";
             var view = make();
@@ -477,17 +478,53 @@ internal static partial class Program
         var model = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
         try
         {
+            void VerifyRoster(UserControl view)
+            {
+                var dialog = (Border)view.FindName("AiSelectionDialog");
+                var back = (Button)view.FindName("AiSelectionBackButton");
+                var title = (TextBlock)view.FindName("AiSelectionTitle");
+                var play = (Button)view.FindName("PlayButton");
+                Rect Bounds(FrameworkElement element) => element.TransformToAncestor(view)
+                    .TransformBounds(new Rect(element.RenderSize));
+                var dialogBounds = Bounds(dialog);
+                var backBounds = Bounds(back);
+                var titleBounds = Bounds(title);
+                if (Math.Abs(backBounds.Left - dialogBounds.Left - 19) > 2 ||
+                    Math.Abs(backBounds.Top + backBounds.Height / 2 - titleBounds.Top - titleBounds.Height / 2) > 2 ||
+                    Math.Abs(titleBounds.Left + titleBounds.Width / 2 - dialogBounds.Left - dialogBounds.Width / 2) > 2 ||
+                    backBounds.Right + 8 > titleBounds.Left || back.Content is not null)
+                    throw new InvalidOperationException("The steampunk back arrow must sit at the dialog's left edge beside its centered title.");
+                var faces = Descendants<Image>(view).Where(image => image.DataContext is GameSeatChoice).ToArray();
+                if (faces.Length != 5 || play.IsEnabled != model.Game.CanPlay)
+                    throw new InvalidOperationException("All five character portraits and the chosen-seat PLAY state must be visible.");
+                if (model.Game.SelectedSeatCount == 0 && model.Game.SeatChoices.Any(choice => choice.IsSelected))
+                    throw new InvalidOperationException("No character should appear selected when the roster first opens.");
+                foreach (var face in faces)
+                {
+                    var choice = (GameSeatChoice)face.DataContext;
+                    if (choice.Role == CharacterRole.Unselected &&
+                        (face.Source is not FormatConvertedBitmap gray || gray.DestinationFormat != PixelFormats.Gray8))
+                        throw new InvalidOperationException("Unselected characters must use true grayscale portraits.");
+                }
+            }
+
             await RenderSizes("game-welcome", () => new GameScreenView { DataContext = model });
             await model.Game.ActivateSelectedAsync();
-            await RenderSizes("game-player-count", () => new GameScreenView { DataContext = model });
-            model.Game.SelectCount(5);
+            await RenderSizes("game-five-unselected", () => new GameScreenView { DataContext = model }, VerifyRoster);
+            await RenderSizes("game-five-unselected-narrow", () => new GameScreenView { DataContext = model },
+                VerifyRoster, [(875, 680)]);
+            var backView = new GameScreenView { DataContext = model };
+            await Arrange(backView, 1000, 620);
+            ((Button)backView.FindName("AiSelectionBackButton"))
+                .RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            if (!model.Game.IsWelcome)
+                throw new InvalidOperationException("The roster back arrow must return to the opening menu.");
             await model.Game.ActivateSelectedAsync();
-            await RenderSizes("game-five-faces", () => new GameScreenView { DataContext = model });
-            model.Game.SelectSeat(3);
-            await model.Game.ActivateSelectedAsync();
-            await RenderSizes("game-robot-face", () => new GameScreenView { DataContext = model });
-            if (model.Game.SeatChoices.Count != 5 || !model.Setup.Seats[3].IsComputer)
-                throw new InvalidOperationException("The game face choices did not update the shared seat setup.");
+            model.Game.CycleSeat(model.Game.SeatChoices[0]);
+            model.Game.CycleSeat(model.Game.SeatChoices[1]);
+            await RenderSizes("game-two-chosen", () => new GameScreenView { DataContext = model }, VerifyRoster);
+            model.Game.CycleSeat(model.Game.SeatChoices[0]);
+            await RenderSizes("game-robot-face", () => new GameScreenView { DataContext = model }, VerifyRoster);
             var pointerView = new GameScreenView { DataContext = model };
             await Arrange(pointerView, 1000, 620);
             var fourth = Descendants<Button>(pointerView).Single(button =>
@@ -498,9 +535,17 @@ internal static partial class Program
             if (model.Game.SeatSelection != 3)
                 throw new InvalidOperationException("Hover must move the face selection indicator.");
             fourth.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-            await Task.Delay(280);
-            if (model.Setup.Seats[3].IsComputer)
-                throw new InvalidOperationException("Click must flip the matched robot portrait back to human.");
+            await Task.Delay(400);
+            if (model.Game.SeatChoices[3].Role != CharacterRole.Human)
+                throw new InvalidOperationException("Click must colorize an unselected human portrait.");
+            fourth.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            await Task.Delay(400);
+            if (model.Game.SeatChoices[3].Role != CharacterRole.Computer)
+                throw new InvalidOperationException("A second click must show the matched robot portrait.");
+            fourth.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            await Task.Delay(400);
+            if (model.Game.SeatChoices[3].Role != CharacterRole.Unselected)
+                throw new InvalidOperationException("A third click must return to the unselected grayscale portrait.");
 
             var keyboardModel = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
             try
@@ -511,16 +556,17 @@ internal static partial class Program
                 void KeyPress(Key key) => keyboardView.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,
                     source, Environment.TickCount, key) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
                 KeyPress(Key.Enter);
-                KeyPress(Key.Down);
-                if (!keyboardModel.Game.IsPlayerCount || keyboardModel.Game.CountSelection != 3)
-                    throw new InvalidOperationException("Arrow keys must move the player-count highlight.");
                 KeyPress(Key.Enter);
+                await Task.Delay(400);
                 KeyPress(Key.Right);
                 KeyPress(Key.Enter);
-                await Task.Delay(280);
-                if (!keyboardModel.Game.IsAiSelection || keyboardModel.Setup.Seats.Count != 3 ||
-                    !keyboardModel.Setup.Seats[1].IsComputer)
-                    throw new InvalidOperationException("Enter and cursor keys must select and flip a face.");
+                await Task.Delay(400);
+                KeyPress(Key.Enter);
+                await Task.Delay(400);
+                if (!keyboardModel.Game.IsCharacterSelection || keyboardModel.Game.SelectedSeatCount != 2 ||
+                    keyboardModel.Game.SeatChoices[0].Role != CharacterRole.Human ||
+                    keyboardModel.Game.SeatChoices[1].Role != CharacterRole.Computer)
+                    throw new InvalidOperationException("Enter and cursor keys must cycle and select the five character choices.");
             }
             finally { await keyboardModel.DisposeToolsAsync(); }
 

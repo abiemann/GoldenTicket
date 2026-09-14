@@ -351,11 +351,14 @@ technical header and navigation; exclusive operating-system fullscreen is not re
 
 With no saved match, the opening choice is **Start a new game**. When at least one match exists,
 **Reload the previous game** resumes the most recently updated save, preserving its verification
-and rebuild gates. New-game setup asks for 2–5 players using a corresponding number of person
-symbols, then shows that many initially human portraits. Selecting a portrait flips it to its
-matched robot portrait or back and updates the underlying seat to **Computer X** or **Player X**.
-Keyboard arrows move the selection and Enter activates it; hover moves the selection and click
-activates it with the mouse. **PLAY!** starts the configured match after the current manual
+and rebuild gates. New-game setup shows all five character portraits at once in grayscale. Each
+portrait cycles from unselected to a color human **Player X**, to its matched robot **Computer X**,
+then back to unselected grayscale. Humans and computers are numbered separately in character
+order, and their numbers close gaps when a choice changes. Choosing 2–5 portraits determines the
+seat count; there is no separate player-count step. Keyboard arrows move the selection and Enter
+cycles it; hover moves the selection and click cycles it with the mouse. The back arrow is a brass,
+steampunk-styled control without a circular highlight. **PLAY!** becomes available with at least
+two selected characters and creates those seats in the shared match setup after the current manual
 whole-board verification acknowledgment. All-human and all-computer rosters are allowed; an
 operator still places and verifies any computer player's physical trains.
 

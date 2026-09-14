@@ -36,10 +36,16 @@ public partial class GameScreenView : UserControl
         else if (e.Key == Key.Enter && !e.IsRepeat)
         {
             if (Keyboard.FocusedElement is CheckBox ||
-                Keyboard.FocusedElement is Button back && Equals(back.Tag, "NavigationBack")) return;
+                Keyboard.FocusedElement is Button focused &&
+                (Equals(focused.Tag, "NavigationBack") || ReferenceEquals(focused, PlayButton))) return;
             e.Handled = true;
-            if (game.IsAiSelection && game.SeatSelection < game.SeatChoices.Count)
-                FlipFace(game.SeatChoices[game.SeatSelection], FindSeatButton(game.SeatSelection));
+            if (game.IsCharacterSelection && game.SeatSelection < game.SeatChoices.Count)
+            {
+                var index = Keyboard.FocusedElement is Button { DataContext: GameSeatChoice choice }
+                    ? choice.Number - 1 : Math.Max(0, game.SeatSelection);
+                game.SelectSeat(index);
+                FlipFace(game.SeatChoices[index], FindSeatButton(index));
+            }
             else
                 await game.ActivateSelectedAsync();
             FocusCurrentChoice();
@@ -54,20 +60,6 @@ public partial class GameScreenView : UserControl
         var game = Game;
         if (game is null) return;
         game.SelectWelcome(ReferenceEquals(sender, ReloadButton) ? 1 : 0);
-        await game.ActivateSelectedAsync();
-        FocusCurrentChoice();
-    }
-
-    private void Count_MouseEnter(object sender, MouseEventArgs e)
-    {
-        if (sender is Button { Tag: int count }) Game?.SelectCount(count);
-    }
-
-    private async void Count_Click(object sender, RoutedEventArgs e)
-    {
-        var game = Game;
-        if (game is null || sender is not Button { Tag: int count }) return;
-        game.SelectCount(count);
         await game.ActivateSelectedAsync();
         FocusCurrentChoice();
     }
@@ -102,14 +94,16 @@ public partial class GameScreenView : UserControl
 
     private void FlipFace(GameSeatChoice choice, Button? button)
     {
-        if (_faceFlipping || Game?.IsBusy == true) return;
+        var game = Game;
+        if (_faceFlipping || game is null || game.IsBusy) return;
         if (button is null || !SystemParameters.ClientAreaAnimation)
         {
-            choice.Toggle();
+            game.CycleSeat(choice);
             return;
         }
 
         _faceFlipping = true;
+        game.IsFaceFlipping = true;
         var transform = new ScaleTransform(1, 1);
         button.RenderTransformOrigin = new Point(.5, .5);
         button.RenderTransform = transform;
@@ -118,13 +112,14 @@ public partial class GameScreenView : UserControl
         {
             transform.BeginAnimation(ScaleTransform.ScaleXProperty, null);
             transform.ScaleX = 0;
-            choice.Toggle();
+            game.CycleSeat(choice);
             var open = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(115));
             open.Completed += (_, _) =>
             {
                 transform.BeginAnimation(ScaleTransform.ScaleXProperty, null);
                 transform.ScaleX = 1;
                 _faceFlipping = false;
+                game.IsFaceFlipping = false;
             };
             transform.BeginAnimation(ScaleTransform.ScaleXProperty, open);
         };

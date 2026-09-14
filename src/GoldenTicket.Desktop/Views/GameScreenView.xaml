@@ -39,9 +39,13 @@
             </Setter>
         </Style>
 
-        <Style x:Key="GameSelectableButton" TargetType="Button" BasedOn="{StaticResource GameChoiceButton}">
+        <Style x:Key="GameSeatButton" TargetType="Button" BasedOn="{StaticResource GameChoiceButton}">
             <Style.Triggers>
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="BorderBrush" Value="#FFE7D8B2" />
+                    <Setter Property="BorderThickness" Value="3" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsChosen}" Value="True">
                     <Setter Property="BorderBrush" Value="#FFFFD576" />
                     <Setter Property="BorderThickness" Value="4" />
                     <Setter Property="Background" Value="#EC522D26" />
@@ -76,6 +80,52 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+
+        <Style x:Key="GameBackArrowButton" TargetType="Button">
+            <Setter Property="Width" Value="64" />
+            <Setter Property="Height" Value="54" />
+            <Setter Property="Foreground" Value="#FFFFE5A6" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Canvas Width="64" Height="54" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Path x:Name="ArrowBody"
+                                  Data="M 28,4 C 25,4 23,5 21,7 L 3,23 C 0,26 0,29 3,32 L 21,48 C 23,50 25,51 28,50 C 31,50 33,48 33,45 L 33,37 L 54,37 C 58,37 60,34 60,30 L 60,24 C 60,20 58,17 54,17 L 33,17 L 33,9 C 33,6 31,4 28,4 Z"
+                                  Stroke="#FF5B2D16" StrokeThickness="2">
+                                <Path.Fill>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#FFFFEAB0" Offset="0" />
+                                        <GradientStop Color="#FFE4AC54" Offset="0.43" />
+                                        <GradientStop Color="#FF9E5427" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Path.Fill>
+                                <Path.Effect>
+                                    <DropShadowEffect Color="#FF150D0A" BlurRadius="5" ShadowDepth="2" Opacity="0.65" />
+                                </Path.Effect>
+                            </Path>
+                            <Path Data="M 30,13 L 16,27 30,41 M 16,27 H 48"
+                                  Stroke="#99522611" StrokeThickness="2" StrokeLineJoin="Round"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            <Ellipse Canvas.Left="48" Canvas.Top="24" Width="6" Height="6"
+                                     Fill="#FFFFE7AE" Stroke="#FF7E401C" StrokeThickness="1" />
+                        </Canvas>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ArrowBody" Property="Stroke" Value="#FFFFE3A1" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ArrowBody" Property="Fill" Value="#FFC17D3C" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ArrowBody" Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid Background="#101821">
@@ -106,58 +156,22 @@
             </StackPanel>
         </Border>
 
-        <Border VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="20,20,20,38"
-                Padding="22" CornerRadius="12" Background="#E7151E29"
-                BorderBrush="#FFD6AD5C" BorderThickness="1"
-                Visibility="{Binding Game.IsPlayerCount, Converter={StaticResource BoolToVisibility}}">
+        <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
+                 VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="16,16,16,25"
+                 Visibility="{Binding Game.IsCharacterSelection, Converter={StaticResource BoolToVisibility}}">
+        <Border x:Name="AiSelectionDialog" Padding="18" CornerRadius="12" Background="#EA151E29"
+                BorderBrush="#FFD6AD5C" BorderThickness="1">
             <StackPanel>
-                <TextBlock Text="How many players?" Foreground="#FFFFE7B0" FontSize="25"
-                           FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,14" />
-                <ItemsControl x:Name="CountItems" ItemsSource="{Binding Game.CountOptions}"
-                              HorizontalAlignment="Center">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Button Style="{StaticResource GameSelectableButton}" Tag="{Binding Count}"
-                                    Width="164" Height="106" Margin="5" MouseEnter="Count_MouseEnter"
-                                    Click="Count_Click" AutomationProperties.Name="{Binding Count, StringFormat={}{0} players}">
-                                <StackPanel>
-                                    <TextBlock Text="{Binding Count}" Foreground="#FFFFE7B0"
-                                               FontSize="25" FontWeight="Bold" HorizontalAlignment="Center" />
-                                    <ItemsControl ItemsSource="{Binding People}" HorizontalAlignment="Center" Margin="0,8,0,0">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Grid Width="24" Height="33" Margin="1,0">
-                                                    <Ellipse Width="11" Height="11" Fill="#FFF5D38F"
-                                                             HorizontalAlignment="Center" VerticalAlignment="Top" />
-                                                    <Path Data="M 3,32 C 3,13 21,13 21,32 Z" Fill="#FFF5D38F" />
-                                                </Grid>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </StackPanel>
-                            </Button>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <Button Content="Back" Tag="NavigationBack" Style="{StaticResource SecondaryButton}" Click="Back_Click"
-                        HorizontalAlignment="Left" Margin="5,14,0,0" />
-            </StackPanel>
-        </Border>
-
-        <Border VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="16,16,16,25"
-                Padding="18" CornerRadius="12" Background="#EA151E29"
-                BorderBrush="#FFD6AD5C" BorderThickness="1"
-                Visibility="{Binding Game.IsAiSelection, Converter={StaticResource BoolToVisibility}}">
-            <StackPanel>
-                <TextBlock Text="Select AI players" Foreground="#FFFFE7B0" FontSize="25"
-                           FontWeight="SemiBold" HorizontalAlignment="Center" />
-                <TextBlock Text="Select a face to change that player between human and computer."
+                <Grid Height="54">
+                    <TextBlock x:Name="AiSelectionTitle" Text="Choose players"
+                               Foreground="#FFFFE7B0" FontSize="25" FontWeight="SemiBold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Button x:Name="AiSelectionBackButton" Style="{StaticResource GameBackArrowButton}"
+                            Tag="NavigationBack" HorizontalAlignment="Left" VerticalAlignment="Center"
+                            Click="Back_Click" ToolTip="Back"
+                            AutomationProperties.Name="Back to game menu" />
+                </Grid>
+                <TextBlock Text="Choose at least two. Click a face to cycle: Player → Computer → Unselected."
                            Foreground="#FFE6D9C3" FontSize="14" HorizontalAlignment="Center"
                            Margin="0,4,0,13" />
                 <ItemsControl x:Name="SeatItems" ItemsSource="{Binding Game.SeatChoices}"
@@ -167,11 +181,11 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Button Style="{StaticResource GameSelectableButton}" Width="157" Margin="5,0"
+                            <Button Style="{StaticResource GameSeatButton}" Width="157" Margin="5,0"
                                     MouseEnter="Seat_MouseEnter" Click="Seat_Click"
-                                    AutomationProperties.Name="{Binding Label}">
+                                    AutomationProperties.Name="{Binding AccessibleName}">
                                 <StackPanel>
-                                    <Image Source="{Binding PortraitUri}" Width="129" Height="129"
+                                    <Image Source="{Binding Portrait}" Width="129" Height="129"
                                            Stretch="Uniform" />
                                     <TextBlock Text="{Binding Label}" Foreground="#FFFFF1D7" FontSize="17"
                                                FontWeight="SemiBold" HorizontalAlignment="Center"
@@ -188,14 +202,14 @@
                            Visibility="{Binding Game.Message, Converter={StaticResource MessageVisibility}}"
                            AutomationProperties.LiveSetting="Polite" />
                 <Grid Margin="5,14,5,0">
-                    <Button Content="Back" Tag="NavigationBack" Style="{StaticResource SecondaryButton}" Click="Back_Click"
-                            HorizontalAlignment="Left" />
                     <Button x:Name="PlayButton" Content="PLAY!" Style="{StaticResource GamePlayButton}"
                             HorizontalAlignment="Center" Width="205" Height="56" FontSize="24"
-                            FontWeight="Bold" MouseEnter="Play_MouseEnter" Click="Play_Click" />
+                            FontWeight="Bold" IsEnabled="{Binding Game.CanPlay}"
+                            MouseEnter="Play_MouseEnter" Click="Play_Click" />
                 </Grid>
             </StackPanel>
         </Border>
+        </Viewbox>
 
         <!-- Gameplay reuses the existing public views and the same MainViewModel. The technical
              layer remains alive underneath this view while it is covered. -->

@@ -1,55 +1,86 @@
-using System.Collections.ObjectModel;
-using System.ComponentModel;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
+using GoldenTicket.Domain;
 
 namespace GoldenTicket.Desktop.ViewModels;
 
-public enum GameScreenStage { Welcome, PlayerCount, AiSelection, Playing }
+public enum GameScreenStage { Welcome, CharacterSelection, Playing }
+public enum CharacterRole { Unselected, Human, Computer }
 
-public sealed partial class PlayerCountChoice(int count) : ObservableObject
+public sealed partial class GameSeatChoice(int number) : ObservableObject
 {
-    public int Count { get; } = count;
-    public IReadOnlyList<int> People { get; } = Enumerable.Range(0, count).ToArray();
+    private BitmapImage? _humanPortrait;
+    private BitmapImage? _robotPortrait;
+    private ImageSource? _grayPortrait;
 
+    public int Number { get; } = number;
+    public bool IsChosen => Role != CharacterRole.Unselected;
+    public string Label => Role switch
+    {
+        CharacterRole.Human => $"Player {RoleNumber}",
+        CharacterRole.Computer => $"Computer {RoleNumber}",
+        _ => "Select",
+    };
+    public string AccessibleName => $"Character {Number}, {Label}";
+    public string PortraitUri => $"/GoldenTicket;component/Assets/Characters/character-{Number:00}-{(Role == CharacterRole.Computer ? "robot" : "human")}-256.png";
+    public ImageSource Portrait => Role switch
+    {
+        CharacterRole.Human => _humanPortrait ??= LoadPortrait(false),
+        CharacterRole.Computer => _robotPortrait ??= LoadPortrait(true),
+        _ => _grayPortrait ??= GrayPortrait(),
+    };
+
+    [ObservableProperty] private CharacterRole _role;
+    [ObservableProperty] private int _roleNumber;
     [ObservableProperty] private bool _isSelected;
-}
 
-public sealed partial class GameSeatChoice : ObservableObject, IDisposable
-{
-    private readonly SeatSetupRow _seat;
-
-    public GameSeatChoice(SeatSetupRow seat, int number)
+    partial void OnRoleChanged(CharacterRole value)
     {
-        _seat = seat;
-        Number = number;
-        _seat.PropertyChanged += SeatChanged;
-    }
-
-    public int Number { get; }
-    public bool IsComputer => _seat.IsComputer;
-    public string Label => $"{(IsComputer ? "Computer" : "Player")} {Number}";
-    public string PortraitUri => $"/GoldenTicket;component/Assets/Characters/character-{Number:00}-{(IsComputer ? "robot" : "human")}-256.png";
-
-    [ObservableProperty] private bool _isSelected;
-
-    public void Toggle()
-    {
-        _seat.IsComputer = !_seat.IsComputer;
-        _seat.DisplayName = Label;
-    }
-
-    private void SeatChanged(object? sender, PropertyChangedEventArgs args)
-    {
-        if (args.PropertyName != nameof(SeatSetupRow.IsComputer)) return;
-        OnPropertyChanged(nameof(IsComputer));
+        OnPropertyChanged(nameof(IsChosen));
         OnPropertyChanged(nameof(Label));
+        OnPropertyChanged(nameof(AccessibleName));
         OnPropertyChanged(nameof(PortraitUri));
+        OnPropertyChanged(nameof(Portrait));
     }
 
-    public void Dispose() => _seat.PropertyChanged -= SeatChanged;
+    partial void OnRoleNumberChanged(int value)
+    {
+        OnPropertyChanged(nameof(Label));
+        OnPropertyChanged(nameof(AccessibleName));
+    }
+
+    public void Cycle() => Role = Role switch
+    {
+        CharacterRole.Unselected => CharacterRole.Human,
+        CharacterRole.Human => CharacterRole.Computer,
+        _ => CharacterRole.Unselected,
+    };
+
+    private BitmapImage LoadPortrait(bool robot)
+    {
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.UriSource = new Uri($"pack://application:,,,/GoldenTicket;component/Assets/Characters/character-{Number:00}-{(robot ? "robot" : "human")}-256.png");
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        image.EndInit();
+        image.Freeze();
+        return image;
+    }
+
+    private ImageSource GrayPortrait()
+    {
+        var image = new FormatConvertedBitmap();
+        image.BeginInit();
+        image.Source = _humanPortrait ??= LoadPortrait(false);
+        image.DestinationFormat = PixelFormats.Gray8;
+        image.EndInit();
+        image.Freeze();
+        return image;
+    }
 }
 
-/// <summary>The player-facing setup uses the same seat rows and match commands as the technical setup.</summary>
+/// <summary>Five character choices become the shared setup seats only when a new match starts.</summary>
 public sealed partial class GameScreenViewModel : ObservableObject
 {
     private readonly MainViewModel _main;
@@ -57,26 +88,25 @@ public sealed partial class GameScreenViewModel : ObservableObject
     public GameScreenViewModel(MainViewModel main)
     {
         _main = main;
-        CountOptions = Enumerable.Range(2, 4).Select(count => new PlayerCountChoice(count)).ToArray();
+        SeatChoices = Enumerable.Range(1, 5).Select(number => new GameSeatChoice(number)).ToArray();
         _main.Setup.SavedSessions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasPreviousGame));
-        _main.Setup.Seats.CollectionChanged += (_, _) => SyncSeats();
         UpdateSelection();
     }
 
-    public IReadOnlyList<PlayerCountChoice> CountOptions { get; }
-    public ObservableCollection<GameSeatChoice> SeatChoices { get; } = [];
+    public IReadOnlyList<GameSeatChoice> SeatChoices { get; }
     public bool HasPreviousGame => _main.Setup.SavedSessions.Count > 0;
+    public int SelectedSeatCount => SeatChoices.Count(choice => choice.IsChosen);
+    public bool CanPlay => SelectedSeatCount >= _main.Setup.MinPlayers && !IsFaceFlipping;
 
     [ObservableProperty] private GameScreenStage _stage = GameScreenStage.Welcome;
     [ObservableProperty] private int _welcomeSelection;
-    [ObservableProperty] private int _countSelection = 2;
-    [ObservableProperty] private int _seatSelection;
+    [ObservableProperty] private int _seatSelection = -1;
     [ObservableProperty] private bool _isBusy;
+    [ObservableProperty] private bool _isFaceFlipping;
     [ObservableProperty] private string? _message;
 
     public bool IsWelcome => Stage == GameScreenStage.Welcome;
-    public bool IsPlayerCount => Stage == GameScreenStage.PlayerCount;
-    public bool IsAiSelection => Stage == GameScreenStage.AiSelection;
+    public bool IsCharacterSelection => Stage == GameScreenStage.CharacterSelection;
     public bool IsPlaying => Stage == GameScreenStage.Playing;
     public bool IsStartSelected => WelcomeSelection == 0;
     public bool IsReloadSelected => WelcomeSelection == 1;
@@ -85,8 +115,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
     partial void OnStageChanged(GameScreenStage value)
     {
         OnPropertyChanged(nameof(IsWelcome));
-        OnPropertyChanged(nameof(IsPlayerCount));
-        OnPropertyChanged(nameof(IsAiSelection));
+        OnPropertyChanged(nameof(IsCharacterSelection));
         OnPropertyChanged(nameof(IsPlaying));
         Message = null;
     }
@@ -97,13 +126,11 @@ public sealed partial class GameScreenViewModel : ObservableObject
         OnPropertyChanged(nameof(IsReloadSelected));
     }
 
-    partial void OnCountSelectionChanged(int value) => UpdateSelection();
     partial void OnSeatSelectionChanged(int value) => UpdateSelection();
+    partial void OnIsFaceFlippingChanged(bool value) => OnPropertyChanged(nameof(CanPlay));
 
     private void UpdateSelection()
     {
-        if (CountOptions is not null)
-            foreach (var option in CountOptions) option.IsSelected = option.Count == CountSelection;
         foreach (var choice in SeatChoices) choice.IsSelected = choice.Number - 1 == SeatSelection;
         OnPropertyChanged(nameof(IsPlaySelected));
     }
@@ -112,13 +139,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
 
     public void Back()
     {
-        if (IsBusy) return;
-        Stage = Stage switch
-        {
-            GameScreenStage.AiSelection => GameScreenStage.PlayerCount,
-            GameScreenStage.PlayerCount => GameScreenStage.Welcome,
-            _ => Stage,
-        };
+        if (!IsBusy && IsCharacterSelection) Stage = GameScreenStage.Welcome;
     }
 
     public void SelectWelcome(int index)
@@ -126,14 +147,27 @@ public sealed partial class GameScreenViewModel : ObservableObject
         if (index is 0 or 1 && (index == 0 || HasPreviousGame)) WelcomeSelection = index;
     }
 
-    public void SelectCount(int count)
-    {
-        if (count is >= 2 and <= 5) CountSelection = count;
-    }
-
     public void SelectSeat(int index)
     {
         if (index >= 0 && index <= SeatChoices.Count) SeatSelection = index;
+    }
+
+    public void CycleSeat(GameSeatChoice choice)
+    {
+        if (IsBusy || !IsCharacterSelection || !SeatChoices.Contains(choice)) return;
+        choice.Cycle();
+        var human = 0;
+        var computer = 0;
+        foreach (var seat in SeatChoices)
+            seat.RoleNumber = seat.Role switch
+            {
+                CharacterRole.Human => ++human,
+                CharacterRole.Computer => ++computer,
+                _ => 0,
+            };
+        OnPropertyChanged(nameof(SelectedSeatCount));
+        OnPropertyChanged(nameof(CanPlay));
+        Message = null;
     }
 
     public void MoveSelection(int delta)
@@ -144,10 +178,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
             case GameScreenStage.Welcome:
                 SelectWelcome(Math.Clamp(WelcomeSelection + delta, 0, HasPreviousGame ? 1 : 0));
                 break;
-            case GameScreenStage.PlayerCount:
-                SelectCount(Math.Clamp(CountSelection + delta, 2, 5));
-                break;
-            case GameScreenStage.AiSelection:
+            case GameScreenStage.CharacterSelection:
                 SelectSeat(Math.Clamp(SeatSelection + delta, 0, SeatChoices.Count));
                 break;
         }
@@ -159,47 +190,42 @@ public sealed partial class GameScreenViewModel : ObservableObject
         switch (Stage)
         {
             case GameScreenStage.Welcome:
-                if (WelcomeSelection == 0) Stage = GameScreenStage.PlayerCount;
+                if (WelcomeSelection == 0)
+                {
+                    foreach (var choice in SeatChoices) { choice.Role = CharacterRole.Unselected; choice.RoleNumber = 0; }
+                    SeatSelection = -1;
+                    _main.Setup.ManualVerificationAccepted = false;
+                    OnPropertyChanged(nameof(SelectedSeatCount));
+                    OnPropertyChanged(nameof(CanPlay));
+                    Stage = GameScreenStage.CharacterSelection;
+                }
                 else await ReloadPreviousAsync();
                 break;
-            case GameScreenStage.PlayerCount:
-                ConfigureSeats(CountSelection);
-                Stage = GameScreenStage.AiSelection;
-                SyncSeats();
-                break;
-            case GameScreenStage.AiSelection:
+            case GameScreenStage.CharacterSelection:
                 if (SeatSelection == SeatChoices.Count) await PlayAsync();
-                else SeatChoices[SeatSelection].Toggle();
+                else
+                {
+                    if (SeatSelection < 0) SeatSelection = 0;
+                    CycleSeat(SeatChoices[SeatSelection]);
+                }
                 break;
         }
     }
 
-    private void ConfigureSeats(int count)
+    private void ConfigureSeats()
     {
-        while (_main.Setup.Seats.Count > count) _main.Setup.RemoveSeat();
-        while (_main.Setup.Seats.Count < count) _main.Setup.AddSeat();
-        for (var index = 0; index < count; index++)
+        var chosen = SeatChoices.Where(choice => choice.IsChosen).ToArray();
+        while (_main.Setup.Seats.Count > chosen.Length) _main.Setup.RemoveSeat();
+        while (_main.Setup.Seats.Count < chosen.Length) _main.Setup.AddSeat();
+        var colors = Enum.GetValues<PlayerColor>();
+        for (var index = 0; index < chosen.Length; index++)
         {
             var seat = _main.Setup.Seats[index];
-            seat.IsComputer = false;
-            seat.DisplayName = $"Player {index + 1}";
+            seat.IsComputer = chosen[index].Role == CharacterRole.Computer;
+            seat.DisplayName = chosen[index].Label;
+            seat.Color = colors[index];
         }
         _main.Setup.StartingSeatIndex = 0;
-        SyncSeats();
-        SeatSelection = 0;
-        UpdateSelection();
-    }
-
-    public void SyncSeats()
-    {
-        if (Stage != GameScreenStage.AiSelection) return;
-        foreach (var choice in SeatChoices) choice.Dispose();
-        SeatChoices.Clear();
-        for (var index = 0; index < _main.Setup.Seats.Count; index++)
-            SeatChoices.Add(new GameSeatChoice(_main.Setup.Seats[index], index + 1));
-        CountSelection = _main.Setup.Seats.Count;
-        SeatSelection = Math.Clamp(SeatSelection, 0, SeatChoices.Count);
-        UpdateSelection();
     }
 
     private async Task ReloadPreviousAsync()
@@ -218,9 +244,16 @@ public sealed partial class GameScreenViewModel : ObservableObject
 
     private async Task PlayAsync()
     {
+        if (IsFaceFlipping) return;
+        if (!CanPlay)
+        {
+            Message = $"Choose at least {_main.Setup.MinPlayers} characters to play.";
+            return;
+        }
         IsBusy = true;
         try
         {
+            ConfigureSeats();
             await _main.StartMatchAsync();
             if (Stage != GameScreenStage.Playing)
                 Message = _main.Setup.ValidationMessage ?? "The game could not be started.";
