@@ -246,3 +246,21 @@ four empty controls still clear. Actual .NET CPU/DirectML fixture checks pass. T
 pair is updated and the prior pair is preserved for rollback. Independent new captures remain
 necessary; these figures do not establish general accuracy. See the
 [complete training and deployment record](../../docs/evidence/ml-retrain-2026-09-13/validation.md).
+
+## Denver yellow-train follow-up
+
+The third model adds reviewed photo `184806` after recording its failure against the frozen second
+model. Collection `05` has 33 photos and 1,210 objects; prior 32 annotations and capture groups are
+unchanged. This run initializes model weights from the preceding best checkpoint, while AdamW,
+EMA updates and the learning-rate schedule restart:
+
+```powershell
+& 'artifacts/piece-training/.venv/Scripts/python.exe' tools/piece-training/train_piece_detector.py --labels artifacts/piece-training/labels-reviewed-05.json --images C:/temp --yolox-source artifacts/piece-training/vendor/YOLOX --pretrained artifacts/piece-training/pretrained/yolox_nano.pth --output artifacts/piece-training/runs/retrain-reviewed-05-r1 --epochs 40 --samples-per-epoch 512 --batch-size 16 --seed 20260915 --initialize artifacts/piece-training/runs/retrain-reviewed-04-r1/best.pth --all-reviewed --tile-ownership --confidence 0.30
+```
+
+The existing selection rule chose epoch 20. At fixed confidence 0.30 and exact runtime resize,
+all 1,210 labels match without extras, including the Denver yellow train (score 0.9290). Six
+production CPU/DirectML fixtures match all 352 reviewed objects, with one investigated subpixel
+box difference due to nearly tied NMS candidates. The validated local pair is installed with
+the preceding pair preserved. All 33 photos are now in-sample, including the added photo.
+See the [training, parity and deployment record](../../docs/evidence/ml-retrain-denver-2026-09-13/validation.md).

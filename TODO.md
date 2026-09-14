@@ -173,6 +173,12 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   with rollback preserved. All saved-photo labels now match without extras; this is in-sample
   regression evidence, not independent accuracy. See the
   [training and deployment record](docs/evidence/ml-retrain-2026-09-13/validation.md).
+- [x] **Retrain the Denver yellow-train miss.** Add reviewed photo `184806` and fine-tune on
+  all 33 photos / 1,210 labels. The missed Salt Lake City–Denver train rises from 0.2993 to
+  0.9290 at the unchanged 0.30 cutoff; all labels match without extras. Install the verified
+  local pair with rollback preserved after six CPU/DirectML fixtures and a subpixel parity
+  investigation. These are in-sample checks; independent acceptance remains open above. See the
+  [training and deployment evidence](docs/evidence/ml-retrain-denver-2026-09-13/validation.md).
 - [x] **Experimental learned corner selection.** A separate local corner heatmap model selects
   the outer board crop once per camera session, with an explicit retry and editable handles.
   Manual edits, camera changes and stale frames invalidate pending results. Missing or uncertain

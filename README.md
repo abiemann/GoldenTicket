@@ -35,9 +35,10 @@ stay square. Uncertain train fits keep the original model box.
 The [validation record](docs/evidence/ml-preview-2026-09-13/validation.md) separates measured photo
 results from the live-camera and independent-session tests still needed.
 
-The subsequent [model retraining](docs/evidence/ml-retrain-2026-09-13/validation.md) incorporates
-32 reviewed photos, including crowded markers and printed-route false positives. The new local
-preview model passes the saved-photo checks on CPU and DirectML. These photos were used for
+The latest [model retraining](docs/evidence/ml-retrain-denver-2026-09-13/validation.md) incorporates
+33 reviewed photos, including crowded markers, printed-route false positives and the missed
+yellow train beside Denver. The local preview model passes the saved-photo checks on CPU and
+DirectML, with one documented subpixel outline difference. These photos were used for
 training; new capture sessions remain necessary to measure generalization. Use **Reload ML model**
 in an already open preview after the local model files are updated.
 

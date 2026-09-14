@@ -110,7 +110,7 @@ also corrected an omitted yellow train in `171132`. See the
 
 Photo `20260913-173706` reproduces an extra train prediction over the empty printed yellow slot
 near Boston on both CPU and DirectML. The printed slot remains background while the real red train
-beside it is labeled. Current local collection version `04` contains **32 photos and 1,126 labels**,
+beside it is labeled. At that stage, local collection version `04` contained **32 photos and 1,126 labels**,
 with related layouts kept together. See the
 [Boston false-positive check](evidence/boston-false-positive-2026-09-13/validation.md).
 
@@ -122,6 +122,19 @@ yellow train near Little Rock remains detected. CPU/DirectML fixture checks agre
 **These are in-sample results:** the photos were used in training. New capture sessions are still
 needed to judge generalization and intermittent live failures. The previous model is retained for
 rollback. Use **Reload ML model** in an already open app to load the new installed pair.
+
+A subsequent changed layout, photo `184806`, was reviewed separately without further training.
+The frozen second model matches **78 of 79 trains and all five markers, with no extras**. A yellow
+train at the Denver end of Salt Lake City–Denver scores 0.2993, just below the unchanged 0.30 cutoff.
+CPU and DirectML agree. See the [new-layout check](evidence/new-layout-2026-09-13/validation.md);
+this is an unseen layout from the same capture setup, not an independent capture-session test.
+
+The user subsequently requested another retrain including that photo. Collection `05` now has
+**33 photos and 1,210 labels**. The installed third model matches all labels at the unchanged
+cutoff, with no extras; the Denver yellow train's score rises from 0.2993 to 0.9290. Six actual
+CPU/DirectML fixtures match all 352 reviewed objects, with one documented subpixel box difference
+from nearly tied duplicate proposals. All 33 photos, including `184806`, are now training examples.
+See the [Denver retraining and deployment record](evidence/ml-retrain-denver-2026-09-13/validation.md).
 
 The current difference detector remains available to developer diagnostics for comparison;
 the live Piece outlines feature no longer calls it. The old lighting failure observations are
