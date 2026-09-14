@@ -32,19 +32,32 @@ internal static partial class Program
                 Path.Combine(destination, gpu ? "gpu-profile" : "cpu-profile"));
             var startup = timer.Elapsed.TotalMilliseconds;
             var result = detector.Detect(board);
+            var detectionTimings = new List<double> { result.Elapsed.TotalMilliseconds };
+            var fittingTimings = new List<double> { result.OutlineFittingElapsed.TotalMilliseconds };
+            for (var sample = 0; sample < 2; sample++)
+            {
+                result = detector.Detect(board);
+                detectionTimings.Add(result.Elapsed.TotalMilliseconds);
+                fittingTimings.Add(result.OutlineFittingElapsed.TotalMilliseconds);
+            }
             results.Add(result);
             var providers = Providers(detector.StartupProfilePath);
             var suffix = gpu ? "gpu" : "cpu";
             Draw(board, result.Candidates, Path.Combine(destination, $"piece-outlines-{suffix}.png"));
+            Draw(board, result.Candidates, Path.Combine(destination, $"piece-outlines-preview-{suffix}.png"), maximumWidth: 1600);
             runs.Add(new
             {
                 RequestedGpu = gpu, detector.ModelId, detector.ModelSha256, detector.Backend, detector.FallbackReason,
-                StartupMilliseconds = startup, InferenceMilliseconds = result.Elapsed.TotalMilliseconds,
+                StartupMilliseconds = startup, InferenceMilliseconds = (result.Elapsed - result.OutlineFittingElapsed).TotalMilliseconds,
+                DetectionMilliseconds = result.Elapsed.TotalMilliseconds,
+                OutlineFittingMilliseconds = result.OutlineFittingElapsed.TotalMilliseconds,
+                DetectionTimingsMilliseconds = detectionTimings, OutlineFittingTimingsMilliseconds = fittingTimings,
                 NodeProviders = providers, detector.StartupProfilePath,
                 NativeLibraries = NativeLibraries(),
                 TrainCount = result.Candidates.Count(item => item.Kind == PieceCandidateKind.Train),
                 MarkerCount = result.Candidates.Count(item => item.Kind == PieceCandidateKind.PlayerMarker),
-                Candidates = result.Candidates.Select(item => new { Kind = item.Kind.ToString(), item.Confidence, item.Outline })
+                OrientedTrainCount = result.Candidates.Count(item => item.Kind == PieceCandidateKind.Train && item.OrientedOutline is not null),
+                Candidates = result.Candidates.Select(item => new { Kind = item.Kind.ToString(), item.Confidence, item.Outline, item.OrientedOutline })
             });
         }
         object? parity = null;
@@ -115,26 +128,46 @@ internal static partial class Program
         return CameraFrame.CopyFromBgra32(converted.PixelWidth, converted.PixelHeight, pixels);
     }
 
-    private static void Draw(CameraFrame source, IReadOnlyList<PieceCandidate> candidates, string destination)
+    private static void Draw(CameraFrame source, IReadOnlyList<PieceCandidate> candidates, string destination,
+        int maximumWidth = int.MaxValue)
     {
         var bitmap = BitmapSource.Create(source.Width, source.Height, 96, 96, PixelFormats.Bgra32, null,
             source.Bgra32.ToArray(), source.Stride);
         var visual = new DrawingVisual();
+        var scale = Math.Min(1, (double)maximumWidth / source.Width);
         using (var drawing = visual.RenderOpen())
         {
+            drawing.PushTransform(new ScaleTransform(scale, scale));
             drawing.DrawImage(bitmap, new Rect(0, 0, source.Width, source.Height));
             var black = new Pen(Brushes.Black, 5);
             var white = new Pen(Brushes.White, 2);
             foreach (var candidate in candidates)
             {
-                var box = Bounds(candidate);
-                var rectangle = new Rect(box.X * source.Width, box.Y * source.Height,
-                    box.Width * source.Width, box.Height * source.Height);
-                drawing.DrawRectangle(null, black, rectangle);
-                drawing.DrawRectangle(null, white, rectangle);
+                var points = candidate.DisplayOutline.Select(point => new Point(
+                    point.X * source.Width, point.Y * source.Height)).ToArray();
+                if (candidate.Kind == PieceCandidateKind.PlayerMarker)
+                {
+                    var left = points.Min(point => point.X);
+                    var top = points.Min(point => point.Y);
+                    var right = points.Max(point => point.X);
+                    var bottom = points.Max(point => point.Y);
+                    var size = Math.Max(right - left, bottom - top);
+                    var x = (left + right - size) / 2;
+                    var y = (top + bottom - size) / 2;
+                    points = [new(x, y), new(x + size, y), new(x + size, y + size), new(x, y + size)];
+                }
+                var geometry = new StreamGeometry();
+                using (var context = geometry.Open())
+                {
+                    context.BeginFigure(points[0], isFilled: false, isClosed: true);
+                    context.PolyLineTo(points[1..], isStroked: true, isSmoothJoin: false);
+                }
+                drawing.DrawGeometry(null, black, geometry);
+                drawing.DrawGeometry(null, white, geometry);
             }
         }
-        var output = new RenderTargetBitmap(source.Width, source.Height, 96, 96, PixelFormats.Pbgra32);
+        var output = new RenderTargetBitmap((int)Math.Ceiling(source.Width * scale),
+            (int)Math.Ceiling(source.Height * scale), 96, 96, PixelFormats.Pbgra32);
         output.Render(visual);
         var encoder = new PngBitmapEncoder();
         encoder.Frames.Add(BitmapFrame.Create(output));

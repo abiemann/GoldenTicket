@@ -1077,6 +1077,13 @@ The camera is rectified and enhanced in the same order as training exports. Revi
 that exact unpainted crop and unreviewed predictions, not a later frame. The separate enhancement
 badge does not imply ML GPU execution. See [current evidence](docs/evidence/ml-preview-2026-09-13/validation.md).
 
+After ML detection and NMS, `TrainOutlineFitter` uses the analyzed pixels within each train box
+to estimate a rotated display rectangle. Original model boxes, confidences and class counts stay
+unchanged. Ambiguous or clipped fits fall back to the original geometry; score markers stay square.
+The optional normalized-board polygon is projected through the crop into the sensor preview and
+recorded separately in review ZIPs as an unreviewed local image fit. This is display refinement,
+not a learned angle, segmentation mask, board-route lookup or an empty-board comparison.
+
 The subsequent corner experiment adds a separate, locally trained U-Net heatmap model on the
 complete raw camera frame. It proposes TL/TR/BR/BL outer corners once per camera/format session,
 and through an explicit **Detect board corners** retry. It does not run continuously or replace
@@ -1084,8 +1091,8 @@ manual adjustments after they begin. The fixed contract is RGB 0–1, centered 3
 four 192-pixel sigmoid heatmaps, and local peak-centroid decoding. Confidence and quadrilateral
 validation precede crop replacement; rejected proposals leave the existing crop untouched.
 The UI checks cancellation, camera identity, source age and crop-edit revisions before publishing.
-Before setting the crop handles, the accepted quadrilateral expands by 4% about its center
-(2% per side for a rectangle) to retain score pieces protruding beyond the board border.
+Before setting the crop handles, the accepted quadrilateral expands by 0.5% about its center
+(0.25% per side for a rectangle), leaving a thin border outside the board edge.
 Corner movement is limited by the image bounds; convexity and containment of the original board
 are checked. The resulting visible outline is used for preview, export and piece inference.
 Padding is applied once per model proposal, with no hidden expansion of manually edited handles.

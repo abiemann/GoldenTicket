@@ -15,7 +15,8 @@ The model supplies visual observations only: manual game verification remains in
    the four outer corners automatically. Check the complete score track is inside the outline;
    adjust the handles, retry **Detect board corners**, or choose **Select four board corners**.
    No empty-board or camera-framing reference is required for outlines. Clear hands and inspect
-   the white train rectangles and score-marker squares.
+   the white train rectangles and score-marker squares. Train outlines follow the visible train
+   angle when a local image fit is reliable; uncertain fits keep the original upright model box.
 3. Read the separate **ML** backend/model status under **Piece outlines**. The top CPU/GPU badge
    describes image enhancement. **Reload ML model** reloads the locally installed pair and
    prefers GPU, unless **CPU only** is selected above. Changing enhancement alone does not
@@ -23,6 +24,7 @@ The model supplies visual observations only: manual game verification remains in
 4. Enter an optional note about a missing, extra or merged outline and choose **Save detection
    example…**. The ZIP contains the exact analyzed, unpainted board image and `predictions.json`,
    including model SHA-256, confidence, source identity, explicit coordinate units and your note.
+   Original model boxes and optional image-fitted `orientedOutline` polygons are stored separately.
    Capture continues; the saved image and predictions stay paired. Existing files are not replaced.
    Predictions are marked unreviewed and are never automatically treated as training labels.
 
@@ -67,8 +69,19 @@ new measurements and a versioned manifest.
 
 Physical plastic colors are annotation metadata used to break down errors. This two-class
 model **does not recognize player color or ownership**. Its axis-aligned boxes do not establish
-learned rotation or segmentation. Marker squares are a display transform; evaluation and exports
-retain the detector's original geometry.
+learned rotation or segmentation. After ML detection and NMS, a bounded local image fit estimates
+an oriented rectangle for each train whose visible shape supports one. This display refinement
+uses the current analyzed image, without an empty-board reference or board-route lookup; it does
+not add detections or change their classes or confidence. Low-contrast, ambiguous or clipped fits
+fall back to the original box. Marker squares remain a display transform.
+
+Original detector geometry stays in `outline` and the pixel box fields for evaluation and review.
+The optional `orientedOutline` uses the same normalized-board coordinates and is explicitly tagged
+`local-image-fit` in review ZIPs. It is not a learned rotation prediction or reviewed training label.
+The preview projects its four corners through the selected board crop, preserving alignment under
+camera perspective, zoom and pan. The preview reports total detection time; review and smoke
+reports separate model inference from outline fitting. No model retraining or additional runtime is required.
+See the [orientation checks and limitations](evidence/train-orientation-2026-09-13/validation.md).
 
 ## Results and the next review loop
 

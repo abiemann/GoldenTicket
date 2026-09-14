@@ -145,6 +145,10 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   ONNX CPU/DirectML inference into the preview. Empty-board capture is no longer a prerequisite.
   Add exact-frame review ZIPs with model hashes and notes. See the
   [experiment and validation](docs/piece-recognition-ml.md); this is experimental visual feedback.
+- [x] **Rotated train outlines.** Fit an optional display rectangle to the train pixels within each
+  ML detection; uncertain fits retain the original box and markers remain square. Preserve original
+  model predictions for evaluation and save fitted geometry separately for review. This is local
+  image fitting, not learned rotation; live-camera angle accuracy still needs review.
 - [ ] **Independent ML acceptance and error-driven training.** Review saved failures, correct
   labels, retrain with recorded provenance and evaluate untouched new capture sessions. Include
   empty boards and lighting changes in held-out evaluation, all colors, crowding, motion and
@@ -154,8 +158,8 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   the outer board crop once per camera session, with an explicit retry and editable handles.
   Manual edits, camera changes and stale frames invalidate pending results. Missing or uncertain
   models preserve manual operation. See [model scope and validation](docs/board-corners-ml.md).
-- [x] **Outer crop margin.** ML corner proposals expand slightly outward before setting the
-  visible handles, preserving score pieces near the border. Padding stays inside the camera
+- [x] **Outer crop margin.** ML corner proposals expand by about 0.25% per side before setting the
+  visible handles, leaving a thin border matching the user's adjusted examples. Padding stays inside the camera
   image and contains the detected board. Retries do not accumulate it; manual edits remain exact.
 - [ ] **Real corner-model acceptance.** Collect uncropped, independently labeled camera sessions
   with varied backgrounds, framing, lighting, perspective and occlusion. Synthetic projective

@@ -133,12 +133,16 @@ public sealed partial class CameraViewModel
             cropRevision = review.CropRevision, processingRevision = review.ProcessingRevision,
             modelRevision = review.ModelRevision, corners = review.Corners,
             modelId = review.Detection.ModelId, modelSha256 = review.Detection.ModelSha256, backend = review.Detection.Backend,
-            inferenceMilliseconds = review.Detection.Elapsed.TotalMilliseconds,
+            inferenceMilliseconds = (review.Detection.Elapsed - review.Detection.OutlineFittingElapsed).TotalMilliseconds,
+            detectionMilliseconds = review.Detection.Elapsed.TotalMilliseconds,
+            outlineFittingMilliseconds = review.Detection.OutlineFittingElapsed.TotalMilliseconds,
             outlineCoordinateSpace = "normalized-board", boxCoordinateSpace = "board-pixels",
             predictions = review.Detection.Candidates.Select(candidate => new
             {
                 kind = candidate.Kind == PieceCandidateKind.Train ? "train" : "player-marker",
                 confidence = candidate.Confidence, outline = candidate.Outline.Select(point => new { x = point.X, y = point.Y }),
+                orientedOutline = candidate.OrientedOutline?.Select(point => new { x = point.X, y = point.Y }),
+                orientedOutlineSource = candidate.OrientedOutline is null ? null : "local-image-fit",
                 x = candidate.Outline.Min(point => point.X) * review.Board.Width,
                 y = candidate.Outline.Min(point => point.Y) * review.Board.Height,
                 width = (candidate.Outline.Max(point => point.X) - candidate.Outline.Min(point => point.X)) * review.Board.Width,

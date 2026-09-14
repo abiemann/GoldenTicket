@@ -5,16 +5,16 @@ namespace GoldenTicket.Domain.Tests;
 public sealed class BoardCropPaddingTests
 {
     [Fact]
-    public void AddsTwoPercentOfBoardExtentOnEachSide()
+    public void AddsQuarterPercentOfBoardExtentOnEachSide()
     {
         NormalizedPoint[] original = [new(.2, .3), new(.8, .3), new(.8, .7), new(.2, .7)];
         var result = BoardCropPadding.Expand(Frame(), original);
 
         Assert.False(result.LimitedByFrame);
-        Assert.Equal(.188, result.Corners[0].X, 12);
-        Assert.Equal(.292, result.Corners[0].Y, 12);
-        Assert.Equal(.812, result.Corners[2].X, 12);
-        Assert.Equal(.708, result.Corners[2].Y, 12);
+        Assert.Equal(.1985, result.Corners[0].X, 12);
+        Assert.Equal(.299, result.Corners[0].Y, 12);
+        Assert.Equal(.8015, result.Corners[2].X, 12);
+        Assert.Equal(.701, result.Corners[2].Y, 12);
         AssertContains(result.Corners, original);
     }
 

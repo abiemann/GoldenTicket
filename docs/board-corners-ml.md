@@ -5,9 +5,10 @@ the score track. It runs once when a fresh camera/format session starts. **Detec
 beside zoom retries on the current camera image. The existing numbered handles, keyboard nudges,
 zoom and pan remain available for corrections. **Select four board corners** starts manual placement.
 
-Automatic selection adds a small outward margin before setting the handles: a 4% expansion about
-the detected quadrilateral's center, equivalent to 2% of each board dimension on each side for a
-rectangular board. This helps retain score pieces that project over the printed board edge. The
+Automatic selection adds a narrow outward margin before setting the handles: a 0.5% expansion about
+the detected quadrilateral's center, equivalent to 0.25% of each board dimension on each side for a
+rectangular board. This leaves a thin border beyond the board edge, approximately 4 pixels for a
+1600-pixel-wide board, following the user's manually adjusted crop examples. The
 visible yellow outline is the actual crop used by preview, export and piece inference. Padding
 is applied once to each new model result; retries do not accumulate it and manual adjustments
 remain exact. Expansion is limited to available camera pixels and must contain the original board.

@@ -34,8 +34,8 @@ backend. Rules and game AI remain on the CPU.
    source enhanced to 3840 × 2160 is explicitly identified as upscaled. Larger output pixels do
    not add captured detail or make that source native 4K.
 4. With the local [corner model](board-corners-ml.md) installed, ML selects the four outer board
-   corners once when the preview starts, with a small outward margin for score pieces near the
-   edge. The yellow outline shows the crop that will be saved. Check the complete score track
+   corners once when the preview starts, with a narrow outward margin of about 0.25% per side.
+   The yellow outline shows the crop that will be saved. Check the complete score track
    and all pieces are inside it; a margin limited by the camera edge needs a wider camera view.
    **Detect board corners** retries; **Select four board corners** starts manual placement in
    clockwise order. During manual placement the prompt above the image
@@ -73,8 +73,10 @@ image processing or exported photo.
 Check all four board corners, including the complete score track, and enable **Show piece
 outlines**. Pieces may already be on the board. An empty-board reference is no longer required.
 The local model classifies the current image into trains and score markers; it does not classify
-their colors or assign route ownership. Train candidates appear as white rectangles, and score
-markers as white squares. Counts describe the current prediction, not a verified inventory.
+their colors or assign route ownership. Train candidates appear as white rectangles rotated to
+follow their visible shape when a local image fit is reliable; uncertain fits keep the original
+model box. Score markers stay white squares. Counts describe the current prediction, not a verified
+inventory. Review ZIPs preserve original model boxes and optional fitted polygons separately.
 
 The model loads from `models/pieces/` beside the executable. This source checkout copies the
 locally trained model there when building. A fresh checkout without those ignored weights shows

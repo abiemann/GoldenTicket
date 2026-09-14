@@ -18,6 +18,7 @@ public sealed record LearnedPieceDetection(IReadOnlyList<PieceCandidate> Candida
     string ModelId, string Backend, TimeSpan Elapsed)
 {
     public string ModelSha256 { get; init; } = "";
+    public TimeSpan OutlineFittingElapsed { get; init; }
 }
 
 /// <summary>
@@ -125,7 +126,14 @@ public sealed class LearnedPieceDetector : IPieceModelDetector
                 candidates = DetectCore(resized, token);
             }
             token.ThrowIfCancellationRequested();
-            return new(candidates, ModelId, Backend, timer.Elapsed) { ModelSha256 = ModelSha256 };
+            // Preserve model boxes/confidences for NMS, evaluation and review. The optional
+            // display geometry comes from the same frame, without an empty-board reference.
+            var fittingStarted = Stopwatch.GetTimestamp();
+            candidates = TrainOutlineFitter.Refine(resized, candidates, token);
+            var fittingElapsed = Stopwatch.GetElapsedTime(fittingStarted);
+            token.ThrowIfCancellationRequested();
+            return new(candidates, ModelId, Backend, timer.Elapsed)
+            { ModelSha256 = ModelSha256, OutlineFittingElapsed = fittingElapsed };
         }
     }
 

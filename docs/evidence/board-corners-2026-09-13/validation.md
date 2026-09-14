@@ -84,7 +84,7 @@ and broader GPU/CPU hardware coverage. Confidence is not a calibrated correctnes
 
 ## Follow-up: outer crop padding
 
-The user observed score pieces close to the selected boundary. Automatic selection now expands
+The user observed score pieces close to the selected boundary. The initial padding change expanded
 each model proposal by 4% about its center (approximately 2% per side), limited to camera bounds.
 The resulting four visible handles define the preview, export and piece-analysis crop. Convexity
 and containment of the original board are verified; padding never accumulates on repeated detection
@@ -101,3 +101,18 @@ All 66 relevant padding, camera-selection, manual-editing, photo-export and piec
 passed in `artifacts/corner-test-results/crop-padding.trx`, including 10 padding geometry cases
 and 22 automatic-corner flow cases. The earlier full-suite and WPF results above predate this
 follow-up. The Desktop development build was rebuilt successfully with zero warnings/errors.
+
+## Follow-up: tighter crop margin
+
+After live review, the user supplied four manually adjusted corner screenshots with a thin border
+outside the board. The current margin is **0.25% per side** (0.5% expansion about the center), one
+eighth of the initial 2% margin. This is an approximate match to the zoomed screenshot examples,
+not a calibrated measurement. Frame limits, containment checks, retry behavior and exact manual
+adjustments are unchanged; the frozen ML model is unchanged too.
+
+All 66 relevant tests passed again in `artifacts/corner-test-results/crop-padding-tight.trx`.
+The test build includes the Desktop project. The saved full-camera diagnostic image was rerun
+on CPU and its padded outline visually checked: the crop now closely follows the board with a
+narrow border, without reaching the camera bounds in this example. The report and rendered
+outline are under `artifacts/board-corners/runtime-padding-tight/`. This is static verification;
+the tighter margin still needs the user's live-camera review.

@@ -29,13 +29,15 @@ produced none. These bounded checks do not complete physical-camera acceptance. 
 The September 13 [ML preview experiment](docs/piece-recognition-ml.md) replaces live Piece outlines
 with a locally trained two-class detector. It finds trains and score markers without an empty-board
 reference, using ONNX Runtime on DirectML or CPU. Photos, labels and experimental weights stay local.
+Train outlines follow the piece angle when a local image fit is reliable; score-marker outlines
+stay square. Uncertain train fits keep the original model box.
 **Save detection example…** records the analyzed image, predictions and a note for later review.
 The [validation record](docs/evidence/ml-preview-2026-09-13/validation.md) separates measured photo
 results from the live-camera and independent-session tests still needed.
 
 The [automatic corner experiment](docs/board-corners-ml.md) adds a separate learned model that
 selects the four outer board corners on camera startup. **Detect board corners** retries it;
-the numbered handles include a small outward crop margin to retain score pieces near the edge,
+the numbered handles include a narrow outward crop margin (about 0.25% per side),
 and remain editable with the existing zoom and pan controls.
 
 ## What this build does

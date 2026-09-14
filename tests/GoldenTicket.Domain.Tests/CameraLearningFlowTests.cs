@@ -47,6 +47,24 @@ public sealed class CameraLearningFlowTests
     }
 
     [Fact]
+    public async Task Image_fitted_train_outline_is_mapped_through_crop_while_model_box_stays_unchanged()
+    {
+        await using var fixture = new Fixture();
+        fixture.Model.ResultCandidates = OrientedCandidates();
+        await fixture.InitializeAsync();
+        await fixture.ProcessAsync();
+
+        var registration = BoardRegistration.Create(fixture.Frame, fixture.Corners);
+        var train = fixture.Model.ResultCandidates[0];
+        Assert.Equal(FakeModel.Candidates[0].Outline, train.Outline);
+        Assert.NotEqual(train.Outline, train.DisplayOutline);
+        Assert.Equal(train.DisplayOutline.Select(p => registration.MapToSensor(p.X, p.Y)),
+            fixture.Camera.PieceOutlines[0].SensorOutline);
+        Assert.Equal(FakeModel.Candidates[1].Outline.Select(p => registration.MapToSensor(p.X, p.Y)),
+            fixture.Camera.PieceOutlines[1].SensorOutline);
+    }
+
+    [Fact]
     public async Task Turning_outlines_off_clears_predictions_and_skips_inference_until_enabled()
     {
         await using var fixture = new Fixture();
@@ -272,6 +290,7 @@ public sealed class CameraLearningFlowTests
     public async Task Review_zip_preserves_exact_analyzed_pixels_and_predictions_with_note_without_overwrite()
     {
         await using var fixture = new Fixture();
+        fixture.Model.ResultCandidates = OrientedCandidates();
         var directory = Path.Combine(Path.GetTempPath(), "GoldenTicket-ml-review-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, "review.zip");
@@ -325,10 +344,22 @@ public sealed class CameraLearningFlowTests
                 Assert.Equal(2, predictions.Length);
                 for (var index = 0; index < predictions.Length; index++)
                 {
-                    var expected = FakeModel.Candidates[index];
+                    var expected = fixture.Model.ResultCandidates[index];
                     var actual = predictions[index];
                     Assert.Equal(index == 0 ? "train" : "player-marker", actual.GetProperty("kind").GetString());
                     Assert.Equal(expected.Confidence, actual.GetProperty("confidence").GetDouble());
+                    var fitted = actual.GetProperty("orientedOutline");
+                    if (expected.OrientedOutline is { } oriented)
+                    {
+                        Assert.Equal("local-image-fit", actual.GetProperty("orientedOutlineSource").GetString());
+                        Assert.Equal(oriented.Select(p => p.X), fitted.EnumerateArray().Select(p => p.GetProperty("x").GetDouble()));
+                        Assert.Equal(oriented.Select(p => p.Y), fitted.EnumerateArray().Select(p => p.GetProperty("y").GetDouble()));
+                    }
+                    else
+                    {
+                        Assert.Equal(JsonValueKind.Null, fitted.ValueKind);
+                        Assert.Equal(JsonValueKind.Null, actual.GetProperty("orientedOutlineSource").ValueKind);
+                    }
                     Assert.Equal(expected.Outline.Min(point => point.X) * analyzed.Width, actual.GetProperty("x").GetDouble());
                     Assert.Equal(expected.Outline.Min(point => point.Y) * analyzed.Height, actual.GetProperty("y").GetDouble());
                     Assert.Equal((expected.Outline.Max(point => point.X) - expected.Outline.Min(point => point.X)) * analyzed.Width,
@@ -439,6 +470,15 @@ public sealed class CameraLearningFlowTests
         }
     }
 
+    private static PieceCandidate[] OrientedCandidates() =>
+    [
+        FakeModel.Candidates[0] with
+        {
+            OrientedOutline = [new(.15, .27), new(.27, .25), new(.28, .27), new(.16, .29)]
+        },
+        FakeModel.Candidates[1]
+    ];
+
     private sealed class FakeModel(string modelId) : IPieceModelDetector
     {
         private readonly ManualResetEventSlim _release = new(true);
@@ -451,6 +491,7 @@ public sealed class CameraLearningFlowTests
             new(PieceCandidateKind.PlayerMarker, [new(.87, .82), new(.92, .82), new(.92, .88), new(.87, .88)], .82)
         ];
         public string ModelId => modelId;
+        public IReadOnlyList<PieceCandidate> ResultCandidates { get; set; } = Candidates;
         public string ModelSha256 => new('a', 64);
         public string Backend => "synthetic CPU";
         public string? FallbackReason => null;
@@ -477,7 +518,7 @@ public sealed class CameraLearningFlowTests
                 _release.Wait(token);
                 token.ThrowIfCancellationRequested();
                 if (Failure is { } failure) throw failure;
-                return new(Candidates, ModelId, Backend, TimeSpan.FromMilliseconds(12)) { ModelSha256 = ModelSha256 };
+                return new(ResultCandidates, ModelId, Backend, TimeSpan.FromMilliseconds(12)) { ModelSha256 = ModelSha256 };
             }
             finally { Interlocked.Decrement(ref _active); }
         }

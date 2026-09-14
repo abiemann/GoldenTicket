@@ -236,12 +236,12 @@ public sealed partial class CameraViewModel
                 _outlinedFrame = frame;
                 PieceOutlines = detection.Candidates.Select(candidate => new PreviewPieceOutline(
                     candidate.Kind == PieceCandidateKind.PlayerMarker,
-                    candidate.Outline.Select(point => registration.MapToSensor(point.X, point.Y)).ToArray())).ToArray();
+                    candidate.DisplayOutline.Select(point => registration.MapToSensor(point.X, point.Y)).ToArray())).ToArray();
                 ModelStatus = $"ML · {detection.Backend} · {detection.ModelId}" +
                     (_pieceModel?.FallbackReason is { Length: > 0 } reason ? " · " + reason : "");
                 DetectionText = $"{detection.Candidates.Count(candidate => candidate.Kind == PieceCandidateKind.Train)} trains · " +
                     $"{detection.Candidates.Count(candidate => candidate.Kind == PieceCandidateKind.PlayerMarker)} score markers · " +
-                    $"{detection.Elapsed.TotalMilliseconds:0} ms inference. Experimental ML outlines; check for missed or extra pieces.";
+                    $"{detection.Elapsed.TotalMilliseconds:0} ms detection. Experimental ML outlines; check for missed or extra pieces.";
                 _reviewDetection = new(board!, detection, frame.Width, frame.Height, cropRevision,
                     processingRevision, modelRevision, registration.Corners.ToArray());
                 OnPropertyChanged(nameof(CanSaveDetectionExample));

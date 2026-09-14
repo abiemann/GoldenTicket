@@ -4,7 +4,13 @@ public enum PieceCandidateKind { Train, PlayerMarker }
 public enum PieceDetectionState { NoReference, Ready, Stale, CameraChanged, SceneChanged, Moving, InsufficientDetail }
 
 /// <summary>An experimental visual candidate, never authoritative route occupancy or a game command.</summary>
-public sealed record PieceCandidate(PieceCandidateKind Kind, IReadOnlyList<NormalizedPoint> Outline, double Confidence);
+public sealed record PieceCandidate(PieceCandidateKind Kind, IReadOnlyList<NormalizedPoint> Outline, double Confidence)
+{
+    /// <summary>Optional image-fitted train rectangle; the original detector geometry stays in Outline.</summary>
+    public IReadOnlyList<NormalizedPoint>? OrientedOutline { get; init; }
+    public IReadOnlyList<NormalizedPoint> DisplayOutline =>
+        Kind == PieceCandidateKind.Train ? OrientedOutline ?? Outline : Outline;
+}
 
 public sealed record PieceDetectionResult(PieceDetectionState State, IReadOnlyList<PieceCandidate> Candidates,
     long FrameSequence, long CameraEpoch, long ReferenceRevision, double ChangedFraction);

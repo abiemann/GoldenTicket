@@ -8,7 +8,7 @@ public sealed record BoardCropPaddingResult(IReadOnlyList<NormalizedPoint> Corne
 /// </summary>
 public static class BoardCropPadding
 {
-    public const double MarginFraction = 0.02;
+    public const double MarginFraction = 0.0025;
 
     public static BoardCropPaddingResult Expand(CameraFrame frame, IReadOnlyList<NormalizedPoint> corners)
     {
@@ -17,7 +17,7 @@ public static class BoardCropPadding
         var original = corners.ToArray();
         _ = BoardRegistration.Create(frame, original);
         var center = new NormalizedPoint(original.Average(p => p.X), original.Average(p => p.Y));
-        // A 4% enlargement adds 2% of the board extent on each side. Normalized
+        // A 0.5% enlargement adds a narrow 0.25% border on each side. Normalized
         // homothety has the same effect in sensor pixels at every image resolution.
         var deltas = original.Select(p => new NormalizedPoint(
             (p.X - center.X) * (2 * MarginFraction),
