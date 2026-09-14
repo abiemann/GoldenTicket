@@ -154,7 +154,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     {
         if (IsBusy || _disposed) return;
         IsBusy = true;
-        CancelCornerDetection();
+        // Clear readings and invalidate pending inference before camera teardown can wait.
+        ClearRegistration();
         try
         {
             _previewTimer.Stop();
@@ -162,7 +163,6 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             IsRunning = false;
             Preview = null;
             BoardPreview = null;
-            ClearRegistration();
             Status = "Camera stopped. Manual whole-board confirmation remains available.";
             FormatText = "No camera format negotiated";
         }
@@ -471,6 +471,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        ClearDetectionPreview();
         NotifyPhotoAvailability();
         _lifetime.Cancel();
         _previewTimer.Stop();

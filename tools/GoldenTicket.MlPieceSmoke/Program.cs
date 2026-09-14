@@ -56,6 +56,11 @@ internal static partial class Program
                 NativeLibraries = NativeLibraries(),
                 TrainCount = result.Candidates.Count(item => item.Kind == PieceCandidateKind.Train),
                 MarkerCount = result.Candidates.Count(item => item.Kind == PieceCandidateKind.PlayerMarker),
+                ScoreMarkers = ScoreMarkerReader.Read(board, result.Candidates).Select(reading => new
+                {
+                    reading.CandidateIndex, Color = reading.Color?.ToString(), reading.Score,
+                    Status = reading.Status.ToString(), reading.Reason
+                }),
                 OrientedTrainCount = result.Candidates.Count(item => item.Kind == PieceCandidateKind.Train && item.OrientedOutline is not null),
                 Candidates = result.Candidates.Select(item => new { Kind = item.Kind.ToString(), item.Confidence, item.Outline, item.OrientedOutline })
             });

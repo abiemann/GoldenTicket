@@ -264,3 +264,112 @@ production CPU/DirectML fixtures match all 352 reviewed objects, with one invest
 box difference due to nearly tied NMS candidates. The validated local pair is installed with
 the preceding pair preserved. All 33 photos are now in-sample, including the added photo.
 See the [training, parity and deployment record](../../docs/evidence/ml-retrain-denver-2026-09-13/validation.md).
+
+The fourth model adds the reviewed stronger-shadow photos `202009` and `202150` in
+collection `06`: 35 photos and 1,390 objects. It preserves all previous 33 entries and
+related capture groups. The recorded training command was:
+
+```powershell
+& 'artifacts/piece-training/.venv/Scripts/python.exe' tools/piece-training/train_piece_detector.py --labels artifacts/piece-training/labels-reviewed-06.json --images C:/temp --yolox-source artifacts/piece-training/vendor/YOLOX --pretrained artifacts/piece-training/pretrained/yolox_nano.pth --output artifacts/piece-training/runs/retrain-reviewed-06-r1 --epochs 40 --samples-per-epoch 512 --batch-size 16 --seed 20260916 --initialize artifacts/piece-training/runs/retrain-reviewed-05-r1/best.pth --all-reviewed --tile-ownership --confidence 0.30
+```
+
+The automatically selected epoch-20 checkpoint adds a false positive to older photo
+`125240` at the fixed preview threshold, despite improving the new cases. Its export and
+comparison are retained as a rejected candidate. The predeclared fallback exports the
+final epoch-40 checkpoint separately:
+
+```powershell
+& 'artifacts/piece-training/.venv/Scripts/python.exe' tools/piece-training/train_piece_detector.py --labels artifacts/piece-training/labels-reviewed-06.json --images C:/temp --yolox-source artifacts/piece-training/vendor/YOLOX --pretrained artifacts/piece-training/pretrained/yolox_nano.pth --output artifacts/piece-training/runs/retrain-reviewed-06-r1-final --epochs 40 --samples-per-epoch 512 --batch-size 16 --seed 20260916 --export-checkpoint artifacts/piece-training/runs/retrain-reviewed-06-r1/last.pth --all-reviewed --tile-ownership --confidence 0.30
+```
+
+The final export matches all 1,390 reviewed labels without extras at 0.30, keeps distinct
+parallel black-train predictions, and improves the upper boxes from IoU about 0.51 to
+0.85 / 0.84. Nine production CPU/DirectML fixtures pass, including `125240`. The selected
+training weights remain in `retrain-reviewed-06-r1/last.pth`; the `-final` folder is a
+separate export, not another training run. All 35 photos are in-sample after inclusion.
+See [selection, validation and installation evidence](../../docs/evidence/ml-retrain-shadows-2026-09-13/validation.md).
+
+Collection `07` adds the shifted-light photo `202835`, with 86 physical trains and five
+markers. It contains 36 photos and 1,481 objects, preserving all 35 previous entries.
+The user reported intermittent Miami extras, but the frozen fourth model already matches
+every piece in this saved frame without extras. Empty printed slots and cast shadows are
+reviewed background. The related `202727` score-reading fixture is excluded from training.
+
+```powershell
+& 'artifacts/piece-training/.venv/Scripts/python.exe' tools/piece-training/train_piece_detector.py --labels artifacts/piece-training/labels-reviewed-07.json --images C:/temp --yolox-source artifacts/piece-training/vendor/YOLOX --pretrained artifacts/piece-training/pretrained/yolox_nano.pth --output artifacts/piece-training/runs/retrain-reviewed-07-r1 --epochs 40 --samples-per-epoch 512 --batch-size 16 --seed 20260917 --initialize artifacts/piece-training/runs/retrain-reviewed-07-baseline/last.pth --all-reviewed --tile-ownership --confidence 0.30
+```
+
+The initializer is a verified copy of `retrain-reviewed-06-r1/last.pth`, which produced
+the installed fourth model. Fixed evaluation must preserve all reviewed detections and
+parallel black-train localization, then check CPU/DirectML and score readings. The
+[shifted-light validation record](../../docs/evidence/ml-retrain-miami-shadows-2026-09-13/validation.md)
+distinguishes this in-sample training check from the still-unmeasured live behavior.
+
+The automatic epoch-20 selection adds two extras to `202150` at the fixed 0.30 threshold
+and is rejected. Exporting the saved final epoch-40 checkpoint gives 1,481 matches without
+extras on all 36 photos, with parallel-train and score-reading checks passing:
+
+```powershell
+& 'artifacts/piece-training/.venv/Scripts/python.exe' tools/piece-training/train_piece_detector.py --labels artifacts/piece-training/labels-reviewed-07.json --images C:/temp --yolox-source artifacts/piece-training/vendor/YOLOX --pretrained artifacts/piece-training/pretrained/yolox_nano.pth --output artifacts/piece-training/runs/retrain-reviewed-07-r1-final --epochs 40 --samples-per-epoch 512 --batch-size 16 --seed 20260917 --export-checkpoint artifacts/piece-training/runs/retrain-reviewed-07-r1/last.pth --all-reviewed --tile-ownership --confidence 0.30
+```
+
+The `-final` directory is an export from the same training run. Continue future training
+from the verified `retrain-reviewed-07-r1/last.pth`, not from an absent checkpoint inside
+the export directory. All 36 labeled evaluation photos are now training examples.
+
+Collection `08` adds photo `203020`, whose pieces are unchanged while the shadows have
+moved again. Native source review confirms all 91 prior body labels still align, yielding
+37 photos / 1,572 labels with all previous 36 entries preserved. The recorded first run
+uses seed 20260918; both saved checkpoints fail fixed runtime checks. Its final checkpoint
+misses the `130924` red marker at a tile-ownership boundary, and its automatic selection
+adds a duplicate spanning real blue/red trains in `203020`. Both exports remain preserved.
+
+The recorded retry changes only the seed to 20260919 and starts from the same frozen
+fifth-model initializer. It evaluates the final checkpoint first, using the same operating
+threshold and unchanged labels:
+
+```powershell
+& 'artifacts/piece-training/.venv/Scripts/python.exe' tools/piece-training/train_piece_detector.py --labels artifacts/piece-training/labels-reviewed-08.json --images C:/temp --yolox-source artifacts/piece-training/vendor/YOLOX --pretrained artifacts/piece-training/pretrained/yolox_nano.pth --output artifacts/piece-training/runs/retrain-reviewed-08-r2 --epochs 40 --samples-per-epoch 512 --batch-size 16 --seed 20260919 --initialize artifacts/piece-training/runs/retrain-reviewed-08-baseline/last.pth --all-reviewed --tile-ownership --confidence 0.30
+& 'artifacts/piece-training/.venv/Scripts/python.exe' tools/piece-training/train_piece_detector.py --labels artifacts/piece-training/labels-reviewed-08.json --images C:/temp --yolox-source artifacts/piece-training/vendor/YOLOX --pretrained artifacts/piece-training/pretrained/yolox_nano.pth --output artifacts/piece-training/runs/retrain-reviewed-08-r2-final --epochs 40 --samples-per-epoch 512 --batch-size 16 --seed 20260919 --export-checkpoint artifacts/piece-training/runs/retrain-reviewed-08-r2/last.pth --all-reviewed --tile-ownership --confidence 0.30
+```
+
+The initializer is a verified copy of `retrain-reviewed-07-r1/last.pth`. The retry preserves
+its evaluated epoch-10/20/30/40 checkpoints for diagnostics, in addition to the automatic
+selection and final export. See the [lighting-variation record](../../docs/evidence/ml-retrain-light-variation-2026-09-13/validation.md)
+for fixed-runtime, native-provider and score-reading acceptance and the tile-boundary limitation.
+
+The retry's final export is installed locally after all 1,572 labels and 13 native CPU/DirectML
+fixtures pass. Continue training from `retrain-reviewed-08-r2/last.pth` (SHA-256
+`e4fbf2f87105fc6dea9f654d97b4ebb05885af204cef1d27181341adeb5149a4`),
+not from the export-only `retrain-reviewed-08-r2-final` directory. These 37 photos are all
+training examples; their regression results do not measure independent-session accuracy.
+
+Collection `09` adds `203656` after major lighting adjustments. Source review retains
+the same 86 train bodies and five markers, excluding larger shadows. The collection has
+38 photos and 1,663 labels, with all 37 earlier entries preserved. The recorded run uses
+seed 20260920 and initializes from the verified sixth model's final checkpoint:
+
+```powershell
+& 'artifacts/piece-training/.venv/Scripts/python.exe' tools/piece-training/train_piece_detector.py --labels artifacts/piece-training/labels-reviewed-09.json --images C:/temp --yolox-source artifacts/piece-training/vendor/YOLOX --pretrained artifacts/piece-training/pretrained/yolox_nano.pth --output artifacts/piece-training/runs/retrain-reviewed-09-r1 --epochs 40 --samples-per-epoch 512 --batch-size 16 --seed 20260920 --initialize artifacts/piece-training/runs/retrain-reviewed-09-baseline/last.pth --all-reviewed --tile-ownership --confidence 0.30
+& 'artifacts/piece-training/.venv/Scripts/python.exe' tools/piece-training/train_piece_detector.py --labels artifacts/piece-training/labels-reviewed-09.json --images C:/temp --yolox-source artifacts/piece-training/vendor/YOLOX --pretrained artifacts/piece-training/pretrained/yolox_nano.pth --output artifacts/piece-training/runs/retrain-reviewed-09-r1-final --epochs 40 --samples-per-epoch 512 --batch-size 16 --seed 20260920 --export-checkpoint artifacts/piece-training/runs/retrain-reviewed-09-r1/last.pth --all-reviewed --tile-ownership --confidence 0.30
+```
+
+The final export is checked first at the unchanged 0.30 preview threshold. The trainer's
+automatic selection is preserved as a fallback only if that final checkpoint fails.
+See the [major-lighting record](../../docs/evidence/ml-retrain-large-lighting-2026-09-13/validation.md)
+for fixed-runtime and native CPU/DirectML results. All 38 labeled photos are used in training.
+
+The final epoch-40 checkpoint misses the older `130924` red marker at a tile-ownership
+boundary and is rejected. The saved trainer-selected epoch-30 checkpoint is exported
+separately, retaining explicit provenance for the fallback evaluation:
+
+```powershell
+& 'artifacts/piece-training/.venv/Scripts/python.exe' tools/piece-training/train_piece_detector.py --labels artifacts/piece-training/labels-reviewed-09.json --images C:/temp --yolox-source artifacts/piece-training/vendor/YOLOX --pretrained artifacts/piece-training/pretrained/yolox_nano.pth --output artifacts/piece-training/runs/retrain-reviewed-09-r1-best --epochs 40 --samples-per-epoch 512 --batch-size 16 --seed 20260920 --export-checkpoint artifacts/piece-training/runs/retrain-reviewed-09-r1/best.pth --all-reviewed --tile-ownership --confidence 0.30
+```
+
+The explicit epoch-30 export is installed locally after all 1,663 labels match without
+extras and 14 native CPU/DirectML fixtures pass. Continue training from the accepted
+`retrain-reviewed-09-r1/best.pth`, SHA-256
+`cebddfa224a03a1f9b91f25c49aea0638d8b53aa951ef431d21485b0bd618893`.
+The `-best` directory contains export artifacts; the rejected `last.pth` is preserved
+for diagnostics and is not the accepted continuation checkpoint.

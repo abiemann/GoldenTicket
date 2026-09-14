@@ -149,22 +149,28 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   ML detection; uncertain fits retain the original box and markers remain square. Preserve original
   model predictions for evaluation and save fitted geometry separately for review. This is local
   image fitting, not learned rotation; live-camera angle accuracy still needs review.
+- [x] **Score marker values in Piece outlines.** Show each detected marker's color and printed
+  track position, preserving shared rows/columns. Clear stale readings and display missing,
+  uncertain and duplicate colors explicitly. The supplied photo reads yellow 20, blue 15,
+  red 11, black 11 and green 50 on CPU/DirectML; 57 focused checks and four WPF render cases
+  pass. These observations do not change game scores or infer full laps. See the
+  [score-marker checks](docs/evidence/score-markers-2026-09-13/validation.md).
 - [ ] **Independent ML acceptance and error-driven training.** Review saved failures, correct
   labels, retrain with recorded provenance and evaluate untouched new capture sessions. Include
   empty boards and lighting changes in held-out evaluation, all colors, crowding, motion and
   occlusion. Measure whole camera-to-outline latency and provider failures on more hardware.
   Color recognition, route assignment and automatic game verification remain separate work.
-- [ ] **Crowded score-marker training examples.** The black marker in photo `20260913-171132`
+- [ ] **Independent crowded-marker checks.** The black marker in photo `20260913-171132`
   had low baseline confidence when surrounded by other markers. The second model now detects it
   in all three reviewed failure photos. Collect new paired isolated/clustered examples on light
   and dark artwork to test generalization. See the
   [recorded failure](docs/evidence/clustered-markers-2026-09-13/validation.md).
-- [ ] **Intermittent yellow-train outline.** Label photo `172806` and correct the same yellow body
-  omitted from the previous `171132` labels (completed in collection `03`). The saved photo detects
+- [ ] **Capture an intermittent yellow-train miss.** Photo `172806` and the yellow body
+  omitted from the previous `171132` labels were reviewed in collection `03` and subsequently trained. The saved photo detects
   the train on both CPU and DirectML; collect an exact missed-frame detection example before
   attributing the live failure or changing runtime behavior. See the
   [check and label correction](docs/evidence/yellow-train-2026-09-13/validation.md).
-- [ ] **Printed-route false positives.** The second model removes the extra prediction over the
+- [ ] **Check new layouts for printed-route false positives.** The second model removes the extra prediction over the
   empty yellow Boston–New York slot in training photo `173706` and keeps the real red train.
   Check new layouts and lighting for recurrence. See the
   [reproduction and labels](docs/evidence/boston-false-positive-2026-09-13/validation.md).
@@ -179,6 +185,43 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   local pair with rollback preserved after six CPU/DirectML fixtures and a subpixel parity
   investigation. These are in-sample checks; independent acceptance remains open above. See the
   [training and deployment evidence](docs/evidence/ml-retrain-denver-2026-09-13/validation.md).
+- [x] **Retrain for stronger shadows and parallel trains.** Add reviewed photos `202009`
+  and `202150` to collection `06` (35 photos / 1,390 labels). Select the final checkpoint
+  after rejecting an early checkpoint's older-photo false positive. All reviewed labels
+  match without extras; parallel upper boxes improve from IoU about 0.51 to 0.85 / 0.84
+  with no lower-edge spill. Nine CPU/DirectML fixtures pass. These are in-sample checks;
+  independent sessions and live stability remain acceptance work. See the
+  [training evidence](docs/evidence/ml-retrain-shadows-2026-09-13/validation.md).
+- [x] **Train on shifted-light Miami example.** Add reviewed photo `202835` to collection
+  `07` (36 photos / 1,481 labels), excluding printed slots and cast shadows. Reject the
+  early checkpoint's two older-photo extras; the final checkpoint preserves all labels
+  without extras and distinct parallel trains. Ten labeled CPU/DirectML fixtures plus
+  the separate `202727` score fixture pass. The frozen model already handled this saved
+  frame, so the intermittent live issue remains unverified. See
+  [shifted-light evidence](docs/evidence/ml-retrain-miami-shadows-2026-09-13/validation.md).
+- [x] **Train on another shadow direction.** Add reviewed photo `203020` with unchanged
+  placements to collection `08` (37 photos / 1,572 labels). Reject both first-run checkpoints;
+  the seed-only retry preserves every label without extras at the unchanged preview threshold.
+  Twelve labeled CPU/DirectML fixtures and the separate score fixture pass. Install the verified
+  pair locally with the previous pair retained for rollback. Results remain in-sample. See
+  [lighting-variation evidence](docs/evidence/ml-retrain-light-variation-2026-09-13/validation.md).
+- [x] **Train on major lighting adjustments.** Add reviewed photo `203656` to collection
+  `09` (38 photos / 1,663 labels). Reject final epoch40 for the older marker seam miss;
+  install the recorded epoch30 fallback after all labels match without extras and all
+  14 native CPU/DirectML fixtures pass. Previous model pairs remain available for rollback.
+  These are training-photo checks, not independent live acceptance. See
+  [major-lighting evidence](docs/evidence/ml-retrain-large-lighting-2026-09-13/validation.md).
+- [x] **Reconcile the saved training backlog.** All 38 reviewed piece photos across collections
+  `01`–`09`, including the staged failure and lighting examples, are included in the installed
+  model. No additional reviewed training batch remains. Photo `181222` was used for corner
+  training; `202727` remains an intentionally untrained score-check fixture. Independent
+  live captures and the runtime issues below are separate outstanding work. Coverage evidence
+  is local under `artifacts/piece-training/backlog-audit-20260913/`.
+- [ ] **Tile-boundary detection gap.** A rejected training checkpoint misses the red score
+  marker in `130924` because adjacent tiles predict centers just across opposite sides of
+  the same ownership boundary, discarding both strong proposals. Preserve the raw/native
+  regression and evaluate a geometry fix separately from model training. See the
+  [lighting-variation diagnosis](docs/evidence/ml-retrain-light-variation-2026-09-13/validation.md).
 - [x] **Experimental learned corner selection.** A separate local corner heatmap model selects
   the outer board crop once per camera session, with an explicit retry and editable handles.
   Manual edits, camera changes and stale frames invalidate pending results. Missing or uncertain

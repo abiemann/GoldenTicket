@@ -40,10 +40,13 @@ public sealed class CameraProcessingFlowTests
         Assert.True(fixture.Camera.MoveBoardCorner(0, new(.02, .02)));
         Assert.False(fixture.Camera.HasPieceReference);
         fixture.Camera.PieceOutlines = [new(false, [new(.1,.1),new(.2,.1),new(.2,.2),new(.1,.2)])];
+        SeedMarkerScore(fixture.Camera);
         fixture.Refresh(stale: true);
         typeof(CameraViewModel).GetMethod("PreviewTick", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(fixture.Camera, [null, EventArgs.Empty]);
         Assert.Empty(fixture.Camera.PieceOutlines);
+        Assert.Empty(fixture.Camera.ScoreMarkerReadings);
+        Assert.All(fixture.Camera.MarkerScores, row => Assert.Equal("—", row.ValueText));
     }
 
     [Fact]
@@ -54,12 +57,15 @@ public sealed class CameraProcessingFlowTests
         typeof(CameraViewModel).GetField("_outlinedFrame", BindingFlags.NonPublic | BindingFlags.Instance)!
             .SetValue(fixture.Camera, fixture.Frame);
         fixture.Camera.PieceOutlines = [new(false, [new(.1,.1),new(.2,.1),new(.2,.2),new(.1,.2)])];
+        SeedMarkerScore(fixture.Camera);
         fixture.Refresh();
         // Hold processing to simulate a slow worker while capture continues to deliver frames.
         fixture.Camera.IsBusy = true;
         typeof(CameraViewModel).GetMethod("PreviewTick", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(fixture.Camera, [null, EventArgs.Empty]);
         Assert.Empty(fixture.Camera.PieceOutlines);
+        Assert.Empty(fixture.Camera.ScoreMarkerReadings);
+        Assert.All(fixture.Camera.MarkerScores, row => Assert.Equal("—", row.ValueText));
         Assert.Contains("fresh processed image", fixture.Camera.DetectionText);
     }
 
@@ -99,6 +105,10 @@ public sealed class CameraProcessingFlowTests
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }
+
+    private static void SeedMarkerScore(CameraViewModel camera) =>
+        typeof(CameraViewModel).GetMethod("PublishMarkerScores", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(camera, [new ScoreMarkerReading[] { new(0, MarkerColor.Red, 11, ScoreMarkerReadingStatus.Read, "") }]);
 
     private sealed class Fixture : IAsyncDisposable
     {

@@ -40,6 +40,9 @@ public sealed class CameraLearningFlowTests
         Assert.Equal((fixture.ModelDirectory, false), Assert.Single(fixture.FactoryCalls));
         Assert.True(fixture.Camera.CanSaveDetectionExample);
         var analyzed = Assert.IsType<CameraFrame>(fixture.Model.LastBoard);
+        // Score reading must use exactly the analyzed crop, with the same candidate indices.
+        Assert.Equal(ScoreMarkerReader.Read(analyzed, FakeModel.Candidates), fixture.Camera.ScoreMarkerReadings);
+        Assert.Single(fixture.Camera.ScoreMarkerReadings);
         Assert.Equal((3456, 2160), (analyzed.Width, analyzed.Height));
         Assert.Equal(fixture.Frame.Sequence, analyzed.Sequence);
         Assert.Equal(fixture.Frame.Epoch, analyzed.Epoch);
@@ -74,6 +77,9 @@ public sealed class CameraLearningFlowTests
 
         fixture.Camera.ShowPieceOutlines = false;
         Assert.Empty(fixture.Camera.PieceOutlines);
+        AssertNoMarkerScores(fixture.Camera);
+        Assert.Empty(fixture.Camera.ScoreMarkerReadings);
+        Assert.All(fixture.Camera.MarkerScores, row => Assert.Equal("—", row.ValueText));
         Assert.False(fixture.Camera.CanSaveDetectionExample);
         fixture.Refresh();
         await fixture.ProcessAsync();
@@ -83,6 +89,7 @@ public sealed class CameraLearningFlowTests
 
         fixture.Camera.ShowPieceOutlines = true;
         Assert.Empty(fixture.Camera.PieceOutlines);
+        AssertNoMarkerScores(fixture.Camera);
         fixture.Refresh();
         await fixture.ProcessAsync();
         Assert.Equal(2, fixture.Model.Calls);
@@ -130,6 +137,7 @@ public sealed class CameraLearningFlowTests
         }
 
         Assert.Empty(fixture.Camera.PieceOutlines);
+        AssertNoMarkerScores(fixture.Camera);
         Assert.False(fixture.Camera.CanSaveDetectionExample);
         if (change == "model")
         {
@@ -161,6 +169,7 @@ public sealed class CameraLearningFlowTests
             await processing.WaitAsync(TimeSpan.FromSeconds(60), Token);
         }
         Assert.Empty(fixture.Camera.PieceOutlines);
+        AssertNoMarkerScores(fixture.Camera);
         Assert.False(fixture.Camera.CanSaveDetectionExample);
         Assert.Contains("fresh processed image", fixture.Camera.DetectionText);
         Assert.Contains("current camera image while ML catches up", fixture.Camera.ProcessingText);
@@ -202,11 +211,13 @@ public sealed class CameraLearningFlowTests
             reload = fixture.Camera.ReloadPieceModelCommand.ExecuteAsync(null);
             Assert.True(fixture.Camera.IsModelBusy);
             Assert.Empty(fixture.Camera.PieceOutlines);
+            AssertNoMarkerScores(fixture.Camera);
             fixture.Refresh(inverted: true);
             processing = fixture.ProcessAsync();
             await processing.WaitAsync(TimeSpan.FromSeconds(5), Token);
             Assert.Equal(1, fixture.Model.Calls);
             Assert.Empty(fixture.Camera.PieceOutlines);
+            AssertNoMarkerScores(fixture.Camera);
             Assert.False(fixture.Camera.CanSaveDetectionExample);
             Assert.Equal(fixture.Frame.Bgra32.ToArray(), Pixels(fixture.Camera.Preview!));
             Assert.Contains("Loading the local ML model", fixture.Camera.DetectionText);
@@ -236,6 +247,7 @@ public sealed class CameraLearningFlowTests
         await fixture.ProcessAsync();
 
         Assert.Empty(fixture.Camera.PieceOutlines);
+        AssertNoMarkerScores(fixture.Camera);
         Assert.False(fixture.Camera.CanSaveDetectionExample);
         Assert.Contains("synthetic inference failure", fixture.Camera.DetectionText);
         var preview = Assert.IsAssignableFrom<BitmapSource>(fixture.Camera.Preview);
@@ -256,6 +268,7 @@ public sealed class CameraLearningFlowTests
         Assert.Contains("unavailable", fixture.Camera.DetectionText);
         Assert.NotNull(fixture.Camera.Preview);
         Assert.Empty(fixture.Camera.PieceOutlines);
+        AssertNoMarkerScores(fixture.Camera);
         Assert.False(fixture.Camera.CanSaveDetectionExample);
         Assert.True(fixture.Camera.CanExportPhoto);
     }
@@ -273,6 +286,7 @@ public sealed class CameraLearningFlowTests
             await fixture.Camera.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10), Token);
             await processing;
             Assert.Empty(fixture.Camera.PieceOutlines);
+            AssertNoMarkerScores(fixture.Camera);
             Assert.False(fixture.Camera.CanSaveDetectionExample);
             Assert.Equal(1, fixture.Model.DisposeCalls);
             Assert.False(fixture.Model.DisposedDuringDetection);
@@ -284,6 +298,49 @@ public sealed class CameraLearningFlowTests
             fixture.Model.Release();
             await fixture.DisposeAsync();
         }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Stopping_or_disposing_clears_scores_before_camera_teardown_finishes(bool dispose)
+    {
+        await using var fixture = new Fixture();
+        await fixture.InitializeAsync();
+        await fixture.ProcessAsync();
+        Assert.NotEmpty(fixture.Camera.ScoreMarkerReadings);
+        fixture.Refresh();
+        fixture.Model.Pause();
+        var processing = fixture.ProcessAsync();
+        var lifecycle = (SemaphoreSlim)typeof(CameraCaptureService)
+            .GetField("_lifecycle", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(fixture.Camera.Capture)!;
+        Task closing = Task.CompletedTask;
+        var locked = false;
+        try
+        {
+            await fixture.Model.Entered.Task.WaitAsync(TimeSpan.FromSeconds(60), Token);
+            await lifecycle.WaitAsync(Token);
+            locked = true;
+            closing = dispose ? fixture.Camera.DisposeAsync().AsTask()
+                : fixture.Camera.StopCommand.ExecuteAsync(null);
+            Assert.False(closing.IsCompleted);
+            Assert.Empty(fixture.Camera.PieceOutlines);
+            AssertNoMarkerScores(fixture.Camera);
+            fixture.Model.Release();
+            await processing.WaitAsync(TimeSpan.FromSeconds(60), Token);
+            // Capture still owns its old frame until teardown acquires the gate; its late
+            // inference must not restore readings after the user's stop/dispose request.
+            Assert.Empty(fixture.Camera.PieceOutlines);
+            AssertNoMarkerScores(fixture.Camera);
+        }
+        finally
+        {
+            fixture.Model.Release();
+            if (locked) lifecycle.Release();
+            await Task.WhenAll(processing, closing).WaitAsync(TimeSpan.FromSeconds(60), Token);
+        }
+        Assert.Empty(fixture.Camera.PieceOutlines);
+        AssertNoMarkerScores(fixture.Camera);
     }
 
     [Fact]
@@ -387,6 +444,16 @@ public sealed class CameraLearningFlowTests
             foreach (var file in Directory.GetFiles(directory)) File.Delete(file);
             Directory.Delete(directory);
         }
+    }
+
+    private static void AssertNoMarkerScores(CameraViewModel camera)
+    {
+        Assert.Empty(camera.ScoreMarkerReadings);
+        Assert.All(camera.MarkerScores, row =>
+        {
+            Assert.Equal("—", row.ValueText);
+            Assert.Equal("Waiting", row.StatusText);
+        });
     }
 
     private static byte[] Pixels(BitmapSource source)

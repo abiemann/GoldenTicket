@@ -1077,10 +1077,24 @@ The camera is rectified and enhanced in the same order as training exports. Revi
 that exact unpainted crop and unreviewed predictions, not a later frame. The separate enhancement
 badge does not imply ML GPU execution. See [current evidence](docs/evidence/ml-preview-2026-09-13/validation.md).
 
-The latest [reviewed-example retraining](docs/evidence/ml-retrain-denver-2026-09-13/validation.md)
-uses all 33 collected photos to incorporate reported failures, including the yellow train beside
-Denver, preserving capture-group metadata and earlier models for rollback. Its improved saved-photo
-results are explicitly in-sample;
+The Piece outlines panel also reads detected score markers through `ScoreMarkerReader`.
+This separate local color/position estimate uses the exact analyzed crop and the upright
+USA board's perimeter geometry; it does not add detections or infer train ownership.
+Aligned markers may share a printed row/column value. Missing, uncertain or duplicate-color
+readings do not become numeric scores. The cards expire and invalidate with their source
+outlines, including immediately when stopping capture. Printed 1–100 positions do not infer
+completed laps and never write to authoritative game scores.
+
+The latest [reviewed-example retraining](docs/evidence/ml-retrain-large-lighting-2026-09-13/validation.md)
+uses all 38 collected photos to incorporate reported failures and lighting variations, including
+the yellow train beside Denver, parallel black trains and several changed shadow directions,
+preserving capture-group metadata and earlier models for rollback. Selection checks per-photo
+regressions and close-pair box placement, in addition to detection counts and score readings.
+The final checkpoint was rejected for a missed marker; the saved epoch-30 fallback passes
+all 1,663 labels and 14 native CPU/DirectML fixtures. The rejected
+marker case exposes an unresolved tile-ownership boundary gap, preserved for a separate runtime
+fix. The latest frame is correct both before and after training, so it does not reproduce
+intermittent live extras. Saved-photo results are explicitly in-sample;
 new independent capture sessions remain required. The model contract, operating thresholds and
 manual verification boundary are unchanged.
 

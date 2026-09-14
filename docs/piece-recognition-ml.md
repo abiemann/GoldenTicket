@@ -33,6 +33,29 @@ crop, processing or model changes invalidate in-flight results. Published outlin
 two seconds even while the camera is still supplying newer frames. Loading/inference failures
 leave the normal preview and manual game available and report the ML failure.
 
+### Score markers by color
+
+The **Score track** cards under Piece outlines show blue, red, green, yellow and black marker
+values from the same analyzed image. After ML locates a `player-marker`, a separate local
+reader samples its interior color and maps its center to the perimeter of the upright classic
+USA board. It reads the printed 1–100 track, including 20, 50, 70 and 100 at its corners;
+it cannot determine how many full laps a player has completed. Train colors and route
+ownership remain unread, and no score reading changes game state.
+
+Keep the crop close to all four outer board edges. Side-by-side markers aligned with the
+same score-track row or column can share a value; readings are not assigned distinct scores.
+Unknown color, off-track or ambiguous positions do not produce a numeric value. Missing colors
+show **Not detected**, and multiple detections of one color show **Multiple markers** rather
+than choosing one. Turning outlines off, changing camera/crop/model, stopping capture or
+letting results expire clears both outlines and scores.
+
+The score reader does not retrain or alter the detector, its boxes, confidence or thresholds.
+`GoldenTicket.MlPieceSmoke` includes `ScoreMarkers` alongside its original detections for
+offline photo checks. These are experimental readings; new lighting and crowded-marker
+examples still need review.
+See the [score-marker validation](evidence/score-markers-2026-09-13/validation.md), including
+the supplied photo, shared score 11 and occupied-corner regressions.
+
 ## First training experiment
 
 The first training experiment used **29 photos and 954 labels: 835 trains and 119 score markers**.
@@ -130,11 +153,56 @@ CPU and DirectML agree. See the [new-layout check](evidence/new-layout-2026-09-1
 this is an unseen layout from the same capture setup, not an independent capture-session test.
 
 The user subsequently requested another retrain including that photo. Collection `05` now has
-**33 photos and 1,210 labels**. The installed third model matches all labels at the unchanged
+**33 photos and 1,210 labels**. That third model matches all labels at the unchanged
 cutoff, with no extras; the Denver yellow train's score rises from 0.2993 to 0.9290. Six actual
 CPU/DirectML fixtures match all 352 reviewed objects, with one documented subpixel box difference
 from nearly tied duplicate proposals. All 33 photos, including `184806`, are now training examples.
 See the [Denver retraining and deployment record](evidence/ml-retrain-denver-2026-09-13/validation.md).
+
+Photo `202009` adds a stronger-shadow example of two parallel black trains near Denver.
+In this saved photo both middle trains have retained predictions, but the upper box extends
+over its neighbor. CPU and DirectML agree. Separate body labels and frozen outputs were kept
+before further training, preserving collection `05`. See the
+[parallel-train localization review](evidence/parallel-black-shadows-2026-09-13/validation.md).
+
+The requested [fourth-model retraining](evidence/ml-retrain-shadows-2026-09-13/validation.md)
+includes both `202009` and `202150` in collection `06`: **35 photos and 1,390 labels**.
+The selected final checkpoint matches all labels without extras at the unchanged thresholds,
+and upper parallel-train IoUs improve from about 0.51 to 0.85 / 0.84 with no lower-edge spill.
+An earlier checkpoint was rejected because it added a false positive to an older photo.
+Nine actual CPU/DirectML fixtures pass, including that regression case. These are in-sample
+results; they do not establish reliability through every live frame. Reload the ML model
+in an already open preview after installing the new local pair.
+
+The [fifth-model training](evidence/ml-retrain-miami-shadows-2026-09-13/validation.md) adds
+the shifted-light `202835` photo to collection `07`: **36 photos and 1,481 labels**.
+Empty printed Miami slots and cast shadows remain background. The frozen model already
+matches all pieces in this saved frame; the reported live extras are not reproduced here.
+An early checkpoint adds two extras to `202150` and is rejected. The final checkpoint
+preserves all 1,481 matches without extras, retains distinct parallel black trains, and
+passes ten labeled CPU/DirectML fixtures plus the separate untrained `202727` score check.
+Both `202835` and `202727` read yellow 20, blue 15, red 11, black 11 and green 50. This
+training inclusion does not establish that intermittent live outlines are fixed.
+
+The [sixth-model training](evidence/ml-retrain-light-variation-2026-09-13/validation.md) adds
+`203020` with unchanged pieces and another shadow direction: **37 photos and 1,572 labels**.
+Both first-run checkpoints are rejected for a missed older marker or a duplicate train box.
+A recorded seed-only retry passes every label without extras, plus 12 labeled CPU/DirectML
+fixtures and the separate `202727` score fixture. All five expected scores match on `202835`,
+`203020` and `202727`. The installed final checkpoint preserves separate parallel black trains.
+The rejected marker case reveals a tile-ownership boundary gap; this training does not change
+that runtime rule. The latest photo was already detected correctly before training, and these
+checks remain in-sample rather than independent evidence of live reliability.
+
+The [seventh-model training](evidence/ml-retrain-large-lighting-2026-09-13/validation.md)
+adds the major-lighting photo `203656`: **38 photos and 1,663 labels**. Source review
+retains the same 86 trains and five markers with cast shadows excluded. The final
+checkpoint repeats the earlier marker seam miss and is rejected; the saved epoch-30
+fallback matches every label without extras and passes 13 labeled CPU/DirectML fixtures
+plus the untrained score fixture. All five scores match on all four score-check photos.
+The installed model keeps distinct parallel black trains. Display orientation still
+falls back to upright boxes for some trains; training does not change the fitter or
+tile-ownership rule. Independent-session and live-camera acceptance remain open.
 
 The current difference detector remains available to developer diagnostics for comparison;
 the live Piece outlines feature no longer calls it. The old lighting failure observations are

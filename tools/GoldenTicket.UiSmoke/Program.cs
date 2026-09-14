@@ -31,8 +31,12 @@ internal static partial class Program
     [STAThread]
     private static void Main(string[] args)
     {
-        if (args.Length > 1) throw new ArgumentException("Usage: GoldenTicket.UiSmoke [output-directory]");
-        Output = Path.GetFullPath(args.Length == 1 ? args[0] : "artifacts/ui-smoke");
+        var markerScoresOnly = args.Length > 0 && args[0] == "--marker-scores";
+        if (args.Length > (markerScoresOnly ? 2 : 1))
+            throw new ArgumentException("Usage: GoldenTicket.UiSmoke [output-directory] | --marker-scores [output-directory]");
+        Output = Path.GetFullPath(markerScoresOnly
+            ? args.Length == 2 ? args[1] : "artifacts/ui-smoke-marker-scores"
+            : args.Length == 1 ? args[0] : "artifacts/ui-smoke");
         Directory.CreateDirectory(Output);
         var app = new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("pack://application:,,,/GoldenTicket;component/Theme/Palette.xaml") });
@@ -44,6 +48,11 @@ internal static partial class Program
             MainViewModel? model = null;
             try
             {
+                if (markerScoresOnly)
+                {
+                    await RunMarkerScoresSmoke();
+                    return;
+                }
                 model = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
                 model.Setup.ManualVerificationAccepted = true;
                 model.Setup.Seats[0].DisplayName = "Alex";

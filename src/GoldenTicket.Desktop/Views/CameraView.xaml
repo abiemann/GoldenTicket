@@ -8,6 +8,7 @@
              d:DataContext="{d:DesignInstance vm:CameraViewModel}" mc:Ignorable="d">
     <UserControl.Resources>
         <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+        <local:PlayerColorBrushConverter x:Key="PlayerColorBrush" />
         <Style x:Key="CornerSelectionButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
             <Setter Property="Content" Value="Select four board corners" />
             <Style.Triggers>
@@ -148,7 +149,31 @@
                     </WrapPanel>
                     <TextBlock x:Name="PieceModelStatus" Text="{Binding ModelStatus}" TextWrapping="Wrap" Margin="0,0,0,6" />
                     <TextBlock Text="{Binding DetectionText}" TextWrapping="Wrap" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite" />
-                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,0" Text="This is an experimental model. Check for missing, extra or merged outlines, especially on touching pieces and glare. It detects piece type, not player color or route ownership. Outlines do not change the game." />
+                    <TextBlock Text="Score track" FontWeight="SemiBold" Margin="0,12,0,6" />
+                    <ItemsControl x:Name="MarkerScoresList" ItemsSource="{Binding MarkerScores}" AutomationProperties.Name="Score track values by marker color">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{DynamicResource Ornament}" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="0,0,8,8" MinWidth="132"
+                                        AutomationProperties.Name="{Binding AccessibleText}">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse Width="14" Height="14" Fill="{Binding Color, Converter={StaticResource PlayerColorBrush}}"
+                                                     Stroke="{DynamicResource Text.Primary}" StrokeThickness="1" Margin="0,0,6,0" />
+                                            <TextBlock Text="{Binding Color}" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding ValueText}" FontSize="24" FontWeight="SemiBold" Margin="0,4,0,0" />
+                                        <TextBlock Text="{Binding StatusText}" Style="{StaticResource Caption}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{Binding MarkerScoreStatus}" TextWrapping="Wrap" />
+                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,6,0,0" Text="Reads marker colors and printed track positions on the upright USA board. Keep the crop close to its outer edge. Full laps are not inferred; these readings do not change game scores." />
+                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,0" Text="This is an experimental model. Check for missing, extra or merged outlines, especially on touching pieces and glare. Train colors and route ownership are not read. Outlines do not change the game." />
                     <TextBlock Text="Review note (optional)" Margin="0,12,0,4" />
                     <TextBox x:Name="DetectionReviewNoteBox" Text="{Binding DetectionReviewNote, UpdateSourceTrigger=PropertyChanged}"
                              MaxLength="2000" TextWrapping="Wrap" MinHeight="44" AcceptsReturn="True"

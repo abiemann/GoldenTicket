@@ -194,7 +194,9 @@ public sealed partial class CameraViewModel
                     catch (Exception error) { detectionError = error.Message; }
                 }
                 return (Enhanced: ToBitmap(result.Frame), Raw: ToBitmap(frame),
-                    Board: board is null ? null : ToBitmap(board), Detection: detection, Error: detectionError);
+                    Board: board is null ? null : ToBitmap(board), Detection: detection, Error: detectionError,
+                    Scores: detection is not null && board is not null
+                        ? ScoreMarkerReader.Read(board, detection.Candidates) : []);
             }, _lifetime.Token);
 
             if (_disposed || !Capture.IsRunning || frame.Epoch != Capture.Epoch ||
@@ -234,6 +236,7 @@ public sealed partial class CameraViewModel
             if (prepared.Detection is { } detection && registration is not null && !IsModelBusy)
             {
                 _outlinedFrame = frame;
+                PublishMarkerScores(prepared.Scores);
                 PieceOutlines = detection.Candidates.Select(candidate => new PreviewPieceOutline(
                     candidate.Kind == PieceCandidateKind.PlayerMarker,
                     candidate.DisplayOutline.Select(point => registration.MapToSensor(point.X, point.Y)).ToArray())).ToArray();
@@ -290,6 +293,7 @@ public sealed partial class CameraViewModel
         _outlinedFrame = null;
         _reviewDetection = null;
         PieceOutlines = [];
+        ClearMarkerScores();
         OnPropertyChanged(nameof(CanSaveDetectionExample));
     }
 

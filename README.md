@@ -31,15 +31,22 @@ with a locally trained two-class detector. It finds trains and score markers wit
 reference, using ONNX Runtime on DirectML or CPU. Photos, labels and experimental weights stay local.
 Train outlines follow the piece angle when a local image fit is reliable; score-marker outlines
 stay square. Uncertain train fits keep the original model box.
+**Piece outlines → Score track** reads each detected marker's color and printed track value.
+Markers beside the same row or column may share a score. Missing or uncertain readings are
+shown explicitly and clear with stale outlines. Keep the upright USA board tightly cropped;
+these are track positions, not inferred full-lap totals or changes to the game's scores.
 **Save detection example…** records the analyzed image, predictions and a note for later review.
 The [validation record](docs/evidence/ml-preview-2026-09-13/validation.md) separates measured photo
 results from the live-camera and independent-session tests still needed.
 
-The latest [model retraining](docs/evidence/ml-retrain-denver-2026-09-13/validation.md) incorporates
-33 reviewed photos, including crowded markers, printed-route false positives and the missed
-yellow train beside Denver. The local preview model passes the saved-photo checks on CPU and
-DirectML, with one documented subpixel outline difference. These photos were used for
-training; new capture sessions remain necessary to measure generalization. Use **Reload ML model**
+The latest [model retraining](docs/evidence/ml-retrain-large-lighting-2026-09-13/validation.md) incorporates
+38 reviewed photos, including crowded markers, printed-route false positives, the missed
+yellow train beside Denver, parallel black trains and major lighting changes.
+The local preview model matches all 1,663 labels without extras and preserves separate
+parallel-train boxes. Thirteen labeled photo checks and a separate score-reading fixture pass on
+CPU and DirectML. The latest saved frame was already correct before training, so it does not
+verify a fix for intermittent live extras. These are training-set checks;
+new capture sessions remain necessary to measure generalization. Use **Reload ML model**
 in an already open preview after the local model files are updated.
 
 The [automatic corner experiment](docs/board-corners-ml.md) adds a separate learned model that
