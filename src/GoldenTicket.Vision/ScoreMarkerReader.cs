@@ -21,6 +21,7 @@ public static class ScoreMarkerReader
     private const double VerticalStep = (Bottom - Top) / 20;
     private const double VerticalTrackBand = .028;
     private const double HorizontalTrackBand = .042;
+    public static NormalizedPoint ScoreOneCenter => new(Left, Bottom - VerticalStep);
 
     public static IReadOnlyList<ScoreMarkerReading> Read(CameraFrame board,
         IReadOnlyList<PieceCandidate> candidates)

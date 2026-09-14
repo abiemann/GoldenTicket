@@ -21,6 +21,10 @@ public sealed partial class CameraViewModel
     private (long Epoch, int Width, int Height)? _gameBoardCapture;
     private IReadOnlyList<NormalizedPoint> _gameBoardCorners = [];
     private (long Epoch, int Width, int Height, long Sequence, DateTimeOffset CapturedAt)? _firstGameBoardMiss;
+    private MarkerColor[] _gameSetupColors = [];
+    private DateTimeOffset _gameMarkersAcceptedAt = DateTimeOffset.MinValue;
+    private (long Epoch, int Width, int Height)? _gameMarkersCapture;
+    private bool _gameMarkersReady;
 
     private static readonly TimeSpan GameBoardCheckInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan GameBoardResultLifetime = TimeSpan.FromSeconds(2.5);
@@ -29,6 +33,8 @@ public sealed partial class CameraViewModel
     [ObservableProperty] private bool _isCornerDetectionBusy;
     [ObservableProperty] private string _cornerDetectionStatus = "ML selects the board corners when the preview starts. You can adjust the handles afterwards.";
     [ObservableProperty] private string _gameBoardFramingStatus = "Waiting for the camera to find all four board corners.";
+    public bool ShowGameBoardNotice => IsRunning && !string.IsNullOrWhiteSpace(GameBoardFramingStatus);
+    partial void OnGameBoardFramingStatusChanged(string value) => OnPropertyChanged(nameof(ShowGameBoardNotice));
 
     /// <summary>Current ML predictions in full-camera coordinates, never manual crop handles.</summary>
     public IReadOnlyList<NormalizedPoint> GameBoardCorners
@@ -36,20 +42,29 @@ public sealed partial class CameraViewModel
         get => _gameBoardCorners;
         private set
         {
-            if (SetProperty(ref _gameBoardCorners, value)) OnPropertyChanged(nameof(CanStartGameWithBoard));
+            if (SetProperty(ref _gameBoardCorners, value))
+            {
+                OnPropertyChanged(nameof(HasFreshGameBoardCorners));
+                OnPropertyChanged(nameof(CanStartGameWithBoard));
+            }
         }
     }
 
-    public bool CanStartGameWithBoard => _gameBoardFramingActive && GameBoardCorners.Count == 4 &&
+    public bool HasFreshGameBoardCorners => _gameBoardFramingActive && GameBoardCorners.Count == 4 &&
         IsRunning && Capture.IsRunning && _gameBoardCapture is { } capture &&
         Capture.LatestFrame is { } frame && frame.Age <= TimeSpan.FromSeconds(2) &&
         (frame.Epoch, frame.Width, frame.Height) == capture &&
         DateTimeOffset.UtcNow - _gameBoardAcceptedAt <= GameBoardResultLifetime;
 
-    public void BeginGameBoardFraming()
+    public bool CanStartGameWithBoard => HasFreshGameBoardCorners && _gameMarkersReady &&
+        _gameMarkersCapture == _gameBoardCapture &&
+        DateTimeOffset.UtcNow - _gameMarkersAcceptedAt <= GameBoardResultLifetime;
+
+    public void BeginGameBoardFraming(IReadOnlyCollection<MarkerColor>? selectedColors = null)
     {
         _gameBoardFramingActive = true;
         _gameBoardFramingRevision++;
+        _gameSetupColors = selectedColors?.Distinct().ToArray() ?? [];
         _lastGameBoardCheckAt = DateTimeOffset.MinValue;
         _firstGameBoardMiss = null;
         ClearGameBoardFraming();
@@ -61,15 +76,29 @@ public sealed partial class CameraViewModel
         _gameBoardFramingActive = false;
         _gameBoardFramingRevision++;
         _firstGameBoardMiss = null;
+        _gameSetupColors = [];
         ClearGameBoardFraming();
+    }
+
+    private void ClearGameMarkerCheck()
+    {
+        _gameMarkersReady = false;
+        _gameMarkersCapture = null;
+        _gameMarkersAcceptedAt = DateTimeOffset.MinValue;
+        OnPropertyChanged(nameof(CanStartGameWithBoard));
     }
 
     private void ClearGameBoardFraming()
     {
         _gameBoardCapture = null;
         _gameBoardAcceptedAt = DateTimeOffset.MinValue;
+        ClearGameMarkerCheck();
         if (GameBoardCorners.Count != 0) GameBoardCorners = [];
-        else OnPropertyChanged(nameof(CanStartGameWithBoard));
+        else
+        {
+            OnPropertyChanged(nameof(HasFreshGameBoardCorners));
+            OnPropertyChanged(nameof(CanStartGameWithBoard));
+        }
     }
 
     private bool ConfirmGameBoardMiss(CameraFrame frame)
@@ -98,7 +127,11 @@ public sealed partial class CameraViewModel
             ClearGameBoardFraming();
             GameBoardFramingStatus = "The live board view changed. Checking all four corners again…";
         }
-        else OnPropertyChanged(nameof(CanStartGameWithBoard));
+        else
+        {
+            OnPropertyChanged(nameof(HasFreshGameBoardCorners));
+            OnPropertyChanged(nameof(CanStartGameWithBoard));
+        }
     }
 
     private void QueueGameBoardFraming(CameraFrame frame)
@@ -208,7 +241,11 @@ public sealed partial class CameraViewModel
                 _gameBoardCapture = (current.Epoch, current.Width, current.Height);
                 _gameBoardAcceptedAt = DateTimeOffset.UtcNow;
                 GameBoardCorners = result.Corners.ToArray();
-                GameBoardFramingStatus = "All four board corners are visible.";
+                if (GameBoardFramingStatus.StartsWith("Checking the live image", StringComparison.Ordinal) ||
+                    GameBoardFramingStatus.StartsWith("The live board view changed", StringComparison.Ordinal))
+                    GameBoardFramingStatus = "Checking for trains and scoring markers…";
+                await CheckGameSetupMarkersAsync(current, gameBoardRevision, operationRevision,
+                    cropRevision, cameraEpoch, cancellation.Token);
                 return;
             }
             // Validate and render before replacing any existing crop. Failure leaves it untouched.
@@ -256,6 +293,64 @@ public sealed partial class CameraViewModel
             IsCornerDetectionBusy = false;
         }
     }
+
+    private async Task CheckGameSetupMarkersAsync(CameraFrame frame, long gameBoardRevision,
+        long operationRevision, long cropRevision, long cameraEpoch, CancellationToken token)
+    {
+        try
+        {
+            await EnsurePieceModelAsync();
+            if (!GameMarkerOperationIsCurrent(gameBoardRevision, operationRevision, cropRevision, cameraEpoch)) return;
+            if (_pieceModel is null)
+            {
+                ClearGameMarkerCheck();
+                GameBoardFramingStatus = "Piece detection unavailable. " + ModelStatus;
+                return;
+            }
+            var check = await Task.Run(() =>
+            {
+                var observations = new List<GameSetupBoardObservation>(4);
+                foreach (var corners in GameBoardOrientations.Enumerate(GameBoardCorners))
+                {
+                    token.ThrowIfCancellationRequested();
+                    var board = BoardRegistration.Create(frame, corners)
+                        .Rectify(frame, LearnedPieceDetector.BoardWidth, LearnedPieceDetector.BoardHeight);
+                    LearnedPieceDetection detection;
+                    lock (_modelGate) detection = _pieceModel!.Detect(board, token);
+                    observations.Add(new(detection.Candidates,
+                        ScoreMarkerReader.Read(board, detection.Candidates)));
+                }
+                return GameSetupBoardValidator.Check(_gameSetupColors, observations);
+            }, token);
+            if (!GameMarkerOperationIsCurrent(gameBoardRevision, operationRevision, cropRevision, cameraEpoch)) return;
+            var latest = Capture.LatestFrame;
+            if (latest is null || latest.Age > TimeSpan.FromSeconds(2) ||
+                (latest.Epoch, latest.Width, latest.Height) != (frame.Epoch, frame.Width, frame.Height) ||
+                frame.Age > TimeSpan.FromSeconds(2))
+            {
+                ClearGameMarkerCheck();
+                GameBoardFramingStatus = "The camera image changed. Checking the board again…";
+                return;
+            }
+            _gameMarkersReady = check.Ready;
+            _gameMarkersCapture = (frame.Epoch, frame.Width, frame.Height);
+            _gameMarkersAcceptedAt = DateTimeOffset.UtcNow;
+            GameBoardFramingStatus = check.Message;
+            OnPropertyChanged(nameof(CanStartGameWithBoard));
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            if (!GameMarkerOperationIsCurrent(gameBoardRevision, operationRevision, cropRevision, cameraEpoch)) return;
+            ClearGameMarkerCheck();
+            GameBoardFramingStatus = "Board piece check unavailable: " + ex.Message;
+        }
+    }
+
+    private bool GameMarkerOperationIsCurrent(long gameBoardRevision, long operationRevision,
+        long cropRevision, long cameraEpoch) => _gameBoardFramingActive &&
+        gameBoardRevision == _gameBoardFramingRevision &&
+        CornerOperationIsCurrent(operationRevision, cropRevision, cameraEpoch);
 
     private bool CornerOperationIsCurrent(long operationRevision, long cropRevision, long cameraEpoch) =>
         !_disposed && !IsBusy && Capture.IsRunning && Capture.Epoch == cameraEpoch &&

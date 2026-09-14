@@ -242,7 +242,10 @@
                     <TextBlock x:Name="CameraSetupHelp"
                                Text="Position the board game and camera so the entire board is visible"
                                Foreground="#FFF8EEDC" FontSize="19" TextAlignment="Center"
-                               Margin="0,12,0,20" />
+                               Margin="0,12,0,6" />
+                    <TextBlock Text="Place scoring markers on or near the 1"
+                               Foreground="#FFF8EEDC" FontSize="16" TextAlignment="Center"
+                               Margin="0,0,0,16" />
                     <Border x:Name="CameraSetupPreviewFrame" Width="800" Height="440" CornerRadius="8"
                             Background="#0E141B" BorderBrush="#99DFB75C" BorderThickness="2"
                             ClipToBounds="True">
@@ -252,9 +255,9 @@
                                    AutomationProperties.Name="Live board camera preview" />
                             <Canvas x:Name="CameraSetupCornerOverlay" IsHitTestVisible="False"
                                     SizeChanged="CameraSetupCornerOverlay_SizeChanged" />
-                            <Border Background="#C9161E28" CornerRadius="5" Padding="10,6"
+                            <Border x:Name="CameraSetupNotice" Background="#C9161E28" CornerRadius="5" Padding="10,6"
                                     HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="12"
-                                    Visibility="{Binding Camera.IsRunning, Converter={StaticResource BoolToVisibility}}">
+                                    Visibility="{Binding Camera.ShowGameBoardNotice, Converter={StaticResource BoolToVisibility}}">
                                 <TextBlock Text="{Binding Camera.GameBoardFramingStatus}" Foreground="White"
                                            FontSize="14" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="740"
                                            AutomationProperties.LiveSetting="Polite" />
@@ -272,7 +275,7 @@
                             </StackPanel>
                         </Grid>
                     </Border>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,20,0,0">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,16,0,0">
                         <Button x:Name="ConfirmationCancelButton" Content="CANCEL"
                                 Style="{StaticResource GameSetupActionButton}" Width="180" Height="56"
                                 FontSize="20" Margin="0,0,16,0" Click="CancelCameraSetup_Click" />

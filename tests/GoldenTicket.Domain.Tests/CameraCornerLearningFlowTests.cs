@@ -18,7 +18,8 @@ public sealed class CameraCornerLearningFlowTests
         Assert.False(fixture.Camera.CanStartGameWithBoard);
 
         await fixture.CheckGameBoardAsync();
-        Assert.True(fixture.Camera.CanStartGameWithBoard);
+        Assert.True(fixture.Camera.HasFreshGameBoardCorners);
+        Assert.False(fixture.Camera.CanStartGameWithBoard);
         Assert.Equal(FakeModel.Corners, fixture.Camera.GameBoardCorners);
         Assert.Empty(fixture.Camera.SelectedCorners);
         Assert.False(fixture.Camera.HasBoardCrop);
@@ -26,8 +27,8 @@ public sealed class CameraCornerLearningFlowTests
         fixture.Model.RejectionReason = "synthetic partly hidden board";
         fixture.Refresh();
         await fixture.CheckGameBoardAsync();
-        Assert.True(fixture.Camera.CanStartGameWithBoard);
-        Assert.Equal("All four board corners are visible.", fixture.Camera.GameBoardFramingStatus);
+        Assert.True(fixture.Camera.HasFreshGameBoardCorners);
+        Assert.Contains("Piece detection unavailable", fixture.Camera.GameBoardFramingStatus);
         Assert.Equal(FakeModel.Corners, fixture.Camera.GameBoardCorners);
 
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
@@ -63,13 +64,13 @@ public sealed class CameraCornerLearningFlowTests
         fixture.Model.DetectedCorners = FakeModel.Corners;
         fixture.Refresh();
         await fixture.CheckGameBoardAsync();
-        Assert.True(fixture.Camera.CanStartGameWithBoard);
+        Assert.True(fixture.Camera.HasFreshGameBoardCorners);
         fixture.Clock.Advance(TimeSpan.FromSeconds(3));
         Assert.False(fixture.Camera.CanStartGameWithBoard);
         fixture.Refresh(epoch: 2);
         Assert.False(fixture.Camera.CanStartGameWithBoard);
         await fixture.CheckGameBoardAsync();
-        Assert.True(fixture.Camera.CanStartGameWithBoard);
+        Assert.True(fixture.Camera.HasFreshGameBoardCorners);
         fixture.Camera.EndGameBoardFraming();
         Assert.False(fixture.Camera.CanStartGameWithBoard);
         Assert.Empty(fixture.Camera.GameBoardCorners);
@@ -85,14 +86,78 @@ public sealed class CameraCornerLearningFlowTests
         fixture.Model.RejectionReason = "synthetic one-frame miss";
         fixture.Refresh();
         await fixture.CheckGameBoardAsync();
-        Assert.Equal("All four board corners are visible.", fixture.Camera.GameBoardFramingStatus);
+        Assert.Contains("Piece detection unavailable", fixture.Camera.GameBoardFramingStatus);
 
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         fixture.Model.RejectionReason = null;
         fixture.Refresh();
         await fixture.CheckGameBoardAsync();
-        Assert.True(fixture.Camera.CanStartGameWithBoard);
-        Assert.Equal("All four board corners are visible.", fixture.Camera.GameBoardFramingStatus);
+        Assert.True(fixture.Camera.HasFreshGameBoardCorners);
+        Assert.Contains("Piece detection unavailable", fixture.Camera.GameBoardFramingStatus);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public async Task Game_setup_requires_both_selected_score_colors_on_printed_one(int orientationIndex)
+    {
+        using var pieces = new FakePieceModel();
+        await using var fixture = new Fixture(pieceFactory: (_, _) => pieces);
+        var orientedCorners = GameBoardOrientations.Enumerate(FakeModel.Corners)[orientationIndex];
+        fixture.FramePainter = (pixels, width, height) =>
+        {
+            PaintScorePiece(pixels, width, height, orientedCorners, .017, .9266, (138, 55, 48));
+            PaintScorePiece(pixels, width, height, orientedCorners, .055, .9266, (0, 48, 100));
+        };
+        fixture.Refresh();
+        fixture.Camera.BeginGameBoardFraming([MarkerColor.Red, MarkerColor.Blue]);
+        await fixture.CheckGameBoardAsync();
+        Assert.True(fixture.Camera.HasFreshGameBoardCorners);
+        Assert.True(fixture.Camera.CanStartGameWithBoard, fixture.Camera.GameBoardFramingStatus);
+        Assert.Equal("", fixture.Camera.GameBoardFramingStatus);
+        Assert.Equal(4, pieces.Calls);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(3));
+        Assert.False(fixture.Camera.CanStartGameWithBoard);
+        fixture.Refresh();
+        await fixture.CheckGameBoardAsync();
+        Assert.True(fixture.Camera.CanStartGameWithBoard, fixture.Camera.GameBoardFramingStatus);
+
+        pieces.ShowTrain = true;
+        fixture.Refresh();
+        await fixture.CheckGameBoardAsync();
+        Assert.False(fixture.Camera.CanStartGameWithBoard);
+        Assert.Contains("Remove all trains", fixture.Camera.GameBoardFramingStatus);
+        pieces.ShowTrain = false;
+        fixture.Refresh();
+        await fixture.CheckGameBoardAsync();
+        Assert.True(fixture.Camera.CanStartGameWithBoard, fixture.Camera.GameBoardFramingStatus);
+
+        fixture.FramePainter = (pixels, width, height) =>
+            PaintScorePiece(pixels, width, height, orientedCorners, .017, .9266, (138, 55, 48));
+        fixture.Refresh();
+        await fixture.CheckGameBoardAsync();
+        Assert.False(fixture.Camera.CanStartGameWithBoard);
+        Assert.Contains("blue", fixture.Camera.GameBoardFramingStatus);
+    }
+
+    private static void PaintScorePiece(byte[] pixels, int width, int height,
+        IReadOnlyList<NormalizedPoint> corners, double u, double v, (byte R, byte G, byte B) color)
+    {
+        var blank = CameraFrame.CopyFromBgra32(width, height, pixels);
+        var point = BoardRegistration.Create(blank, corners).MapToSensor(u, v);
+        var centerX = (int)Math.Round(point.X * (width - 1));
+        var centerY = (int)Math.Round(point.Y * (height - 1));
+        for (var y = Math.Max(0, centerY - 3); y <= Math.Min(height - 1, centerY + 3); y++)
+        for (var x = Math.Max(0, centerX - 3); x <= Math.Min(width - 1, centerX + 3); x++)
+        {
+            var offset = (y * width + x) * 4;
+            pixels[offset] = color.B;
+            pixels[offset + 1] = color.G;
+            pixels[offset + 2] = color.R;
+        }
     }
 
     [Fact]
@@ -456,11 +521,14 @@ public sealed class CameraCornerLearningFlowTests
         public ConcurrentQueue<(string Directory, bool PreferGpu)> FactoryCalls { get; } = new();
         public CameraViewModel Camera { get; }
         public CameraFrame Frame => Camera.Capture.LatestFrame!;
+        public Action<byte[], int, int>? FramePainter { get; set; }
         public object? Registration => Field("_registration").GetValue(Camera);
 
-        public Fixture(Func<string, bool, IBoardCornerDetector>? factory = null)
+        public Fixture(Func<string, bool, IBoardCornerDetector>? factory = null,
+            Func<string, bool, IPieceModelDetector>? pieceFactory = null)
         {
             Camera = new(pieceModelDirectory: ModelDirectory + "-unused-pieces", boardCornerModelDirectory: ModelDirectory,
+                pieceModelFactory: pieceFactory,
                 boardCornerModelFactory: (directory, preferGpu) =>
                 {
                     FactoryCalls.Enqueue((directory, preferGpu));
@@ -483,6 +551,7 @@ public sealed class CameraCornerLearningFlowTests
                 pixels[index + 2] = 150;
                 pixels[index + 3] = 255;
             }
+            FramePainter?.Invoke(pixels, width, height);
             SetCapture("_epoch", epoch);
             SetCapture("_running", true);
             SetCapture("_latest", CameraFrame.CopyFromBgra32(width, height, pixels, ++_sequence, epoch, clock: Clock));
@@ -520,6 +589,53 @@ public sealed class CameraCornerLearningFlowTests
             await Camera.DisposeAsync();
             Model.ReleaseResources();
         }
+    }
+
+    private sealed class FakePieceModel : IPieceModelDetector
+    {
+        public string ModelId => "synthetic-score-pieces";
+        public string Backend => "synthetic CPU";
+        public string? FallbackReason => null;
+        public int Calls { get; private set; }
+        public bool ShowTrain { get; set; }
+
+        public LearnedPieceDetection Detect(CameraFrame board, CancellationToken token = default)
+        {
+            Calls++;
+            var candidates = new List<PieceCandidate>();
+            if (IsRed(board, .017, .9266)) candidates.Add(Marker(.017, .9266));
+            if (IsBlue(board, .055, .9266)) candidates.Add(Marker(.055, .9266));
+            if (ShowTrain) candidates.Add(new(PieceCandidateKind.Train,
+                [new(.45, .45), new(.55, .45), new(.55, .55), new(.45, .55)], .95));
+            return new(candidates, ModelId, Backend, TimeSpan.FromMilliseconds(1));
+        }
+
+        private static bool IsRed(CameraFrame board, double x, double y)
+        {
+            var (r, g, b) = Sample(board, x, y);
+            return r > 110 && g < 95 && b < 95;
+        }
+
+        private static bool IsBlue(CameraFrame board, double x, double y)
+        {
+            var (r, g, b) = Sample(board, x, y);
+            return b > 70 && r < 55 && g < 90;
+        }
+
+        private static (byte R, byte G, byte B) Sample(CameraFrame board, double x, double y)
+        {
+            var px = (int)Math.Round(x * (board.Width - 1));
+            var py = (int)Math.Round(y * (board.Height - 1));
+            var offset = py * board.Stride + px * 4;
+            var bytes = board.Bgra32.Span;
+            return (bytes[offset + 2], bytes[offset + 1], bytes[offset]);
+        }
+
+        private static PieceCandidate Marker(double x, double y) => new(PieceCandidateKind.PlayerMarker,
+            [new(x - .012, y - .018), new(x + .012, y - .018),
+                new(x + .012, y + .018), new(x - .012, y + .018)], .95);
+
+        public void Dispose() { }
     }
 
     private sealed class FakeModel : IBoardCornerDetector

@@ -25,13 +25,20 @@ See the
   hover-filled back arrow, an instruction below the portraits, and a transient SET-UP BOARD hover fill.
   SET-UP BOARD opens a separate camera setup screen that hides the roster, starts the shared preview when
   available, and offers retry, cancel and final PLAY controls. Local ML repeatedly checks the live
-  image, marks all four accepted outer board corners with small white plus signs, and enables PLAY
-  only while the four-corner result remains fresh. Manual placement verification remains.
-- [x] The affected corner-flow tests pass after the one-second recheck change. Synthetic WPF checks
-  cover 71 render cases, selection input, repeated transitions, resizing, privacy hiding and
+  image and marks all four accepted outer board corners with small white plus signs. The piece model
+  checks all four board rotations, blocks PLAY when it sees a train, and verifies one scoring marker
+  for every selected color near printed 1. Missing colors and trains appear as actionable notices;
+  the notice disappears when the camera, train, and marker checks are ready.
+  Manual placement verification remains.
+- [ ] Validate score-piece color and printed-1 acceptance with the real overhead camera for all
+  five colors and rotated board orientations; synthetic tests do not establish live accuracy.
+- [ ] Recognize the board's printed score-track orientation independently of marker placement;
+  the current four-rotation proximity check can mistake a marker cluster at another corner for 1.
+- [x] The affected corner and score-piece tests pass (72 focused cases). Synthetic WPF checks
+  cover 73 render cases, selection input, repeated transitions, resizing, privacy hiding and
   shared game/camera ownership, with no binding warnings.
 - [ ] Rerun the full automated suite under a loaded Windows user profile after the latest
-  corner-flow change; the sandboxed run cannot use Windows user-profile encryption.
+  corner and score-piece changes; the sandboxed run cannot use Windows user-profile encryption.
 - [ ] Perform a hands-on desktop check of focus, maximization, animation/reduced-motion settings
   and the live camera while switching layers on the target Windows machine.
 

@@ -8,12 +8,20 @@ corners** starts manual placement.
 
 The **Before we begin** game screen uses the same model and camera stream for a separate live
 framing check, roughly once per second while that screen is open. Four accepted corners appear as
-small white plus signs over the preview. **PLAY!** remains disabled until the current camera epoch
-has a recent, confident four-corner result with every corner inside the frame. Rechecks leave the
-success message visible. A single missed detection keeps the recent result; a second miss on a
+small white plus signs over the preview. No orientation click is required: the app rectifies the
+board in four rotations and runs the existing piece detector and score-marker reader. **PLAY!**
+remains disabled until the current camera epoch has a recent, confident four-corner result with
+every corner inside the frame, no detected trains, and one marker for every chosen train color
+near the printed **1** area. The notice names missing colors or tells the operator to remove
+trains; it disappears when all checks pass. A single missed corner detection keeps the recent
+result; a second miss on a
 fresh frame at least one second later clears the markers and shows board-position guidance.
 A stale frame, camera restart or leaving the screen clears readiness immediately. A previous
 manual crop does not satisfy this gate. This check does not overwrite technical crop handles.
+The four-rotation comparison uses marker placement to choose a likely orientation; it does not
+independently read the printed numeral. A marker cluster at another score-track corner could
+therefore pass this proximity check. Rotated-board and marker checks have synthetic coverage;
+real overhead-camera accuracy still needs validation.
 
 Automatic selection adds a narrow outward margin before setting the handles: a 0.5% expansion about
 the detected quadrilateral's center, equivalent to 0.25% of each board dimension on each side for a

@@ -7,6 +7,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using GoldenTicket.Desktop.ViewModels;
+using GoldenTicket.Vision;
 
 namespace GoldenTicket.Desktop.Views;
 
@@ -42,7 +43,7 @@ public partial class GameScreenView : UserControl
     private void CornerOverlayCameraChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(CameraViewModel.Preview) or nameof(CameraViewModel.GameBoardCorners)
-            or nameof(CameraViewModel.CanStartGameWithBoard) or nameof(CameraViewModel.IsRunning))
+            or nameof(CameraViewModel.HasFreshGameBoardCorners) or nameof(CameraViewModel.IsRunning))
             _ = Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(DrawCameraSetupCorners));
     }
 
@@ -54,7 +55,7 @@ public partial class GameScreenView : UserControl
         if (CameraSetupCornerOverlay is null) return;
         CameraSetupCornerOverlay.Children.Clear();
         var camera = _cornerOverlayCamera ?? (DataContext as MainViewModel)?.Camera;
-        if (camera is not { CanStartGameWithBoard: true, Preview: { } source } ||
+        if (camera is not { HasFreshGameBoardCorners: true, Preview: { } source } ||
             CameraSetupCornerOverlay.ActualWidth <= 0 || CameraSetupCornerOverlay.ActualHeight <= 0 ||
             source.Width <= 0 || source.Height <= 0) return;
         var scale = Math.Min(CameraSetupCornerOverlay.ActualWidth / source.Width,
@@ -221,7 +222,9 @@ public partial class GameScreenView : UserControl
         }
         _ = Dispatcher.BeginInvoke(DispatcherPriority.Input,
             new Action(() => { if (IsVisible && game.IsCameraSetup) Keyboard.Focus(ConfirmationCancelButton); }));
-        (DataContext as MainViewModel)?.Camera.BeginGameBoardFraming();
+        (DataContext as MainViewModel)?.Camera.BeginGameBoardFraming(
+            game.SeatChoices.Where(choice => choice.IsChosen)
+                .Select(choice => Enum.Parse<MarkerColor>(choice.TrainColor.ToString())).ToArray());
         await EnsureCameraPreviewAsync();
     }
 

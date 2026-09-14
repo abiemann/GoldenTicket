@@ -614,19 +614,39 @@ internal static partial class Program
                 cameraType.GetProperty(nameof(CameraViewModel.GameBoardCorners))!.GetSetMethod(true)!
                     .Invoke(camera, [new NormalizedPoint[]
                     { new(.1, .12), new(.9, .12), new(.9, .88), new(.1, .88) }]);
-                camera.GameBoardFramingStatus = "All four board corners are visible.";
+                camera.GameBoardFramingStatus = "Missing scoring marker: red.";
                 await RenderSizes("game-camera-corners-synthetic",
                     () => new GameScreenView { DataContext = model }, view =>
                     {
                         var overlay = (Canvas)view.FindName("CameraSetupCornerOverlay");
+                        var notice = (Border)view.FindName("CameraSetupNotice");
                         var play = (Button)view.FindName("ConfirmationPlayButton");
                         var whiteLines = overlay.Children.OfType<Line>()
                             .Where(line => ReferenceEquals(line.Stroke, Brushes.White)).ToArray();
-                        if (!camera.CanStartGameWithBoard || !play.IsEnabled ||
+                        if (!camera.HasFreshGameBoardCorners || camera.CanStartGameWithBoard || play.IsEnabled ||
+                            notice.Visibility != Visibility.Visible ||
                             overlay.Children.Count != 16 || whiteLines.Length != 8 ||
                             whiteLines.Any(line => line.X1 < 0 || line.X2 > overlay.ActualWidth ||
                                 line.Y1 < 0 || line.Y2 > overlay.ActualHeight))
-                            throw new InvalidOperationException("Four fresh ML corners must draw white plus signs and enable PLAY.");
+                            throw new InvalidOperationException("Four fresh ML corners must draw white plus signs but keep PLAY disabled until score pieces are checked.");
+                    }, [(875, 680), (1280, 800)]);
+                cameraType.GetField("_gameMarkersReady", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .SetValue(camera, true);
+                cameraType.GetField("_gameMarkersCapture", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .SetValue(camera, (1L, 320, 180));
+                cameraType.GetField("_gameMarkersAcceptedAt", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .SetValue(camera, DateTimeOffset.UtcNow);
+                camera.GameBoardFramingStatus = "";
+                cameraType.GetProperty(nameof(CameraViewModel.GameBoardCorners))!.GetSetMethod(true)!
+                    .Invoke(camera, [new NormalizedPoint[]
+                    { new(.1, .12), new(.9, .12), new(.9, .88), new(.1, .88) }]);
+                await RenderSizes("game-camera-pieces-ready-synthetic",
+                    () => new GameScreenView { DataContext = model }, view =>
+                    {
+                        var play = (Button)view.FindName("ConfirmationPlayButton");
+                        var notice = (Border)view.FindName("CameraSetupNotice");
+                        if (!camera.CanStartGameWithBoard || !play.IsEnabled || notice.Visibility != Visibility.Collapsed)
+                            throw new InvalidOperationException("Fresh corners and score pieces must enable PLAY and hide the board notice.");
                     }, [(875, 680), (1280, 800)]);
             }
             finally

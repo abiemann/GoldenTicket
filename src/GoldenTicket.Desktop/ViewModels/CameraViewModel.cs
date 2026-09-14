@@ -83,6 +83,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     partial void OnIsRunningChanged(bool value)
     {
         NotifyPhotoAvailability();
+        OnPropertyChanged(nameof(ShowGameBoardNotice));
+        OnPropertyChanged(nameof(HasFreshGameBoardCorners));
         OnPropertyChanged(nameof(CanStartGameWithBoard));
     }
     partial void OnHasBoardCropChanged(bool value) => NotifyPhotoAvailability();

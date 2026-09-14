@@ -367,10 +367,14 @@ selected characters and opens a separate **Before we begin** camera screen, hidi
 This screen asks the operator to position the board and camera so the entire board is visible,
 automatically starts the shared camera when possible, and shows its live preview with a retry
 control when unavailable. The local corner model checks the current full-camera image repeatedly.
-Small white plus signs mark its four accepted outer corners. **PLAY!** is enabled only while a
-recent result confidently places all four corners inside the image. Rechecks preserve the success
-message; board-position guidance appears after two missed detections at least one second apart.
-A stale or restarted camera view clears the markers and disables **PLAY!**. **CANCEL** returns to
+Small white plus signs mark its four accepted outer corners. No click is required. The shared
+piece model checks all four rotations of the rectified board for trains and physical scoring
+markers, then compares detected marker colors with the selected roster and their proximity to
+the printed **1** area. **PLAY!** is enabled only with recent accepted corners, no detected trains,
+and one marker for each selected color near **1**. An on-board notice names missing colors or asks
+the operator to remove trains; it disappears when all checks pass. Board-position guidance appears
+after two missed corner detections at least one second apart.
+A stale or restarted camera view clears readiness and disables **PLAY!**. **CANCEL** returns to
 the roster; **PLAY!** confirms setup and creates the selected seats in the shared match setup.
 Every placement still requires manual whole-board verification. All-human and all-computer
 rosters are allowed; an operator still places and verifies any computer player's physical trains.
