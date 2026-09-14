@@ -60,6 +60,8 @@ internal static partial class Program
                 model.Setup.Seats[2].DisplayName = "Brakeman";
                 await VerifyWindowShutdown();
                 await VerifyWindowExitConfirmation();
+                await VerifyGameMenu();
+                await VerifyGameLayerTransition();
                 await VerifySavedMatchSelection();
                 await VerifySavedMatchName();
                 await RenderSizes("setup", () => new SetupView { DataContext = model });
@@ -423,7 +425,7 @@ internal static partial class Program
             }
             verify?.Invoke(view);
             var beforeErrors = BindingLog.ErrorCount;
-            var buttons = Descendants<ButtonBase>(root).Where(b => b.Visibility == Visibility.Visible).Select(b =>
+            var buttons = Descendants<ButtonBase>(root).Where(IsElementShown).Select(b =>
             {
                 var bounds = b.TransformToAncestor(root).TransformBounds(new Rect(b.RenderSize));
                 return new { Type = b.GetType().Name, Label = Label(b), Bounds = new { bounds.X, bounds.Y, bounds.Width, bounds.Height },
@@ -432,7 +434,8 @@ internal static partial class Program
                     ContentForegrounds = Descendants<TextBlock>(b).Select(t => t.Foreground.ToString()).Distinct().ToArray(),
                     HorizontalOverflow = bounds.Left < -1 || bounds.Right > width + 1 };
             }).ToArray();
-            var scrolls = Descendants<ScrollViewer>(root).Where(s => s.ScrollableHeight > 1 || s.ScrollableWidth > 1).ToArray();
+            var scrolls = Descendants<ScrollViewer>(root).Where(s => IsElementShown(s) &&
+                (s.ScrollableHeight > 1 || s.ScrollableWidth > 1)).ToArray();
             Save(root, $"{name}-{width}x{height}-top.png", width, height);
             foreach (var scroll in scrolls) scroll.ScrollToBottom();
             await Arrange(root, width, height);
@@ -441,7 +444,7 @@ internal static partial class Program
             Console.WriteLine($"{name} {width}x{height}: {buttons.Length} controls, {buttons.Count(b => b.HorizontalOverflow)} horizontally outside viewport, {scrolls.Length} scroll surfaces.");
             if (buttons.Any(b => b.Label.Length > 0 && b.HorizontalOverflow))
                 throw new InvalidOperationException($"An interactive control extends outside the horizontal viewport: {name} {width}×{height}.");
-            foreach (var button in Descendants<Button>(root).Where(b => b.Visibility == Visibility.Visible &&
+            foreach (var button in Descendants<Button>(root).Where(b => IsElementShown(b) &&
                 b.Style == System.Windows.Application.Current.Resources["PrimaryButton"]))
             {
                 if (Descendants<TextBlock>(button).Any(t => t.Foreground.ToString() != button.Foreground.ToString()))
@@ -460,6 +463,134 @@ internal static partial class Program
         root.UpdateLayout();
         await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
         root.UpdateLayout();
+    }
+
+    private static bool IsElementShown(DependencyObject element)
+    {
+        for (DependencyObject? current = element; current is not null; current = VisualTreeHelper.GetParent(current))
+            if (current is UIElement { Visibility: not Visibility.Visible }) return false;
+        return true;
+    }
+
+    private static async Task VerifyGameMenu()
+    {
+        var model = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
+        try
+        {
+            await RenderSizes("game-welcome", () => new GameScreenView { DataContext = model });
+            await model.Game.ActivateSelectedAsync();
+            await RenderSizes("game-player-count", () => new GameScreenView { DataContext = model });
+            model.Game.SelectCount(5);
+            await model.Game.ActivateSelectedAsync();
+            await RenderSizes("game-five-faces", () => new GameScreenView { DataContext = model });
+            model.Game.SelectSeat(3);
+            await model.Game.ActivateSelectedAsync();
+            await RenderSizes("game-robot-face", () => new GameScreenView { DataContext = model });
+            if (model.Game.SeatChoices.Count != 5 || !model.Setup.Seats[3].IsComputer)
+                throw new InvalidOperationException("The game face choices did not update the shared seat setup.");
+            var pointerView = new GameScreenView { DataContext = model };
+            await Arrange(pointerView, 1000, 620);
+            var fourth = Descendants<Button>(pointerView).Single(button =>
+                button.DataContext is GameSeatChoice { Number: 4 });
+            model.Game.SelectSeat(0);
+            fourth.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount)
+                { RoutedEvent = Mouse.MouseEnterEvent });
+            if (model.Game.SeatSelection != 3)
+                throw new InvalidOperationException("Hover must move the face selection indicator.");
+            fourth.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            await Task.Delay(280);
+            if (model.Setup.Seats[3].IsComputer)
+                throw new InvalidOperationException("Click must flip the matched robot portrait back to human.");
+
+            var keyboardModel = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
+            try
+            {
+                var keyboardView = new GameScreenView { DataContext = keyboardModel };
+                await Arrange(keyboardView, 1000, 620);
+                var source = new FixturePresentationSource { RootVisual = keyboardView };
+                void KeyPress(Key key) => keyboardView.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,
+                    source, Environment.TickCount, key) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+                KeyPress(Key.Enter);
+                KeyPress(Key.Down);
+                if (!keyboardModel.Game.IsPlayerCount || keyboardModel.Game.CountSelection != 3)
+                    throw new InvalidOperationException("Arrow keys must move the player-count highlight.");
+                KeyPress(Key.Enter);
+                KeyPress(Key.Right);
+                KeyPress(Key.Enter);
+                await Task.Delay(280);
+                if (!keyboardModel.Game.IsAiSelection || keyboardModel.Setup.Seats.Count != 3 ||
+                    !keyboardModel.Setup.Seats[1].IsComputer)
+                    throw new InvalidOperationException("Enter and cursor keys must select and flip a face.");
+            }
+            finally { await keyboardModel.DisposeToolsAsync(); }
+
+            var savedStore = new InMemorySessionStore();
+            var savedSource = new MainViewModel(ManifestLoader.LoadClassicUs(), savedStore);
+            var savedMenu = new MainViewModel(ManifestLoader.LoadClassicUs(), savedStore);
+            try
+            {
+                savedSource.Setup.ManualVerificationAccepted = true;
+                await savedSource.StartMatchAsync();
+                await savedMenu.LoadSavedSessionsAsync();
+                await RenderSizes("game-welcome-saved", () => new GameScreenView { DataContext = savedMenu }, view =>
+                {
+                    var reload = (Button)view.FindName("ReloadButton");
+                    if (reload.Visibility != Visibility.Visible)
+                        throw new InvalidOperationException("A saved game must offer Reload the previous game.");
+                });
+            }
+            finally
+            {
+                await savedSource.DisposeToolsAsync();
+                await savedMenu.DisposeToolsAsync();
+            }
+            Console.WriteLine("Game menu: staged renders, hover/click and cursor/Enter interactions passed.");
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    private static async Task VerifyGameLayerTransition()
+    {
+        var model = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
+        model.Setup.ManualVerificationAccepted = true;
+        var camera = model.Camera;
+        var window = new GoldenTicket.Desktop.MainWindow(model, _ => true);
+        var root = (Grid)window.FindName("Root");
+        var technical = (Grid)window.FindName("TechnicalLayer");
+        var game = (GameScreenView)window.FindName("GameLayer");
+        var returnButton = (Button)window.FindName("ReturnToGameButton");
+        var reveal = typeof(GoldenTicket.Desktop.MainWindow).GetMethod("RevealTechnicalLayer",
+            BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("The Shift+Escape reveal handler is missing.");
+        try
+        {
+            await Arrange(root, 1000, 620);
+            await model.StartMatchAsync();
+            if (!game.IsEnabled || technical.IsEnabled)
+                throw new InvalidOperationException("The game layer must be the only enabled layer at launch.");
+            if (!model.IsPrivateVisible)
+                throw new InvalidOperationException("The privacy fixture must reveal the opening hand before switching layers.");
+            reveal.Invoke(window, null);
+            reveal.Invoke(window, null);
+            await Task.Delay(400);
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            if (game.Visibility != Visibility.Collapsed || !technical.IsEnabled || model.IsPrivateVisible)
+                throw new InvalidOperationException("Revealing the technical layer must cover private cards and disable the game layer.");
+            await Arrange(root, 1280, 800);
+            returnButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            await Task.Delay(400);
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            if (game.Visibility != Visibility.Visible || !game.IsEnabled || technical.IsEnabled ||
+                ((TranslateTransform)game.RenderTransform).X != 0 || !ReferenceEquals(camera, model.Camera) ||
+                model.Screen != Screen.Table)
+                throw new InvalidOperationException("Returning to the game must restore full coverage and preserve the match and camera.");
+            Console.WriteLine("Game layer: reveal/return, repeat, resize, privacy and shared-camera state passed.");
+        }
+        finally
+        {
+            window.Close();
+            await model.DisposeToolsAsync();
+        }
     }
 
     private static async Task VerifyHumanPresentation()

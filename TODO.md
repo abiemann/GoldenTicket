@@ -5,6 +5,25 @@ The complete requirements remain in [DESIGN.md](DESIGN.md). This is a partial ma
 implementation with a game companion and camera/reference-photo tools, not a completed automatic
 camera-assisted product. See [September 12 progress and morning checks](docs/IMPLEMENTATION-2026-09-12.md).
 
+## Game screen (implemented September 14, 2026)
+
+See the
+[game and technical layers](DESIGN.md#411-game-and-technical-layers).
+
+- [x] Add a player-facing game layer that covers the entire application content area, including
+  the current technical navigation. Keep the existing technical interface available underneath.
+- [x] Slide the game layer out of view to reveal the technical interface with Shift+Escape.
+  Preserve plain Escape-to-hide/cancel behavior and ignore held-key repeats.
+- [x] Add a **Return to game** button at the top of the technical interface. Slide the game
+  layer back over 100% of the content area, preserving the active game and technical tool state.
+- [x] Add snowy-twilight launch art, Start/Reload choices, 2–5 player counts, matched human/robot
+  portrait selection, keyboard and mouse input, and PLAY. All-human and all-computer setups work.
+- [x] All 686 automated tests pass under a loaded Windows user profile. Synthetic WPF checks
+  cover 64 render cases, selection input, repeated transitions, resizing, privacy hiding and
+  shared game/camera ownership, with no binding warnings.
+- [ ] Perform a hands-on desktop check of focus, maximization, animation/reduced-motion settings
+  and the live camera while switching layers on the target Windows machine.
+
 ## Still missing: feature checklist
 
 These six features remain unfinished. The milestone tasks below define their implementation and

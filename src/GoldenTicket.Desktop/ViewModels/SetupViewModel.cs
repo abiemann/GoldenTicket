@@ -191,7 +191,7 @@ public sealed partial class SetupViewModel : ObservableObject
         var selectedId = SelectedSavedSession?.SessionId;
         SelectedSavedSession = null;
         SavedSessions.Clear();
-        foreach (var summary in summaries)
+        foreach (var summary in summaries.OrderByDescending(summary => summary.UpdatedAt))
         {
             SavedSessions.Add(new SavedSessionRow(
                 summary.SessionId,

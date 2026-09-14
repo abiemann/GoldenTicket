@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using GoldenTicket.Desktop.ViewModels;
@@ -14,6 +16,9 @@ public partial class MainWindow : Window
     private bool _closingAfterCleanup;
     private bool _cleanupStarted;
     private bool _exitPromptOpen;
+    private bool _technicalVisible;
+    private bool _layerTransition;
+    private readonly TranslateTransform _gameTranslation = new();
 
     public MainWindow() : this(() => new MainViewModel()) { }
 
@@ -23,13 +28,16 @@ public partial class MainWindow : Window
     private MainWindow(Func<MainViewModel> createModel, Func<ExitPrompt, bool>? confirmExit = null)
     {
         InitializeComponent();
+        GameLayer.RenderTransform = _gameTranslation;
 
         try
         {
             _model = createModel();
             DataContext = _model;
+            _model.SetGameLayerVisible(true);
             Loaded += async (_, _) =>
             {
+                GameLayer.FocusCurrentChoice();
                 await Task.WhenAll(_model.LoadSavedSessionsAsync(), _model.Camera.InitializeProcessingAsync());
             };
         }
@@ -50,6 +58,10 @@ public partial class MainWindow : Window
         Deactivated += (_, _) => _model.SetWindowActive(false);
         Activated += (_, _) => _model.SetWindowActive(true);
         PreviewKeyDown += OnPreviewKeyDown;
+        Root.SizeChanged += (_, _) =>
+        {
+            if (_technicalVisible && !_layerTransition) _gameTranslation.X = Root.ActualWidth;
+        };
         PreviewMouseDown += (_, _) => _lastInteraction = Environment.TickCount64;
         PreviewMouseWheel += (_, _) => _lastInteraction = Environment.TickCount64;
         PreviewTouchDown += (_, _) => _lastInteraction = Environment.TickCount64;
@@ -154,7 +166,79 @@ public partial class MainWindow : Window
         _lastInteraction = Environment.TickCount64;
         if (e.Key != Key.Escape || _model is null) return;
 
-        _model.HidePrivateSeatCommand.Execute(null);
-        e.Handled = true;
+        if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0)
+        {
+            if (!e.IsRepeat) RevealTechnicalLayer();
+            e.Handled = true;
+            return;
+        }
+
+        if (_model.IsPrivateVisible)
+        {
+            _model.HidePrivateSeatCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
+
+    private void ReturnToGame_Click(object sender, RoutedEventArgs e) => ReturnToGameLayer();
+
+    private void RevealTechnicalLayer()
+    {
+        if (_technicalVisible || _layerTransition || _exitPromptOpen || _cleanupStarted) return;
+        _model?.HidePrivateSeat();
+        _model?.SetGameLayerVisible(false);
+        _technicalVisible = true;
+        _layerTransition = true;
+        GameLayer.IsEnabled = false;
+        TechnicalLayer.IsEnabled = false;
+        SlideGameLayer(Root.ActualWidth, () =>
+        {
+            GameLayer.Visibility = Visibility.Collapsed;
+            TechnicalLayer.IsEnabled = true;
+            _layerTransition = false;
+            ReturnToGameButton.Focus();
+        });
+    }
+
+    private void ReturnToGameLayer()
+    {
+        if (!_technicalVisible || _layerTransition || _exitPromptOpen || _cleanupStarted) return;
+        _model?.HidePrivateSeat();
+        _technicalVisible = false;
+        _layerTransition = true;
+        TechnicalLayer.IsEnabled = false;
+        GameLayer.Visibility = Visibility.Visible;
+        GameLayer.IsEnabled = false;
+        _gameTranslation.X = Root.ActualWidth;
+        SlideGameLayer(0, () =>
+        {
+            GameLayer.IsEnabled = true;
+            _model?.SetGameLayerVisible(true);
+            _layerTransition = false;
+            GameLayer.FocusCurrentChoice();
+        });
+    }
+
+    private void SlideGameLayer(double destination, Action completed)
+    {
+        if (!SystemParameters.ClientAreaAnimation || Root.ActualWidth <= 0)
+        {
+            _gameTranslation.X = destination;
+            completed();
+            return;
+        }
+
+        var animation = new DoubleAnimation(_gameTranslation.X, destination,
+            new Duration(TimeSpan.FromMilliseconds(260)))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut },
+        };
+        animation.Completed += (_, _) =>
+        {
+            _gameTranslation.BeginAnimation(TranslateTransform.XProperty, null);
+            _gameTranslation.X = destination == 0 ? 0 : Root.ActualWidth;
+            completed();
+        };
+        _gameTranslation.BeginAnimation(TranslateTransform.XProperty, animation);
     }
 }

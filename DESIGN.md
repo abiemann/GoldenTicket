@@ -342,6 +342,39 @@ revealing a private hand. Confirm disposes local tools and defers the final wind
 the original canceled WPF closing event has returned. Never capture a photo or create a
 pack-away checkpoint as a side effect of the exit prompt.
 
+### 4.11 Game and technical layers
+
+**First game-screen layer implemented September 14, 2026.** The application opens onto the
+snowy-twilight artwork and player-facing setup. The existing interface remains the technical
+workflow underneath. The game layer covers 100% of the application content area, including the
+technical header and navigation; exclusive operating-system fullscreen is not required.
+
+With no saved match, the opening choice is **Start a new game**. When at least one match exists,
+**Reload the previous game** resumes the most recently updated save, preserving its verification
+and rebuild gates. New-game setup asks for 2–5 players using a corresponding number of person
+symbols, then shows that many initially human portraits. Selecting a portrait flips it to its
+matched robot portrait or back and updates the underlying seat to **Computer X** or **Player X**.
+Keyboard arrows move the selection and Enter activates it; hover moves the selection and click
+activates it with the mouse. **PLAY!** starts the configured match after the current manual
+whole-board verification acknowledgment. All-human and all-computer rosters are allowed; an
+operator still places and verifies any computer player's physical trains.
+
+Shift+Escape slides the game screen to the right to reveal the technical interface. Plain
+Escape retains private-card hiding and child-control cancellation, and held-key repeats do not
+repeat the reveal.
+
+A **Return to game** button at the top of the technical interface reverses the transition and
+brings the game layer back over the entire content area. Both layers bind to the same game
+coordinator, camera service and companion state; changing the presentation does not recreate
+the match, reset camera settings or discard technical work. Private views follow the hiding
+rules in section 4.7 when leaving their workflow.
+
+The transition lasts 260 ms when Windows client-area animations are enabled and is immediate
+when they are disabled. Only the active layer accepts input, focus moves to it, and the game
+layer fills the resized or maximized content area. The existing table, rebuild and final-score
+views are shown as the first player-facing gameplay views after PLAY or Reload. This UI step
+does not complete the separate voice, story and audio work.
+
 ## 5. Digital cards and private information
 
 ### 5.1 Single source of card state

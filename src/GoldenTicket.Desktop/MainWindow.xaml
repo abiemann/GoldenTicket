@@ -19,7 +19,8 @@
         <local:ScreenVisibilityConverter x:Key="ScreenVisibility" />
     </Window.Resources>
 
-    <Grid>
+    <Grid x:Name="Root" ClipToBounds="True">
+      <Grid x:Name="TechnicalLayer" IsEnabled="False">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -41,6 +42,8 @@
                         Command="{Binding ShowCameraCommand}" Style="{StaticResource SecondaryButton}"
                         AutomationProperties.Name="Image processor status. Open camera settings." />
                 <WrapPanel>
+                    <Button x:Name="ReturnToGameButton" Content="Return to game" Click="ReturnToGame_Click"
+                            Style="{StaticResource PrimaryButton}" />
                     <Button Content="Game table" Command="{Binding ShowGameCommand}" Style="{StaticResource SecondaryButton}" />
                     <Button Content="Camera" Command="{Binding ShowCameraCommand}" Style="{StaticResource SecondaryButton}" />
                     <Button Content="Connect phone" Command="{Binding ShowConnectionCommand}" Style="{StaticResource SecondaryButton}"
@@ -87,13 +90,15 @@
                 Visibility="{Binding Busy, Converter={StaticResource EmptyStringToVisibility}}">
             <TextBlock Text="{Binding Busy}" FontWeight="SemiBold" />
         </Border>
+      </Grid>
+
+      <views:GameScreenView x:Name="GameLayer" />
 
         <!--
             The privacy curtain (DESIGN 4.7). It is fully opaque and covers everything, and the
             private view under it exists only while a seat is revealed.
         -->
         <views:PrivateSeatView
-            Grid.RowSpan="2"
             Visibility="{Binding IsPrivateVisible, Converter={StaticResource BoolToVisibility}}" />
     </Grid>
 </Window>

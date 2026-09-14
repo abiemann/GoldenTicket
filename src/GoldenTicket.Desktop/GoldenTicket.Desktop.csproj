@@ -23,6 +23,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Resource Include="$(RepoRoot)assets/artwork/golden-ticket-snowy-twilight-20260914.png"
+              Link="Assets/golden-ticket-snowy-twilight.png" />
+    <Resource Include="$(RepoRoot)assets/artwork/characters/character-*-256.png"
+              Link="Assets/Characters/%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\GoldenTicket.Domain\GoldenTicket.Domain.csproj" />
     <ProjectReference Include="..\GoldenTicket.Application\GoldenTicket.Application.csproj" />
     <ProjectReference Include="..\GoldenTicket.AI\GoldenTicket.AI.csproj" />

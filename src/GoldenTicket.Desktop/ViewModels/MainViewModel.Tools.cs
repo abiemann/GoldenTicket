@@ -53,7 +53,7 @@ public sealed partial class MainViewModel
 
     private bool CanCompanionControl => CanConnectPhone && !_toolsDisposed && !_exitRequested && _systemAvailable && !_mustReload &&
         (!_operationInProgress || _handlingRemoteCommand) && !NeedsBoardReconciliation &&
-        Screen == Screen.Table && _coordinator is { StorageFaulted: false };
+        IsGameplayScreenActive(Screen.Table) && _coordinator is { StorageFaulted: false };
 
     private bool BeginRemoteCommand()
     {

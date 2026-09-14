@@ -1,0 +1,209 @@
+<UserControl x:Class="GoldenTicket.Desktop.Views.GameScreenView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:GoldenTicket.Desktop"
+             xmlns:views="clr-namespace:GoldenTicket.Desktop.Views"
+             Focusable="True" PreviewKeyDown="OnPreviewKeyDown">
+    <UserControl.Resources>
+        <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+        <local:EmptyStringToVisibilityConverter x:Key="MessageVisibility" />
+        <local:ScreenVisibilityConverter x:Key="ScreenVisibility" />
+
+        <Style x:Key="GameChoiceButton" TargetType="Button">
+            <Setter Property="Background" Value="#DB17212C" />
+            <Setter Property="Foreground" Value="#FFF8EEDC" />
+            <Setter Property="BorderBrush" Value="#99DFB75C" />
+            <Setter Property="BorderThickness" Value="2" />
+            <Setter Property="Padding" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Frame" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Frame" Property="Background" Value="#E14E2F2B" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Frame" Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="GameSelectableButton" TargetType="Button" BasedOn="{StaticResource GameChoiceButton}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="BorderBrush" Value="#FFFFD576" />
+                    <Setter Property="BorderThickness" Value="4" />
+                    <Setter Property="Background" Value="#EC522D26" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="WelcomeStartButton" TargetType="Button" BasedOn="{StaticResource GameChoiceButton}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Game.IsStartSelected}" Value="True">
+                    <Setter Property="BorderBrush" Value="#FFFFD576" />
+                    <Setter Property="BorderThickness" Value="4" />
+                    <Setter Property="Background" Value="#EC522D26" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="WelcomeReloadButton" TargetType="Button" BasedOn="{StaticResource GameChoiceButton}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Game.IsReloadSelected}" Value="True">
+                    <Setter Property="BorderBrush" Value="#FFFFD576" />
+                    <Setter Property="BorderThickness" Value="4" />
+                    <Setter Property="Background" Value="#EC522D26" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="GamePlayButton" TargetType="Button" BasedOn="{StaticResource GameChoiceButton}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Game.IsPlaySelected}" Value="True">
+                    <Setter Property="BorderBrush" Value="#FFFFD576" />
+                    <Setter Property="BorderThickness" Value="4" />
+                    <Setter Property="Background" Value="#EC522D26" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Background="#101821">
+        <Image Source="/GoldenTicket;component/Assets/golden-ticket-snowy-twilight.png"
+               Stretch="UniformToFill" IsHitTestVisible="False" />
+
+        <Border VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="34,24,0,34"
+                Width="470" Padding="22" CornerRadius="12"
+                Background="#DE151E29" BorderBrush="#FFD6AD5C" BorderThickness="1"
+                Visibility="{Binding Game.IsWelcome, Converter={StaticResource BoolToVisibility}}">
+            <StackPanel>
+                <TextBlock Text="Choose a journey" Foreground="#FFFFE7B0" FontSize="24"
+                           FontWeight="SemiBold" Margin="0,0,0,14" />
+                <Button x:Name="StartButton" Style="{StaticResource WelcomeStartButton}"
+                        Content="Start a new game" FontSize="20" MinHeight="58" Margin="0,0,0,10"
+                        MouseEnter="Start_MouseEnter" Click="Welcome_Click"
+                        AutomationProperties.Name="Start a new game" />
+                <Button x:Name="ReloadButton" Style="{StaticResource WelcomeReloadButton}"
+                        Content="Reload the previous game" FontSize="20" MinHeight="58"
+                        MouseEnter="Reload_MouseEnter" Click="Welcome_Click"
+                        Visibility="{Binding Game.HasPreviousGame, Converter={StaticResource BoolToVisibility}}"
+                        AutomationProperties.Name="Reload the previous game" />
+                <TextBlock Text="Use ↑ ↓ and Enter, or point and click"
+                           Foreground="#FFE6D9C3" FontSize="13" Margin="2,14,0,0" />
+                <TextBlock Text="{Binding Game.Message}" Foreground="#FFFFD576" Margin="2,10,0,0"
+                           Visibility="{Binding Game.Message, Converter={StaticResource MessageVisibility}}"
+                           AutomationProperties.LiveSetting="Polite" />
+            </StackPanel>
+        </Border>
+
+        <Border VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="20,20,20,38"
+                Padding="22" CornerRadius="12" Background="#E7151E29"
+                BorderBrush="#FFD6AD5C" BorderThickness="1"
+                Visibility="{Binding Game.IsPlayerCount, Converter={StaticResource BoolToVisibility}}">
+            <StackPanel>
+                <TextBlock Text="How many players?" Foreground="#FFFFE7B0" FontSize="25"
+                           FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,14" />
+                <ItemsControl x:Name="CountItems" ItemsSource="{Binding Game.CountOptions}"
+                              HorizontalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Style="{StaticResource GameSelectableButton}" Tag="{Binding Count}"
+                                    Width="164" Height="106" Margin="5" MouseEnter="Count_MouseEnter"
+                                    Click="Count_Click" AutomationProperties.Name="{Binding Count, StringFormat={}{0} players}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Count}" Foreground="#FFFFE7B0"
+                                               FontSize="25" FontWeight="Bold" HorizontalAlignment="Center" />
+                                    <ItemsControl ItemsSource="{Binding People}" HorizontalAlignment="Center" Margin="0,8,0,0">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Width="24" Height="33" Margin="1,0">
+                                                    <Ellipse Width="11" Height="11" Fill="#FFF5D38F"
+                                                             HorizontalAlignment="Center" VerticalAlignment="Top" />
+                                                    <Path Data="M 3,32 C 3,13 21,13 21,32 Z" Fill="#FFF5D38F" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Content="Back" Tag="NavigationBack" Style="{StaticResource SecondaryButton}" Click="Back_Click"
+                        HorizontalAlignment="Left" Margin="5,14,0,0" />
+            </StackPanel>
+        </Border>
+
+        <Border VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="16,16,16,25"
+                Padding="18" CornerRadius="12" Background="#EA151E29"
+                BorderBrush="#FFD6AD5C" BorderThickness="1"
+                Visibility="{Binding Game.IsAiSelection, Converter={StaticResource BoolToVisibility}}">
+            <StackPanel>
+                <TextBlock Text="Select AI players" Foreground="#FFFFE7B0" FontSize="25"
+                           FontWeight="SemiBold" HorizontalAlignment="Center" />
+                <TextBlock Text="Select a face to change that player between human and computer."
+                           Foreground="#FFE6D9C3" FontSize="14" HorizontalAlignment="Center"
+                           Margin="0,4,0,13" />
+                <ItemsControl x:Name="SeatItems" ItemsSource="{Binding Game.SeatChoices}"
+                              HorizontalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Style="{StaticResource GameSelectableButton}" Width="157" Margin="5,0"
+                                    MouseEnter="Seat_MouseEnter" Click="Seat_Click"
+                                    AutomationProperties.Name="{Binding Label}">
+                                <StackPanel>
+                                    <Image Source="{Binding PortraitUri}" Width="129" Height="129"
+                                           Stretch="Uniform" />
+                                    <TextBlock Text="{Binding Label}" Foreground="#FFFFF1D7" FontSize="17"
+                                               FontWeight="SemiBold" HorizontalAlignment="Center"
+                                               Margin="0,10,0,0" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <CheckBox Content="I will check the whole physical board before confirming placements."
+                          IsChecked="{Binding Setup.ManualVerificationAccepted}"
+                          Foreground="#FFF8EEDC" FontSize="13" Margin="6,14,0,0" />
+                <TextBlock Text="{Binding Game.Message}" Foreground="#FFFFD576" Margin="6,8,0,0"
+                           Visibility="{Binding Game.Message, Converter={StaticResource MessageVisibility}}"
+                           AutomationProperties.LiveSetting="Polite" />
+                <Grid Margin="5,14,5,0">
+                    <Button Content="Back" Tag="NavigationBack" Style="{StaticResource SecondaryButton}" Click="Back_Click"
+                            HorizontalAlignment="Left" />
+                    <Button x:Name="PlayButton" Content="PLAY!" Style="{StaticResource GamePlayButton}"
+                            HorizontalAlignment="Center" Width="205" Height="56" FontSize="24"
+                            FontWeight="Bold" MouseEnter="Play_MouseEnter" Click="Play_Click" />
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- Gameplay reuses the existing public views and the same MainViewModel. The technical
+             layer remains alive underneath this view while it is covered. -->
+        <Grid Background="{StaticResource Surface.Window}"
+              Visibility="{Binding Game.IsPlaying, Converter={StaticResource BoolToVisibility}}">
+            <views:TableView Visibility="{Binding GameplayScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=Table}" />
+            <views:RebuildView Visibility="{Binding GameplayScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=Rebuild}" />
+            <views:FinalScoreView Visibility="{Binding GameplayScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=FinalScore}" />
+        </Grid>
+    </Grid>
+</UserControl>

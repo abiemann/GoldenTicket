@@ -42,6 +42,7 @@ public sealed partial class MainViewModel : ObservableObject
     private bool _operationInProgress;
     private bool _windowActive = true;
     private bool _mustReload;
+    private bool _gameLayerVisible;
     private long _revealGeneration;
 
     public MainViewModel()
@@ -58,6 +59,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         Setup = new SetupViewModel(manifest);
         Table = new TableViewModel(manifest);
+        Game = new GameScreenViewModel(this);
         InitializeTools();
         Setup.PropertyChanged += (_, args) =>
         {
@@ -69,6 +71,8 @@ public sealed partial class MainViewModel : ObservableObject
     public SetupViewModel Setup { get; }
 
     public TableViewModel Table { get; }
+
+    public GameScreenViewModel Game { get; }
 
     public ObservableCollection<FinalScoreRow> FinalScores { get; } = [];
 
@@ -93,8 +97,28 @@ public sealed partial class MainViewModel : ObservableObject
     private int HumanSeatCount => _coordinator?.Public.Seats.Count(seat => seat.Kind == SeatKind.Human) ?? Setup.HumanSeatCount;
     public bool IsSingleHumanGame => HumanSeatCount == 1;
     public bool CanConnectPhone => HumanSeatCount > 1;
-    public bool CanResumeMatch => !_operationInProgress && !_exitRequested && Screen == Screen.Setup &&
+    public Screen GameplayScreen => _gameScreen;
+    private bool IsGameplayScreenActive(Screen screen) =>
+        _gameLayerVisible ? _gameScreen == screen : Screen == screen;
+    public bool CanResumeMatch => !_operationInProgress && !_exitRequested && IsGameplayScreenActive(Screen.Setup) &&
         Setup.SelectedSavedSession is not null;
+
+    public void SetGameLayerVisible(bool visible)
+    {
+        if (_gameLayerVisible == visible) return;
+        _gameLayerVisible = visible;
+        HidePrivateSeat();
+        OnPropertyChanged(nameof(CanRevealPrivateSeat));
+        ResumeMatchCommand.NotifyCanExecuteChanged();
+    }
+
+    private void ShowGameplayScreen(Screen screen)
+    {
+        _gameScreen = screen;
+        OnPropertyChanged(nameof(GameplayScreen));
+        if (!_gameLayerVisible || Screen is Screen.Setup or Screen.Table or Screen.Rebuild or Screen.FinalScore)
+            Screen = screen;
+    }
 
     private void NotifyHumanPresentation()
     {
@@ -108,7 +132,7 @@ public sealed partial class MainViewModel : ObservableObject
     private (SeatId SeatId, string Name)? _revealable;
 
     public bool CanRevealPrivateSeat => _revealable is not null && !_operationInProgress && !_exitRequested
-        && _windowActive && _systemAvailable && !_toolsDisposed && Screen == Screen.Table && !NeedsBoardReconciliation && !_mustReload
+        && _windowActive && _systemAvailable && !_toolsDisposed && IsGameplayScreenActive(Screen.Table) && !NeedsBoardReconciliation && !_mustReload
         && _coordinator is { StorageFaulted: false }
         && _coordinator.Public.Lifecycle is SessionLifecycle.Setup or SessionLifecycle.Active
         && _coordinator.Public.TurnPhase != TurnPhase.RulesDecisionRequired;
@@ -123,7 +147,11 @@ public sealed partial class MainViewModel : ObservableObject
 
     partial void OnScreenChanged(Screen value)
     {
-        if (value is Screen.Setup or Screen.Table or Screen.Rebuild or Screen.FinalScore) _gameScreen = value;
+        if (value is Screen.Setup or Screen.Table or Screen.Rebuild or Screen.FinalScore)
+        {
+            _gameScreen = value;
+            OnPropertyChanged(nameof(GameplayScreen));
+        }
         HidePrivateSeat();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
         ResumeMatchCommand.NotifyCanExecuteChanged();
@@ -147,7 +175,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     public async Task StartMatchAsync()
     {
-        if (_operationInProgress || _exitRequested || Screen != Screen.Setup || Setup.TryBuildSetup() is not { } setup) return;
+        if (_operationInProgress || _exitRequested || !IsGameplayScreenActive(Screen.Setup) || Setup.TryBuildSetup() is not { } setup) return;
 
         SetOperationInProgress(true);
         HidePrivateSeat();
@@ -162,16 +190,17 @@ public sealed partial class MainViewModel : ObservableObject
                 _coordinator, new HeuristicAiPolicy(), DeterministicRandom.SeedFromOperatingSystem().S0);
 
             var revealUnchanged = generation == _revealGeneration;
-            Screen = Screen.Table;
+            ShowGameplayScreen(Screen.Table);
             if (revealUnchanged) generation = _revealGeneration;
             NotifyHumanPresentation();
             Status = null;
             await PumpAsync();
+            Game.ShowPlaying();
         }
         catch (Exception)
         {
             Setup.ValidationMessage = "The match could not be started. Reopen the application and check its saved matches.";
-            if (Screen == Screen.Table) RequireReload();
+            if (_coordinator is not null) RequireReload();
         }
         finally
         {
@@ -184,7 +213,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanResumeMatch))]
     public async Task ResumeMatchAsync()
     {
-        if (_operationInProgress || _exitRequested || Screen != Screen.Setup) return;
+        if (_operationInProgress || _exitRequested || !IsGameplayScreenActive(Screen.Setup)) return;
         if (Setup.SelectedSavedSession is not { } saved)
         {
             Setup.SavedMatchMessage = "Check a saved match in the list before choosing Resume selected match.";
@@ -205,7 +234,7 @@ public sealed partial class MainViewModel : ObservableObject
             _driver = new ComputerSeatDriver(
                 _coordinator, new HeuristicAiPolicy(), DeterministicRandom.SeedFromOperatingSystem().S0);
 
-            Screen = Screen.Table;
+            ShowGameplayScreen(Screen.Table);
 
             // A packed or half-saved match has no board on the table to reconcile: its own workflow
             // handles the physical side (DESIGN 19.4, 19.8).
@@ -230,16 +259,17 @@ public sealed partial class MainViewModel : ObservableObject
                 if (!continued.SafeToPack && continued.Problem is { } problem) Status = problem;
             }
 
-            if (_coordinator.Public.Lifecycle == SessionLifecycle.Rebuilding) Screen = Screen.Rebuild;
+            if (_coordinator.Public.Lifecycle == SessionLifecycle.Rebuilding) ShowGameplayScreen(Screen.Rebuild);
 
             await RefreshAsync();
+            Game.ShowPlaying();
         }
         catch (Exception exception)
         {
             Setup.SavedMatchMessage = exception is NotSupportedException
                 ? "This build can only resume matches that use manual verification."
                 : "The saved match could not be verified. Check storage access and the installed board-data version.";
-            if (Screen != Screen.Setup) RequireReload();
+            if (_coordinator is not null) RequireReload();
         }
         finally
         {
@@ -492,7 +522,7 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     private bool CanSubmitOperator() => !_operationInProgress && !_exitRequested && !_mustReload &&
-        !NeedsBoardReconciliation && Screen == Screen.Table;
+        !NeedsBoardReconciliation && IsGameplayScreenActive(Screen.Table);
 
     /// <summary>
     /// Accepts the reviewed continuation for a paused supply position (DESIGN 6.4). The operator has
@@ -573,7 +603,7 @@ public sealed partial class MainViewModel : ObservableObject
         if (_coordinator is null || Public?.Checkpoint is not { } checkpoint) return;
 
         await SubmitLifecycleAsync(new BeginBoardRebuild(_coordinator.NewEnvelope(), checkpoint.CheckpointId));
-        if (_coordinator.Public.Lifecycle == SessionLifecycle.Rebuilding) Screen = Screen.Rebuild;
+        if (_coordinator.Public.Lifecycle == SessionLifecycle.Rebuilding) ShowGameplayScreen(Screen.Rebuild);
     }
 
     /// <summary>
@@ -633,7 +663,7 @@ public sealed partial class MainViewModel : ObservableObject
                 if (_coordinator.Public.Lifecycle == SessionLifecycle.Active)
                 {
                     var revealUnchanged = generation == _revealGeneration;
-                    Screen = Screen.Table;
+                    ShowGameplayScreen(Screen.Table);
                     if (revealUnchanged) generation = _revealGeneration;
                 }
                 await PumpAsync();
@@ -741,7 +771,7 @@ public sealed partial class MainViewModel : ObservableObject
         if (view.FinalResult is { } result)
         {
             BuildFinalScores(result);
-            Screen = Screen.FinalScore;
+            ShowGameplayScreen(Screen.FinalScore);
             PrivateSeat = null;
         }
     }

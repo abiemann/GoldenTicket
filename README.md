@@ -54,6 +54,12 @@ selects the four outer board corners on camera startup. **Detect board corners**
 the numbered handles include a narrow outward crop margin (about 0.25% per side),
 and remain editable with the existing zoom and pan controls.
 
+The September 14 game-screen update opens on the snowy-twilight artwork and adds the new-game,
+previous-game and player-portrait flow described below. The existing technical screens remain
+available through Shift+Escape. The full 686-test suite passed under a loaded Windows user profile;
+64 synthetic WPF render cases passed without binding warnings. Hands-on focus, maximization,
+reduced-motion and live-camera switching remain to be checked on the target desktop.
+
 ## What this build does
 
 This build implements the core game plus initial phone, camera and photo workflows from DESIGN
@@ -83,6 +89,10 @@ This build implements the core game plus initial phone, camera and photo workflo
 - A WPF interface in the box-derived palette: a public table screen, an opaque privacy curtain with
   a per-seat private view, the operator's placement instruction and confirmation, and a results
   screen.
+- A player-facing launch layer using the supplied snowy-twilight artwork. Start a new match with
+  2–5 human/robot portrait choices, or reopen the most recently updated save. Shift+Escape reveals
+  the existing technical screens; **Return to game** slides the game layer back. Both presentations
+  use the same match and camera objects.
 - With one human, cards and destination choices open on the laptop when that player needs to act.
   **Your cards** and **Back to table** replace handoff prompts, and **Connect phone** is hidden.
   Matches with multiple humans keep pass-and-hide and can optionally use the phone companion.
@@ -240,17 +250,20 @@ dotnet run --project tools/GoldenTicket.Simulator -- simulate --games 20 --seats
 
 ## Playing a match
 
-To continue a game, find **Saved matches**, check the match you want, then choose **Resume selected
-match**. A single saved match is checked automatically. Only one match can be selected, and Refresh
-keeps that selection when the match is still available. Resume stays disabled until a match is
-checked; any restore error appears beside that button. Check the physical board before play resumes.
-Each named save shows the name entered when saving first, followed by its date, turn, status and
-players. Existing saves retain their names; **Packed away** is the status, not the save's name.
+The app opens on the game screen. Choose **Start a new game** with ↑/↓ and Enter, or hover and
+click. When saved matches exist, **Reload the previous game** opens the most recently updated one.
+To choose a different save, press **Shift+Escape**, find **Saved matches** on the technical setup
+screen, check the match, then choose **Resume selected match**. A single saved match is checked
+automatically. Check the physical board before play resumes. Named saves show their name, date,
+turn, status and players; **Packed away** is a status, not the save's name.
 
 1. Put the board and the plastic trains on the table. **Leave the physical cards and destination
    tickets in the box** — the application deals and holds every card, for every seat.
-2. Name the seats, pick each one's physical train colour, and mark which are computer players.
-   Explicitly select manual verification; this build has no camera verification.
+2. Choose 2–5 players. On **Select AI players**, each face starts human; select it with the arrow
+   keys and Enter, or point and click, to flip it to its matched robot portrait. A second selection
+   flips it back. Check the manual whole-board verification acknowledgment and choose **PLAY!**.
+   Human-only and computer-only games are allowed; a person must still place and verify computer
+   trains. The technical setup screen offers seat names, colours and AI difficulty.
 3. With one human, opening destination choices appear directly on the laptop. With multiple
    humans, each player reveals their private view in turn; the screen is covered between seats.
 4. On a solo human's turn, their cards open on the laptop for draws, destination tickets, or route
@@ -267,7 +280,8 @@ players. Existing saves retain their names; **Packed away** is the status, not t
 
 For multiple humans, optionally use **Connect phone** to start the local host, install/trust its
 public certificate, open the PWA, and approve the matching pairing identity. Return to **Game
-table** to enable phone play. Pass-and-hide on the laptop also works. A single human needs no
+table** to enable phone play, then select **Return to game** to cover the technical screens.
+Pass-and-hide on the laptop also works. A single human needs no
 phone connection or local HTTPS setup. Use **Camera** for preview, board crop and a stable scene
 reference. **Save and pack away** saves the digital game; it does not automatically take a picture.
 **Export board photo** writes a PNG of the current crop and works without a scene reference, even
