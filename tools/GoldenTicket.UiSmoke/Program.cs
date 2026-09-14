@@ -14,6 +14,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using Line = System.Windows.Shapes.Line;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Desktop.Views;
 using GoldenTicket.Application;
@@ -503,8 +504,9 @@ internal static partial class Program
                     backBounds.Right + 8 > titleBounds.Left || back.Content is not null)
                     throw new InvalidOperationException("The steampunk back arrow must sit at the dialog's left edge beside its centered title.");
                 var faces = Descendants<Image>(view).Where(image => image.DataContext is GameSeatChoice).ToArray();
-                if (faces.Length != 5 || play.IsEnabled != model.Game.CanPlay)
-                    throw new InvalidOperationException("All five character portraits and the chosen-seat PLAY state must be visible.");
+                if (faces.Length != 5 || play.Content as string != "SET-UP BOARD" ||
+                    play.IsEnabled != model.Game.CanPlay)
+                    throw new InvalidOperationException("All five character portraits and the chosen-seat board setup button must be visible.");
                 var seatButtons = Descendants<Button>(dialog).Where(button => button.DataContext is GameSeatChoice).ToArray();
                 if (Descendants<CheckBox>(dialog).Any() || seatButtons.Length != 5 ||
                     Bounds(instructions).Top <= seatButtons.Max(button => Bounds(button).Bottom))
@@ -564,6 +566,7 @@ internal static partial class Program
                 var help = (TextBlock)view.FindName("CameraSetupHelp");
                 var frame = (Border)view.FindName("CameraSetupPreviewFrame");
                 var preview = (Image)view.FindName("CameraSetupPreview");
+                var corners = (Canvas)view.FindName("CameraSetupCornerOverlay");
                 var cancel = (Button)view.FindName("ConfirmationCancelButton");
                 var play = (Button)view.FindName("ConfirmationPlayButton");
                 Rect Bounds(FrameworkElement element) => element.TransformToAncestor(view)
@@ -572,14 +575,70 @@ internal static partial class Program
                     !model.Game.IsCameraSetup || model.Setup.ManualVerificationAccepted ||
                     help.Text != "Position the board game and camera so the entire board is visible" ||
                     cancel.Content as string != "CANCEL" || play.Content as string != "PLAY!" ||
+                    play.IsEnabled || corners.Children.Count != 0 ||
                     Bounds(help).Bottom >= Bounds(frame).Top ||
                     Bounds(frame).Bottom >= Bounds(cancel).Top ||
                     Bounds(frame).Bottom >= Bounds(play).Top ||
                     !ReferenceEquals(preview.Source, model.Camera.Preview) ||
                     System.Windows.Data.BindingOperations.GetBindingExpression(preview, Image.SourceProperty)?
                         .ParentBinding.Path.Path != "Camera.Preview")
-                    throw new InvalidOperationException("Camera setup must replace the roster, share its live preview, and place CANCEL and PLAY below it.");
+                    throw new InvalidOperationException("Camera setup must hide the roster, share the preview, and hold PLAY until ML finds all four corners.");
             }, [(875, 680), (1280, 800)]);
+            var camera = model.Camera;
+            var capture = camera.Capture;
+            var captureType = typeof(CameraCaptureService);
+            var cameraType = typeof(CameraViewModel);
+            var pixels = new byte[320 * 180 * 4];
+            for (var pixel = 0; pixel < pixels.Length; pixel += 4)
+            {
+                pixels[pixel] = pixels[pixel + 1] = pixels[pixel + 2] = 145;
+                pixels[pixel + 3] = 255;
+            }
+            var frameForCorners = CameraFrame.CopyFromBgra32(320, 180, pixels, 1, 1);
+            try
+            {
+                captureType.GetField("_epoch", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .SetValue(capture, 1L);
+                captureType.GetField("_running", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .SetValue(capture, true);
+                captureType.GetField("_latest", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .SetValue(capture, frameForCorners);
+                camera.IsRunning = true;
+                camera.Preview = BitmapSource.Create(320, 180, 96, 96, PixelFormats.Bgra32,
+                    null, pixels, 320 * 4);
+                camera.BeginGameBoardFraming();
+                cameraType.GetField("_gameBoardCapture", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .SetValue(camera, (1L, 320, 180));
+                cameraType.GetField("_gameBoardAcceptedAt", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .SetValue(camera, DateTimeOffset.UtcNow);
+                cameraType.GetProperty(nameof(CameraViewModel.GameBoardCorners))!.GetSetMethod(true)!
+                    .Invoke(camera, [new NormalizedPoint[]
+                    { new(.1, .12), new(.9, .12), new(.9, .88), new(.1, .88) }]);
+                camera.GameBoardFramingStatus = "All four board corners are visible.";
+                await RenderSizes("game-camera-corners-synthetic",
+                    () => new GameScreenView { DataContext = model }, view =>
+                    {
+                        var overlay = (Canvas)view.FindName("CameraSetupCornerOverlay");
+                        var play = (Button)view.FindName("ConfirmationPlayButton");
+                        var whiteLines = overlay.Children.OfType<Line>()
+                            .Where(line => ReferenceEquals(line.Stroke, Brushes.White)).ToArray();
+                        if (!camera.CanStartGameWithBoard || !play.IsEnabled ||
+                            overlay.Children.Count != 16 || whiteLines.Length != 8 ||
+                            whiteLines.Any(line => line.X1 < 0 || line.X2 > overlay.ActualWidth ||
+                                line.Y1 < 0 || line.Y2 > overlay.ActualHeight))
+                            throw new InvalidOperationException("Four fresh ML corners must draw white plus signs and enable PLAY.");
+                    }, [(875, 680), (1280, 800)]);
+            }
+            finally
+            {
+                camera.EndGameBoardFraming();
+                camera.Preview = null;
+                camera.IsRunning = false;
+                captureType.GetField("_running", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .SetValue(capture, false);
+                captureType.GetField("_latest", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .SetValue(capture, null);
+            }
             var confirmationView = new GameScreenView { DataContext = model };
             await Arrange(confirmationView, 875, 680);
             ((Button)confirmationView.FindName("ConfirmationCancelButton"))
@@ -595,7 +654,7 @@ internal static partial class Program
                 .RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount)
                     { RoutedEvent = Mouse.MouseEnterEvent });
             if (model.Game.SeatSelection != 0)
-                throw new InvalidOperationException("Hovering PLAY must not leave its selected fill latched.");
+                throw new InvalidOperationException("Hovering SET-UP BOARD must not leave its selected fill latched.");
             fourth.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount)
                 { RoutedEvent = Mouse.MouseEnterEvent });
             if (model.Game.SeatSelection != 3)

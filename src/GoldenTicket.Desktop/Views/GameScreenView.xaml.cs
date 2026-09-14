@@ -1,8 +1,10 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using GoldenTicket.Desktop.ViewModels;
 
@@ -12,10 +14,69 @@ public partial class GameScreenView : UserControl
 {
     private bool _faceFlipping;
     private long? _setupCameraEpoch;
+    private CameraViewModel? _cornerOverlayCamera;
 
-    public GameScreenView() => InitializeComponent();
+    public GameScreenView()
+    {
+        InitializeComponent();
+        Loaded += (_, _) => AttachCornerOverlayCamera((DataContext as MainViewModel)?.Camera);
+        Unloaded += (_, _) => AttachCornerOverlayCamera(null);
+        DataContextChanged += (_, _) =>
+        {
+            if (IsLoaded) AttachCornerOverlayCamera((DataContext as MainViewModel)?.Camera);
+        };
+    }
 
     private GameScreenViewModel? Game => (DataContext as MainViewModel)?.Game;
+
+    private void AttachCornerOverlayCamera(CameraViewModel? camera)
+    {
+        if (ReferenceEquals(_cornerOverlayCamera, camera)) return;
+        if (_cornerOverlayCamera is not null)
+            _cornerOverlayCamera.PropertyChanged -= CornerOverlayCameraChanged;
+        _cornerOverlayCamera = camera;
+        if (camera is not null) camera.PropertyChanged += CornerOverlayCameraChanged;
+        DrawCameraSetupCorners();
+    }
+
+    private void CornerOverlayCameraChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(CameraViewModel.Preview) or nameof(CameraViewModel.GameBoardCorners)
+            or nameof(CameraViewModel.CanStartGameWithBoard) or nameof(CameraViewModel.IsRunning))
+            _ = Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(DrawCameraSetupCorners));
+    }
+
+    private void CameraSetupCornerOverlay_SizeChanged(object sender, SizeChangedEventArgs e) =>
+        DrawCameraSetupCorners();
+
+    private void DrawCameraSetupCorners()
+    {
+        if (CameraSetupCornerOverlay is null) return;
+        CameraSetupCornerOverlay.Children.Clear();
+        var camera = _cornerOverlayCamera ?? (DataContext as MainViewModel)?.Camera;
+        if (camera is not { CanStartGameWithBoard: true, Preview: { } source } ||
+            CameraSetupCornerOverlay.ActualWidth <= 0 || CameraSetupCornerOverlay.ActualHeight <= 0 ||
+            source.Width <= 0 || source.Height <= 0) return;
+        var scale = Math.Min(CameraSetupCornerOverlay.ActualWidth / source.Width,
+            CameraSetupCornerOverlay.ActualHeight / source.Height);
+        var width = source.Width * scale;
+        var height = source.Height * scale;
+        var left = (CameraSetupCornerOverlay.ActualWidth - width) / 2;
+        var top = (CameraSetupCornerOverlay.ActualHeight - height) / 2;
+        foreach (var corner in camera.GameBoardCorners)
+        {
+            var x = left + corner.X * width;
+            var y = top + corner.Y * height;
+            AddLine(x - 8, y, x + 8, y, Brushes.Black, 5);
+            AddLine(x, y - 8, x, y + 8, Brushes.Black, 5);
+            AddLine(x - 8, y, x + 8, y, Brushes.White, 2.5);
+            AddLine(x, y - 8, x, y + 8, Brushes.White, 2.5);
+        }
+
+        void AddLine(double x1, double y1, double x2, double y2, Brush stroke, double thickness) =>
+            CameraSetupCornerOverlay.Children.Add(new Line
+            { X1 = x1, Y1 = y1, X2 = x2, Y2 = y2, Stroke = stroke, StrokeThickness = thickness });
+    }
 
     public void FocusCurrentChoice() => _ = Dispatcher.BeginInvoke(DispatcherPriority.Input,
         new Action(() => { if (IsVisible && IsEnabled) Keyboard.Focus(this); }));
@@ -29,6 +90,7 @@ public partial class GameScreenView : UserControl
             if (e.Key == Key.Escape)
             {
                 game.CancelCameraSetup();
+                (DataContext as MainViewModel)?.Camera.EndGameBoardFraming();
                 e.Handled = true;
                 await StopSetupCameraIfOwnedAsync();
                 FocusCurrentChoice();
@@ -159,6 +221,7 @@ public partial class GameScreenView : UserControl
         }
         _ = Dispatcher.BeginInvoke(DispatcherPriority.Input,
             new Action(() => { if (IsVisible && game.IsCameraSetup) Keyboard.Focus(ConfirmationCancelButton); }));
+        (DataContext as MainViewModel)?.Camera.BeginGameBoardFraming();
         await EnsureCameraPreviewAsync();
     }
 
@@ -191,15 +254,22 @@ public partial class GameScreenView : UserControl
     {
         if (Game is not { IsCameraSetup: true, IsBusy: false } game) return;
         game.CancelCameraSetup();
+        (DataContext as MainViewModel)?.Camera.EndGameBoardFraming();
         await StopSetupCameraIfOwnedAsync();
         FocusCurrentChoice();
     }
 
     private async void CameraSetupPlay_Click(object sender, RoutedEventArgs e)
     {
-        if (Game is not { IsCameraSetup: true, IsBusy: false } game) return;
+        if (DataContext is not MainViewModel model ||
+            model.Game is not { IsCameraSetup: true, IsBusy: false } game ||
+            !model.Camera.CanStartGameWithBoard) return;
         await game.ConfirmCameraSetupAndPlayAsync();
-        if (game.IsPlaying) _setupCameraEpoch = null;
+        if (game.IsPlaying)
+        {
+            model.Camera.EndGameBoardFraming();
+            _setupCameraEpoch = null;
+        }
         if (game.IsCameraSetup) Keyboard.Focus(ConfirmationPlayButton);
         else FocusCurrentChoice();
     }

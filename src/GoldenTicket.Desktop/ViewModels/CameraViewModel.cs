@@ -80,7 +80,11 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     public bool CanExportPhoto => IsRunning && HasBoardCrop && !IsBusy && !_disposed;
     public bool CanCapturePhoto => CanExportPhoto && !SafetyHeld;
 
-    partial void OnIsRunningChanged(bool value) => NotifyPhotoAvailability();
+    partial void OnIsRunningChanged(bool value)
+    {
+        NotifyPhotoAvailability();
+        OnPropertyChanged(nameof(CanStartGameWithBoard));
+    }
     partial void OnHasBoardCropChanged(bool value) => NotifyPhotoAvailability();
     partial void OnIsBusyChanged(bool value) => NotifyPhotoAvailability();
     partial void OnSafetyHeldChanged(bool value) => OnPropertyChanged(nameof(CanCapturePhoto));
@@ -161,6 +165,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             _previewTimer.Stop();
             await Capture.StopAsync();
             IsRunning = false;
+            ClearGameBoardFraming();
+            GameBoardFramingStatus = "Waiting for the camera to find all four board corners.";
             Preview = null;
             BoardPreview = null;
             Status = "Camera stopped. Manual whole-board confirmation remains available.";
@@ -181,6 +187,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         var frame = Capture.LatestFrame;
         if (!Capture.IsRunning || frame is null || frame.Age > TimeSpan.FromSeconds(2))
         {
+            ExpireGameBoardFraming(null);
             ClearDetectionPreview();
             _monitor.MarkStale();
             SafetyHeld = true;
@@ -194,6 +201,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             }
             return;
         }
+        ExpireGameBoardFraming(frame);
         if (frame.Sequence == _previewSequence) return;
         _previewSequence = frame.Sequence;
         try
@@ -217,7 +225,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
                 SceneReferenceState.InsufficientDetail => "Too little visible detail. Check focus, lighting, camera cover and board framing.",
                 _ => "Waiting for fresh camera frames."
             };
-            QueueAutomaticCornerDetection(frame);
+            if (_gameBoardFramingActive) QueueGameBoardFraming(frame);
+            else QueueAutomaticCornerDetection(frame);
             QueueFrameProcessing(frame);
         }
         catch (Exception ex)

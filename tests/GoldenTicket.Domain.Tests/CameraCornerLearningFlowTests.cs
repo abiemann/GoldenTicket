@@ -11,6 +11,122 @@ public sealed class CameraCornerLearningFlowTests
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     [Fact]
+    public async Task Game_setup_keeps_success_through_one_miss_then_warns_after_a_second_miss()
+    {
+        await using var fixture = new Fixture();
+        fixture.Camera.BeginGameBoardFraming();
+        Assert.False(fixture.Camera.CanStartGameWithBoard);
+
+        await fixture.CheckGameBoardAsync();
+        Assert.True(fixture.Camera.CanStartGameWithBoard);
+        Assert.Equal(FakeModel.Corners, fixture.Camera.GameBoardCorners);
+        Assert.Empty(fixture.Camera.SelectedCorners);
+        Assert.False(fixture.Camera.HasBoardCrop);
+
+        fixture.Model.RejectionReason = "synthetic partly hidden board";
+        fixture.Refresh();
+        await fixture.CheckGameBoardAsync();
+        Assert.True(fixture.Camera.CanStartGameWithBoard);
+        Assert.Equal("All four board corners are visible.", fixture.Camera.GameBoardFramingStatus);
+        Assert.Equal(FakeModel.Corners, fixture.Camera.GameBoardCorners);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        fixture.Refresh();
+        await fixture.CheckGameBoardAsync();
+        Assert.False(fixture.Camera.CanStartGameWithBoard);
+        Assert.Empty(fixture.Camera.GameBoardCorners);
+        Assert.Contains("Move the camera", fixture.Camera.GameBoardFramingStatus);
+        fixture.Camera.EndGameBoardFraming();
+    }
+
+    [Fact]
+    public async Task Game_setup_rejects_corners_at_the_camera_edge_and_old_frames()
+    {
+        await using var fixture = new Fixture();
+        fixture.Camera.BeginGameBoardFraming();
+        fixture.Model.DetectedCorners = [new(.001, .12), new(.9, .12), new(.9, .88), new(.001, .88)];
+        await fixture.CheckGameBoardAsync();
+        Assert.False(fixture.Camera.CanStartGameWithBoard);
+        Assert.Empty(fixture.Camera.GameBoardCorners);
+        Assert.DoesNotContain("Move the camera", fixture.Camera.GameBoardFramingStatus);
+
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(500));
+        fixture.Refresh();
+        await fixture.CheckGameBoardAsync();
+        Assert.DoesNotContain("Move the camera", fixture.Camera.GameBoardFramingStatus);
+
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(500));
+        fixture.Refresh();
+        await fixture.CheckGameBoardAsync();
+        Assert.Contains("Move the camera back", fixture.Camera.GameBoardFramingStatus);
+
+        fixture.Model.DetectedCorners = FakeModel.Corners;
+        fixture.Refresh();
+        await fixture.CheckGameBoardAsync();
+        Assert.True(fixture.Camera.CanStartGameWithBoard);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(3));
+        Assert.False(fixture.Camera.CanStartGameWithBoard);
+        fixture.Refresh(epoch: 2);
+        Assert.False(fixture.Camera.CanStartGameWithBoard);
+        await fixture.CheckGameBoardAsync();
+        Assert.True(fixture.Camera.CanStartGameWithBoard);
+        fixture.Camera.EndGameBoardFraming();
+        Assert.False(fixture.Camera.CanStartGameWithBoard);
+        Assert.Empty(fixture.Camera.GameBoardCorners);
+    }
+
+    [Fact]
+    public async Task Game_setup_ignores_a_single_transient_miss_after_success()
+    {
+        await using var fixture = new Fixture();
+        fixture.Camera.BeginGameBoardFraming();
+        await fixture.CheckGameBoardAsync();
+
+        fixture.Model.RejectionReason = "synthetic one-frame miss";
+        fixture.Refresh();
+        await fixture.CheckGameBoardAsync();
+        Assert.Equal("All four board corners are visible.", fixture.Camera.GameBoardFramingStatus);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        fixture.Model.RejectionReason = null;
+        fixture.Refresh();
+        await fixture.CheckGameBoardAsync();
+        Assert.True(fixture.Camera.CanStartGameWithBoard);
+        Assert.Equal("All four board corners are visible.", fixture.Camera.GameBoardFramingStatus);
+    }
+
+    [Fact]
+    public async Task A_manual_crop_cannot_unlock_game_setup_when_the_ml_model_is_unavailable()
+    {
+        await using var fixture = new Fixture((_, _) => throw new FileNotFoundException("synthetic corner model missing"));
+        fixture.SelectManualCrop();
+        fixture.Camera.BeginGameBoardFraming();
+        await fixture.CheckGameBoardAsync();
+
+        Assert.True(fixture.Camera.HasBoardCrop);
+        Assert.False(fixture.Camera.CanStartGameWithBoard);
+        Assert.Empty(fixture.Camera.GameBoardCorners);
+        Assert.Contains("synthetic corner model missing", fixture.Camera.GameBoardFramingStatus);
+    }
+
+    [Fact]
+    public async Task Closing_game_setup_discards_an_in_flight_corner_result()
+    {
+        await using var fixture = new Fixture();
+        fixture.Camera.BeginGameBoardFraming();
+        fixture.Model.Pause(ignoreCancellation: true);
+        var check = fixture.CheckGameBoardAsync();
+        await fixture.Model.Entered.Task.WaitAsync(Token);
+
+        fixture.Camera.EndGameBoardFraming();
+        fixture.Model.Release();
+        await check;
+
+        Assert.False(fixture.Camera.CanStartGameWithBoard);
+        Assert.Empty(fixture.Camera.GameBoardCorners);
+    }
+
+    [Fact]
     public async Task Model_uses_uncropped_frame_and_selects_four_ordered_handles_that_remain_editable()
     {
         await using var fixture = new Fixture();
@@ -380,6 +496,10 @@ public sealed class CameraCornerLearningFlowTests
         }
 
         public Task DetectAsync() => Camera.DetectBoardCornersCommand.ExecuteAsync(null);
+
+        public Task CheckGameBoardAsync() => (Task)typeof(CameraViewModel)
+            .GetMethod("DetectBoardCornersCoreAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(Camera, [true])!;
 
         public void QueueAutomatic() => typeof(CameraViewModel)
             .GetMethod("QueueAutomaticCornerDetection", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(Camera, [Frame]);

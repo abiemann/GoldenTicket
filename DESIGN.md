@@ -362,13 +362,17 @@ there is no separate player-count step. Keyboard arrows move the selection and E
 hover moves the
 selection and click cycles it with the mouse. The instruction sits beneath the portraits. The
 back control is a thin brass arrow outline at the left of the title, filled only while hovered;
-**PLAY!** likewise fills only while hovered. **PLAY!** becomes available with at least two selected
-characters and opens a separate **Before we begin** camera screen, hiding the roster completely.
+**SET-UP BOARD** likewise fills only while hovered. It becomes available with at least two
+selected characters and opens a separate **Before we begin** camera screen, hiding the roster.
 This screen asks the operator to position the board and camera so the entire board is visible,
 automatically starts the shared camera when possible, and shows its live preview with a retry
-control when unavailable. **CANCEL** returns to the roster; the second **PLAY!** confirms setup
-and creates the selected seats in the shared match setup. Manual play remains available when no
-camera starts; every placement still requires whole-board verification. All-human and all-computer
+control when unavailable. The local corner model checks the current full-camera image repeatedly.
+Small white plus signs mark its four accepted outer corners. **PLAY!** is enabled only while a
+recent result confidently places all four corners inside the image. Rechecks preserve the success
+message; board-position guidance appears after two missed detections at least one second apart.
+A stale or restarted camera view clears the markers and disables **PLAY!**. **CANCEL** returns to
+the roster; **PLAY!** confirms setup and creates the selected seats in the shared match setup.
+Every placement still requires manual whole-board verification. All-human and all-computer
 rosters are allowed; an operator still places and verifies any computer player's physical trains.
 
 Shift+Escape slides the game screen to the right to reveal the technical interface. Plain

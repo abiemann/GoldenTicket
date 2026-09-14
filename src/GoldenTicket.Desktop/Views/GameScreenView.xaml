@@ -40,6 +40,29 @@
         </Style>
 
         <Style x:Key="GameSeatButton" TargetType="Button" BasedOn="{StaticResource GameChoiceButton}">
+            <Setter Property="Padding" Value="14" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Border x:Name="Frame" Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="10" />
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Frame" Property="Background" Value="#E14E2F2B" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Frame" Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
             <Style.Triggers>
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
                     <Setter Property="BorderBrush" Value="#FFE7D8B2" />
@@ -104,7 +127,7 @@
                                 HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Path x:Name="ArrowBody"
                                   Data="M 27,8.3 L 3,27 L 27,45.7 L 27,36.35 L 60,36.35 L 60,17.65 L 27,17.65 Z"
-                                  Fill="Transparent" Stroke="#FFD6AD5C" StrokeThickness="2.125"
+                                  Fill="Transparent" Stroke="#FFD6AD5C" StrokeThickness="1.8"
                                   StrokeLineJoin="Round" />
                         </Canvas>
                         <ControlTemplate.Triggers>
@@ -199,8 +222,8 @@
                            Visibility="{Binding Game.Message, Converter={StaticResource MessageVisibility}}"
                            AutomationProperties.LiveSetting="Polite" />
                 <Grid Margin="5,14,5,0">
-                    <Button x:Name="PlayButton" Content="PLAY!" Style="{StaticResource GamePlayButton}"
-                            HorizontalAlignment="Center" Width="205" Height="56" FontSize="24"
+                    <Button x:Name="PlayButton" Content="SET-UP BOARD" Style="{StaticResource GamePlayButton}"
+                            HorizontalAlignment="Center" Width="250" Height="56" FontSize="24"
                             FontWeight="Bold" IsEnabled="{Binding Game.CanPlay}"
                             Click="Play_Click" />
                 </Grid>
@@ -227,6 +250,15 @@
                             <Image x:Name="CameraSetupPreview" Source="{Binding Camera.Preview}"
                                    Stretch="Uniform" IsHitTestVisible="False"
                                    AutomationProperties.Name="Live board camera preview" />
+                            <Canvas x:Name="CameraSetupCornerOverlay" IsHitTestVisible="False"
+                                    SizeChanged="CameraSetupCornerOverlay_SizeChanged" />
+                            <Border Background="#C9161E28" CornerRadius="5" Padding="10,6"
+                                    HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="12"
+                                    Visibility="{Binding Camera.IsRunning, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="{Binding Camera.GameBoardFramingStatus}" Foreground="White"
+                                           FontSize="14" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="740"
+                                           AutomationProperties.LiveSetting="Polite" />
+                            </Border>
                             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="660"
                                         Visibility="{Binding Camera.IsRunning, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
                                 <TextBlock Text="{Binding Camera.Status}" Foreground="#FFF8EEDC" FontSize="19"
@@ -246,7 +278,8 @@
                                 FontSize="20" Margin="0,0,16,0" Click="CancelCameraSetup_Click" />
                         <Button x:Name="ConfirmationPlayButton" Content="PLAY!"
                                 Style="{StaticResource GameSetupActionButton}" Width="235" Height="56"
-                                FontSize="22" FontWeight="Bold" Click="CameraSetupPlay_Click" />
+                                FontSize="22" FontWeight="Bold" IsEnabled="{Binding Camera.CanStartGameWithBoard}"
+                                Click="CameraSetupPlay_Click" />
                     </StackPanel>
                     <TextBlock Text="{Binding Game.Message}" Foreground="#FFFFD576"
                                TextAlignment="Center" Margin="0,8,0,0"

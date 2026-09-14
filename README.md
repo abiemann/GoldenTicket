@@ -56,8 +56,9 @@ and remain editable with the existing zoom and pan controls.
 
 The September 14 game-screen update opens on the snowy-twilight artwork and adds the new-game,
 previous-game and player-portrait flow described below. The existing technical screens remain
-available through Shift+Escape. The full 690-test suite passed under a loaded Windows user profile;
-69 synthetic WPF render cases passed without binding warnings. Hands-on focus, maximization,
+available through Shift+Escape. The affected corner-flow tests pass after the latest recheck change;
+71 synthetic WPF render cases pass without binding warnings. The full suite still needs a rerun under
+a loaded Windows user profile. Hands-on focus, maximization,
 reduced-motion and live-camera switching remain to be checked on the target desktop.
 
 ## What this build does
@@ -266,13 +267,15 @@ turn, status and players; **Packed away** is a status, not the save's name.
    The first selected human is **Player 1** and the first selected computer is **Computer 1**;
    each type is numbered separately. The characters' coats and physical train pieces match in
    red, blue, green, black and yellow screen order, even if some characters are skipped. Choose 2–5
-   characters, then select **PLAY!** to open **Before we begin**. Position the board and camera so
-   the entire board is visible in the shared live preview, then choose **PLAY!** there to start.
-   **CANCEL** returns to character selection. The camera starts automatically when available;
-   use **Retry camera** if it does not start. Manual play remains available without a camera, and
-   every train placement still requires a whole-board check. Human-only and computer-only games
-   are allowed; a person must still place and verify computer trains. The technical setup screen
-   offers seat names, colours and AI difficulty.
+   characters, then select **SET-UP BOARD** to open **Before we begin**. Position the board and
+   camera so the entire board is visible in the shared live preview. The local ML model checks
+   the current image and places small white plus signs on all four outer corners. **PLAY!** becomes available
+   only while all four are confidently visible in a fresh camera view. **CANCEL** returns to
+   character selection. The camera starts automatically when available; use **Retry camera** if
+   it does not start. This screen requires the deployed local corner model; without it, **PLAY!**
+   stays disabled. Every train placement still requires a manual whole-board check. Human-only
+   and computer-only games are allowed; a person must still place and verify computer trains. The
+   technical setup screen offers seat names, colours and AI difficulty.
 3. With one human, opening destination choices appear directly on the laptop. With multiple
    humans, each player reveals their private view in turn; the screen is covered between seats.
 4. On a solo human's turn, their cards open on the laptop for draws, destination tickets, or route

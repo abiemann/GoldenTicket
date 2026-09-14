@@ -1,9 +1,19 @@
 # Experimental ML board corners
 
-The preview uses a separate learned model to select the four **outer** board corners, including
-the score track. It runs once when a fresh camera/format session starts. **Detect board corners**
-beside zoom retries on the current camera image. The existing numbered handles, keyboard nudges,
-zoom and pan remain available for corrections. **Select four board corners** starts manual placement.
+The technical camera preview uses a separate learned model to select the four **outer** board
+corners, including the score track. It runs once when a fresh camera/format session starts.
+**Detect board corners** beside zoom retries on the current camera image. The existing numbered
+handles, keyboard nudges, zoom and pan remain available for corrections. **Select four board
+corners** starts manual placement.
+
+The **Before we begin** game screen uses the same model and camera stream for a separate live
+framing check, roughly once per second while that screen is open. Four accepted corners appear as
+small white plus signs over the preview. **PLAY!** remains disabled until the current camera epoch
+has a recent, confident four-corner result with every corner inside the frame. Rechecks leave the
+success message visible. A single missed detection keeps the recent result; a second miss on a
+fresh frame at least one second later clears the markers and shows board-position guidance.
+A stale frame, camera restart or leaving the screen clears readiness immediately. A previous
+manual crop does not satisfy this gate. This check does not overwrite technical crop handles.
 
 Automatic selection adds a narrow outward margin before setting the handles: a 0.5% expansion about
 the detected quadrilateral's center, equivalent to 0.25% of each board dimension on each side for a
@@ -14,8 +24,8 @@ is applied once to each new model result; retries do not accumulate it and manua
 remain exact. Expansion is limited to available camera pixels and must contain the original board.
 The preview reports when the camera boundary limits the margin, so the camera can be framed wider.
 
-Selection is deliberately stationary after the initial attempt. Moving the camera requires a
-retry or handle adjustment; this is not continuous board tracking. Manual edits take priority
+Technical crop selection is deliberately stationary after the initial attempt. Moving the camera
+requires a retry or handle adjustment; this is not continuous board tracking. Manual edits take priority
 over work in progress. A rejected or failed retry preserves an existing valid crop, and a missing
 model leaves manual placement available. The corner status names the active inference backend.
 The next attempt applies the current CPU/GPU preference. Piece outlines start using the accepted
@@ -27,7 +37,8 @@ Build with `artifacts/board-corners/model/board-corners.onnx` and `manifest.json
 Desktop project copies that pair into `models/board-corners/` beside the executable. The separately
 trained piece model remains in `models/pieces/`. Photos, weights, checkpoints and Python environments
 remain ignored local artifacts; the app never downloads or trains a model. A fresh source checkout
-needs a compatible local deployment pair to enable automatic selection.
+needs a compatible local deployment pair to enable automatic selection and the game-setup PLAY
+gate. Without it, the game screen shows a model-unavailable status and cannot start a new match.
 
 ## Model and limits
 

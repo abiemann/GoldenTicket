@@ -14,9 +14,100 @@ public sealed partial class CameraViewModel
     private CancellationTokenSource? _cornerCancellation;
     private (long Epoch, int Width, int Height)? _autoCornerCapture;
     private long _cornerOperationRevision;
+    private bool _gameBoardFramingActive;
+    private long _gameBoardFramingRevision;
+    private DateTimeOffset _lastGameBoardCheckAt = DateTimeOffset.MinValue;
+    private DateTimeOffset _gameBoardAcceptedAt = DateTimeOffset.MinValue;
+    private (long Epoch, int Width, int Height)? _gameBoardCapture;
+    private IReadOnlyList<NormalizedPoint> _gameBoardCorners = [];
+    private (long Epoch, int Width, int Height, long Sequence, DateTimeOffset CapturedAt)? _firstGameBoardMiss;
+
+    private static readonly TimeSpan GameBoardCheckInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan GameBoardResultLifetime = TimeSpan.FromSeconds(2.5);
+    private const double GameBoardEdgeMargin = .005;
 
     [ObservableProperty] private bool _isCornerDetectionBusy;
     [ObservableProperty] private string _cornerDetectionStatus = "ML selects the board corners when the preview starts. You can adjust the handles afterwards.";
+    [ObservableProperty] private string _gameBoardFramingStatus = "Waiting for the camera to find all four board corners.";
+
+    /// <summary>Current ML predictions in full-camera coordinates, never manual crop handles.</summary>
+    public IReadOnlyList<NormalizedPoint> GameBoardCorners
+    {
+        get => _gameBoardCorners;
+        private set
+        {
+            if (SetProperty(ref _gameBoardCorners, value)) OnPropertyChanged(nameof(CanStartGameWithBoard));
+        }
+    }
+
+    public bool CanStartGameWithBoard => _gameBoardFramingActive && GameBoardCorners.Count == 4 &&
+        IsRunning && Capture.IsRunning && _gameBoardCapture is { } capture &&
+        Capture.LatestFrame is { } frame && frame.Age <= TimeSpan.FromSeconds(2) &&
+        (frame.Epoch, frame.Width, frame.Height) == capture &&
+        DateTimeOffset.UtcNow - _gameBoardAcceptedAt <= GameBoardResultLifetime;
+
+    public void BeginGameBoardFraming()
+    {
+        _gameBoardFramingActive = true;
+        _gameBoardFramingRevision++;
+        _lastGameBoardCheckAt = DateTimeOffset.MinValue;
+        _firstGameBoardMiss = null;
+        ClearGameBoardFraming();
+        GameBoardFramingStatus = "Checking the live image for all four board corners…";
+    }
+
+    public void EndGameBoardFraming()
+    {
+        _gameBoardFramingActive = false;
+        _gameBoardFramingRevision++;
+        _firstGameBoardMiss = null;
+        ClearGameBoardFraming();
+    }
+
+    private void ClearGameBoardFraming()
+    {
+        _gameBoardCapture = null;
+        _gameBoardAcceptedAt = DateTimeOffset.MinValue;
+        if (GameBoardCorners.Count != 0) GameBoardCorners = [];
+        else OnPropertyChanged(nameof(CanStartGameWithBoard));
+    }
+
+    private bool ConfirmGameBoardMiss(CameraFrame frame)
+    {
+        var first = _firstGameBoardMiss;
+        if (first is null || (first.Value.Epoch, first.Value.Width, first.Value.Height) !=
+            (frame.Epoch, frame.Width, frame.Height) || frame.CapturedAt < first.Value.CapturedAt)
+        {
+            _firstGameBoardMiss = (frame.Epoch, frame.Width, frame.Height, frame.Sequence, frame.CapturedAt);
+            return false;
+        }
+        if (frame.Sequence == first.Value.Sequence ||
+            frame.CapturedAt - first.Value.CapturedAt < GameBoardCheckInterval) return false;
+        _firstGameBoardMiss = null;
+        return true;
+    }
+
+    private void ExpireGameBoardFraming(CameraFrame? frame)
+    {
+        if (!_gameBoardFramingActive || _gameBoardCapture is not { } capture) return;
+        if (frame is null ||
+            (frame.Epoch, frame.Width, frame.Height) != capture ||
+            frame.Age > TimeSpan.FromSeconds(2) ||
+            DateTimeOffset.UtcNow - _gameBoardAcceptedAt > GameBoardResultLifetime)
+        {
+            ClearGameBoardFraming();
+            GameBoardFramingStatus = "The live board view changed. Checking all four corners again…";
+        }
+        else OnPropertyChanged(nameof(CanStartGameWithBoard));
+    }
+
+    private void QueueGameBoardFraming(CameraFrame frame)
+    {
+        if (!_gameBoardFramingActive || !CanDetectBoardCorners ||
+            DateTimeOffset.UtcNow - _lastGameBoardCheckAt < GameBoardCheckInterval) return;
+        _lastGameBoardCheckAt = DateTimeOffset.UtcNow;
+        _cornerWork = DetectBoardCornersCoreAsync(forGameBoard: true);
+    }
 
     public bool CanDetectBoardCorners => IsRunning && !IsBusy && !IsCornerDetectionBusy && !_disposed;
     partial void OnIsCornerDetectionBusyChanged(bool value) => OnPropertyChanged(nameof(CanDetectBoardCorners));
@@ -41,16 +132,17 @@ public sealed partial class CameraViewModel
         await _cornerWork;
     }
 
-    private async Task DetectBoardCornersCoreAsync()
+    private async Task DetectBoardCornersCoreAsync(bool forGameBoard = false)
     {
         IsCornerDetectionBusy = true;
         var operationRevision = ++_cornerOperationRevision;
+        var gameBoardRevision = _gameBoardFramingRevision;
         var cropRevision = _cropRevision;
         var cameraEpoch = Capture.Epoch;
         var preferGpu = SelectedProcessor.Value != FrameComputeMode.Cpu;
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         _cornerCancellation = cancellation;
-        CornerDetectionStatus = "Locating the four board corners with ML…";
+        if (!forGameBoard) CornerDetectionStatus = "Locating the four board corners with ML…";
         try
         {
             // Model initialization is separate from the preview worker and never holds the UI thread.
@@ -72,13 +164,51 @@ public sealed partial class CameraViewModel
             if (frame.Width != current.Width || frame.Height != current.Height || frame.Epoch != current.Epoch ||
                 frame.Age > TimeSpan.FromSeconds(2))
             {
-                CornerDetectionStatus = "The camera image changed or became stale. Use Detect board corners to try again.";
+                if (forGameBoard && _gameBoardFramingActive && gameBoardRevision == _gameBoardFramingRevision)
+                {
+                    _firstGameBoardMiss = null;
+                    ClearGameBoardFraming();
+                    GameBoardFramingStatus = "The camera image changed. Hold it steady while the board is checked again.";
+                }
+                else if (!forGameBoard)
+                    CornerDetectionStatus = "The camera image changed or became stale. Use Detect board corners to try again.";
                 return;
             }
             if (!result.Accepted)
             {
-                CornerDetectionStatus = "ML could not confidently locate all four corners. " +
-                    result.RejectionReason + " Keep the whole board visible, then try again or select the corners manually.";
+                if (forGameBoard && _gameBoardFramingActive && gameBoardRevision == _gameBoardFramingRevision)
+                {
+                    if (ConfirmGameBoardMiss(current))
+                    {
+                        ClearGameBoardFraming();
+                        GameBoardFramingStatus = "Move the camera until all four board corners are visible.";
+                    }
+                }
+                else if (!forGameBoard)
+                    CornerDetectionStatus = "ML could not confidently locate all four corners. " +
+                        result.RejectionReason + " Keep the whole board visible, then try again or select the corners manually.";
+                return;
+            }
+            if (forGameBoard)
+            {
+                if (!_gameBoardFramingActive || gameBoardRevision != _gameBoardFramingRevision) return;
+                _ = BoardRegistration.Create(current, result.Corners);
+                if (result.Corners.Any(point => point.X <= GameBoardEdgeMargin ||
+                    point.X >= 1 - GameBoardEdgeMargin || point.Y <= GameBoardEdgeMargin ||
+                    point.Y >= 1 - GameBoardEdgeMargin))
+                {
+                    if (ConfirmGameBoardMiss(current))
+                    {
+                        ClearGameBoardFraming();
+                        GameBoardFramingStatus = "Move the camera back so every board corner has room inside the image.";
+                    }
+                    return;
+                }
+                _firstGameBoardMiss = null;
+                _gameBoardCapture = (current.Epoch, current.Width, current.Height);
+                _gameBoardAcceptedAt = DateTimeOffset.UtcNow;
+                GameBoardCorners = result.Corners.ToArray();
+                GameBoardFramingStatus = "All four board corners are visible.";
                 return;
             }
             // Validate and render before replacing any existing crop. Failure leaves it untouched.
@@ -105,8 +235,17 @@ public sealed partial class CameraViewModel
         catch (Exception ex)
         {
             if (CornerOperationIsCurrent(operationRevision, cropRevision, cameraEpoch))
-                CornerDetectionStatus = "Automatic corner selection unavailable: " + ex.Message +
-                    " Use Select four board corners, or try detection again.";
+            {
+                if (forGameBoard && _gameBoardFramingActive && gameBoardRevision == _gameBoardFramingRevision)
+                {
+                    _firstGameBoardMiss = null;
+                    ClearGameBoardFraming();
+                    GameBoardFramingStatus = "Board corner check unavailable: " + ex.Message;
+                }
+                else if (!forGameBoard)
+                    CornerDetectionStatus = "Automatic corner selection unavailable: " + ex.Message +
+                        " Use Select four board corners, or try detection again.";
+            }
         }
         finally
         {
