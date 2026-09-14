@@ -76,47 +76,44 @@
                 <DataTrigger Binding="{Binding Game.IsPlaySelected}" Value="True">
                     <Setter Property="BorderBrush" Value="#FFFFD576" />
                     <Setter Property="BorderThickness" Value="4" />
-                    <Setter Property="Background" Value="#EC522D26" />
                 </DataTrigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#EC522D26" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="GameSetupActionButton" TargetType="Button" BasedOn="{StaticResource GameChoiceButton}">
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#EC522D26" />
+                    <Setter Property="BorderBrush" Value="#FFFFD576" />
+                </Trigger>
             </Style.Triggers>
         </Style>
 
         <Style x:Key="GameBackArrowButton" TargetType="Button">
             <Setter Property="Width" Value="64" />
             <Setter Property="Height" Value="54" />
-            <Setter Property="Foreground" Value="#FFFFE5A6" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Canvas Width="64" Height="54" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Canvas Width="64" Height="54" Background="Transparent"
+                                HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Path x:Name="ArrowBody"
-                                  Data="M 28,4 C 25,4 23,5 21,7 L 3,23 C 0,26 0,29 3,32 L 21,48 C 23,50 25,51 28,50 C 31,50 33,48 33,45 L 33,37 L 54,37 C 58,37 60,34 60,30 L 60,24 C 60,20 58,17 54,17 L 33,17 L 33,9 C 33,6 31,4 28,4 Z"
-                                  Stroke="#FF5B2D16" StrokeThickness="2">
-                                <Path.Fill>
-                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                                        <GradientStop Color="#FFFFEAB0" Offset="0" />
-                                        <GradientStop Color="#FFE4AC54" Offset="0.43" />
-                                        <GradientStop Color="#FF9E5427" Offset="1" />
-                                    </LinearGradientBrush>
-                                </Path.Fill>
-                                <Path.Effect>
-                                    <DropShadowEffect Color="#FF150D0A" BlurRadius="5" ShadowDepth="2" Opacity="0.65" />
-                                </Path.Effect>
-                            </Path>
-                            <Path Data="M 30,13 L 16,27 30,41 M 16,27 H 48"
-                                  Stroke="#99522611" StrokeThickness="2" StrokeLineJoin="Round"
-                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
-                            <Ellipse Canvas.Left="48" Canvas.Top="24" Width="6" Height="6"
-                                     Fill="#FFFFE7AE" Stroke="#FF7E401C" StrokeThickness="1" />
+                                  Data="M 27,8.3 L 3,27 L 27,45.7 L 27,36.35 L 60,36.35 L 60,17.65 L 27,17.65 Z"
+                                  Fill="Transparent" Stroke="#FFD6AD5C" StrokeThickness="2.125"
+                                  StrokeLineJoin="Round" />
                         </Canvas>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ArrowBody" Property="Stroke" Value="#FFFFE3A1" />
+                                <Setter TargetName="ArrowBody" Property="Fill" Value="#EC522D26" />
+                                <Setter TargetName="ArrowBody" Property="Stroke" Value="#FFFFD576" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="ArrowBody" Property="Fill" Value="#FFC17D3C" />
+                                <Setter TargetName="ArrowBody" Property="Fill" Value="#E14E2F2B" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="ArrowBody" Property="Opacity" Value="0.5" />
@@ -168,13 +165,12 @@
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                     <Button x:Name="AiSelectionBackButton" Style="{StaticResource GameBackArrowButton}"
                             Tag="NavigationBack" HorizontalAlignment="Left" VerticalAlignment="Center"
+                            Margin="-10,0,0,0"
                             Click="Back_Click" ToolTip="Back"
                             AutomationProperties.Name="Back to game menu" />
                 </Grid>
-                <TextBlock Text="Choose at least two. Click a face to cycle: Player → Computer → Unselected."
-                           Foreground="#FFE6D9C3" FontSize="14" HorizontalAlignment="Center"
-                           Margin="0,4,0,13" />
                 <ItemsControl x:Name="SeatItems" ItemsSource="{Binding Game.SeatChoices}"
+                              Margin="0,8,0,0"
                               HorizontalAlignment="Center">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
@@ -195,9 +191,10 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-                <CheckBox Content="I will check the whole physical board before confirming placements."
-                          IsChecked="{Binding Setup.ManualVerificationAccepted}"
-                          Foreground="#FFF8EEDC" FontSize="13" Margin="6,14,0,0" />
+                <TextBlock x:Name="SeatInstructions"
+                           Text="Choose at least two. Click a face to cycle: Player → Computer → Unselected."
+                           Foreground="#FFE6D9C3" FontSize="14" HorizontalAlignment="Center"
+                           Margin="0,15,0,0" />
                 <TextBlock Text="{Binding Game.Message}" Foreground="#FFFFD576" Margin="6,8,0,0"
                            Visibility="{Binding Game.Message, Converter={StaticResource MessageVisibility}}"
                            AutomationProperties.LiveSetting="Polite" />
@@ -205,10 +202,58 @@
                     <Button x:Name="PlayButton" Content="PLAY!" Style="{StaticResource GamePlayButton}"
                             HorizontalAlignment="Center" Width="205" Height="56" FontSize="24"
                             FontWeight="Bold" IsEnabled="{Binding Game.CanPlay}"
-                            MouseEnter="Play_MouseEnter" Click="Play_Click" />
+                            Click="Play_Click" />
                 </Grid>
             </StackPanel>
         </Border>
+        </Viewbox>
+
+        <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
+                 VerticalAlignment="Center" HorizontalAlignment="Center" Margin="16"
+                 Visibility="{Binding Game.IsCameraSetup, Converter={StaticResource BoolToVisibility}}">
+            <Border x:Name="CameraSetupDialog" Width="880" Padding="24" CornerRadius="12"
+                    Background="#EA151E29" BorderBrush="#FFD6AD5C" BorderThickness="1">
+                <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="Before we begin" Foreground="#FFFFE7B0" FontSize="30"
+                               FontWeight="SemiBold" HorizontalAlignment="Center" />
+                    <TextBlock x:Name="CameraSetupHelp"
+                               Text="Position the board game and camera so the entire board is visible"
+                               Foreground="#FFF8EEDC" FontSize="19" TextAlignment="Center"
+                               Margin="0,12,0,20" />
+                    <Border x:Name="CameraSetupPreviewFrame" Width="800" Height="440" CornerRadius="8"
+                            Background="#0E141B" BorderBrush="#99DFB75C" BorderThickness="2"
+                            ClipToBounds="True">
+                        <Grid>
+                            <Image x:Name="CameraSetupPreview" Source="{Binding Camera.Preview}"
+                                   Stretch="Uniform" IsHitTestVisible="False"
+                                   AutomationProperties.Name="Live board camera preview" />
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="660"
+                                        Visibility="{Binding Camera.IsRunning, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
+                                <TextBlock Text="{Binding Camera.Status}" Foreground="#FFF8EEDC" FontSize="19"
+                                           TextWrapping="Wrap" TextAlignment="Center" />
+                                <TextBlock Text="{Binding Camera.Problem}" Foreground="#FFFFD576" FontSize="15"
+                                           TextWrapping="Wrap" TextAlignment="Center" Margin="0,8,0,0"
+                                           Visibility="{Binding Camera.Problem, Converter={StaticResource MessageVisibility}}" />
+                                <Button Content="Retry camera" Style="{StaticResource GameSetupActionButton}"
+                                        HorizontalAlignment="Center" Width="180" Height="48" FontSize="16"
+                                        Margin="0,18,0,0" Click="RetryCamera_Click" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,20,0,0">
+                        <Button x:Name="ConfirmationCancelButton" Content="CANCEL"
+                                Style="{StaticResource GameSetupActionButton}" Width="180" Height="56"
+                                FontSize="20" Margin="0,0,16,0" Click="CancelCameraSetup_Click" />
+                        <Button x:Name="ConfirmationPlayButton" Content="PLAY!"
+                                Style="{StaticResource GameSetupActionButton}" Width="235" Height="56"
+                                FontSize="22" FontWeight="Bold" Click="CameraSetupPlay_Click" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding Game.Message}" Foreground="#FFFFD576"
+                               TextAlignment="Center" Margin="0,8,0,0"
+                               Visibility="{Binding Game.Message, Converter={StaticResource MessageVisibility}}"
+                               AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+            </Border>
         </Viewbox>
 
         <!-- Gameplay reuses the existing public views and the same MainViewModel. The technical

@@ -16,11 +16,17 @@ See the
   Preserve plain Escape-to-hide/cancel behavior and ignore held-key repeats.
 - [x] Add a **Return to game** button at the top of the technical interface. Slide the game
   layer back over 100% of the content area, preserving the active game and technical tool state.
-- [x] Add snowy-twilight launch art, Start/Reload choices, five grayscale character portraits that
-  cycle through human, computer and unselected, independent role numbering, keyboard and mouse
-  input, and PLAY for 2–5 chosen seats. All-human and all-computer setups work.
-- [x] All 689 automated tests pass under a loaded Windows user profile. Synthetic WPF checks
-  cover 65 render cases, selection input, repeated transitions, resizing, privacy hiding and
+- [x] Add snowy-twilight launch art, Start/Reload choices, and five portraits with grayscale faces
+  and scenery but colored jackets. They alternate female, male, female, male, female and cycle
+  through human, computer and unselected with separate role numbering. Keyboard and mouse input
+  and PLAY support 2–5 chosen seats, including all-human and all-computer setups. The portraits
+  and their robot matches use red, blue, green, black and yellow coats in screen order; physical
+  train colors follow character identity even when choices are skipped. The roster has an outlined
+  hover-filled back arrow, an instruction below the portraits, and a transient PLAY hover fill.
+  PLAY opens a separate camera setup screen that hides the roster, starts the shared preview when
+  available, and offers retry, cancel and final PLAY controls. Manual placement verification remains.
+- [x] All 690 automated tests pass under a loaded Windows user profile. Synthetic WPF checks
+  cover 69 render cases, selection input, repeated transitions, resizing, privacy hiding and
   shared game/camera ownership, with no binding warnings.
 - [ ] Perform a hands-on desktop check of focus, maximization, animation/reduced-motion settings
   and the live camera while switching layers on the target Windows machine.

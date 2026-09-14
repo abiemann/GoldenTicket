@@ -11,6 +11,7 @@ namespace GoldenTicket.Desktop.Views;
 public partial class GameScreenView : UserControl
 {
     private bool _faceFlipping;
+    private long? _setupCameraEpoch;
 
     public GameScreenView() => InitializeComponent();
 
@@ -23,6 +24,17 @@ public partial class GameScreenView : UserControl
     {
         var game = Game;
         if (game is null || game.IsPlaying || game.IsBusy) return;
+        if (game.IsCameraSetup)
+        {
+            if (e.Key == Key.Escape)
+            {
+                game.CancelCameraSetup();
+                e.Handled = true;
+                await StopSetupCameraIfOwnedAsync();
+                FocusCurrentChoice();
+            }
+            return;
+        }
         if (e.Key is Key.Up or Key.Left)
         {
             game.MoveSelection(-1);
@@ -35,8 +47,7 @@ public partial class GameScreenView : UserControl
         }
         else if (e.Key == Key.Enter && !e.IsRepeat)
         {
-            if (Keyboard.FocusedElement is CheckBox ||
-                Keyboard.FocusedElement is Button focused &&
+            if (Keyboard.FocusedElement is Button focused &&
                 (Equals(focused.Tag, "NavigationBack") || ReferenceEquals(focused, PlayButton))) return;
             e.Handled = true;
             if (game.IsCharacterSelection && game.SeatSelection < game.SeatChoices.Count)
@@ -46,8 +57,12 @@ public partial class GameScreenView : UserControl
                 game.SelectSeat(index);
                 FlipFace(game.SeatChoices[index], FindSeatButton(index));
             }
-            else
-                await game.ActivateSelectedAsync();
+            else if (game.IsCharacterSelection)
+            {
+                await StartPlayAsync(game);
+                return;
+            }
+            else await game.ActivateSelectedAsync();
             FocusCurrentChoice();
         }
     }
@@ -126,19 +141,67 @@ public partial class GameScreenView : UserControl
         transform.BeginAnimation(ScaleTransform.ScaleXProperty, close);
     }
 
-    private void Play_MouseEnter(object sender, MouseEventArgs e)
-    {
-        var game = Game;
-        if (game is not null) game.SelectSeat(game.SeatChoices.Count);
-    }
-
     private async void Play_Click(object sender, RoutedEventArgs e)
     {
         var game = Game;
         if (game is null) return;
         game.SelectSeat(game.SeatChoices.Count);
+        await StartPlayAsync(game);
+    }
+
+    private async Task StartPlayAsync(GameScreenViewModel game)
+    {
         await game.ActivateSelectedAsync();
+        if (!game.IsCameraSetup)
+        {
+            FocusCurrentChoice();
+            return;
+        }
+        _ = Dispatcher.BeginInvoke(DispatcherPriority.Input,
+            new Action(() => { if (IsVisible && game.IsCameraSetup) Keyboard.Focus(ConfirmationCancelButton); }));
+        await EnsureCameraPreviewAsync();
+    }
+
+    private async Task EnsureCameraPreviewAsync(bool refreshDevices = false)
+    {
+        if (DataContext is not MainViewModel model || !model.Game.IsCameraSetup) return;
+        var camera = model.Camera;
+        if (camera.IsRunning || camera.IsBusy) return;
+        if (refreshDevices || camera.SelectedDevice is null)
+            await camera.RefreshDevicesCommand.ExecuteAsync(null);
+        if (!model.Game.IsCameraSetup || camera.IsRunning || camera.IsBusy || camera.SelectedDevice is null) return;
+        await camera.StartCommand.ExecuteAsync(null);
+        if (!camera.IsRunning) return;
+        if (model.Game.IsCameraSetup || model.Game.IsPlaying) _setupCameraEpoch = camera.Capture.Epoch;
+        else await camera.StopCommand.ExecuteAsync(null);
+    }
+
+    private async Task StopSetupCameraIfOwnedAsync()
+    {
+        if (_setupCameraEpoch is not { } ownedEpoch || DataContext is not MainViewModel model) return;
+        _setupCameraEpoch = null;
+        if (model.Camera.IsRunning && !model.Camera.IsBusy && model.Camera.Capture.Epoch == ownedEpoch)
+            await model.Camera.StopCommand.ExecuteAsync(null);
+    }
+
+    private async void RetryCamera_Click(object sender, RoutedEventArgs e) =>
+        await EnsureCameraPreviewAsync(refreshDevices: true);
+
+    private async void CancelCameraSetup_Click(object sender, RoutedEventArgs e)
+    {
+        if (Game is not { IsCameraSetup: true, IsBusy: false } game) return;
+        game.CancelCameraSetup();
+        await StopSetupCameraIfOwnedAsync();
         FocusCurrentChoice();
+    }
+
+    private async void CameraSetupPlay_Click(object sender, RoutedEventArgs e)
+    {
+        if (Game is not { IsCameraSetup: true, IsBusy: false } game) return;
+        await game.ConfirmCameraSetupAndPlayAsync();
+        if (game.IsPlaying) _setupCameraEpoch = null;
+        if (game.IsCameraSetup) Keyboard.Focus(ConfirmationPlayButton);
+        else FocusCurrentChoice();
     }
 
     private void Back_Click(object sender, RoutedEventArgs e)

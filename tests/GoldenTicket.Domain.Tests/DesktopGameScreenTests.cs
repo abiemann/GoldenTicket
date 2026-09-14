@@ -1,5 +1,6 @@
 using GoldenTicket.Application;
 using GoldenTicket.Desktop.ViewModels;
+using GoldenTicket.Domain;
 using GoldenTicket.Domain.Manifest;
 
 namespace GoldenTicket.Domain.Tests;
@@ -17,6 +18,11 @@ public sealed class DesktopGameScreenTests
             await model.Game.ActivateSelectedAsync();
             Assert.Equal(GameScreenStage.CharacterSelection, model.Game.Stage);
             Assert.Equal(5, model.Game.SeatChoices.Count);
+            Assert.Equal(new[] { 1, 4, 2, 5, 3 },
+                model.Game.SeatChoices.Select(choice => choice.PortraitNumber));
+            Assert.Equal(new[] { PlayerColor.Red, PlayerColor.Blue, PlayerColor.Green,
+                PlayerColor.Black, PlayerColor.Yellow },
+                model.Game.SeatChoices.Select(choice => choice.TrainColor));
             Assert.All(model.Game.SeatChoices, choice =>
             {
                 Assert.Equal(CharacterRole.Unselected, choice.Role);
@@ -65,9 +71,9 @@ public sealed class DesktopGameScreenTests
                 if (allComputer) await model.Game.ActivateSelectedAsync();
             }
             Assert.Equal(2, model.Game.SelectedSeatCount);
-            model.Setup.ManualVerificationAccepted = true;
             model.Game.SelectSeat(5);
             await model.Game.ActivateSelectedAsync();
+            await model.Game.ConfirmCameraSetupAndPlayAsync();
 
             Assert.Equal(GameScreenStage.Playing, model.Game.Stage);
             Assert.Equal(Screen.Table, model.GameplayScreen);
@@ -76,6 +82,8 @@ public sealed class DesktopGameScreenTests
             Assert.All(model.Setup.Seats, seat => Assert.Equal(allComputer, seat.IsComputer));
             Assert.Equal(allComputer ? "Computer 1" : "Player 1", model.Setup.Seats[0].DisplayName);
             Assert.Equal(allComputer ? "Computer 2" : "Player 2", model.Setup.Seats[1].DisplayName);
+            Assert.Equal(new[] { PlayerColor.Blue, PlayerColor.Yellow },
+                model.Setup.Seats.Select(seat => seat.Color));
         }
         finally { await model.DisposeToolsAsync(); }
     }
@@ -95,15 +103,17 @@ public sealed class DesktopGameScreenTests
             model.Game.CycleSeat(model.Game.SeatChoices[2]);
             Assert.Equal(new[] { "Computer 1", "Computer 2", "Player 1" },
                 model.Game.SeatChoices.Take(3).Select(choice => choice.Label));
-            model.Setup.ManualVerificationAccepted = true;
             model.Game.SelectSeat(5);
             await model.Game.ActivateSelectedAsync();
+            await model.Game.ConfirmCameraSetupAndPlayAsync();
 
             Assert.Equal(GameScreenStage.Playing, model.Game.Stage);
             Assert.Equal(3, model.Setup.Seats.Count);
             Assert.Equal(new[] { "Computer 1", "Computer 2", "Player 1" },
                 model.Setup.Seats.Select(seat => seat.DisplayName));
             Assert.Equal(new[] { true, true, false }, model.Setup.Seats.Select(seat => seat.IsComputer));
+            Assert.Equal(new[] { PlayerColor.Red, PlayerColor.Blue, PlayerColor.Green },
+                model.Setup.Seats.Select(seat => seat.Color));
         }
         finally { await model.DisposeToolsAsync(); }
     }
@@ -116,13 +126,15 @@ public sealed class DesktopGameScreenTests
         {
             await model.Game.ActivateSelectedAsync();
             foreach (var choice in model.Game.SeatChoices) model.Game.CycleSeat(choice);
-            model.Setup.ManualVerificationAccepted = true;
             model.Game.SelectSeat(5);
             await model.Game.ActivateSelectedAsync();
+            await model.Game.ConfirmCameraSetupAndPlayAsync();
 
             Assert.Equal(GameScreenStage.Playing, model.Game.Stage);
             Assert.Equal(5, model.Setup.Seats.Count);
             Assert.Equal(5, model.Setup.Seats.Select(seat => seat.Color).Distinct().Count());
+            Assert.Equal(new[] { PlayerColor.Red, PlayerColor.Blue, PlayerColor.Green,
+                PlayerColor.Black, PlayerColor.Yellow }, model.Setup.Seats.Select(seat => seat.Color));
             Assert.Equal(new[] { "Player 1", "Player 2", "Player 3", "Player 4", "Player 5" },
                 model.Setup.Seats.Select(seat => seat.DisplayName));
         }
@@ -153,6 +165,37 @@ public sealed class DesktopGameScreenTests
             Assert.Equal(GameScreenStage.CharacterSelection, model.Game.Stage);
             model.Game.IsFaceFlipping = false;
             Assert.True(model.Game.CanPlay);
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Fact]
+    public async Task CameraSetupHidesRosterUntilPlayAndCancelReturnsToChoices()
+    {
+        var model = NewModel();
+        try
+        {
+            await model.Game.ActivateSelectedAsync();
+            model.Game.CycleSeat(model.Game.SeatChoices[0]);
+            model.Game.CycleSeat(model.Game.SeatChoices[1]);
+            model.Game.SelectSeat(5);
+            await model.Game.ActivateSelectedAsync();
+            Assert.True(model.Game.IsCameraSetup);
+            Assert.False(model.Game.IsCharacterSelection);
+            Assert.False(model.Setup.ManualVerificationAccepted);
+            Assert.Equal(GameScreenStage.CameraSetup, model.Game.Stage);
+
+            model.Game.CancelCameraSetup();
+            Assert.False(model.Game.IsCameraSetup);
+            Assert.Equal(-1, model.Game.SeatSelection);
+            Assert.Equal(GameScreenStage.CharacterSelection, model.Game.Stage);
+
+            model.Game.SelectSeat(5);
+            await model.Game.ActivateSelectedAsync();
+            await model.Game.ConfirmCameraSetupAndPlayAsync();
+            Assert.True(model.Setup.ManualVerificationAccepted);
+            Assert.Equal(GameScreenStage.Playing, model.Game.Stage);
+            Assert.False(model.Game.IsCameraSetup);
         }
         finally { await model.DisposeToolsAsync(); }
     }
@@ -192,10 +235,10 @@ public sealed class DesktopGameScreenTests
             await model.Game.ActivateSelectedAsync();
             model.Game.CycleSeat(model.Game.SeatChoices[0]);
             model.Game.CycleSeat(model.Game.SeatChoices[1]);
-            model.Setup.ManualVerificationAccepted = true;
             model.Screen = Screen.Camera;
             model.Game.SelectSeat(5);
             await model.Game.ActivateSelectedAsync();
+            await model.Game.ConfirmCameraSetupAndPlayAsync();
 
             Assert.Equal(GameScreenStage.Playing, model.Game.Stage);
             Assert.Equal(Screen.Camera, model.Screen);

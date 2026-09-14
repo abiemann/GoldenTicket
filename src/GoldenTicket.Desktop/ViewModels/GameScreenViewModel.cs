@@ -5,16 +5,34 @@ using GoldenTicket.Domain;
 
 namespace GoldenTicket.Desktop.ViewModels;
 
-public enum GameScreenStage { Welcome, CharacterSelection, Playing }
+public enum GameScreenStage { Welcome, CharacterSelection, CameraSetup, Playing }
 public enum CharacterRole { Unselected, Human, Computer }
 
 public sealed partial class GameSeatChoice(int number) : ObservableObject
 {
     private BitmapImage? _humanPortrait;
     private BitmapImage? _robotPortrait;
-    private ImageSource? _grayPortrait;
+    private ImageSource? _unselectedPortrait;
 
     public int Number { get; } = number;
+    public int PortraitNumber => Number switch
+    {
+        1 => 1,
+        2 => 4,
+        3 => 2,
+        4 => 5,
+        5 => 3,
+        _ => throw new InvalidOperationException($"Character {Number} has no portrait."),
+    };
+    public PlayerColor TrainColor => PortraitNumber switch
+    {
+        1 => PlayerColor.Red,
+        2 => PlayerColor.Green,
+        3 => PlayerColor.Yellow,
+        4 => PlayerColor.Blue,
+        5 => PlayerColor.Black,
+        _ => throw new InvalidOperationException($"Character {Number} has no train color."),
+    };
     public bool IsChosen => Role != CharacterRole.Unselected;
     public string Label => Role switch
     {
@@ -23,12 +41,12 @@ public sealed partial class GameSeatChoice(int number) : ObservableObject
         _ => "Select",
     };
     public string AccessibleName => $"Character {Number}, {Label}";
-    public string PortraitUri => $"/GoldenTicket;component/Assets/Characters/character-{Number:00}-{(Role == CharacterRole.Computer ? "robot" : "human")}-256.png";
+    public string PortraitUri => $"/GoldenTicket;component/Assets/Characters/character-{PortraitNumber:00}-{(Role == CharacterRole.Computer ? "robot" : "human")}-256.png";
     public ImageSource Portrait => Role switch
     {
         CharacterRole.Human => _humanPortrait ??= LoadPortrait(false),
         CharacterRole.Computer => _robotPortrait ??= LoadPortrait(true),
-        _ => _grayPortrait ??= GrayPortrait(),
+        _ => _unselectedPortrait ??= UnselectedPortrait(),
     };
 
     [ObservableProperty] private CharacterRole _role;
@@ -61,22 +79,62 @@ public sealed partial class GameSeatChoice(int number) : ObservableObject
     {
         var image = new BitmapImage();
         image.BeginInit();
-        image.UriSource = new Uri($"pack://application:,,,/GoldenTicket;component/Assets/Characters/character-{Number:00}-{(robot ? "robot" : "human")}-256.png");
+        image.UriSource = new Uri($"pack://application:,,,/GoldenTicket;component/Assets/Characters/character-{PortraitNumber:00}-{(robot ? "robot" : "human")}-256.png");
         image.CacheOption = BitmapCacheOption.OnLoad;
         image.EndInit();
         image.Freeze();
         return image;
     }
 
-    private ImageSource GrayPortrait()
+    private ImageSource UnselectedPortrait()
     {
-        var image = new FormatConvertedBitmap();
-        image.BeginInit();
-        image.Source = _humanPortrait ??= LoadPortrait(false);
-        image.DestinationFormat = PixelFormats.Gray8;
-        image.EndInit();
-        image.Freeze();
-        return image;
+        var source = new FormatConvertedBitmap(_humanPortrait ??= LoadPortrait(false), PixelFormats.Bgra32, null, 0);
+        var width = source.PixelWidth;
+        var height = source.PixelHeight;
+        var stride = width * 4;
+        var pixels = new byte[stride * height];
+        source.CopyPixels(pixels, stride, 0);
+        for (var y = 0; y < height; y++)
+        for (var x = 0; x < width; x++)
+        {
+            var offset = y * stride + x * 4;
+            var blue = pixels[offset];
+            var green = pixels[offset + 1];
+            var red = pixels[offset + 2];
+            if (IsJacketPixel(x, y, width, height, red, green, blue)) continue;
+            var gray = (byte)Math.Clamp((int)Math.Round(.2126 * red + .7152 * green + .0722 * blue), 0, 255);
+            pixels[offset] = gray;
+            pixels[offset + 1] = gray;
+            pixels[offset + 2] = gray;
+        }
+        var portrait = BitmapSource.Create(width, height, source.DpiX, source.DpiY,
+            PixelFormats.Bgra32, null, pixels, stride);
+        portrait.Freeze();
+        return portrait;
+    }
+
+    private bool IsJacketPixel(int x, int y, int width, int height, byte red, byte green, byte blue)
+    {
+        // The color check keeps scenery and skin gray even near the jacket's outer silhouette.
+        var px = x * 256 / width;
+        var py = y * 256 / height;
+        var inJacket = py switch
+        {
+            < 160 => false,
+            < 185 => px is >= 32 and <= 88 or >= 170 and <= 224,
+            < 218 => px is >= 22 and <= 109 or >= 148 and <= 235,
+            _ => px is <= 118 or >= 138,
+        };
+        if (!inJacket) return false;
+        return TrainColor switch
+        {
+            PlayerColor.Red => red > green * 1.5 && red > blue * 1.5 && red > 50,
+            PlayerColor.Green => green >= red * .85 && green > blue * 1.2 && red < 115 && green < 120,
+            PlayerColor.Yellow => red > green * 1.12 && green > blue * 1.6 && green - blue > 80 && red > 100,
+            PlayerColor.Blue => blue > red * 1.3 && blue > green * 1.2 && blue > 60,
+            PlayerColor.Black => red < 95 && green < 90 && blue < 85,
+            _ => false,
+        };
     }
 }
 
@@ -107,6 +165,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
 
     public bool IsWelcome => Stage == GameScreenStage.Welcome;
     public bool IsCharacterSelection => Stage == GameScreenStage.CharacterSelection;
+    public bool IsCameraSetup => Stage == GameScreenStage.CameraSetup;
     public bool IsPlaying => Stage == GameScreenStage.Playing;
     public bool IsStartSelected => WelcomeSelection == 0;
     public bool IsReloadSelected => WelcomeSelection == 1;
@@ -116,6 +175,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsWelcome));
         OnPropertyChanged(nameof(IsCharacterSelection));
+        OnPropertyChanged(nameof(IsCameraSetup));
         OnPropertyChanged(nameof(IsPlaying));
         Message = null;
     }
@@ -139,7 +199,9 @@ public sealed partial class GameScreenViewModel : ObservableObject
 
     public void Back()
     {
-        if (!IsBusy && IsCharacterSelection) Stage = GameScreenStage.Welcome;
+        if (IsBusy) return;
+        if (IsCameraSetup) CancelCameraSetup();
+        else if (IsCharacterSelection) Stage = GameScreenStage.Welcome;
     }
 
     public void SelectWelcome(int index)
@@ -149,7 +211,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
 
     public void SelectSeat(int index)
     {
-        if (index >= 0 && index <= SeatChoices.Count) SeatSelection = index;
+        if (index >= -1 && index <= SeatChoices.Count) SeatSelection = index;
     }
 
     public void CycleSeat(GameSeatChoice choice)
@@ -202,7 +264,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
                 else await ReloadPreviousAsync();
                 break;
             case GameScreenStage.CharacterSelection:
-                if (SeatSelection == SeatChoices.Count) await PlayAsync();
+                if (SeatSelection == SeatChoices.Count) OpenCameraSetup();
                 else
                 {
                     if (SeatSelection < 0) SeatSelection = 0;
@@ -217,13 +279,12 @@ public sealed partial class GameScreenViewModel : ObservableObject
         var chosen = SeatChoices.Where(choice => choice.IsChosen).ToArray();
         while (_main.Setup.Seats.Count > chosen.Length) _main.Setup.RemoveSeat();
         while (_main.Setup.Seats.Count < chosen.Length) _main.Setup.AddSeat();
-        var colors = Enum.GetValues<PlayerColor>();
         for (var index = 0; index < chosen.Length; index++)
         {
             var seat = _main.Setup.Seats[index];
             seat.IsComputer = chosen[index].Role == CharacterRole.Computer;
             seat.DisplayName = chosen[index].Label;
-            seat.Color = colors[index];
+            seat.Color = chosen[index].TrainColor;
         }
         _main.Setup.StartingSeatIndex = 0;
     }
@@ -242,7 +303,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
         finally { IsBusy = false; }
     }
 
-    private async Task PlayAsync()
+    private void OpenCameraSetup()
     {
         if (IsFaceFlipping) return;
         if (!CanPlay)
@@ -250,6 +311,11 @@ public sealed partial class GameScreenViewModel : ObservableObject
             Message = $"Choose at least {_main.Setup.MinPlayers} characters to play.";
             return;
         }
+        Stage = GameScreenStage.CameraSetup;
+    }
+
+    private async Task StartMatchAsync()
+    {
         IsBusy = true;
         try
         {
@@ -259,5 +325,19 @@ public sealed partial class GameScreenViewModel : ObservableObject
                 Message = _main.Setup.ValidationMessage ?? "The game could not be started.";
         }
         finally { IsBusy = false; }
+    }
+
+    public void CancelCameraSetup()
+    {
+        if (!IsCameraSetup || IsBusy) return;
+        SelectSeat(-1);
+        Stage = GameScreenStage.CharacterSelection;
+    }
+
+    public async Task ConfirmCameraSetupAndPlayAsync()
+    {
+        if (!IsCameraSetup || IsBusy) return;
+        _main.Setup.ManualVerificationAccepted = true;
+        await StartMatchAsync();
     }
 }

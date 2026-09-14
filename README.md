@@ -56,8 +56,8 @@ and remain editable with the existing zoom and pan controls.
 
 The September 14 game-screen update opens on the snowy-twilight artwork and adds the new-game,
 previous-game and player-portrait flow described below. The existing technical screens remain
-available through Shift+Escape. The full 689-test suite passed under a loaded Windows user profile;
-65 synthetic WPF render cases passed without binding warnings. Hands-on focus, maximization,
+available through Shift+Escape. The full 690-test suite passed under a loaded Windows user profile;
+69 synthetic WPF render cases passed without binding warnings. Hands-on focus, maximization,
 reduced-motion and live-camera switching remain to be checked on the target desktop.
 
 ## What this build does
@@ -90,10 +90,10 @@ This build implements the core game plus initial phone, camera and photo workflo
   a per-seat private view, the operator's placement instruction and confirmation, and a results
   screen.
 - A player-facing launch layer using the supplied snowy-twilight artwork. Choose 2–5 players from
-  five grayscale human portraits that cycle through human, computer and unselected, or reopen the
-  most recently updated save. Shift+Escape reveals
-  the existing technical screens; **Return to game** slides the game layer back. Both presentations
-  use the same match and camera objects.
+  five portraits whose faces and scenery begin grayscale while their jackets keep their train
+  colors. The portraits cycle through human, computer and unselected. You can also reopen the
+  most recently updated save. Shift+Escape reveals the existing technical screens; **Return to
+  game** slides the game layer back. Both presentations use the same match and camera objects.
 - With one human, cards and destination choices open on the laptop when that player needs to act.
   **Your cards** and **Back to table** replace handoff prompts, and **Connect phone** is hidden.
   Matches with multiple humans keep pass-and-hide and can optionally use the phone companion.
@@ -260,13 +260,19 @@ turn, status and players; **Packed away** is a status, not the save's name.
 
 1. Put the board and the plastic trains on the table. **Leave the physical cards and destination
    tickets in the box** — the application deals and holds every card, for every seat.
-2. On **Choose players**, all five portraits start grayscale and unselected. Use arrow keys and
+2. On **Choose players**, all five portraits start unselected, with grayscale faces and scenery
+   but colored jackets. They alternate female, male, female, male, female. Use arrow keys and
    Enter, or point and click, to cycle each face through color human, matched robot and unselected.
    The first selected human is **Player 1** and the first selected computer is **Computer 1**;
-   each type is numbered separately. Choose 2–5 characters, check the manual whole-board
-   verification acknowledgment, then choose **PLAY!**. Human-only and computer-only games are
-   allowed; a person must still place and verify computer trains. The technical setup screen offers
-   seat names, colours and AI difficulty.
+   each type is numbered separately. The characters' coats and physical train pieces match in
+   red, blue, green, black and yellow screen order, even if some characters are skipped. Choose 2–5
+   characters, then select **PLAY!** to open **Before we begin**. Position the board and camera so
+   the entire board is visible in the shared live preview, then choose **PLAY!** there to start.
+   **CANCEL** returns to character selection. The camera starts automatically when available;
+   use **Retry camera** if it does not start. Manual play remains available without a camera, and
+   every train placement still requires a whole-board check. Human-only and computer-only games
+   are allowed; a person must still place and verify computer trains. The technical setup screen
+   offers seat names, colours and AI difficulty.
 3. With one human, opening destination choices appear directly on the laptop. With multiple
    humans, each player reveals their private view in turn; the screen is covered between seats.
 4. On a solo human's turn, their cards open on the laptop for draws, destination tickets, or route

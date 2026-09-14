@@ -351,16 +351,25 @@ technical header and navigation; exclusive operating-system fullscreen is not re
 
 With no saved match, the opening choice is **Start a new game**. When at least one match exists,
 **Reload the previous game** resumes the most recently updated save, preserving its verification
-and rebuild gates. New-game setup shows all five character portraits at once in grayscale. Each
-portrait cycles from unselected to a color human **Player X**, to its matched robot **Computer X**,
-then back to unselected grayscale. Humans and computers are numbered separately in character
-order, and their numbers close gaps when a choice changes. Choosing 2–5 portraits determines the
-seat count; there is no separate player-count step. Keyboard arrows move the selection and Enter
-cycles it; hover moves the selection and click cycles it with the mouse. The back arrow is a brass,
-steampunk-styled control without a circular highlight. **PLAY!** becomes available with at least
-two selected characters and creates those seats in the shared match setup after the current manual
-whole-board verification acknowledgment. All-human and all-computer rosters are allowed; an
-operator still places and verifies any computer player's physical trains.
+and rebuild gates. New-game setup shows all five character portraits at once, alternating female,
+male, female, male, female. Unselected faces and scenery are grayscale while only the jackets
+retain their colors. Each portrait cycles from unselected to a full-color human **Player X**, to
+its matched robot **Computer X**, then back to unselected. Humans and computers are numbered
+separately in screen order, and their numbers close gaps when a choice changes. The five
+coat/physical train colors are red, blue, green, black and yellow in screen order; skipping a
+character does not reassign another's color. Choosing 2–5 portraits determines the seat count;
+there is no separate player-count step. Keyboard arrows move the selection and Enter cycles it;
+hover moves the
+selection and click cycles it with the mouse. The instruction sits beneath the portraits. The
+back control is a thin brass arrow outline at the left of the title, filled only while hovered;
+**PLAY!** likewise fills only while hovered. **PLAY!** becomes available with at least two selected
+characters and opens a separate **Before we begin** camera screen, hiding the roster completely.
+This screen asks the operator to position the board and camera so the entire board is visible,
+automatically starts the shared camera when possible, and shows its live preview with a retry
+control when unavailable. **CANCEL** returns to the roster; the second **PLAY!** confirms setup
+and creates the selected seats in the shared match setup. Manual play remains available when no
+camera starts; every placement still requires whole-board verification. All-human and all-computer
+rosters are allowed; an operator still places and verifies any computer player's physical trains.
 
 Shift+Escape slides the game screen to the right to reveal the technical interface. Plain
 Escape retains private-card hiding and child-control cancellation, and held-key repeats do not

@@ -480,16 +480,24 @@ internal static partial class Program
         {
             void VerifyRoster(UserControl view)
             {
+                static (byte red, byte green, byte blue) Pixel(BitmapSource source, int x, int y)
+                {
+                    var image = new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
+                    var bytes = new byte[4];
+                    image.CopyPixels(new Int32Rect(x, y, 1, 1), bytes, 4, 0);
+                    return (bytes[2], bytes[1], bytes[0]);
+                }
                 var dialog = (Border)view.FindName("AiSelectionDialog");
                 var back = (Button)view.FindName("AiSelectionBackButton");
                 var title = (TextBlock)view.FindName("AiSelectionTitle");
+                var instructions = (TextBlock)view.FindName("SeatInstructions");
                 var play = (Button)view.FindName("PlayButton");
                 Rect Bounds(FrameworkElement element) => element.TransformToAncestor(view)
                     .TransformBounds(new Rect(element.RenderSize));
                 var dialogBounds = Bounds(dialog);
                 var backBounds = Bounds(back);
                 var titleBounds = Bounds(title);
-                if (Math.Abs(backBounds.Left - dialogBounds.Left - 19) > 2 ||
+                if (Math.Abs(backBounds.Left - dialogBounds.Left - 9) > 2 ||
                     Math.Abs(backBounds.Top + backBounds.Height / 2 - titleBounds.Top - titleBounds.Height / 2) > 2 ||
                     Math.Abs(titleBounds.Left + titleBounds.Width / 2 - dialogBounds.Left - dialogBounds.Width / 2) > 2 ||
                     backBounds.Right + 8 > titleBounds.Left || back.Content is not null)
@@ -497,14 +505,36 @@ internal static partial class Program
                 var faces = Descendants<Image>(view).Where(image => image.DataContext is GameSeatChoice).ToArray();
                 if (faces.Length != 5 || play.IsEnabled != model.Game.CanPlay)
                     throw new InvalidOperationException("All five character portraits and the chosen-seat PLAY state must be visible.");
+                var seatButtons = Descendants<Button>(dialog).Where(button => button.DataContext is GameSeatChoice).ToArray();
+                if (Descendants<CheckBox>(dialog).Any() || seatButtons.Length != 5 ||
+                    Bounds(instructions).Top <= seatButtons.Max(button => Bounds(button).Bottom))
+                    throw new InvalidOperationException("The roster instruction must follow all five faces without a checkbox.");
                 if (model.Game.SelectedSeatCount == 0 && model.Game.SeatChoices.Any(choice => choice.IsSelected))
                     throw new InvalidOperationException("No character should appear selected when the roster first opens.");
                 foreach (var face in faces)
                 {
                     var choice = (GameSeatChoice)face.DataContext;
-                    if (choice.Role == CharacterRole.Unselected &&
-                        (face.Source is not FormatConvertedBitmap gray || gray.DestinationFormat != PixelFormats.Gray8))
-                        throw new InvalidOperationException("Unselected characters must use true grayscale portraits.");
+                    if (choice.Role != CharacterRole.Unselected) continue;
+                    if (face.Source is not BitmapSource portrait)
+                        throw new InvalidOperationException("Unselected characters need a rendered portrait.");
+                    foreach (var (x, y) in new[] { (128, 100), (220, 100) })
+                    {
+                        var (red, green, blue) = Pixel(portrait, x, y);
+                        if (red != green || green != blue)
+                            throw new InvalidOperationException("Faces and scenery must remain grayscale before selection.");
+                    }
+                    var (coatRed, coatGreen, coatBlue) = Pixel(portrait, 70, 200);
+                    var coatShowsColor = choice.TrainColor switch
+                    {
+                        PlayerColor.Red => coatRed > coatGreen * 1.5 && coatRed > coatBlue * 1.5,
+                        PlayerColor.Green => coatGreen > coatRed && coatGreen > coatBlue,
+                        PlayerColor.Yellow => coatRed > coatGreen && coatGreen > coatBlue * 2,
+                        PlayerColor.Blue => coatBlue > coatRed * 2 && coatBlue > coatGreen * 2,
+                        PlayerColor.Black => coatRed < 60 && coatGreen < 60 && coatBlue < 60,
+                        _ => false,
+                    };
+                    if (!coatShowsColor)
+                        throw new InvalidOperationException("Only the unselected character's jacket should retain its train color.");
                 }
             }
 
@@ -525,11 +555,47 @@ internal static partial class Program
             await RenderSizes("game-two-chosen", () => new GameScreenView { DataContext = model }, VerifyRoster);
             model.Game.CycleSeat(model.Game.SeatChoices[0]);
             await RenderSizes("game-robot-face", () => new GameScreenView { DataContext = model }, VerifyRoster);
+            model.Game.SelectSeat(5);
+            await model.Game.ActivateSelectedAsync();
+            await RenderSizes("game-camera-setup", () => new GameScreenView { DataContext = model }, view =>
+            {
+                var dialog = (Border)view.FindName("CameraSetupDialog");
+                var roster = (Border)view.FindName("AiSelectionDialog");
+                var help = (TextBlock)view.FindName("CameraSetupHelp");
+                var frame = (Border)view.FindName("CameraSetupPreviewFrame");
+                var preview = (Image)view.FindName("CameraSetupPreview");
+                var cancel = (Button)view.FindName("ConfirmationCancelButton");
+                var play = (Button)view.FindName("ConfirmationPlayButton");
+                Rect Bounds(FrameworkElement element) => element.TransformToAncestor(view)
+                    .TransformBounds(new Rect(element.RenderSize));
+                if (!IsElementShown(dialog) || IsElementShown(roster) ||
+                    !model.Game.IsCameraSetup || model.Setup.ManualVerificationAccepted ||
+                    help.Text != "Position the board game and camera so the entire board is visible" ||
+                    cancel.Content as string != "CANCEL" || play.Content as string != "PLAY!" ||
+                    Bounds(help).Bottom >= Bounds(frame).Top ||
+                    Bounds(frame).Bottom >= Bounds(cancel).Top ||
+                    Bounds(frame).Bottom >= Bounds(play).Top ||
+                    !ReferenceEquals(preview.Source, model.Camera.Preview) ||
+                    System.Windows.Data.BindingOperations.GetBindingExpression(preview, Image.SourceProperty)?
+                        .ParentBinding.Path.Path != "Camera.Preview")
+                    throw new InvalidOperationException("Camera setup must replace the roster, share its live preview, and place CANCEL and PLAY below it.");
+            }, [(875, 680), (1280, 800)]);
+            var confirmationView = new GameScreenView { DataContext = model };
+            await Arrange(confirmationView, 875, 680);
+            ((Button)confirmationView.FindName("ConfirmationCancelButton"))
+                .RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            if (model.Game.IsCameraSetup || !model.Game.IsCharacterSelection)
+                throw new InvalidOperationException("Cancelling camera setup must return to the roster.");
             var pointerView = new GameScreenView { DataContext = model };
             await Arrange(pointerView, 1000, 620);
             var fourth = Descendants<Button>(pointerView).Single(button =>
                 button.DataContext is GameSeatChoice { Number: 4 });
             model.Game.SelectSeat(0);
+            ((Button)pointerView.FindName("PlayButton"))
+                .RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount)
+                    { RoutedEvent = Mouse.MouseEnterEvent });
+            if (model.Game.SeatSelection != 0)
+                throw new InvalidOperationException("Hovering PLAY must not leave its selected fill latched.");
             fourth.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount)
                 { RoutedEvent = Mouse.MouseEnterEvent });
             if (model.Game.SeatSelection != 3)
@@ -569,6 +635,29 @@ internal static partial class Program
                     throw new InvalidOperationException("Enter and cursor keys must cycle and select the five character choices.");
             }
             finally { await keyboardModel.DisposeToolsAsync(); }
+
+            var colorModel = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
+            try
+            {
+                await colorModel.Game.ActivateSelectedAsync();
+                foreach (var choice in colorModel.Game.SeatChoices) colorModel.Game.CycleSeat(choice);
+                await RenderSizes("game-five-colored", () => new GameScreenView { DataContext = colorModel },
+                    view =>
+                    {
+                        if (Descendants<Image>(view).Count(image => image.DataContext is GameSeatChoice &&
+                            image.Source is BitmapImage) != 5)
+                            throw new InvalidOperationException("All five selected humans must use color portraits.");
+                    }, [(1280, 800)]);
+                foreach (var choice in colorModel.Game.SeatChoices.Skip(2)) colorModel.Game.CycleSeat(choice);
+                await RenderSizes("game-last-three-robots", () => new GameScreenView { DataContext = colorModel },
+                    view =>
+                    {
+                        if (colorModel.Game.SeatChoices.Skip(2).Any(choice =>
+                            choice.Role != CharacterRole.Computer || !choice.PortraitUri.Contains("robot-256")))
+                            throw new InvalidOperationException("The last three characters must show their matching robot portraits.");
+                    }, [(1280, 800)]);
+            }
+            finally { await colorModel.DisposeToolsAsync(); }
 
             var savedStore = new InMemorySessionStore();
             var savedSource = new MainViewModel(ManifestLoader.LoadClassicUs(), savedStore);
