@@ -35,7 +35,7 @@ leave the normal preview and manual game available and report the ML failure.
 
 ## First training experiment
 
-The reviewed collection contains **29 photos and 954 labels: 835 trains and 119 score markers**.
+The first training experiment used **29 photos and 954 labels: 835 trains and 119 score markers**.
 Each individual train is boxed, including touching trains. Four photos are reviewed empty boards.
 Original photographs and labels are read-only inputs; their hashes are rechecked after training.
 
@@ -85,7 +85,7 @@ See the [orientation checks and limitations](evidence/train-orientation-2026-09-
 
 ## Results and the next review loop
 
-At the selected threshold, the Python validation path matches 693 of 711 labeled pieces at
+For the original model, the Python validation path matches 693 of 711 labeled pieces at
 IoU 0.50, with 18 misses and 3 false positives: 99.6% precision and 97.5% recall. All 55 validation
 score markers are matched; most misses are yellow trains. Known empty training photos produce
 zero detections at this threshold. See the [validation record](evidence/ml-preview-2026-09-13/validation.md)
@@ -96,6 +96,32 @@ the complete image and correct labels, then add useful examples to a new recorde
 Keep entire sessions, repeated layouts and lighting variants together. Reserve new independent
 test sessions before tuning. Compare each candidate model on the same fixed evaluation set,
 including misses, duplicates and false detections per board, rather than counts alone.
+
+The first new recorded failure is a **black score marker surrounded by other markers** in photo
+`20260913-171132`. Its score is below threshold before overlap filtering; .NET and Python reproduce
+the miss. The user chose to collect more examples before retraining. Reviewed additions are saved
+in local collection versions, preserving the original 29-photo training experiment. See the
+[clustered-marker diagnosis and capture plan](evidence/clustered-markers-2026-09-13/validation.md).
+
+Photo `20260913-172806` records an intermittent yellow-train outline report. The saved photo itself
+detects the train on CPU and DirectML; an exact missed-frame example is still needed. Label review
+also corrected an omitted yellow train in `171132`. See the
+[yellow-train check and correction](evidence/yellow-train-2026-09-13/validation.md).
+
+Photo `20260913-173706` reproduces an extra train prediction over the empty printed yellow slot
+near Boston on both CPU and DirectML. The printed slot remains background while the real red train
+beside it is labeled. Current local collection version `04` contains **32 photos and 1,126 labels**,
+with related layouts kept together. See the
+[Boston false-positive check](evidence/boston-false-positive-2026-09-13/validation.md).
+
+The user then requested retraining. The [second model](evidence/ml-retrain-2026-09-13/validation.md)
+uses all 32 reviewed photos and is installed for local preview. At the unchanged 0.30 threshold,
+the fixed comparison improves from 21 misses and eight extras to zero of each across these photos.
+The crowded black markers are detected and the Boston printed-slot extra box is gone; the real
+yellow train near Little Rock remains detected. CPU/DirectML fixture checks agree.
+**These are in-sample results:** the photos were used in training. New capture sessions are still
+needed to judge generalization and intermittent live failures. The previous model is retained for
+rollback. Use **Reload ML model** in an already open app to load the new installed pair.
 
 The current difference detector remains available to developer diagnostics for comparison;
 the live Piece outlines feature no longer calls it. The old lighting failure observations are

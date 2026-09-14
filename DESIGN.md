@@ -1077,6 +1077,12 @@ The camera is rectified and enhanced in the same order as training exports. Revi
 that exact unpainted crop and unreviewed predictions, not a later frame. The separate enhancement
 badge does not imply ML GPU execution. See [current evidence](docs/evidence/ml-preview-2026-09-13/validation.md).
 
+The subsequent [reviewed-example retraining](docs/evidence/ml-retrain-2026-09-13/validation.md)
+uses all 32 collected photos to incorporate reported failures, preserving capture-group metadata
+and the original model for rollback. Its improved saved-photo results are explicitly in-sample;
+new independent capture sessions remain required. The model contract, operating thresholds and
+manual verification boundary are unchanged.
+
 After ML detection and NMS, `TrainOutlineFitter` uses the analyzed pixels within each train box
 to estimate a rotated display rectangle. Original model boxes, confidences and class counts stay
 unchanged. Ambiguous or clipped fits fall back to the original geometry; score markers stay square.

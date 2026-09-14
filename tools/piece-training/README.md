@@ -224,3 +224,25 @@ Run training geometry and matching checks in the isolated environment:
 These verify labels stay attached to pixels through crop/resize/rotation augmentation,
 overlap ownership covers every board point once, and duplicate predictions cannot inflate
 true positives. Standard-library-only test environments skip these optional training checks.
+
+## Reviewed-failure retraining · September 13, 2026
+
+The second experiment fine-tunes the preserved baseline checkpoint on all 32 reviewed photos
+in collection `04`, including the three new failure examples and four empty controls:
+
+```powershell
+& 'artifacts/piece-training/.venv/Scripts/python.exe' tools/piece-training/train_piece_detector.py --labels artifacts/piece-training/labels-reviewed-04.json --images C:/temp --yolox-source artifacts/piece-training/vendor/YOLOX --pretrained artifacts/piece-training/pretrained/yolox_nano.pth --output artifacts/piece-training/runs/retrain-reviewed-04-r1 --epochs 40 --samples-per-epoch 512 --batch-size 16 --seed 20260914 --initialize artifacts/piece-training/runs/baseline-session-01/best.pth --all-reviewed --tile-ownership --confidence 0.30
+```
+
+Use a new output directory for any further run. The ordinary labels place the new failures in
+the September 13 validation group; `--all-reviewed` explicitly includes them in training without
+inventing a split between related captures. All resulting photo scores are **in-sample diagnostics**.
+The trainer still selects its best epoch by threshold-swept F1; `--confidence` applies only to the
+final evaluation/export. Epoch 30 was selected in this run. The trainer's `evaluation.json` covers
+the 14 September 13 photos; a separate fixed-threshold ONNX comparison covers all 32 photos.
+
+The comparison changes from 1,105 matches / eight extras / 21 misses to 1,126 / zero / zero, with
+four empty controls still clear. Actual .NET CPU/DirectML fixture checks pass. The local preview
+pair is updated and the prior pair is preserved for rollback. Independent new captures remain
+necessary; these figures do not establish general accuracy. See the
+[complete training and deployment record](../../docs/evidence/ml-retrain-2026-09-13/validation.md).

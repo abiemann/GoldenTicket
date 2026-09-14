@@ -154,6 +154,25 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   empty boards and lighting changes in held-out evaluation, all colors, crowding, motion and
   occlusion. Measure whole camera-to-outline latency and provider failures on more hardware.
   Color recognition, route assignment and automatic game verification remain separate work.
+- [ ] **Crowded score-marker training examples.** The black marker in photo `20260913-171132`
+  had low baseline confidence when surrounded by other markers. The second model now detects it
+  in all three reviewed failure photos. Collect new paired isolated/clustered examples on light
+  and dark artwork to test generalization. See the
+  [recorded failure](docs/evidence/clustered-markers-2026-09-13/validation.md).
+- [ ] **Intermittent yellow-train outline.** Label photo `172806` and correct the same yellow body
+  omitted from the previous `171132` labels (completed in collection `03`). The saved photo detects
+  the train on both CPU and DirectML; collect an exact missed-frame detection example before
+  attributing the live failure or changing runtime behavior. See the
+  [check and label correction](docs/evidence/yellow-train-2026-09-13/validation.md).
+- [ ] **Printed-route false positives.** The second model removes the extra prediction over the
+  empty yellow Boston–New York slot in training photo `173706` and keeps the real red train.
+  Check new layouts and lighting for recurrence. See the
+  [reproduction and labels](docs/evidence/boston-false-positive-2026-09-13/validation.md).
+- [x] **Retrain on reviewed failures.** Fine-tune on all 32 photos / 1,126 labels, compare both
+  models at unchanged thresholds, verify actual CPU/DirectML outputs and install the local pair
+  with rollback preserved. All saved-photo labels now match without extras; this is in-sample
+  regression evidence, not independent accuracy. See the
+  [training and deployment record](docs/evidence/ml-retrain-2026-09-13/validation.md).
 - [x] **Experimental learned corner selection.** A separate local corner heatmap model selects
   the outer board crop once per camera session, with an explicit retry and editable handles.
   Manual edits, camera changes and stale frames invalidate pending results. Missing or uncertain
