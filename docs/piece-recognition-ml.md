@@ -204,6 +204,16 @@ The installed model keeps distinct parallel black trains. Display orientation st
 falls back to upright boxes for some trains; training does not change the fitter or
 tile-ownership rule. Independent-session and live-camera acceptance remain open.
 
+The [Pixel webcam HQ training](evidence/ml-retrain-pixel-hq-2026-09-14/validation.md)
+adds `20260914-182629`, a different layout with **43 trains and no scoring markers**.
+The collection now has **39 photos and 1,706 labels**. The final epoch-40 export
+matches every reviewed object without extras and passes 14 labeled native CPU/DirectML
+fixtures plus the separate untrained score fixture. The installed model preserves the
+earlier parallel-black and Miami background checks. On the HQ photo, 36 train outlines
+receive an orientation fit and seven retain ordinary rectangles. The previous model
+already detected all 43 trains; this adds HQ training coverage and preserves saved-photo
+results, rather than establishing improved independent-session accuracy.
+
 The current difference detector remains available to developer diagnostics for comparison;
 the live Piece outlines feature no longer calls it. The old lighting failure observations are
 preserved in [the glare record](glare-test.md).

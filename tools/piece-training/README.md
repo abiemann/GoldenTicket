@@ -373,3 +373,47 @@ extras and 14 native CPU/DirectML fixtures pass. Continue training from the acce
 `cebddfa224a03a1f9b91f25c49aea0638d8b53aa951ef431d21485b0bd618893`.
 The `-best` directory contains export artifacts; the rejected `last.pth` is preserved
 for diagnostics and is not the accepted continuation checkpoint.
+
+## Pixel webcam HQ retraining · September 14, 2026
+
+Collection `10` adds `GoldenTicket-board-20260914-182629.png`, a 3456 × 2160 source
+captured in Pixel webcam HQ mode as reported by the user. Visual review identifies
+43 trains and no scoring markers: 14 black, 7 blue, 12 green, 4 red and 6 yellow.
+Printed route slots and shadows remain background, including the empty Miami area.
+The collection contains 39 photos and 1,706 labels (1,542 trains and 164 markers),
+including four empty-board controls, with all 38 previous entries unchanged.
+
+The run uses 40 epochs, 512 samples per epoch, batch size 16 and seed 20260921.
+Its initializer is a frozen, verified copy of the accepted reviewed-09 epoch-30
+`best.pth`, not the rejected reviewed-09 final checkpoint. The exact recorded
+training and explicit epoch-40 export commands are:
+
+```powershell
+& 'artifacts/piece-training/.venv/Scripts/python.exe' tools/piece-training/train_piece_detector.py --labels artifacts/piece-training/labels-reviewed-10.json --images C:/temp --yolox-source artifacts/piece-training/vendor/YOLOX --pretrained artifacts/piece-training/pretrained/yolox_nano.pth --initialize artifacts/piece-training/runs/retrain-reviewed-10-baseline/best.pth --output artifacts/piece-training/runs/retrain-reviewed-10-r1 --epochs 40 --samples-per-epoch 512 --batch-size 16 --seed 20260921 --all-reviewed --tile-ownership --confidence 0.30
+& 'artifacts/piece-training/.venv/Scripts/python.exe' tools/piece-training/train_piece_detector.py --labels artifacts/piece-training/labels-reviewed-10.json --images C:/temp --yolox-source artifacts/piece-training/vendor/YOLOX --pretrained artifacts/piece-training/pretrained/yolox_nano.pth --export-checkpoint artifacts/piece-training/runs/retrain-reviewed-10-r1/last.pth --output artifacts/piece-training/runs/retrain-reviewed-10-r1-final --epochs 40 --samples-per-epoch 512 --batch-size 16 --seed 20260921 --all-reviewed --tile-ownership --confidence 0.30
+```
+
+The final candidate matches all 1,706 labels across all 39 photos with zero extras
+and zero misses at the unchanged confidence 0.30 / NMS 0.45 / matching IoU 0.50.
+The prior 38-photo results reproduce, and the Denver parallel-pair and Miami
+hard-negative checks pass. The frozen baseline already matched every reviewed
+object, including all 43 trains in this HQ photo, so these counts establish
+regression preservation rather than a measured increase in detection accuracy.
+
+Candidate ONNX SHA-256:
+`81cfec6a8e423f4106e2aee067376136a8255d4855da97d4464a2b22006fa8bb`.
+The final export is installed locally after 14 labeled native CPU/actual DirectML
+fixtures and the separate untrained score fixture passed. Every labeled fixture
+matched without extras or misses on both providers; expected scores and prior
+parallel-piece/background checks passed. The accepted continuation checkpoint is
+`artifacts/piece-training/runs/retrain-reviewed-10-r1/last.pth` (epoch 40), SHA-256
+`8907c41d04a066ed7a31c20fdd4b9b4daf1ab3f50e8f5945ef48a5a44ad2f596`.
+The `retrain-reviewed-10-r1-final` directory contains only the separate export.
+The reviewed-09 model and manifest are preserved under `model-before-reviewed-10`
+for rollback. Installation replaces only the local canonical and Debug/Release
+piece model pairs; no application rebuild or runtime threshold change was needed.
+
+All 39 labeled photos enter this training run, so the resulting checks are saved-photo
+regressions, not independent-session or live-reliability measurements. See the
+[Pixel HQ validation record](../../docs/evidence/ml-retrain-pixel-hq-2026-09-14/validation.md)
+for source provenance, frozen identities, baseline details and final acceptance status.
