@@ -1,0 +1,340 @@
+{
+  "version": 1,
+  "modelId": "goldenticket-board-corners-unet-v1",
+  "modelFile": "board-corners.onnx",
+  "modelSha256": "09fce75df40d3253c4dfc744a79a24dcedd5ec7319679e83bfb117e6e4e2aea5",
+  "architecture": "board-corner-unet",
+  "inputName": "images",
+  "outputName": "heatmaps",
+  "inputSize": 384,
+  "heatmapSize": 192,
+  "cornerOrder": [
+    "top-left",
+    "top-right",
+    "bottom-right",
+    "bottom-left"
+  ],
+  "channelOrder": "RGB",
+  "pixelScale": 0.00392156862745098,
+  "pixelOffset": 0,
+  "paddingValue": 114,
+  "resize": "bilinear-half-pixel",
+  "letterbox": "center-round-half-up",
+  "decoder": "peak-centroid-5x5",
+  "confidenceThreshold": 0.55,
+  "opset": 17,
+  "experimental": true,
+  "evaluationRole": "Synthetic projective placements of held-out photo dates and seeds; not real camera accuracy",
+  "training": {
+    "startedAt": "2026-09-13T22:57:58.367387+00:00",
+    "elapsedSeconds": 216.90130329999374,
+    "seed": 20260913,
+    "steps": 1000,
+    "batchSize": 16,
+    "architecture": "Compact U-Net trained from scratch, 4 corner heatmaps",
+    "device": "NVIDIA GeForce RTX 4080 Laptop GPU",
+    "torch": "2.8.0+cu128",
+    "resumeCheckpointSha256": "1dfbecf72f9ba25d84d7d31ec01d799f10a981f3819afbfb88d0fd4a9dc2e7a8",
+    "opencv": "4.11.0",
+    "numpy": "2.2.6",
+    "backgroundScreenshotSha256": "68ca7b88701479f39cfeeb978d8d737babb4a846c661a3bdabfc0db6b1077215",
+    "backgroundScreenshotRegion": [
+      1450,
+      600,
+      1590,
+      1100
+    ],
+    "trainingPhotos": [
+      {
+        "fileName": "GoldenTicket-board-20260912-145957.png",
+        "sha256": "77fcd001c06ef22252dfe10051e8c93f91503f77dedcd9352a0561472fc22923"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-152343.png",
+        "sha256": "81245b5202471c219bbdd995c13e457436e86548a99788cdf5550e92ade47a34"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-152727.png",
+        "sha256": "8484b2a1efb50e12d77e7590ca3a27f175d20c81db0c0f9c34dd7cb37c95aa3b"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-153736.png",
+        "sha256": "295ac7fcaec4f4d2cc0d2a77b8a818b8f9b31390c61096e050bfcca14c631e02"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-160803.png",
+        "sha256": "8c9c062f51fbb829d6f1947360dcfef79f50da3ee0dfbb3daf588d1e8167a792"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-164319.png",
+        "sha256": "6f32f47a35aac1d7f3a908a83cc9a70ece4d8844229e43260a4b4d0c2274f7c4"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-164557.png",
+        "sha256": "12e401a4c381e93f11f49ab2fd47e6b838582c6b36dfc9020a24c17540d2fabd"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-164624.png",
+        "sha256": "d5c7ddc07d801d7b357cbec9575a8a93e5e3d6383458387fe03c55198b00d2b9"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-164718.png",
+        "sha256": "20c012960e4b80cbeea494aa35db3c06464dcddfe690dd5051cc0c2e28608fa0"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-170746.png",
+        "sha256": "1fad8233c58b5df7294f09f512984562b4755aa9ee9156b303145203e31f464f"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-181222.png",
+        "sha256": "9c438e3b7d87629c4f6f1d446acbbdcef06d064533cb246506ebddc471c26682"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-181352.png",
+        "sha256": "d7dcb6901f7da480c271cacb8939e3a7d4710f8792a4350879b9b33ac2341ed9"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-181812.png",
+        "sha256": "7d61b36535299026d89a035dd6c844800c6bfa403a304840fce3dbc7c77f5e31"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-183124.png",
+        "sha256": "59482b047121d17a589bf3b6f6e68549b915ec98efbc04fd511596ac966a4f24"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-183634.png",
+        "sha256": "856728018731d425a839f5e5bc806fee19e95d2ff32cbe5e6c3de7b8a925f293"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-184125.png",
+        "sha256": "1ba82c71a4f8151dbd3c29ef1e2fa7f1991164035aa5fb3fef3aa2043a60d6f2"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-184653.png",
+        "sha256": "097d11683bd5b76cc21fe7d08ef8a84abd4e9d702676e0ade630ddac54bf71e8"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-185546.png",
+        "sha256": "4e843c91fe679c3a67d6321ed4ce371a2c89d260ca993f3a5c5ff38a64f1ec60"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-192139.png",
+        "sha256": "0dda778d613a28f1b651cf37be02fe61f92b604bdda4bfb514dd957022394594"
+      }
+    ],
+    "validationPhotos": [
+      {
+        "fileName": "GoldenTicket-board-20260913-112309.png",
+        "sha256": "9f8f41ee0a99ed35baff910de75cf880d90e19c8782d5322a8acf0bfa67c47f1"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-121656.png",
+        "sha256": "3a9e0fca65dda98884ea273e0552499aa776b256ba72d2555830499de76ae0bb"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-123216.png",
+        "sha256": "681a64a22c8af49e5bf2e1238e61caf39760e85cc0a174f2881674addbb73732"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-124753.png",
+        "sha256": "9b8e7a124aceca4909bc3ff5eaf73a7de61b7140452162f4f620c946bb46dbab"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-125240.png",
+        "sha256": "ddd9d6f43bb2c68b743f53aa52b460aa230dcf5b2b01563e4ed74abe0cecbc58"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-125701.png",
+        "sha256": "44bea38218f35b6021a9594939b3be2b8180a5847991b1d160efa581c6c36720"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-130218.png",
+        "sha256": "cec3525fdd4dec17fcb8119778017b0f21fe4de2580b737736c0e16e9170e193"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-130653.png",
+        "sha256": "455eed64eff4967fd5062a73c0adfb2aeb4a98c3b2f61db05056bdf19b05aa9e"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-130924.png",
+        "sha256": "406738f3883e6454ccb328707f3b33adc0b0dad7dcf56a071d7fc533fe1c4c8c"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-131247.png",
+        "sha256": "b9de36a08d66cb0f5d10defca14738cae70508b0432adae8af86c6d24c11ec09"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-131822.png",
+        "sha256": "50adbbc7ad344cfc957dd7d453f4345c378420445b78042a79fdc8b44b3e2797"
+      }
+    ],
+    "warmStartTraining": {
+      "startedAt": "2026-09-13T22:52:18.103505+00:00",
+      "elapsedSeconds": 302.98263810001663,
+      "seed": 20260913,
+      "steps": 1400,
+      "batchSize": 16,
+      "architecture": "Compact U-Net trained from scratch, 4 corner heatmaps",
+      "device": "NVIDIA GeForce RTX 4080 Laptop GPU",
+      "torch": "2.8.0+cu128",
+      "opencv": "4.11.0",
+      "numpy": "2.2.6",
+      "backgroundScreenshotSha256": "68ca7b88701479f39cfeeb978d8d737babb4a846c661a3bdabfc0db6b1077215",
+      "backgroundScreenshotRegion": [
+        1450,
+        600,
+        1590,
+        1100
+      ],
+      "trainingPhotos": [
+        {
+          "fileName": "GoldenTicket-board-20260912-145957.png",
+          "sha256": "77fcd001c06ef22252dfe10051e8c93f91503f77dedcd9352a0561472fc22923"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-152343.png",
+          "sha256": "81245b5202471c219bbdd995c13e457436e86548a99788cdf5550e92ade47a34"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-152727.png",
+          "sha256": "8484b2a1efb50e12d77e7590ca3a27f175d20c81db0c0f9c34dd7cb37c95aa3b"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-153736.png",
+          "sha256": "295ac7fcaec4f4d2cc0d2a77b8a818b8f9b31390c61096e050bfcca14c631e02"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-160803.png",
+          "sha256": "8c9c062f51fbb829d6f1947360dcfef79f50da3ee0dfbb3daf588d1e8167a792"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-164319.png",
+          "sha256": "6f32f47a35aac1d7f3a908a83cc9a70ece4d8844229e43260a4b4d0c2274f7c4"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-164557.png",
+          "sha256": "12e401a4c381e93f11f49ab2fd47e6b838582c6b36dfc9020a24c17540d2fabd"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-164624.png",
+          "sha256": "d5c7ddc07d801d7b357cbec9575a8a93e5e3d6383458387fe03c55198b00d2b9"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-164718.png",
+          "sha256": "20c012960e4b80cbeea494aa35db3c06464dcddfe690dd5051cc0c2e28608fa0"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-170746.png",
+          "sha256": "1fad8233c58b5df7294f09f512984562b4755aa9ee9156b303145203e31f464f"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-181222.png",
+          "sha256": "9c438e3b7d87629c4f6f1d446acbbdcef06d064533cb246506ebddc471c26682"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-181352.png",
+          "sha256": "d7dcb6901f7da480c271cacb8939e3a7d4710f8792a4350879b9b33ac2341ed9"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-181812.png",
+          "sha256": "7d61b36535299026d89a035dd6c844800c6bfa403a304840fce3dbc7c77f5e31"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-183124.png",
+          "sha256": "59482b047121d17a589bf3b6f6e68549b915ec98efbc04fd511596ac966a4f24"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-183634.png",
+          "sha256": "856728018731d425a839f5e5bc806fee19e95d2ff32cbe5e6c3de7b8a925f293"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-184125.png",
+          "sha256": "1ba82c71a4f8151dbd3c29ef1e2fa7f1991164035aa5fb3fef3aa2043a60d6f2"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-184653.png",
+          "sha256": "097d11683bd5b76cc21fe7d08ef8a84abd4e9d702676e0ade630ddac54bf71e8"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-185546.png",
+          "sha256": "4e843c91fe679c3a67d6321ed4ce371a2c89d260ca993f3a5c5ff38a64f1ec60"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260912-192139.png",
+          "sha256": "0dda778d613a28f1b651cf37be02fe61f92b604bdda4bfb514dd957022394594"
+        }
+      ],
+      "validationPhotos": [
+        {
+          "fileName": "GoldenTicket-board-20260913-112309.png",
+          "sha256": "9f8f41ee0a99ed35baff910de75cf880d90e19c8782d5322a8acf0bfa67c47f1"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260913-121656.png",
+          "sha256": "3a9e0fca65dda98884ea273e0552499aa776b256ba72d2555830499de76ae0bb"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260913-123216.png",
+          "sha256": "681a64a22c8af49e5bf2e1238e61caf39760e85cc0a174f2881674addbb73732"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260913-124753.png",
+          "sha256": "9b8e7a124aceca4909bc3ff5eaf73a7de61b7140452162f4f620c946bb46dbab"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260913-125240.png",
+          "sha256": "ddd9d6f43bb2c68b743f53aa52b460aa230dcf5b2b01563e4ed74abe0cecbc58"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260913-125701.png",
+          "sha256": "44bea38218f35b6021a9594939b3be2b8180a5847991b1d160efa581c6c36720"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260913-130218.png",
+          "sha256": "cec3525fdd4dec17fcb8119778017b0f21fe4de2580b737736c0e16e9170e193"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260913-130653.png",
+          "sha256": "455eed64eff4967fd5062a73c0adfb2aeb4a98c3b2f61db05056bdf19b05aa9e"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260913-130924.png",
+          "sha256": "406738f3883e6454ccb328707f3b33adc0b0dad7dcf56a071d7fc533fe1c4c8c"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260913-131247.png",
+          "sha256": "b9de36a08d66cb0f5d10defca14738cae70508b0432adae8af86c6d24c11ec09"
+        },
+        {
+          "fileName": "GoldenTicket-board-20260913-131822.png",
+          "sha256": "50adbbc7ad344cfc957dd7d453f4345c378420445b78042a79fdc8b44b3e2797"
+        }
+      ]
+    },
+    "finalSourceSha256": "b52c884d3f621f578b73c7e52fb1cb536c876243e64a129157371c8bbcf05b0b"
+  },
+  "syntheticValidation": {
+    "step": 800,
+    "frames": 240,
+    "completeBoards": 182,
+    "acceptedCompleteBoards": 176,
+    "incompleteOrAbsentBoards": 58,
+    "rejectedIncompleteOrAbsentBoards": 58,
+    "allCornerMedianErrorAt384": 0.7943856299146212,
+    "allCornerP95ErrorAt384": 1.949694648332503,
+    "acceptedCornerMedianErrorAt384": 0.7869392084871701,
+    "acceptedCornerP95ErrorAt384": 1.9130718601937733,
+    "minimumCompleteConfidenceP10": 0.6466522693634034,
+    "maximumIncompleteConfidence": 0.49798622727394104,
+    "acceptanceRule": "confidence-only; runtime also requires in-frame coordinates and board geometry"
+  },
+  "onnxMaximumAbsoluteError": 2.980232238769531e-07,
+  "operators": [
+    "Concat",
+    "Constant",
+    "Conv",
+    "Relu",
+    "Resize",
+    "Sigmoid"
+  ]
+}

@@ -1,16 +1,16 @@
 # Learning to recognize physical pieces
 
-Updated September 13, 2026. **Piece outlines now uses a locally trained ML detector** when the
-experimental model is installed. This replaces empty-board differencing in the camera preview.
+Updated September 14, 2026. **Piece outlines uses a locally trained ML detector**, whose accepted
+runtime weights are included in the source checkout. This replaces empty-board differencing in the camera preview.
 The model supplies visual observations only: manual game verification remains in force.
 
 ## Try it in the camera preview
 
-1. Build the desktop project with the local model deployment pair present under
-   `artifacts/piece-training/model/`: `piece-detector.onnx` and `manifest.json`. The project copies
-   these into `models/pieces/` beside the executable. A fresh source checkout has no weights;
-   it reports ML unavailable until an appropriate local model is installed. The application
-   does not download models.
+1. Build the desktop project. Its required tracked deployment pair is
+   `assets/models/pieces/piece-detector.onnx` and `assets/models/pieces/manifest.json`.
+   Build and publish copy them into `models/pieces/` beside the executable. A fresh source
+   checkout includes the trained weights and needs neither model downloads nor retraining.
+   The application does not download models.
 2. Start the camera. With the separate [corner model](board-corners-ml.md) installed, ML selects
    the four outer corners automatically. Check the complete score track is inside the outline;
    adjust the handles, retry **Detect board corners**, or choose **Select four board corners**.
@@ -32,6 +32,11 @@ Disabling outlines stops inference for subsequent frames and clears old predicti
 crop, processing or model changes invalidate in-flight results. Published outlines expire after
 two seconds even while the camera is still supplying newer frames. Loading/inference failures
 leave the normal preview and manual game available and report the ML failure.
+
+Training photos, reviewed labels, PyTorch checkpoints, environments and diagnostic logs remain
+ignored local artifacts. After a future candidate passes validation, promote only its accepted
+ONNX file and matching manifest together into `assets/models/pieces/`; these are the source
+build's deployment inputs. See the [tracked model inventory](../assets/models/README.md).
 
 ### Score markers by color
 

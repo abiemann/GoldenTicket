@@ -2,6 +2,11 @@
 bin/
 obj/
 artifacts/
+# Local training photos and continuation checkpoints; deployable ONNX models live in assets/models/.
+GoldenTicket-board-*.png
+*.pth
+*.pt
+*.ckpt
 node_modules/
 __pycache__/
 *.py[cod]
@@ -24,6 +29,13 @@ coverage*.json
 # Local tooling
 *.binlog
 .DS_Store
+
+# Artwork generation workspace; the finished app images stay tracked in assets/artwork/characters/.
+/assets/artwork/avatar-set-*/
+/assets/artwork/*-master.png
+/assets/artwork/*.prompt.md
+/assets/artwork/human-avatar-*.png
+/assets/artwork/robot-avatar-*.png
 
 # Local secrets, certificates, and saved games
 .env

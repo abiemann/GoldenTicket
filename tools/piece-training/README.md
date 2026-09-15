@@ -12,6 +12,15 @@ The separate `train_piece_detector.py` now runs an explicitly requested local GP
 and exports the model used by the experimental ML preview. It never trains merely because
 an image is annotated. See **Train and evaluate locally** below.
 
+The application uses the accepted tracked runtime pair in `assets/models/pieces/`:
+`piece-detector.onnx` contains its learned weights and `manifest.json` defines and verifies
+the runtime contract. Desktop build and publish copy both files into `models/pieces/`.
+A fresh source checkout needs no model download, Python setup or retraining to use detection.
+Training photos, reviewed labels, PyTorch checkpoints, environments and logs stay ignored.
+After validation, promote only the accepted ONNX file and matching manifest together into
+`assets/models/pieces/`; training commands below continue to write local candidates under
+`artifacts/`. See the [tracked model inventory](../../assets/models/README.md).
+
 ## Annotate photos
 
 1. Open `tools/piece-training/annotate.html` in Edge or Chrome. Opening the local file directly
@@ -210,7 +219,9 @@ reproducible using the same labels and final ML evaluation:
 Local output includes `piece-detector.onnx`, `manifest.json`, per-object `evaluation.json`,
 `empty-board-diagnostic.json`, and `review/*-review.png`. The diagnostic images show reviewed
 boxes on the left; matches, false positives and missed labels on the right. Photos, labels,
-weights and review artifacts stay ignored and are not automatically committed or uploaded.
+training checkpoints and review artifacts stay ignored and are not automatically committed or
+uploaded. Candidate exports remain local until an accepted ONNX/manifest pair is promoted
+to `assets/models/pieces/`.
 Preserve this baseline and use newly captured layouts to record genuine new failures before
 changing training data. `--all-reviewed` exists only for explicitly labelled all-data experiments;
 its output identifies all validation numbers as in-sample diagnostics.
@@ -410,8 +421,9 @@ parallel-piece/background checks passed. The accepted continuation checkpoint is
 `8907c41d04a066ed7a31c20fdd4b9b4daf1ab3f50e8f5945ef48a5a44ad2f596`.
 The `retrain-reviewed-10-r1-final` directory contains only the separate export.
 The reviewed-09 model and manifest are preserved under `model-before-reviewed-10`
-for rollback. Installation replaces only the local canonical and Debug/Release
-piece model pairs; no application rebuild or runtime threshold change was needed.
+for rollback. That training validation installed only the local canonical and Debug/Release
+piece model pairs; no application rebuild or runtime threshold change was needed at that stage.
+The same accepted ONNX/manifest pair is now the tracked `assets/models/pieces/` deployment input.
 
 All 39 labeled photos enter this training run, so the resulting checks are saved-photo
 regressions, not independent-session or live-reliability measurements. See the

@@ -41,12 +41,17 @@ crop without an empty-board reference; corners do not verify game state or route
 
 ## Local deployment
 
-Build with `artifacts/board-corners/model/board-corners.onnx` and `manifest.json` present. The
-Desktop project copies that pair into `models/board-corners/` beside the executable. The separately
-trained piece model remains in `models/pieces/`. Photos, weights, checkpoints and Python environments
-remain ignored local artifacts; the app never downloads or trains a model. A fresh source checkout
-needs a compatible local deployment pair to enable automatic selection and the game-setup PLAY
-gate. Without it, the game screen shows a model-unavailable status and cannot start a new match.
+The required tracked deployment pair is `assets/models/board-corners/board-corners.onnx` and
+`assets/models/board-corners/manifest.json`. Desktop build and publish copy that pair into
+`models/board-corners/` beside the executable; the separately trained piece model goes into
+`models/pieces/`. A fresh source checkout includes both accepted models and their learned
+weights, so no model download or retraining is needed. A missing or invalid runtime pair still
+produces a model-unavailable status and prevents the game-setup PLAY gate from becoming ready.
+
+Photos, reviewed labels, PyTorch checkpoints, Python environments and diagnostic logs remain
+ignored under `artifacts/`. Future validated corner models are promoted by copying only the
+accepted ONNX file and matching manifest together into `assets/models/board-corners/`.
+See the [tracked model inventory](../assets/models/README.md); the app never downloads or trains a model.
 
 ## Model and limits
 
@@ -79,7 +84,7 @@ See [reproduction commands](../tools/board-corners/README.md) and
 The existing ML smoke tool accepts full camera images with:
 
 ```powershell
-dotnet run --project tools/GoldenTicket.MlPieceSmoke -c Release -- --corners artifacts/board-corners/model full-camera-image.png artifacts/board-corners/runtime-check --compare
+dotnet run --project tools/GoldenTicket.MlPieceSmoke -c Release -- --corners assets/models/board-corners full-camera-image.png artifacts/board-corners/runtime-check --compare
 ```
 
 It writes numbered corner overlays and JSON containing model identity, confidence/rejection,

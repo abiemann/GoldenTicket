@@ -1,0 +1,399 @@
+{
+  "version": 1,
+  "modelId": "goldenticket-yolox-nano-retrain-reviewed-10-r1-final",
+  "modelFile": "piece-detector.onnx",
+  "modelSha256": "81cfec6a8e423f4106e2aee067376136a8255d4855da97d4464a2b22006fa8bb",
+  "architecture": "yolox-nano-decoded",
+  "classes": [
+    "train",
+    "player-marker"
+  ],
+  "inputName": "images",
+  "outputName": "detections",
+  "inputSize": 640,
+  "boardWidth": 1920,
+  "boardHeight": 1200,
+  "tileStride": 512,
+  "channelOrder": "BGR",
+  "pixelScale": 1,
+  "pixelOffset": 0,
+  "paddingValue": 114,
+  "resize": "bilinear-half-pixel",
+  "confidenceThreshold": 0.3,
+  "nmsThreshold": 0.45,
+  "opset": 17,
+  "tileOwnership": "center-midpoint",
+  "experimental": true,
+  "trainedOnAllReviewedPhotos": true,
+  "evaluationRole": "in-sample diagnostic; all reviewed images were used to train",
+  "evaluationSummary": {
+    "tp": 1420,
+    "fp": 0,
+    "fn": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  "trainingRun": {
+    "startedAt": "2026-09-15T01:51:26.636612+00:00",
+    "command": [
+      "tools/piece-training/train_piece_detector.py",
+      "--labels",
+      "artifacts/piece-training/labels-reviewed-10.json",
+      "--images",
+      "C:/temp",
+      "--yolox-source",
+      "artifacts/piece-training/vendor/YOLOX",
+      "--pretrained",
+      "artifacts/piece-training/pretrained/yolox_nano.pth",
+      "--export-checkpoint",
+      "artifacts/piece-training/runs/retrain-reviewed-10-r1/last.pth",
+      "--output",
+      "artifacts/piece-training/runs/retrain-reviewed-10-r1-final",
+      "--epochs",
+      "40",
+      "--samples-per-epoch",
+      "512",
+      "--batch-size",
+      "16",
+      "--seed",
+      "20260921",
+      "--all-reviewed",
+      "--tile-ownership",
+      "--confidence",
+      "0.30"
+    ],
+    "labelsSha256": "fc398519b6abd5b9e84dcdc11fc5f9f7b62ef336a78749e0c9e691f86405b69f",
+    "seed": 20260921,
+    "allReviewed": true,
+    "trainingScriptSha256": "cecefb9a00086feffa4990ea80b993ff20b1ed319bf38a6c3289b688cce184fa",
+    "tileOwnership": true,
+    "sourceRevision": "6ddff4824372906469a7fae2dc3206c7aa4bbaee",
+    "sourceUrl": "https://github.com/Megvii-BaseDetection/YOLOX",
+    "pretrainedUrl": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.pth",
+    "pretrainedSha256": "cd28f55fbbc1829f99d9ac9b38a16d259a22889739c8728ea877610201feff7b",
+    "initializeSha256": null,
+    "exportCheckpointSha256": "8907c41d04a066ed7a31c20fdd4b9b4daf1ab3f50e8f5945ef48a5a44ad2f596",
+    "selectedCheckpointEpoch": 40,
+    "pythonVersion": "3.12.14 (main, Aug 25 2026, 14:01:42) [MSC v.1944 64 bit (AMD64)]",
+    "torchVersion": "2.8.0+cu128",
+    "cudaVersion": "12.8",
+    "gpu": "NVIDIA GeForce RTX 4080 Laptop GPU",
+    "epochs": 40,
+    "samplesPerEpoch": 512,
+    "batchSize": 16,
+    "optimizer": "AdamW lr0.001 weight_decay0.0005; 3epoch warmup + cosine to0.00005",
+    "augmentation": "positive-focused/uniform random512..768 crops; horizontal/vertical flips; 90degree rotations; gain0.7..1.3 offset-18..18; 20%Gaussianblur",
+    "trainingFiles": [
+      "GoldenTicket-board-20260912-145957.png",
+      "GoldenTicket-board-20260912-152343.png",
+      "GoldenTicket-board-20260912-152727.png",
+      "GoldenTicket-board-20260912-153736.png",
+      "GoldenTicket-board-20260912-160803.png",
+      "GoldenTicket-board-20260912-164319.png",
+      "GoldenTicket-board-20260912-164557.png",
+      "GoldenTicket-board-20260912-164624.png",
+      "GoldenTicket-board-20260912-164718.png",
+      "GoldenTicket-board-20260912-170746.png",
+      "GoldenTicket-board-20260912-181352.png",
+      "GoldenTicket-board-20260912-181812.png",
+      "GoldenTicket-board-20260912-183124.png",
+      "GoldenTicket-board-20260912-183634.png",
+      "GoldenTicket-board-20260912-184125.png",
+      "GoldenTicket-board-20260912-184653.png",
+      "GoldenTicket-board-20260912-185546.png",
+      "GoldenTicket-board-20260912-192139.png",
+      "GoldenTicket-board-20260913-112309.png",
+      "GoldenTicket-board-20260913-121656.png",
+      "GoldenTicket-board-20260913-123216.png",
+      "GoldenTicket-board-20260913-124753.png",
+      "GoldenTicket-board-20260913-125240.png",
+      "GoldenTicket-board-20260913-125701.png",
+      "GoldenTicket-board-20260913-130218.png",
+      "GoldenTicket-board-20260913-130653.png",
+      "GoldenTicket-board-20260913-130924.png",
+      "GoldenTicket-board-20260913-131247.png",
+      "GoldenTicket-board-20260913-131822.png",
+      "GoldenTicket-board-20260913-171132.png",
+      "GoldenTicket-board-20260913-172806.png",
+      "GoldenTicket-board-20260913-173706.png",
+      "GoldenTicket-board-20260913-184806.png",
+      "GoldenTicket-board-20260913-202009.png",
+      "GoldenTicket-board-20260913-202150.png",
+      "GoldenTicket-board-20260913-202835.png",
+      "GoldenTicket-board-20260913-203020.png",
+      "GoldenTicket-board-20260913-203656.png",
+      "GoldenTicket-board-20260914-182629.png"
+    ],
+    "validationFiles": [
+      "GoldenTicket-board-20260913-112309.png",
+      "GoldenTicket-board-20260913-121656.png",
+      "GoldenTicket-board-20260913-123216.png",
+      "GoldenTicket-board-20260913-124753.png",
+      "GoldenTicket-board-20260913-125240.png",
+      "GoldenTicket-board-20260913-125701.png",
+      "GoldenTicket-board-20260913-130218.png",
+      "GoldenTicket-board-20260913-130653.png",
+      "GoldenTicket-board-20260913-130924.png",
+      "GoldenTicket-board-20260913-131247.png",
+      "GoldenTicket-board-20260913-131822.png",
+      "GoldenTicket-board-20260913-171132.png",
+      "GoldenTicket-board-20260913-172806.png",
+      "GoldenTicket-board-20260913-173706.png",
+      "GoldenTicket-board-20260913-184806.png",
+      "GoldenTicket-board-20260913-202009.png",
+      "GoldenTicket-board-20260913-202150.png",
+      "GoldenTicket-board-20260913-202835.png",
+      "GoldenTicket-board-20260913-203020.png",
+      "GoldenTicket-board-20260913-203656.png"
+    ],
+    "sources": [
+      {
+        "fileName": "GoldenTicket-board-20260912-145957.png",
+        "sha256": "77fcd001c06ef22252dfe10051e8c93f91503f77dedcd9352a0561472fc22923",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-152343.png",
+        "sha256": "81245b5202471c219bbdd995c13e457436e86548a99788cdf5550e92ade47a34",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-152727.png",
+        "sha256": "8484b2a1efb50e12d77e7590ca3a27f175d20c81db0c0f9c34dd7cb37c95aa3b",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-153736.png",
+        "sha256": "295ac7fcaec4f4d2cc0d2a77b8a818b8f9b31390c61096e050bfcca14c631e02",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-160803.png",
+        "sha256": "8c9c062f51fbb829d6f1947360dcfef79f50da3ee0dfbb3daf588d1e8167a792",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-164319.png",
+        "sha256": "6f32f47a35aac1d7f3a908a83cc9a70ece4d8844229e43260a4b4d0c2274f7c4",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-164557.png",
+        "sha256": "12e401a4c381e93f11f49ab2fd47e6b838582c6b36dfc9020a24c17540d2fabd",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-164624.png",
+        "sha256": "d5c7ddc07d801d7b357cbec9575a8a93e5e3d6383458387fe03c55198b00d2b9",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-164718.png",
+        "sha256": "20c012960e4b80cbeea494aa35db3c06464dcddfe690dd5051cc0c2e28608fa0",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-170746.png",
+        "sha256": "1fad8233c58b5df7294f09f512984562b4755aa9ee9156b303145203e31f464f",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-181352.png",
+        "sha256": "d7dcb6901f7da480c271cacb8939e3a7d4710f8792a4350879b9b33ac2341ed9",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-181812.png",
+        "sha256": "7d61b36535299026d89a035dd6c844800c6bfa403a304840fce3dbc7c77f5e31",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-183124.png",
+        "sha256": "59482b047121d17a589bf3b6f6e68549b915ec98efbc04fd511596ac966a4f24",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-183634.png",
+        "sha256": "856728018731d425a839f5e5bc806fee19e95d2ff32cbe5e6c3de7b8a925f293",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-184125.png",
+        "sha256": "1ba82c71a4f8151dbd3c29ef1e2fa7f1991164035aa5fb3fef3aa2043a60d6f2",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-184653.png",
+        "sha256": "097d11683bd5b76cc21fe7d08ef8a84abd4e9d702676e0ade630ddac54bf71e8",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-185546.png",
+        "sha256": "4e843c91fe679c3a67d6321ed4ce371a2c89d260ca993f3a5c5ff38a64f1ec60",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260912-192139.png",
+        "sha256": "0dda778d613a28f1b651cf37be02fe61f92b604bdda4bfb514dd957022394594",
+        "group": "pixel-20260912-session-01",
+        "split": "train"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-112309.png",
+        "sha256": "9f8f41ee0a99ed35baff910de75cf880d90e19c8782d5322a8acf0bfa67c47f1",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-121656.png",
+        "sha256": "3a9e0fca65dda98884ea273e0552499aa776b256ba72d2555830499de76ae0bb",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-123216.png",
+        "sha256": "681a64a22c8af49e5bf2e1238e61caf39760e85cc0a174f2881674addbb73732",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-124753.png",
+        "sha256": "9b8e7a124aceca4909bc3ff5eaf73a7de61b7140452162f4f620c946bb46dbab",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-125240.png",
+        "sha256": "ddd9d6f43bb2c68b743f53aa52b460aa230dcf5b2b01563e4ed74abe0cecbc58",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-125701.png",
+        "sha256": "44bea38218f35b6021a9594939b3be2b8180a5847991b1d160efa581c6c36720",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-130218.png",
+        "sha256": "cec3525fdd4dec17fcb8119778017b0f21fe4de2580b737736c0e16e9170e193",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-130653.png",
+        "sha256": "455eed64eff4967fd5062a73c0adfb2aeb4a98c3b2f61db05056bdf19b05aa9e",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-130924.png",
+        "sha256": "406738f3883e6454ccb328707f3b33adc0b0dad7dcf56a071d7fc533fe1c4c8c",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-131247.png",
+        "sha256": "b9de36a08d66cb0f5d10defca14738cae70508b0432adae8af86c6d24c11ec09",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-131822.png",
+        "sha256": "50adbbc7ad344cfc957dd7d453f4345c378420445b78042a79fdc8b44b3e2797",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-171132.png",
+        "sha256": "c2da1340c0ca66923cfe9f201b145a77245ffada95ed2a9b02cbb803c199567a",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-172806.png",
+        "sha256": "1209790cef33fa90b76302972ac213719ff8b9163d70e321ec0a3f42ce0fb25a",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-173706.png",
+        "sha256": "bd75a854e0c2f2ac32bf27ecc59286005c1d06eb13333982c317b38c035af8f7",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-184806.png",
+        "sha256": "4b446b56165008eb3a24f4ac6144b2e05d17609ec10688af68cd81fcb71516ff",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-202009.png",
+        "sha256": "dc5672da26e97e4367516033a89e39385df9b541c8ded11541bb2ec7a68fd01c",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-202150.png",
+        "sha256": "ac35cdf69d142b200d96f0711b5fee047ae4db305d3fbb2120a79c0fc6ec0aa7",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-202835.png",
+        "sha256": "24117cdb936a775c6d9d29f6c8508a3c926cbca15cd02a49105b45305a439dc2",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-203020.png",
+        "sha256": "ae5c7497dd51a0128854f5ad2ca0afb47be8a22148e607a3183c1698e3c958d3",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260913-203656.png",
+        "sha256": "fad29dfc4f69b8e262716e815de7969e3ab08470f39fa7d4abfaf89b92041750",
+        "group": "pixel-20260913-session-01",
+        "split": "validation"
+      },
+      {
+        "fileName": "GoldenTicket-board-20260914-182629.png",
+        "sha256": "4df1122270a62a51c4608bf91a6f59d9e00814ee2c9f6c9ec45d58b46c27b46f",
+        "group": "pixel-20260914-hq-session-01",
+        "split": "train"
+      }
+    ]
+  },
+  "colorRecognition": false,
+  "onnxParity": {
+    "provider": "CPUExecutionProvider",
+    "shape": [
+      1,
+      8400,
+      7
+    ],
+    "maxAbsoluteDifference": 0.0047607421875,
+    "rtol": 0.001,
+    "atol": 0.002
+  }
+}

@@ -5,6 +5,12 @@ the score track**, in an uncropped camera frame. It does not use the piece
 detector or an empty-board image difference. Manual handle adjustments remain
 necessary when its proposal is inaccurate.
 
+The accepted runtime pair is tracked in `assets/models/board-corners/`:
+`board-corners.onnx` includes its learned weights and `manifest.json` defines and verifies
+the contract. Desktop build and publish copy both into `models/board-corners/`.
+A fresh source checkout needs neither model downloads nor retraining. See the
+[tracked model inventory](../../assets/models/README.md).
+
 The training script runs locally, with no network calls, camera access, or
 uploads. It trains a small U-Net from scratch on projective placements of the
 user's existing rectified board photographs. The mapped image boundaries give
@@ -33,8 +39,10 @@ From the repository root:
 
 The script records hashes of all input photos, the optional screenshot background
 strip, architecture, library versions, seeds, steps, GPU, and synthetic validation.
-Photos, checkpoints, ONNX output, and diagnostic images remain local under ignored
-`artifacts/`; original images are never edited.
+Photos, labels, checkpoints, environments, candidate ONNX exports and diagnostic logs/images
+remain local under ignored `artifacts/`; original images are never edited. After validation,
+promote only the accepted `board-corners.onnx` and matching `manifest.json` together into
+`assets/models/board-corners/`. Training artifacts are not application build inputs.
 
 ## Runtime contract
 
@@ -68,8 +76,9 @@ a 1,000-step refinement with more boards near the image edges, selecting the
 800-step refinement checkpoint by the fixed synthetic validation score. The
 original checkpoint and manifest remain in
 `artifacts/board-corners/baseline-model`; the selected refinement also remains in
-`artifacts/board-corners/model-edge`. The deployed local copy is in
-`artifacts/board-corners/model`.
+`artifacts/board-corners/model-edge`. The original local deployment copy remains in
+`artifacts/board-corners/model`; the same accepted ONNX/manifest pair is now tracked in
+`assets/models/board-corners/` for source builds and publishing.
 
 To repeat the refinement from that recorded local checkpoint:
 

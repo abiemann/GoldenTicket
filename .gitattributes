@@ -1,0 +1,4 @@
+# Model identities must remain byte-for-byte stable across Windows and Unix checkouts.
+/assets/models/**/*.onnx binary
+# Accepted manifests use CRLF; preserve their hashes while retaining whitespace checks.
+/assets/models/**/manifest.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

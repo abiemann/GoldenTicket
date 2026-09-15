@@ -10,7 +10,8 @@ The Windows app can prefer a native 4K camera mode, process images on the CPU or
 hardware GPU, compare raw and enhanced previews, and outline trains and score markers using a
 locally trained ONNX model. The current ML experiment replaces live empty-board differencing.
 Inference runs locally without a cloud service, subscription, Internet connection or runtime
-asset download. The reviewed photos and experimental weights remain local development artifacts.
+asset download. Reviewed runtime models and their embedded trained weights are versioned under
+`assets/models/`; training photos, labels and intermediate checkpoints remain ignored development artifacts.
 
 The game still uses explicit manual verification. Outlines never spend cards, claim a route,
 identify its owner, score points or advance a turn. The CPU/GPU indicator describes actual image
@@ -78,9 +79,9 @@ follow their visible shape when a local image fit is reliable; uncertain fits ke
 model box. Score markers stay white squares. Counts describe the current prediction, not a verified
 inventory. Review ZIPs preserve original model boxes and optional fitted polygons separately.
 
-The model loads from `models/pieces/` beside the executable. This source checkout copies the
-locally trained model there when building. A fresh checkout without those ignored weights shows
-an explicit ML-unavailable status. See [ML setup and validation](piece-recognition-ml.md) for the
+The model loads from `models/pieces/` beside the executable. Builds copy the committed
+`assets/models/pieces/` ONNX model and manifest there, so a fresh checkout includes the
+reviewed weights. Missing or invalid installed files still show an explicit ML-unavailable status. See [ML setup and validation](piece-recognition-ml.md) for the
 reproducible training and deployment path. **Reload ML model** reloads local weights and applies
 the current CPU/GPU preference to inference; **Apply processor** changes image processing.
 

@@ -1,8 +1,8 @@
 # Local ML preview dependencies
 
-The September 13, 2026 experiment runs offline. The application does not install Python,
+The ML preview runs offline. The application does not install Python,
 download weights or execution providers, or send images to an inference service. Training
-dependencies are isolated developer tools; only the ONNX model and native/managed runtime
+dependencies are isolated developer tools; only the ONNX models, matching manifests and native/managed runtime
 are needed in the Windows application.
 
 | Component | Pinned version | Role / notice |
@@ -22,8 +22,12 @@ Training starts from the official YOLOX-Nano COCO checkpoint:
 [upstream release asset](https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.pth),
 SHA-256 `cd28f55fbbc1829f99d9ac9b38a16d259a22889739c8728ea877610201feff7b`.
 The local run manifest records source/weight hashes, commands, data split, seed and environment.
-Photographs, reviewed labels and trained weights remain in ignored local artifacts. The source
-checkout does not automatically redistribute the user's trained weights.
+Accepted ONNX files include the trained weights and are tracked with their matching manifests
+under `assets/models/pieces/` and `assets/models/board-corners/`. Desktop build and publish copy
+these required pairs beside the application. A fresh checkout needs no separate model download
+or retraining. Photographs, reviewed labels, PyTorch checkpoints, environments and diagnostic
+logs remain ignored local artifacts. Future promotion copies only validated ONNX/manifest pairs
+into the tracked directories; see the [model inventory](../assets/models/README.md).
 
 Runtime uses sequential sessions and disables memory-pattern optimization as required by the
 [DirectML provider](https://onnxruntime.ai/docs/execution-providers/DirectML-ExecutionProvider.html).
@@ -43,8 +47,8 @@ The ML smoke tool records actual native module paths, versions and hashes alongs
 
 The [corner detector](board-corners-ml.md) uses the same pinned runtime and native loader. Its
 small convolutional heatmap network is trained locally from scratch; it does not add a pretrained
-third-party checkpoint or a second native runtime. Its training and deployment files are separate
-from the piece model, and stay under ignored `artifacts/board-corners/`.
+third-party checkpoint or a second native runtime. Its accepted runtime pair is tracked separately
+from the piece model; training outputs remain under ignored `artifacts/board-corners/`.
 
 See [training setup](../tools/piece-training/README.md) and
 [the experiment record](piece-recognition-ml.md) for reproduction and current limits.

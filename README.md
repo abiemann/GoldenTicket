@@ -28,7 +28,8 @@ produced none. These bounded checks do not complete physical-camera acceptance. 
 
 The September 13 [ML preview experiment](docs/piece-recognition-ml.md) replaces live Piece outlines
 with a locally trained two-class detector. It finds trains and score markers without an empty-board
-reference, using ONNX Runtime on DirectML or CPU. Photos, labels and experimental weights stay local.
+reference, using ONNX Runtime on DirectML or CPU. Reviewed runtime models and their trained weights
+are committed under `assets/models/`; training photos, labels and intermediate checkpoints stay ignored.
 Train outlines follow the piece angle when a local image fit is reliable; score-marker outlines
 stay square. Uncertain train fits keep the original model box.
 **Piece outlines → Score track** reads each detected marker's color and printed track value.
@@ -349,8 +350,11 @@ docs/                           rules policy decisions and milestone evidence
 
 The proposed `GoldenTicket.Windows` and separate `companion/` TypeScript build remain later
 work. The current companion's plain JavaScript assets are bundled with `GoldenTicket.CompanionHost`.
-Experimental training data and weights live under ignored `artifacts/piece-training/`; local
-builds copy the ONNX model and manifest to `models/pieces/` beside the executable when present.
+Reviewed piece and corner models, with embedded trained weights and matching manifests, live
+under [`assets/models/`](assets/models/README.md). Builds copy both pairs beside the executable
+under `models/`. Training data and intermediate checkpoints stay in ignored `artifacts/`.
+The [finished game artwork](assets/artwork/README.md) is committed; generation masters, prompts
+and unused avatar copies are ignored.
 
 ## Design correspondence
 
