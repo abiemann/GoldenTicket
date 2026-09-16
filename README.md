@@ -260,6 +260,10 @@ dotnet run --project tools/GoldenTicket.Simulator -- simulate --games 20 --seats
 
 The app opens on the game screen. Choose **Start a new game** with ↑/↓ and Enter, or hover and
 click. When saved matches exist, **Reload the previous game** opens the most recently updated one.
+The steampunk **Settings** gear beneath these choices opens display mode, camera quality, processor,
+and preview options. Display mode defaults to a resizable window; **Full screen** hides the title bar,
+and switching back restores the window's size and position. Camera controls use the same configuration
+as the utility screens.
 To choose a different save, press **Shift+Escape**, find **Saved matches** on the technical setup
 screen, check the match, then choose **Resume selected match**. A single saved match is checked
 automatically. Check the physical board before play resumes. Named saves show their name, date,

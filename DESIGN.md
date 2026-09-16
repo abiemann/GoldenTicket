@@ -351,7 +351,9 @@ pack-away checkpoint as a side effect of the exit prompt.
 **First game-screen layer implemented September 14, 2026.** The application opens onto the
 snowy-twilight artwork and player-facing setup. The existing interface remains the technical
 workflow underneath. The game layer covers 100% of the application content area, including the
-technical header and navigation; exclusive operating-system fullscreen is not required.
+technical header and navigation. Settings offers a resizable window by default or borderless
+full screen, with the original window size and position restored when switching back. Exclusive
+operating-system fullscreen is not required.
 
 With no saved match, the opening choice is **Start a new game**. When at least one match exists,
 **Reload the previous game** resumes the most recently updated save, preserving its verification

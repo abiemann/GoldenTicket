@@ -9,6 +9,7 @@
         d:DataContext="{d:DesignInstance vm:MainViewModel}"
         mc:Ignorable="d"
         Title="GoldenTicket" Height="880" Width="1400" MinHeight="620" MinWidth="1000"
+        WindowStyle="SingleBorderWindow" ResizeMode="CanResize"
         Background="{StaticResource Surface.Window}"
         Foreground="{StaticResource Text.Primary}"
         WindowStartupLocation="CenterScreen">

@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:GoldenTicket.Desktop"
              xmlns:views="clr-namespace:GoldenTicket.Desktop.Views"
+             xmlns:vm="clr-namespace:GoldenTicket.Desktop.ViewModels"
              Focusable="True" PreviewKeyDown="OnPreviewKeyDown">
     <UserControl.Resources>
         <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
@@ -146,6 +147,56 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="WelcomeSettingsButton" TargetType="Button">
+            <Setter Property="Width" Value="72" />
+            <Setter Property="Height" Value="73" />
+            <Setter Property="Background" Value="#FF8C552C" />
+            <Setter Property="BorderBrush" Value="#FFFFD576" />
+            <Setter Property="BorderThickness" Value="2" />
+            <Setter Property="Foreground" Value="#FFFFE7B0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid Background="Transparent">
+                            <Canvas Width="56" Height="56" HorizontalAlignment="Center" VerticalAlignment="Top">
+                                <Path x:Name="Gear" Fill="{TemplateBinding Background}"
+                                      Stroke="{TemplateBinding BorderBrush}"
+                                      StrokeThickness="2"
+                                      StrokeLineJoin="Round">
+                                    <Path.Data>
+                                        <CombinedGeometry GeometryCombineMode="Exclude">
+                                            <CombinedGeometry.Geometry1>
+                                                <PathGeometry Figures="M 23,2 L 33,2 L 35,8 L 40,10 L 45,6 L 50,11 L 46,16 L 49,21 L 55,23 L 55,33 L 49,35 L 46,40 L 50,45 L 45,50 L 40,46 L 35,49 L 33,55 L 23,55 L 21,49 L 16,46 L 11,50 L 6,45 L 10,40 L 7,35 L 1,33 L 1,23 L 7,21 L 10,16 L 6,11 L 11,6 L 16,10 L 21,8 Z" />
+                                            </CombinedGeometry.Geometry1>
+                                            <CombinedGeometry.Geometry2>
+                                                <EllipseGeometry Center="28,28" RadiusX="10" RadiusY="10" />
+                                            </CombinedGeometry.Geometry2>
+                                        </CombinedGeometry>
+                                    </Path.Data>
+                                </Path>
+                                <Ellipse Width="12" Height="12" Canvas.Left="22" Canvas.Top="22"
+                                         Stroke="#FFFFD576" StrokeThickness="1" Fill="Transparent" />
+                            </Canvas>
+                            <TextBlock Text="Settings" Foreground="{TemplateBinding Foreground}"
+                                       FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center"
+                                       VerticalAlignment="Bottom" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Gear" Property="Fill" Value="#FFD6A34E" />
+                                <Setter TargetName="Gear" Property="Stroke" Value="#FFFFE7B0" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Gear" Property="Fill" Value="#FF63392A" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid Background="#101821">
@@ -168,13 +219,74 @@
                         MouseEnter="Reload_MouseEnter" Click="Welcome_Click"
                         Visibility="{Binding Game.HasPreviousGame, Converter={StaticResource BoolToVisibility}}"
                         AutomationProperties.Name="Reload the previous game" />
-                <TextBlock Text="Use ↑ ↓ and Enter, or point and click"
-                           Foreground="#FFE6D9C3" FontSize="13" Margin="2,14,0,0" />
+                <Grid Margin="0,12,0,0">
+                    <TextBlock Text="Use ↑ ↓ and Enter, or point and click"
+                               Foreground="#FFE6D9C3" FontSize="13"
+                               VerticalAlignment="Bottom" Margin="2,0,0,4" />
+                    <Button x:Name="SettingsButton" Style="{StaticResource WelcomeSettingsButton}"
+                            HorizontalAlignment="Right" Click="Settings_Click" ToolTip="Settings"
+                            AutomationProperties.Name="Settings" />
+                </Grid>
                 <TextBlock Text="{Binding Game.Message}" Foreground="#FFFFD576" Margin="2,10,0,0"
                            Visibility="{Binding Game.Message, Converter={StaticResource MessageVisibility}}"
                            AutomationProperties.LiveSetting="Polite" />
             </StackPanel>
         </Border>
+
+        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" Margin="18"
+                 Visibility="{Binding Game.IsSettings, Converter={StaticResource BoolToVisibility}}">
+            <Border x:Name="SettingsDialog" Width="610" Padding="22" CornerRadius="12"
+                    Background="#EA151E29" BorderBrush="#FFD6AD5C" BorderThickness="1">
+                <StackPanel>
+                    <Grid Height="54">
+                        <TextBlock Text="Settings" Foreground="#FFFFE7B0" FontSize="25"
+                                   FontWeight="SemiBold" HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                        <Button Style="{StaticResource GameBackArrowButton}" Tag="NavigationBack"
+                                HorizontalAlignment="Left" VerticalAlignment="Center" Margin="-10,0,0,0"
+                                Click="Back_Click" ToolTip="Back"
+                                AutomationProperties.Name="Back to Choose a journey" />
+                    </Grid>
+                    <TextBlock Text="Display mode" Foreground="#FFFFE7B0" FontSize="18"
+                               FontWeight="SemiBold" Margin="0,14,0,6" />
+                    <ComboBox Width="400" Height="38" HorizontalAlignment="Left"
+                              SelectedValuePath="Tag"
+                              SelectedValue="{Binding DisplayMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              AutomationProperties.Name="Display mode">
+                        <ComboBoxItem Content="Resizable" Tag="{x:Static vm:DisplayMode.Resizable}" />
+                        <ComboBoxItem Content="Full screen" Tag="{x:Static vm:DisplayMode.FullScreen}" />
+                    </ComboBox>
+                    <TextBlock Text="Camera quality" Foreground="#FFFFE7B0" FontSize="18"
+                               FontWeight="SemiBold" Margin="0,14,0,6" />
+                    <ComboBox Width="400" Height="38" HorizontalAlignment="Left"
+                              ItemsSource="{Binding Camera.Preferences}"
+                              SelectedItem="{Binding Camera.SelectedPreference}"
+                              DisplayMemberPath="Label"
+                              AutomationProperties.Name="Camera quality preference" />
+                    <TextBlock Text="The camera uses this quality the next time its preview starts."
+                               Foreground="#FFE6D9C3" FontSize="13" Margin="0,5,0,0" />
+                    <TextBlock Text="Image processor" Foreground="#FFFFE7B0" FontSize="18"
+                               FontWeight="SemiBold" Margin="0,18,0,6" />
+                    <StackPanel Orientation="Horizontal">
+                        <ComboBox Width="400" Height="38"
+                                  ItemsSource="{Binding Camera.ProcessorModes}"
+                                  SelectedItem="{Binding Camera.SelectedProcessor}"
+                                  DisplayMemberPath="Label"
+                                  AutomationProperties.Name="Image processor preference" />
+                        <Button Content="Apply" Width="110" Height="48" Margin="12,0,0,0"
+                                Style="{StaticResource GameSetupActionButton}"
+                                Command="{Binding Camera.ApplyProcessorCommand}"
+                                IsEnabled="{Binding Camera.CanApplyProcessor}" />
+                    </StackPanel>
+                    <CheckBox Content="Enhanced 4K preview" IsChecked="{Binding Camera.UseEnhancedPreview}"
+                              Foreground="#FFF8EEDC" Margin="0,20,0,0" />
+                    <CheckBox Content="Show piece outlines" IsChecked="{Binding Camera.ShowPieceOutlines}"
+                              Foreground="#FFF8EEDC" Margin="0,10,0,0" />
+                    <TextBlock Text="These settings use the same camera as the game and utility screens."
+                               Foreground="#FFE6D9C3" FontSize="13" Margin="0,20,0,0" />
+                </StackPanel>
+            </Border>
+        </Viewbox>
 
         <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
                  VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="16,16,16,25"

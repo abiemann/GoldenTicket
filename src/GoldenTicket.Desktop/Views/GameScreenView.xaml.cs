@@ -86,6 +86,16 @@ public partial class GameScreenView : UserControl
     {
         var game = Game;
         if (game is null || game.IsPlaying || game.IsBusy) return;
+        if (game.IsSettings)
+        {
+            if (e.Key == Key.Escape)
+            {
+                game.Back();
+                e.Handled = true;
+                FocusCurrentChoice();
+            }
+            return;
+        }
         if (game.IsCameraSetup)
         {
             if (e.Key == Key.Escape)
@@ -111,7 +121,8 @@ public partial class GameScreenView : UserControl
         else if (e.Key == Key.Enter && !e.IsRepeat)
         {
             if (Keyboard.FocusedElement is Button focused &&
-                (Equals(focused.Tag, "NavigationBack") || ReferenceEquals(focused, PlayButton))) return;
+                (Equals(focused.Tag, "NavigationBack") || ReferenceEquals(focused, PlayButton) ||
+                 ReferenceEquals(focused, SettingsButton))) return;
             e.Handled = true;
             if (game.IsCharacterSelection && game.SeatSelection < game.SeatChoices.Count)
             {
@@ -132,6 +143,12 @@ public partial class GameScreenView : UserControl
 
     private void Start_MouseEnter(object sender, MouseEventArgs e) => Game?.SelectWelcome(0);
     private void Reload_MouseEnter(object sender, MouseEventArgs e) => Game?.SelectWelcome(1);
+
+    private void Settings_Click(object sender, RoutedEventArgs e)
+    {
+        Game?.OpenSettings();
+        FocusCurrentChoice();
+    }
 
     private async void Welcome_Click(object sender, RoutedEventArgs e)
     {

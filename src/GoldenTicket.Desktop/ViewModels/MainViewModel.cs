@@ -26,6 +26,8 @@ public enum Screen
     CheckpointPhoto,
 }
 
+public enum DisplayMode { Resizable, FullScreen }
+
 /// <summary>
 /// Composition root and navigation. It owns the coordinator, drives computer seats between human
 /// actions, and is the only place that decides when a private view may be revealed.
@@ -77,6 +79,7 @@ public sealed partial class MainViewModel : ObservableObject
     public ObservableCollection<FinalScoreRow> FinalScores { get; } = [];
 
     [ObservableProperty] private Screen _screen = Screen.Setup;
+    [ObservableProperty] private DisplayMode _displayMode = DisplayMode.Resizable;
 
     /// <summary>
     /// The revealed private view, or null for the privacy curtain. DESIGN 4.7: hiding discards this

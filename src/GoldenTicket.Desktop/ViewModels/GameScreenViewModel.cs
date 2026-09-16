@@ -6,7 +6,7 @@ using GoldenTicket.Domain;
 
 namespace GoldenTicket.Desktop.ViewModels;
 
-public enum GameScreenStage { Welcome, CharacterSelection, CameraSetup, Playing }
+public enum GameScreenStage { Welcome, Settings, CharacterSelection, CameraSetup, Playing }
 public enum CharacterRole { Unselected, Human, Computer }
 
 public sealed partial class GameSeatChoice(int number) : ObservableObject
@@ -193,6 +193,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
     [ObservableProperty] private string? _message;
 
     public bool IsWelcome => Stage == GameScreenStage.Welcome;
+    public bool IsSettings => Stage == GameScreenStage.Settings;
     public bool IsCharacterSelection => Stage == GameScreenStage.CharacterSelection;
     public bool IsCameraSetup => Stage == GameScreenStage.CameraSetup;
     public bool IsPlaying => Stage == GameScreenStage.Playing;
@@ -203,6 +204,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
     partial void OnStageChanged(GameScreenStage value)
     {
         OnPropertyChanged(nameof(IsWelcome));
+        OnPropertyChanged(nameof(IsSettings));
         OnPropertyChanged(nameof(IsCharacterSelection));
         OnPropertyChanged(nameof(IsCameraSetup));
         OnPropertyChanged(nameof(IsPlaying));
@@ -234,7 +236,12 @@ public sealed partial class GameScreenViewModel : ObservableObject
     {
         if (IsBusy) return;
         if (IsCameraSetup) CancelCameraSetup();
-        else if (IsCharacterSelection) Stage = GameScreenStage.Welcome;
+        else if (IsCharacterSelection || IsSettings) Stage = GameScreenStage.Welcome;
+    }
+
+    public void OpenSettings()
+    {
+        if (!IsBusy && IsWelcome) Stage = GameScreenStage.Settings;
     }
 
     public void SelectWelcome(int index)

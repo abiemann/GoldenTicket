@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Automation.Peers;
 using System.Windows.Automation.Provider;
 using System.Windows.Controls;
@@ -61,6 +62,7 @@ internal static partial class Program
                 model.Setup.Seats[2].DisplayName = "Brakeman";
                 await VerifyWindowShutdown();
                 await VerifyWindowExitConfirmation();
+                await VerifyDisplayMode();
                 await VerifyGameMenu();
                 await VerifyGameTableLayout();
                 await VerifyGameLayerTransition();
@@ -541,7 +543,37 @@ internal static partial class Program
                 }
             }
 
-            await RenderSizes("game-welcome", () => new GameScreenView { DataContext = model });
+            await RenderSizes("game-welcome", () => new GameScreenView { DataContext = model }, view =>
+            {
+                var gear = (Button)view.FindName("SettingsButton");
+                if (!IsElementShown(gear) || gear.ToolTip as string != "Settings" ||
+                    AutomationProperties.GetName(gear) != "Settings")
+                    throw new InvalidOperationException("The welcome tile must expose an accessible Settings gear.");
+            });
+            var settingsView = new GameScreenView { DataContext = model };
+            await Arrange(settingsView, 1000, 620);
+            ((Button)settingsView.FindName("SettingsButton"))
+                .RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            if (!model.Game.IsSettings || model.Game.IsWelcome)
+                throw new InvalidOperationException("The Settings gear must open the shared settings panel.");
+            await RenderSizes("game-settings", () => new GameScreenView { DataContext = model }, view =>
+            {
+                var dialog = (Border)view.FindName("SettingsDialog");
+                var displayMode = Descendants<ComboBox>(dialog).Single(combo =>
+                    AutomationProperties.GetName(combo) == "Display mode");
+                var quality = Descendants<ComboBox>(dialog).Single(combo =>
+                    AutomationProperties.GetName(combo) == "Camera quality preference");
+                var processor = Descendants<ComboBox>(dialog).Single(combo =>
+                    AutomationProperties.GetName(combo) == "Image processor preference");
+                var apply = Descendants<Button>(dialog).Single(button => button.Content as string == "Apply");
+                if (!IsElementShown(dialog) || displayMode.SelectedValue is not DisplayMode.Resizable ||
+                    !ReferenceEquals(quality.SelectedItem, model.Camera.SelectedPreference) ||
+                    !ReferenceEquals(processor.SelectedItem, model.Camera.SelectedProcessor) || apply.ActualHeight < 48)
+                    throw new InvalidOperationException("Settings must use the same live camera preferences as the utility screens.");
+            });
+            model.Game.Back();
+            if (!model.Game.IsWelcome)
+                throw new InvalidOperationException("Back from Settings must return to Choose a journey.");
             await model.Game.ActivateSelectedAsync();
             await RenderSizes("game-five-unselected", () => new GameScreenView { DataContext = model }, VerifyRoster);
             await RenderSizes("game-five-unselected-narrow", () => new GameScreenView { DataContext = model },
@@ -774,8 +806,14 @@ internal static partial class Program
                 await RenderSizes("game-welcome-saved", () => new GameScreenView { DataContext = savedMenu }, view =>
                 {
                     var reload = (Button)view.FindName("ReloadButton");
+                    var gear = (Button)view.FindName("SettingsButton");
+                    Rect Bounds(FrameworkElement element) => element.TransformToAncestor(view)
+                        .TransformBounds(new Rect(element.RenderSize));
                     if (reload.Visibility != Visibility.Visible)
                         throw new InvalidOperationException("A saved game must offer Reload the previous game.");
+                    if (Math.Abs(Bounds(gear).Right - Bounds(reload).Right) > 2 ||
+                        Bounds(gear).Top <= Bounds(reload).Bottom)
+                        throw new InvalidOperationException("The Settings gear must sit below and right-align with Reload the previous game.");
                 });
             }
             finally
@@ -875,6 +913,44 @@ internal static partial class Program
             Console.WriteLine("Game table: persistent human guidance, 2/5 player stations, public card stacks, shared crop, controls, and uniform resize passed.");
         }
         finally { await model.DisposeToolsAsync(); }
+    }
+
+    private static async Task VerifyDisplayMode()
+    {
+        var model = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
+        var window = new GoldenTicket.Desktop.MainWindow(model, _ => true)
+        {
+            Left = 80, Top = 65, Width = 1200, Height = 760,
+        };
+        try
+        {
+            if (model.DisplayMode != DisplayMode.Resizable ||
+                window.WindowStyle != WindowStyle.SingleBorderWindow || window.ResizeMode != ResizeMode.CanResize)
+                throw new InvalidOperationException("The game must start in resizable window mode.");
+            var game = (GameScreenView)window.FindName("GameLayer");
+            model.Game.OpenSettings();
+            await Arrange(game, 1000, 620);
+            var displayMode = Descendants<ComboBox>(game).Single(combo =>
+                AutomationProperties.GetName(combo) == "Display mode");
+            displayMode.SelectedIndex = 1;
+            if (model.DisplayMode != DisplayMode.FullScreen)
+                throw new InvalidOperationException("The Settings choice must change the display mode.");
+            if (window.WindowStyle != WindowStyle.None || window.ResizeMode != ResizeMode.NoResize ||
+                window.WindowState != WindowState.Maximized)
+                throw new InvalidOperationException("Full screen must hide the title bar and fill the display.");
+            displayMode.SelectedIndex = 0;
+            if (window.WindowStyle != WindowStyle.SingleBorderWindow || window.ResizeMode != ResizeMode.CanResize ||
+                window.WindowState != WindowState.Normal || model.DisplayMode != DisplayMode.Resizable ||
+                window.Left != 80 || window.Top != 65 ||
+                window.Width != 1200 || window.Height != 760)
+                throw new InvalidOperationException("Resizable mode must restore the title bar, size and position.");
+            Console.WriteLine("Display mode: resizable default, full-screen title bar removal, and window restoration passed.");
+        }
+        finally
+        {
+            window.Close();
+            await model.DisposeToolsAsync();
+        }
     }
 
     private static async Task VerifyGameLayerTransition()

@@ -1,4 +1,5 @@
 using System.Windows;
+using System.ComponentModel;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -18,6 +19,8 @@ public partial class MainWindow : Window
     private bool _exitPromptOpen;
     private bool _technicalVisible;
     private bool _layerTransition;
+    private Rect? _windowedBounds;
+    private WindowState _windowedState;
     private readonly TranslateTransform _gameTranslation = new();
 
     public MainWindow() : this(() => new MainViewModel()) { }
@@ -34,6 +37,7 @@ public partial class MainWindow : Window
         {
             _model = createModel();
             DataContext = _model;
+            _model.PropertyChanged += OnDisplayModeChanged;
             _model.SetGameLayerVisible(true);
             Loaded += async (_, _) =>
             {
@@ -116,9 +120,42 @@ public partial class MainWindow : Window
         Closed += (_, _) =>
         {
             _privacyTimer.Stop();
+            if (_model is not null) _model.PropertyChanged -= OnDisplayModeChanged;
             SystemEvents.SessionSwitch -= OnSessionSwitch;
             SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         };
+    }
+
+    private void OnDisplayModeChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName != nameof(MainViewModel.DisplayMode) || _model is null) return;
+
+        if (_model.DisplayMode == DisplayMode.FullScreen)
+        {
+            if (WindowStyle == WindowStyle.None) return;
+            _windowedState = WindowState;
+            _windowedBounds = WindowState == WindowState.Maximized
+                ? RestoreBounds : new Rect(Left, Top, Width, Height);
+            WindowState = WindowState.Normal;
+            WindowStyle = WindowStyle.None;
+            ResizeMode = ResizeMode.NoResize;
+            WindowState = WindowState.Maximized;
+        }
+        else
+        {
+            if (WindowStyle != WindowStyle.None) return;
+            WindowState = WindowState.Normal;
+            WindowStyle = WindowStyle.SingleBorderWindow;
+            ResizeMode = ResizeMode.CanResize;
+            if (_windowedBounds is { } bounds)
+            {
+                Left = bounds.Left;
+                Top = bounds.Top;
+                Width = bounds.Width;
+                Height = bounds.Height;
+            }
+            if (_windowedState == WindowState.Maximized) WindowState = WindowState.Maximized;
+        }
     }
 
     private bool ConfirmExit(ExitPrompt prompt)
