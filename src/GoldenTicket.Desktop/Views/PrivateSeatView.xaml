@@ -21,13 +21,15 @@
             <Setter Property="Background" Value="#FFF4E5C8" />
             <Setter Property="BorderBrush" Value="#FFC3934B" />
             <Setter Property="BorderThickness" Value="2" />
+            <Setter Property="Padding" Value="10,5" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="CardFrame" CornerRadius="8" Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}" Padding="16">
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
                         </Border>
                         <ControlTemplate.Triggers>
@@ -278,33 +280,37 @@
         </Border>
       </Grid>
 
-      <!-- A solo opening offer stays private but leaves the live game board visible underneath. -->
-      <Grid x:Name="SoloOpeningOverlay" Background="#30101822"
+      <!-- Use the table's 1440x900 scene coordinates so the live board remains visible above these private cards. -->
+      <Grid x:Name="SoloOpeningOverlay" Background="Transparent"
             Visibility="{Binding ShowSoloOpeningTicketsOnBoard, Converter={StaticResource BoolToVisibility}}">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="22.5*" />
-          <ColumnDefinition Width="55*" />
-          <ColumnDefinition Width="22.5*" />
-        </Grid.ColumnDefinitions>
-        <Viewbox Grid.Column="1" Stretch="Uniform" StretchDirection="Both" VerticalAlignment="Center">
-          <Border Width="900" Padding="22" CornerRadius="12" Background="#F01A2531"
-                  BorderBrush="#FFD6AD5C" BorderThickness="2">
-            <Grid>
-              <StackPanel>
-                <TextBlock Text="Your opening destinations" Foreground="#FFFFE7B0" FontSize="28"
+        <Viewbox Stretch="Uniform" StretchDirection="Both" HorizontalAlignment="Center"
+                 VerticalAlignment="Center" Margin="8">
+          <Canvas Width="1440" Height="900">
+            <Border Canvas.Left="270" Canvas.Top="690" Width="900" Height="205"
+                    Padding="12,8" CornerRadius="10" Background="#F01A2531"
+                    BorderBrush="#FFD6AD5C" BorderThickness="2">
+              <Grid>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="*" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock Text="Your Cards" Foreground="#FFFFE7B0" FontSize="19"
                            FontWeight="Bold" HorizontalAlignment="Center" />
-                <TextBlock Text="Keep all three, or click one destination to drop it. You must keep at least two."
-                           Foreground="#FFF8EEDC" FontSize="16" TextAlignment="Center"
-                           Margin="0,8,0,15" />
-                <ItemsControl x:Name="SoloDestinationCards" ItemsSource="{Binding PrivateSeat.Offer}"
-                              HorizontalAlignment="Center">
+                <TextBlock Grid.Row="1"
+                           Text="Keep all three, or click one destination to drop it. You must keep at least two."
+                           Foreground="#FFF8EEDC" FontSize="12" TextAlignment="Center"
+                           Margin="0,0,0,3" />
+                <ItemsControl x:Name="SoloDestinationCards" Grid.Row="2"
+                              ItemsSource="{Binding PrivateSeat.Offer}" HorizontalAlignment="Center">
                   <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
                   </ItemsControl.ItemsPanel>
                   <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                      <Button Style="{StaticResource SoloDestinationCard}" Width="255" Height="265"
-                              Margin="8,0" Click="SoloDestination_Click"
+                      <Button Style="{StaticResource SoloDestinationCard}" Width="270" Height="99"
+                              Margin="5,0" Click="SoloDestination_Click"
                               AutomationProperties.Name="{Binding Description}">
                         <Grid>
                           <Grid.RowDefinitions>
@@ -312,53 +318,57 @@
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                           </Grid.RowDefinitions>
-                          <TextBlock Text="DESTINATION TICKET" Foreground="#FF684329" FontSize="13"
+                          <TextBlock Text="DESTINATION" Foreground="#FF684329" FontSize="10"
                                      FontWeight="Bold" HorizontalAlignment="Center" />
                           <StackPanel Grid.Row="1" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding Description}" Foreground="#FF33271F" FontSize="20"
+                            <TextBlock Text="{Binding Description}" Foreground="#FF33271F" FontSize="17"
                                        FontWeight="Bold" TextAlignment="Center" TextWrapping="Wrap" />
                             <TextBlock Text="{Binding Points, StringFormat={}{0} points}" Foreground="#FF8C552C"
-                                       FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center"
-                                       Margin="0,15,0,0" />
+                                       FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center"
+                                       Margin="0,2,0,0" />
                           </StackPanel>
                           <TextBlock Grid.Row="2" Text="Click to drop" Foreground="#FF684329"
-                                     FontSize="13" HorizontalAlignment="Center" />
+                                     FontSize="10" HorizontalAlignment="Center" />
                         </Grid>
                       </Button>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
-                <TextBlock Text="{Binding PrivateSeat.Message}" Foreground="#FFFFD576"
-                           FontSize="14" TextAlignment="Center" Margin="0,12,0,0"
-                           Visibility="{Binding PrivateSeat.Message, Converter={StaticResource EmptyStringToVisibility}}" />
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,18,0,0">
-                  <Button x:Name="SoloKeepAllButton" Content="KEEP ALL THREE" Width="230" Height="53"
-                          Style="{StaticResource SoloOverlayAction}" Click="SoloKeepAll_Click" />
-                  <Button Content="Back to table" Width="160" Height="53" Margin="14,0,0,0"
-                          Style="{StaticResource SoloOverlayAction}"
-                          Command="{Binding HidePrivateSeatCommand}" />
-                </StackPanel>
-              </StackPanel>
-              <Grid x:Name="SoloDropConfirmation" Visibility="Collapsed" Background="#E8151E29">
-                <Border Width="465" Padding="24" CornerRadius="10" HorizontalAlignment="Center"
-                        VerticalAlignment="Center" Background="#FF1A2531"
-                        BorderBrush="#FFFFD576" BorderThickness="2">
-                  <StackPanel>
-                    <TextBlock Text="Drop this destination?" Foreground="#FFFFE7B0" FontSize="23"
-                               FontWeight="Bold" TextAlignment="Center" />
-                    <TextBlock x:Name="SoloDropName" Foreground="#FFF8EEDC" FontSize="18"
-                               TextAlignment="Center" TextWrapping="Wrap" Margin="0,12,0,20" />
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                      <Button Content="NO, GO BACK" Width="175" Height="50"
-                              Style="{StaticResource SoloOverlayAction}" Click="SoloDropNo_Click" />
-                      <Button Content="YES, DROP IT" Width="175" Height="50" Margin="12,0,0,0"
-                              Style="{StaticResource SoloOverlayAction}" Click="SoloDropYes_Click" />
-                    </StackPanel>
+                <Grid Grid.Row="3" Margin="0,3,0,0">
+                  <TextBlock Text="{Binding PrivateSeat.Message}" Foreground="#FFFFD576"
+                             FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap"
+                             MaxWidth="440" HorizontalAlignment="Left"
+                             Visibility="{Binding PrivateSeat.Message, Converter={StaticResource EmptyStringToVisibility}}" />
+                  <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="SoloKeepAllButton" Content="KEEP ALL THREE" Width="170" Height="35"
+                            Style="{StaticResource SoloOverlayAction}" Click="SoloKeepAll_Click" />
+                    <Button Content="Back to table" Width="145" Height="35" Margin="10,0,0,0"
+                            Style="{StaticResource SoloOverlayAction}"
+                            Command="{Binding HidePrivateSeatCommand}" />
                   </StackPanel>
-                </Border>
+                </Grid>
+                <Grid x:Name="SoloDropConfirmation" Grid.RowSpan="4"
+                      Visibility="Collapsed" Background="#F0151E29">
+                  <Border Width="465" Padding="12" CornerRadius="10" HorizontalAlignment="Center"
+                          VerticalAlignment="Center" Background="#FF1A2531"
+                          BorderBrush="#FFFFD576" BorderThickness="2">
+                    <StackPanel>
+                      <TextBlock Text="Drop this destination?" Foreground="#FFFFE7B0" FontSize="19"
+                                 FontWeight="Bold" TextAlignment="Center" />
+                      <TextBlock x:Name="SoloDropName" Foreground="#FFF8EEDC" FontSize="15"
+                                 TextAlignment="Center" TextWrapping="Wrap" Margin="0,5,0,8" />
+                      <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button Content="NO, GO BACK" Width="150" Height="36"
+                                Style="{StaticResource SoloOverlayAction}" Click="SoloDropNo_Click" />
+                        <Button Content="YES, DROP IT" Width="150" Height="36" Margin="10,0,0,0"
+                                Style="{StaticResource SoloOverlayAction}" Click="SoloDropYes_Click" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
+                </Grid>
               </Grid>
-            </Grid>
-          </Border>
+            </Border>
+          </Canvas>
         </Viewbox>
       </Grid>
     </Grid>

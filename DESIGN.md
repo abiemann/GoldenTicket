@@ -187,7 +187,9 @@ The public screen contains:
 - A latest-action line at the foot of every player's tile, derived only from allowlisted public
   events. Consecutive train-card draws are summarized together without exposing blind card kinds.
   The first two seats face each other; a fifth seat is centered below the board, with two on each
-  side. The face-up train market sits along the bottom right edge.
+  side. Each tile aligns the player name, train cards, and destinations on one row with score and
+  counts beneath; remaining trains are text above the stacks, and the action line is centered.
+  The face-up train market sits along the bottom right edge.
 - Live board view with transforms synchronized to its displayed frame.
 - Current route instruction or a short explanation of the current card action.
 - Public card market, public scores, and remaining-train indicators. Public destination stacks include
@@ -251,7 +253,7 @@ Select the experience separately from voice/visual output: **Standard** uses ess
 
 ### 4.7 Pass-and-hide
 
-For exactly one human, show the three opening destination tickets over the game board. The player may keep all three or click one ticket to drop it, confirm the choice, and see it animate off the screen before the existing ticket-selection command durably records the two kept tickets. A canceled drop changes nothing. Keep the live table guidance visible behind the overlay. Use **Your cards** on the laptop and **Back to table** instead of pass-the-device wording for later private actions. Open the human's card or ticket choices when a human decision becomes available, then return to the table for physical placement and AI guidance. A deliberate Back to table, Escape, timeout or deactivation remains respected; refreshing the public state must not reopen a deliberately hidden hand. Normal board-check, pack-away and rebuild gates still apply before card actions. Derive the mode from the actual match roster, including resumed matches; setup edits affect only a future match. Hide **Connect phone** and prevent starting companion gameplay in single-human mode.
+For exactly one human, show the three opening destination tickets in a compact **Your Cards** row below the live board. Shift the board upward so it partially underlays the persistent game-table guidance, and hide the usual quick actions, draw piles, and face-up market during this opening choice. In the board's rectified canonical coordinates, draw thick rings around both endpoint cities of every offered destination. Keep the rings in register as the window scales; remove a dropped destination's rings immediately, retaining a ring for any endpoint shared with another kept card. The player may keep all three or click one ticket to drop it, confirm the choice, and see it animate off the screen before the existing ticket-selection command durably records the two kept tickets. A canceled drop changes nothing. Keep the live table guidance visible above the board. Use **Your cards** on the laptop and **Back to table** instead of pass-the-device wording for later private actions. Open the human's card or ticket choices when a human decision becomes available, then return to the table for physical placement and AI guidance. A deliberate Back to table, Escape, timeout or deactivation remains respected; refreshing the public state must not reopen a deliberately hidden hand. Normal board-check, pack-away and rebuild gates still apply before card actions. Derive the mode from the actual match roster, including resumed matches; setup edits affect only a future match. Hide **Connect phone** and prevent starting companion gameplay in single-human mode.
 
 With multiple humans, at a human handoff first show a neutral curtain on the companion: “Pass this device to Alex.” Reveal the active seat's private view only after an explicit action and a fresh laptop-issued private-view grant. The user can hold a touch target to peek at their hand; releasing it returns to the curtain. A persistent reveal option is permitted with a visible Hide control and inactivity timeout. The laptop remains on the public board view when using the companion. Laptop-only play uses the equivalent curtain and keyboard/mouse controls.
 
@@ -355,8 +357,10 @@ pack-away checkpoint as a side effect of the exit prompt.
 **First game-screen layer implemented September 14, 2026.** The application opens onto the
 snowy-twilight artwork and player-facing setup. The existing interface remains the technical
 workflow underneath. The game layer covers 100% of the application content area, including the
-technical header and navigation. Settings offers a resizable window by default or borderless
-full screen, with the original window size and position restored when switching back. Exclusive
+technical header and navigation. The welcome screen's text-only Settings button opens display and
+camera preferences; a bottom-right OK applies a changed processor choice and returns to the menu.
+Settings offers a resizable window by default or borderless full screen, with the original window
+size and position restored when switching back. Exclusive
 operating-system fullscreen is not required.
 
 With no saved match, the opening choice is **Start a new game**. When at least one match exists,

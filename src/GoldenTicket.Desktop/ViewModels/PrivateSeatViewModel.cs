@@ -95,6 +95,10 @@ public sealed partial class PrivateSeatViewModel : ObservableObject
                 GoldenTicket.AI.RoutePlanner.EstimateCost(view, manifest, ticket)));
         }
 
+        if (IsSetupOffer && view.Public.Seats.Count(seat => seat.Kind == SeatKind.Human) == 1)
+            foreach (var marker in DestinationBoardOverlay.Build(manifest, Offer))
+                DestinationMarkers.Add(marker);
+
         MustChooseTickets = legal.MustCommitTicketSelection && Offer.Count > 0;
         CanDrawBlind = legal.CanDrawBlindTrainCard;
         MustResolvePendingClaim = legal.MustResolvePendingClaim;
@@ -138,6 +142,9 @@ public sealed partial class PrivateSeatViewModel : ObservableObject
     public ObservableCollection<TicketRow> Tickets { get; } = [];
 
     public ObservableCollection<TicketChoiceRow> Offer { get; } = [];
+
+    /// <summary>Opening-destination city rings, positioned over the upright live board crop.</summary>
+    public ObservableCollection<DestinationMarkerRow> DestinationMarkers { get; } = [];
 
     public ObservableCollection<MarketSlotRow> DrawableSlots { get; } = [];
 

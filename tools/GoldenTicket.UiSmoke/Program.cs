@@ -545,17 +545,18 @@ internal static partial class Program
 
             await RenderSizes("game-welcome", () => new GameScreenView { DataContext = model }, view =>
             {
-                var gear = (Button)view.FindName("SettingsButton");
-                if (!IsElementShown(gear) || gear.ToolTip as string != "Settings" ||
-                    AutomationProperties.GetName(gear) != "Settings")
-                    throw new InvalidOperationException("The welcome tile must expose an accessible Settings gear.");
+                var settings = (Button)view.FindName("SettingsButton");
+                if (!IsElementShown(settings) || settings.Content as string != "Settings" ||
+                    AutomationProperties.GetName(settings) != "Settings" ||
+                    Descendants<System.Windows.Shapes.Path>(settings).Any())
+                    throw new InvalidOperationException("The welcome tile must expose a text-only Settings button.");
             });
             var settingsView = new GameScreenView { DataContext = model };
             await Arrange(settingsView, 1000, 620);
             ((Button)settingsView.FindName("SettingsButton"))
                 .RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             if (!model.Game.IsSettings || model.Game.IsWelcome)
-                throw new InvalidOperationException("The Settings gear must open the shared settings panel.");
+                throw new InvalidOperationException("The Settings button must open the shared settings panel.");
             await RenderSizes("game-settings", () => new GameScreenView { DataContext = model }, view =>
             {
                 var dialog = (Border)view.FindName("SettingsDialog");
@@ -565,15 +566,18 @@ internal static partial class Program
                     AutomationProperties.GetName(combo) == "Camera quality preference");
                 var processor = Descendants<ComboBox>(dialog).Single(combo =>
                     AutomationProperties.GetName(combo) == "Image processor preference");
-                var apply = Descendants<Button>(dialog).Single(button => button.Content as string == "Apply");
+                var ok = Descendants<Button>(dialog).Single(button => button.Content as string == "OK");
                 if (!IsElementShown(dialog) || displayMode.SelectedValue is not DisplayMode.Resizable ||
                     !ReferenceEquals(quality.SelectedItem, model.Camera.SelectedPreference) ||
-                    !ReferenceEquals(processor.SelectedItem, model.Camera.SelectedProcessor) || apply.ActualHeight < 48)
+                    !ReferenceEquals(processor.SelectedItem, model.Camera.SelectedProcessor) || ok.ActualHeight < 48 ||
+                    ok.HorizontalAlignment != HorizontalAlignment.Right ||
+                    Descendants<Button>(dialog).Any(button => Equals(button.Tag, "NavigationBack")))
                     throw new InvalidOperationException("Settings must use the same live camera preferences as the utility screens.");
             });
-            model.Game.Back();
+            ((Button)settingsView.FindName("SettingsOkButton"))
+                .RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             if (!model.Game.IsWelcome)
-                throw new InvalidOperationException("Back from Settings must return to Choose a journey.");
+                throw new InvalidOperationException("OK from Settings must return to Choose a journey.");
             await model.Game.ActivateSelectedAsync();
             await RenderSizes("game-five-unselected", () => new GameScreenView { DataContext = model }, VerifyRoster);
             await RenderSizes("game-five-unselected-narrow", () => new GameScreenView { DataContext = model },
@@ -806,14 +810,14 @@ internal static partial class Program
                 await RenderSizes("game-welcome-saved", () => new GameScreenView { DataContext = savedMenu }, view =>
                 {
                     var reload = (Button)view.FindName("ReloadButton");
-                    var gear = (Button)view.FindName("SettingsButton");
+                    var settings = (Button)view.FindName("SettingsButton");
                     Rect Bounds(FrameworkElement element) => element.TransformToAncestor(view)
                         .TransformBounds(new Rect(element.RenderSize));
                     if (reload.Visibility != Visibility.Visible)
                         throw new InvalidOperationException("A saved game must offer Reload the previous game.");
-                    if (Math.Abs(Bounds(gear).Right - Bounds(reload).Right) > 2 ||
-                        Bounds(gear).Top <= Bounds(reload).Bottom)
-                        throw new InvalidOperationException("The Settings gear must sit below and right-align with Reload the previous game.");
+                    if (Math.Abs(Bounds(settings).Right - Bounds(reload).Right) > 2 ||
+                        Bounds(settings).Top <= Bounds(reload).Bottom)
+                        throw new InvalidOperationException("The Settings button must sit below and right-align with Reload the previous game.");
                 });
             }
             finally
@@ -899,6 +903,21 @@ internal static partial class Program
                             bounds.Right > view.ActualWidth + 1 || bounds.Bottom > view.ActualHeight + 1;
                     }))
                     throw new InvalidOperationException("Every player portrait and card stack must remain inside the scaled game table.");
+                var firstTile = stationBorders.Single(border =>
+                    border.DataContext is GameTableSeat tileSeat && tileSeat.Seat.SeatId.Value == 1);
+                var tileGrid = Descendants<Grid>(firstTile).Single(grid =>
+                    grid.RowDefinitions.Count == 4 && grid.ColumnDefinitions.Count == 3);
+                var tileText = Descendants<TextBlock>(tileGrid).ToArray();
+                var name = tileText.Single(text => text.Text == "Player 1");
+                var trainLabel = tileText.Single(text => text.Text == "Train cards");
+                var destinationLabel = tileText.Single(text => text.Text == "Destinations");
+                var trainCount = tileText.Single(text => text.Text == "4");
+                var destinationCount = tileText.Single(text => text.Text == "3");
+                if (Grid.GetRow(name) != Grid.GetRow(trainLabel) ||
+                    Grid.GetRow(name) != Grid.GetRow(destinationLabel) ||
+                    Grid.GetRow(trainCount) != 2 || Grid.GetRow(destinationCount) != 2 ||
+                    Descendants<Border>(firstTile).Any(border => border.Width == 20 && border.Height == 8))
+                    throw new InvalidOperationException("Player, train-card and destination labels and counts must align without a train bar graph.");
                 if (model.Game.TableSeats[0].Left != 10 || model.Game.TableSeats[1].Left != 1180 ||
                     (model.Table.Seats.Count == 5 &&
                      (model.Game.TableSeats[2].Left != 10 || model.Game.TableSeats[3].Left != 1180 ||
@@ -907,7 +926,8 @@ internal static partial class Program
                 var status = Descendants<TextBlock>(gameTable)
                     .Single(text => text.DataContext is GameTableSeat tableSeat && tableSeat.Seat.SeatId.Value == 1 &&
                                     text.Text == "Kept 3 destinations and returned 0.");
-                if (!IsElementShown(status))
+                if (!IsElementShown(status) || status.TextAlignment != TextAlignment.Center ||
+                    Grid.GetRow(status) != 3 || Grid.GetColumnSpan(status) != 3)
                     throw new InvalidOperationException("The latest public action must appear along the bottom of the player tile.");
             }
 
@@ -1033,6 +1053,17 @@ internal static partial class Program
 
             await solo.StartMatchCommand.ExecuteAsync(null);
             RequireHumanPrivateView(solo, "Solo test player", mustChooseTickets: true);
+            var soloBoardPixels = new byte[960 * 600 * 4];
+            for (var pixel = 0; pixel < soloBoardPixels.Length; pixel += 4)
+            {
+                soloBoardPixels[pixel] = 85;
+                soloBoardPixels[pixel + 1] = 120;
+                soloBoardPixels[pixel + 2] = 155;
+                soloBoardPixels[pixel + 3] = 255;
+            }
+            solo.Camera.GameTablePreview = BitmapSource.Create(960, 600, 96, 96,
+                PixelFormats.Bgra32, null, soloBoardPixels, 960 * 4);
+            solo.Camera.GameTablePreviewStatus = "";
             if (solo.Table.Instruction != "Solo test player: choose whether to keep all destinations or drop one.")
                 throw new InvalidOperationException("Solo setup guidance must explain the keep-or-drop choice.");
             await RenderSizes("solo-opening-tickets-synthetic", () => new PrivateSeatView { DataContext = solo },
@@ -1046,9 +1077,17 @@ internal static partial class Program
             }, view =>
             {
                 var overlay = Descendants<Grid>(view).Single(grid => grid.Name == "SoloOpeningOverlay");
-                if (!IsShown(overlay, view) || !VisibleText(view).Contains("Your opening destinations", StringComparison.Ordinal) ||
+                var board = Descendants<Border>(view).Single(border => border.Name == "GameBoardFrame");
+                var quickActions = Descendants<StackPanel>(view).Single(panel => panel.Name == "TableQuickActions");
+                var drawPiles = Descendants<Border>(view).Single(border => border.Name == "DrawPilesPanel");
+                var faceUp = Descendants<Border>(view).Single(border => border.Name == "FaceUpMarketPanel");
+                var cityMarkers = Descendants<ItemsControl>(view).Single(control => control.Name == "DestinationCityMarkers");
+                if (!IsShown(overlay, view) || !VisibleText(view).Contains("Your Cards", StringComparison.Ordinal) ||
+                    Canvas.GetTop(board) != 120 || board.ActualHeight + Canvas.GetTop(board) > 690 ||
+                    !IsShown(cityMarkers, view) || cityMarkers.Items.Count == 0 ||
+                    IsShown(quickActions, view) || IsShown(drawPiles, view) || IsShown(faceUp, view) ||
                     !VisibleText(view).Contains("Solo test player: choose whether to keep all destinations or drop one.", StringComparison.Ordinal))
-                    throw new InvalidOperationException("Solo ticket choices must sit above the game board and its guidance.");
+                    throw new InvalidOperationException("Solo setup must keep the board and cards visible together without the usual table controls or draw piles.");
             }, [(1280, 800), (1000, 620), (1920, 1080)]);
             await RenderSizes("solo-drop-confirmation-synthetic", () => new PrivateSeatView { DataContext = solo }, view =>
             {
@@ -1276,7 +1315,7 @@ internal static partial class Program
         {
             var overlay = (Grid)view.FindName("SoloOpeningOverlay");
             if (!IsShown(overlay, view) || !labels.Contains("KEEP ALL THREE") ||
-                !labels.Contains("Back to table") || !text.Contains("Your opening destinations", StringComparison.Ordinal) ||
+                !labels.Contains("Back to table") || !text.Contains("Your Cards", StringComparison.Ordinal) ||
                 Descendants<Button>(view).Count(button => IsShown(button, view) && button.DataContext is TicketChoiceRow) != 3 ||
                 Descendants<ItemsControl>(view).Any(control => IsShown(control, view) &&
                     (ReferenceEquals(control.ItemsSource, privateSeat.Hand) ||

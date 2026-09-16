@@ -157,21 +157,28 @@ public sealed partial class GameScreenViewModel : ObservableObject
         SeatChoices = Enumerable.Range(1, 5).Select(number => new GameSeatChoice(number)).ToArray();
         _main.Setup.SavedSessions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasPreviousGame));
         _main.Table.Seats.CollectionChanged += TableSeatsChanged;
+        _main.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.ShowSoloOpeningTicketsOnBoard))
+                TableSeatsChanged(null, null);
+        };
         UpdateSelection();
     }
 
     public IReadOnlyList<GameSeatChoice> SeatChoices { get; }
     public IReadOnlyList<GameTableSeat> TableSeats { get; private set; } = [];
 
-    private void TableSeatsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    private void TableSeatsChanged(object? sender, NotifyCollectionChangedEventArgs? e)
     {
         // The first two seats face one another. Four seats flank the board; a fifth sits below it.
+        // The solo opening cards use the space below the board, so move that seat into the cleared corner.
+        var extraSeatPosition = _main.ShowSoloOpeningTicketsOnBoard ? (14d, 18d) : (595d, 755d);
         (double Left, double Top)[] positions = _main.Table.Seats.Count switch
         {
             2 => [(10, 330), (1180, 330)],
-            3 => [(10, 330), (1180, 330), (595, 755)],
+            3 => [(10, 330), (1180, 330), extraSeatPosition],
             4 => [(10, 265), (1180, 265), (10, 530), (1180, 530)],
-            _ => [(10, 265), (1180, 265), (10, 530), (1180, 530), (595, 755)],
+            _ => [(10, 265), (1180, 265), (10, 530), (1180, 530), extraSeatPosition],
         };
         TableSeats = _main.Table.Seats.Select((seat, index) =>
         {

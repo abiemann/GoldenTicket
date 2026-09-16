@@ -16,6 +16,8 @@ public partial class GameScreenView : UserControl
     private bool _faceFlipping;
     private long? _setupCameraEpoch;
     private CameraViewModel? _cornerOverlayCamera;
+    private FrameComputeMode? _settingsProcessorAtOpen;
+    private bool _settingsOkBusy;
 
     public GameScreenView()
     {
@@ -146,8 +148,25 @@ public partial class GameScreenView : UserControl
 
     private void Settings_Click(object sender, RoutedEventArgs e)
     {
+        _settingsProcessorAtOpen = (DataContext as MainViewModel)?.Camera.SelectedProcessor.Value;
         Game?.OpenSettings();
         FocusCurrentChoice();
+    }
+
+    private async void SettingsOk_Click(object sender, RoutedEventArgs e)
+    {
+        if (_settingsOkBusy || DataContext is not MainViewModel model || !model.Game.IsSettings) return;
+        _settingsOkBusy = true;
+        try
+        {
+            if (_settingsProcessorAtOpen is { } original &&
+                model.Camera.SelectedProcessor.Value != original)
+                await model.Camera.ApplyProcessorCommand.ExecuteAsync(null);
+            _settingsProcessorAtOpen = null;
+            model.Game.Back();
+            FocusCurrentChoice();
+        }
+        finally { _settingsOkBusy = false; }
     }
 
     private async void Welcome_Click(object sender, RoutedEventArgs e)

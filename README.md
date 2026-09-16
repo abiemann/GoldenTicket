@@ -262,8 +262,9 @@ dotnet run --project tools/GoldenTicket.Simulator -- simulate --games 20 --seats
 
 The app opens on the game screen. Choose **Start a new game** with ↑/↓ and Enter, or hover and
 click. When saved matches exist, **Reload the previous game** opens the most recently updated one.
-The steampunk **Settings** gear beneath these choices opens display mode, camera quality, processor,
-and preview options. Display mode defaults to a resizable window; **Full screen** hides the title bar,
+The **Settings** button beneath these choices opens display mode, camera quality, processor,
+and preview options. **OK** applies a changed processor choice and returns to the game menu.
+Display mode defaults to a resizable window; **Full screen** hides the title bar,
 and switching back restores the window's size and position. Camera controls use the same configuration
 as the utility screens.
 To choose a different save, press **Shift+Escape**, find **Saved matches** on the technical setup
@@ -295,14 +296,22 @@ turn, status and players; **Packed away** is a status, not the save's name.
 3. **PLAY!** opens the game table with a live, cropped board from the accepted four camera corners.
    A persistent panel above the board identifies the current phase, the acting player, and the
    instruction humans should follow next.
-   In a one-human game, opening destinations appear over the board. Select **KEEP ALL THREE** or
+   In a one-human game's opening setup, the board moves up beneath the guidance panel, while a
+   compact **Your Cards** row below it shows all three destinations at the same time. Thick rings
+   mark their endpoint cities on the live board; confirming a drop removes that destination's
+   rings, while an endpoint shared with another kept destination stays marked. The quick-action
+   buttons, draw piles, and face-up train cards stay hidden until the opening choice is complete.
+   Select **KEEP ALL THREE** or
    click one card and confirm its drop; at least two must be kept. The dropped card leaves the
    screen before the saved ticket count updates. The computer chooses its own tickets by value
    and estimated route cost and may keep all three.
    The chosen players sit around it with their matching portraits, train colors, remaining trains,
    and face-down card and destination stacks showing public counts. The first two face each other;
-   with five players, two tiles flank each side of the board and the fifth sits centered below it.
-   Each tile shows that player's latest public action along its bottom edge. During opening selection, each
+   with five players, two tiles flank each side of the board and the fifth sits centered below it
+   during normal play (the fifth moves to the free corner during solo opening selection).
+   Each tile aligns the player name, train-card label, and destination label on one row, with their
+   score and card counts directly below. Remaining trains appear as text above the card stacks,
+   and the latest public action is centered along the tile's bottom edge. During opening selection, each
    unresolved three-ticket offer is included in its player's public count without revealing any
    destination identity. The five face-up train cards appear at the bottom right edge of the table.
    The complete scene scales together when the window is resized or maximized.
