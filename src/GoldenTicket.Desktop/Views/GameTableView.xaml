@@ -115,11 +115,14 @@
                                     <StackPanel Grid.Column="1" Margin="8,0,0,0">
                                         <StackPanel Orientation="Horizontal" Margin="0,1,0,7">
                                             <Border Width="20" Height="8" CornerRadius="2" Margin="0,0,3,0"
-                                                    Background="{Binding Seat.Color, Converter={StaticResource PlayerColorBrush}}" />
+                                                    Background="{Binding Seat.Color, Converter={StaticResource PlayerColorBrush}}"
+                                                    BorderBrush="#FFF0D7A0" BorderThickness="1" />
                                             <Border Width="20" Height="8" CornerRadius="2" Margin="0,0,3,0"
-                                                    Background="{Binding Seat.Color, Converter={StaticResource PlayerColorBrush}}" />
+                                                    Background="{Binding Seat.Color, Converter={StaticResource PlayerColorBrush}}"
+                                                    BorderBrush="#FFF0D7A0" BorderThickness="1" />
                                             <Border Width="20" Height="8" CornerRadius="2" Margin="0,0,7,0"
-                                                    Background="{Binding Seat.Color, Converter={StaticResource PlayerColorBrush}}" />
+                                                    Background="{Binding Seat.Color, Converter={StaticResource PlayerColorBrush}}"
+                                                    BorderBrush="#FFF0D7A0" BorderThickness="1" />
                                             <TextBlock Foreground="#FFF8EEDC" FontSize="11">
                                                 <Run Text="{Binding Seat.TrainsRemaining}" /><Run Text=" trains" />
                                             </TextBlock>
