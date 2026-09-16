@@ -213,7 +213,7 @@ public sealed class PersistenceAuditTests : IDisposable
     }
 
     [Fact]
-    public async Task LegacySnapshotEncodingAndHashRestoreThenUpgradeOnTheNextCommit()
+    public async Task LegacySnapshotEncodingAndHashRemainUsableAfterRestoreUpgrade()
     {
         var (rules, store, coordinator) = await CreateAsync();
         var restored = await store.RestoreAsync(coordinator.SessionId, rules.Manifest, rules.Catalog, CancellationToken.None);

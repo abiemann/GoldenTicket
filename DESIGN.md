@@ -1509,6 +1509,16 @@ players. A listed name or status does not replace checkpoint integrity and readb
 6. Highlight missing, extra, displaced, or wrong-color trains.
 7. Resume the saved operation only after the physical board agrees or a recorded manual reconciliation is completed.
 
+Store schema 3 makes the checkpoint table part of the required save structure. On restoring schema
+1 or 2, first complete compatibility, journal replay, snapshot and invariant checks. Before the first
+upgrade write, use SQLite's backup API to retain the validated database, including committed WAL
+pages, as a standalone file under the match's `backups` directory. Then create the checkpoint table
+if absent, normalize the latest legacy snapshot sequence/hash, and record schema 3 and its migration
+history in one transaction. Preserve existing checkpoint rows, journal events, command outcomes and
+game state. A failed backup or migration must not admit the match for play or leave a partial schema
+upgrade. Listing saves remains read-only with respect to their schema, and already-upgraded restores
+do not create another migration backup.
+
 If the durable lifecycle is `PreparingPackAway`, `PackedAway`, or `Rebuilding`, recover that paused workflow first. Do not perform ordinary auto-resume or launch AI thinking. A packed checkpoint uses its saved physical target and section 19.8's explicit Resume gate, including any separately identified pending placement.
 
 Because all cards are digital, exact card-order restoration does not depend on preserving a physical shuffled deck. A restored board may be rebuilt from scratch using the public diagram while hidden hands stay concealed.

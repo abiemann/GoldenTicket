@@ -372,13 +372,16 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   frozen source state, commit-then-readback validation before any safe-to-pack result, suspended
   partial operations preserved, route-list guided reconstruction with whole-target attestation,
   and exactly-once resume. Verified by `PackAwayTests` and `PackAwayDurabilityTests`.
+- [x] **Legacy checkpoint schema upgrade.** After verified restore, migrate schema 1/2 saves to
+  schema 3 with a standalone SQLite backup before changes. Preserve existing checkpoints and
+  recover interrupted pack-away preparation; failed validation or backup leaves the schema intact.
 - [x] **Desktop exit confirmation.** An unfinished match prompts before exit with No selected;
   wording distinguishes automatic digital saves from a verified pack-away checkpoint. No warning
   for an already verified packed/rebuilding game solely because its optional photo is absent.
   Pending writes block closing; storage faults show uncertainty. Cancel retains usable tools and
   covers private hands. Confirm preserves deferred cleanup and final close without WPF reentry.
 - [ ] **M2/M4: persistence and pack away, remaining.** Add the geometry-based rebuild diagram, complete encrypted snapshots,
-  backup-before-migration, full evidence pinning and machine-verified board photographs,
+  full evidence pinning and machine-verified board photographs,
   partial-operation (pending placement) targets, and current-checkpoint success receipts for the
   companion. Add correction branches and optional encrypted portable export/import.
 - [ ] Complete non-audio theme/high-contrast/screen-reader/keyboard work and adjustable privacy timing

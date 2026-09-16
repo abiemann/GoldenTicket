@@ -88,6 +88,9 @@ This build implements the core game plus initial phone, camera and photo workflo
 - Save paths are confined to valid session directories; concurrent writers, inconsistent journal
   metadata, missing snapshots, and corrupted state stop the operation. An uncertain save outcome
   requires a reload. Unreadable saves remain listed with recovery guidance.
+- Restoring a compatible older save upgrades its checkpoint schema after replay validation. A
+  standalone SQLite backup is retained in that match's `backups` folder before the upgrade;
+  older games can then pack away, including games interrupted during checkpoint preparation.
 - A WPF interface in the box-derived palette: a public table screen, an opaque privacy curtain with
   a per-seat private view, the operator's placement instruction and confirmation, and a results
   screen.

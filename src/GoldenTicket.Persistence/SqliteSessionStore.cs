@@ -20,7 +20,7 @@ namespace GoldenTicket.Persistence;
 /// </summary>
 public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
 {
-    public const int StoreSchemaVersion = 2;
+    public const int StoreSchemaVersion = 3;
 
     /// <summary>Unit separator; seat names are free text and must not collide with it.</summary>
     private const char SeatNameSeparator = '\u001f';
@@ -191,20 +191,14 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
 
         await ExecuteAsync(connection,
             """
-            UPDATE Session SET UpdatedAt = $updatedAt, TurnNumber = $turnNumber, Lifecycle = $lifecycle,
-                StoreSchemaVersion = $storeSchema
+            UPDATE Session SET UpdatedAt = $updatedAt, TurnNumber = $turnNumber, Lifecycle = $lifecycle
             WHERE SessionId = $sessionId;
             """,
             cancellationToken,
             ("$updatedAt", DateTimeOffset.UtcNow.ToString("O")),
             ("$turnNumber", state.TurnNumber),
             ("$lifecycle", state.Lifecycle.ToString()),
-            ("$storeSchema", StoreSchemaVersion),
             ("$sessionId", sessionId.Value));
-
-        await ExecuteAsync(connection,
-            "INSERT OR IGNORE INTO MigrationHistory (Version, AppliedAt) VALUES ($version, $appliedAt);",
-            cancellationToken, ("$version", StoreSchemaVersion), ("$appliedAt", DateTimeOffset.UtcNow.ToString("O")));
 
         await transaction.CommitAsync(cancellationToken);
     }
@@ -274,6 +268,28 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
             throw new SessionIntegrityException(
                 $"The restored match failed {problems.Count} integrity checks. " +
                 "Restoration stops without exposing private cards or changing the save.");
+        }
+
+        if (schemaVersion < StoreSchemaVersion)
+        {
+            // Back up the validated read snapshot before taking this transaction's first write.
+            // A concurrent writer makes the read-to-write upgrade fail rather than migrating
+            // state different from the journal we just checked.
+            await BackupBeforeMigrationAsync(connection, sessionId, schemaVersion, cancellationToken);
+            await CreateCheckpointSchemaAsync(connection, cancellationToken);
+            await ExecuteAsync(connection, """
+                UPDATE Snapshot SET JournalSequence = $sequence, StateHash = $hash
+                WHERE SessionId = $sessionId AND StateVersion = $stateVersion;
+                UPDATE Session SET StoreSchemaVersion = $schema WHERE SessionId = $sessionId;
+                INSERT OR IGNORE INTO MigrationHistory (Version, AppliedAt) VALUES ($schema, $appliedAt);
+                """, cancellationToken,
+                ("$sequence", state.JournalSequence),
+                ("$hash", StateHash.Compute(state)),
+                ("$sessionId", sessionId.Value),
+                ("$stateVersion", state.StateVersion),
+                ("$schema", StoreSchemaVersion),
+                ("$appliedAt", DateTimeOffset.UtcNow.ToString("O")));
+            await transaction.CommitAsync(cancellationToken);
         }
 
         return new RestoredSession(state, journal);
@@ -426,22 +442,6 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
                 PRIMARY KEY (SessionId, Sequence)
             );
 
-            CREATE TABLE IF NOT EXISTS PackAwayCheckpoint (
-                SessionId           TEXT NOT NULL,
-                CheckpointId        TEXT NOT NULL,
-                Name                TEXT NOT NULL,
-                CreatedAt           TEXT NOT NULL,
-                FormatVersion       INTEGER NOT NULL,
-                SourceStateVersion  INTEGER NOT NULL,
-                SourceJournalSeq    INTEGER NOT NULL,
-                TargetProvenance    TEXT NOT NULL,
-                PhotoHash           TEXT NULL,
-                Status              TEXT NOT NULL,
-                Payload             BLOB NOT NULL,
-                Nonce               BLOB NOT NULL,
-                PRIMARY KEY (SessionId, CheckpointId)
-            );
-
             CREATE TABLE IF NOT EXISTS Snapshot (
                 SessionId       TEXT NOT NULL,
                 StateVersion    INTEGER NOT NULL,
@@ -469,6 +469,71 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
             """;
 
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await CreateCheckpointSchemaAsync(connection, cancellationToken);
+    }
+
+    private static Task CreateCheckpointSchemaAsync(SqliteConnection connection, CancellationToken cancellationToken) =>
+        ExecuteAsync(connection, """
+            CREATE TABLE IF NOT EXISTS PackAwayCheckpoint (
+                SessionId           TEXT NOT NULL,
+                CheckpointId        TEXT NOT NULL,
+                Name                TEXT NOT NULL,
+                CreatedAt           TEXT NOT NULL,
+                FormatVersion       INTEGER NOT NULL,
+                SourceStateVersion  INTEGER NOT NULL,
+                SourceJournalSeq    INTEGER NOT NULL,
+                TargetProvenance    TEXT NOT NULL,
+                PhotoHash           TEXT NULL,
+                Status              TEXT NOT NULL,
+                Payload             BLOB NOT NULL,
+                Nonce               BLOB NOT NULL,
+                PRIMARY KEY (SessionId, CheckpointId)
+            );
+            """, cancellationToken);
+
+    private async Task BackupBeforeMigrationAsync(
+        SqliteConnection source, SessionId sessionId, int sourceVersion, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var directory = Path.Combine(SessionDirectory(sessionId), "backups");
+        Directory.CreateDirectory(directory);
+        if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
+            throw new IOException("A saved-match backup directory cannot be a filesystem link.");
+
+        var name = $"migration-v{sourceVersion}-to-v{StoreSchemaVersion}-{DateTimeOffset.UtcNow:yyyyMMddTHHmmssfff}-{Guid.NewGuid():N}";
+        var temporary = Path.Combine(directory, name + ".tmp");
+        var target = Path.Combine(directory, name + ".db");
+        try
+        {
+            await using (var backup = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = temporary,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Pooling = false,
+            }.ToString()))
+            {
+                await backup.OpenAsync(cancellationToken);
+                await ExecuteAsync(backup, "PRAGMA synchronous=FULL;", cancellationToken);
+                // SQLite's backup API includes committed WAL pages, unlike copying session.db.
+                source.BackupDatabase(backup);
+                // Leave a standalone database, with no required WAL sidecar.
+                await ExecuteAsync(backup, "PRAGMA journal_mode=DELETE;", cancellationToken);
+            }
+
+            using (var file = new FileStream(temporary, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                file.Flush(flushToDisk: true);
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(temporary, target);
+        }
+        finally
+        {
+            if (File.Exists(temporary))
+            {
+                try { File.Delete(temporary); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+        }
     }
 
     /// <summary>Appends the events of one transaction and returns the last sequence number used.</summary>
