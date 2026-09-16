@@ -31,10 +31,11 @@ See the
   the notice disappears when the camera, train, and marker checks are ready.
   Manual placement verification remains.
 - [x] After PLAY, show the accepted live board crop in a uniformly scaled game table. Position
-  2–5 player portraits and their public train/card/ticket counts around it, with face-down stacks
-  and the five-card market nearby. Keep private card contents off the public table and provide
-  Your cards and Game controls actions. Preserve the panel above the board as the human guidance
-  area for the current phase, acting seat and next instruction throughout the game.
+  2–5 player portraits and their public train/card/destination counts around it, with face-down
+  stacks and a latest-public-action line per seat. Put up to two seats on each side, a fifth below
+  the board, and the five-card market at the bottom right edge. Keep private card contents off the
+  public table; provide Your cards and Game controls actions. Preserve the panel above the board
+  as the human guidance area for the current phase, acting seat and next instruction throughout the game.
 - [ ] Re-register the live board crop automatically after a saved game is reloaded or the camera
   restarts; for now, use the technical Camera screen to register it again.
 - [ ] Validate score-piece color and printed-1 acceptance with the real overhead camera for all

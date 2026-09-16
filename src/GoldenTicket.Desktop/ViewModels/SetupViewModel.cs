@@ -75,7 +75,7 @@ public sealed partial class SetupViewModel : ObservableObject
 
     public string EditionSummary =>
         $"{_manifest.Edition.DisplayName}  ·  {_manifest.Cities.Length} cities, " +
-        $"{_manifest.Routes.Length} routes, {_manifest.Tickets.Length} destination tickets";
+        $"{_manifest.Routes.Length} routes, {_manifest.Tickets.Length} destinations";
 
     /// <summary>
     /// DESIGN 6.3 keeps this honest: until a reviewer has compared the data package with the physical

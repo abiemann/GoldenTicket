@@ -184,9 +184,13 @@ The public screen contains:
 - A persistent guidance panel above the board: the current phase, the acting seat, and a concise
   instruction telling the humans what is happening or what they need to do next.
 - Active player name, color, symbol, and turn status.
+- A latest-action line at the foot of every player's tile, derived only from allowlisted public
+  events. Consecutive train-card draws are summarized together without exposing blind card kinds.
+  The first two seats face each other; a fifth seat is centered below the board, with two on each
+  side. The face-up train market sits along the bottom right edge.
 - Live board view with transforms synchronized to its displayed frame.
 - Current route instruction or a short explanation of the current card action.
-- Public card market, public scores, and remaining-train indicators. Public ticket stacks include
+- Public card market, public scores, and remaining-train indicators. Public destination stacks include
   the count of a pending offer, including all three opening tickets, while ticket identities remain
   confined to the owning seat's private view.
 - A public event history that omits private draws and unplayed tickets.
@@ -247,7 +251,7 @@ Select the experience separately from voice/visual output: **Standard** uses ess
 
 ### 4.7 Pass-and-hide
 
-For exactly one human, use **Your cards** on the laptop and **Back to table** instead of pass-the-device wording. Open the human's card or ticket choices when a human decision becomes available, then return to the table for physical placement and AI guidance. A deliberate Back to table, Escape, timeout or deactivation remains respected; refreshing the public state must not reopen a deliberately hidden hand. Normal board-check, pack-away and rebuild gates still apply before card actions. Derive the mode from the actual match roster, including resumed matches; setup edits affect only a future match. Hide **Connect phone** and prevent starting companion gameplay in single-human mode.
+For exactly one human, show the three opening destination tickets over the game board. The player may keep all three or click one ticket to drop it, confirm the choice, and see it animate off the screen before the existing ticket-selection command durably records the two kept tickets. A canceled drop changes nothing. Keep the live table guidance visible behind the overlay. Use **Your cards** on the laptop and **Back to table** instead of pass-the-device wording for later private actions. Open the human's card or ticket choices when a human decision becomes available, then return to the table for physical placement and AI guidance. A deliberate Back to table, Escape, timeout or deactivation remains respected; refreshing the public state must not reopen a deliberately hidden hand. Normal board-check, pack-away and rebuild gates still apply before card actions. Derive the mode from the actual match roster, including resumed matches; setup edits affect only a future match. Hide **Connect phone** and prevent starting companion gameplay in single-human mode.
 
 With multiple humans, at a human handoff first show a neutral curtain on the companion: “Pass this device to Alex.” Reveal the active seat's private view only after an explicit action and a fresh laptop-issued private-view grant. The user can hold a touch target to peek at their hand; releasing it returns to the curtain. A persistent reveal option is permitted with a visible Hide control and inactivity timeout. The laptop remains on the public board view when using the companion. Laptop-only play uses the equivalent curtain and keyboard/mouse controls.
 

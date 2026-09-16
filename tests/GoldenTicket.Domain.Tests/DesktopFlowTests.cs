@@ -42,7 +42,11 @@ public class DesktopFlowTests
         // Both computer seats have already chosen; only the human is outstanding.
         Assert.Equal(3, model.Table.Seats.Count);
         Assert.Equal(3, model.Table.Seats.Single(seat => seat.DisplayName == "Alex").TicketCount);
-        Assert.Contains("opening ticket", model.Table.Instruction, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Waiting for first action.", model.Table.Seats.Single(seat => seat.DisplayName == "Alex").LastAction);
+        Assert.All(model.Table.Seats.Where(seat => seat.Operator == "computer"),
+            seat => Assert.StartsWith("Kept ", seat.LastAction));
+        Assert.Contains("Alex: choose whether to keep all destinations or drop one.", model.Table.Instruction);
+        Assert.DoesNotContain("laptop", model.Table.Instruction, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -67,6 +71,20 @@ public class DesktopFlowTests
     }
 
     [Fact]
+    public async Task ThePlayerTileSummarizesBothPubliclyRecordedDrawsInOneTurn()
+    {
+        var model = NewMatch();
+        await model.StartMatchCommand.ExecuteAsync(null);
+        await model.CommitTicketsCommand.ExecuteAsync(null);
+
+        await model.DrawBlindCardAsync();
+        Assert.Equal("Drew 1 blind train card.", model.Table.Seats.Single(seat => seat.DisplayName == "Alex").LastAction);
+
+        await model.DrawBlindCardAsync();
+        Assert.Equal("Drew 2 blind train cards.", model.Table.Seats.Single(seat => seat.DisplayName == "Alex").LastAction);
+    }
+
+    [Fact]
     public async Task KeepingOpeningTicketsStartsPlayAndShowsTheSoloHumansHand()
     {
         var model = NewMatch();
@@ -84,6 +102,7 @@ public class DesktopFlowTests
 
         var human = model.Table.Seats.Single(seat => seat.DisplayName == "Alex");
         Assert.Equal(2, human.TicketCount);
+        Assert.Equal("Kept 2 destinations and returned 1.", human.LastAction);
 
         // The sole human can continue on the laptop without another reveal or phone handoff.
         Assert.All(offered, ticket => Assert.NotEqual(default, ticket));
@@ -139,6 +158,7 @@ public class DesktopFlowTests
         var after = model.Table.Seats.Single(seat => seat.SeatId == placement.SeatId);
         Assert.Equal(routesBefore + 1, after.RoutesClaimed);
         Assert.True(after.TrainsRemaining < 45);
+        Assert.StartsWith("Claimed ", after.LastAction);
         Assert.False(model.Table.WholeBoardAcknowledged);
     }
 

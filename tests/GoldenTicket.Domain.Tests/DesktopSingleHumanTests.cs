@@ -20,6 +20,7 @@ public sealed class DesktopSingleHumanTests
             Assert.False(model.ShowConnectionCommand.CanExecute(null));
             Assert.NotNull(model.PrivateSeat);
             Assert.True(model.PrivateSeat.MustChooseTickets);
+            Assert.True(model.ShowSoloOpeningTicketsOnBoard);
             Assert.Equal(4, model.PrivateSeat.Hand.Sum(group => group.Count));
             Assert.Equal(3, model.PrivateSeat.Offer.Count);
 
@@ -31,6 +32,7 @@ public sealed class DesktopSingleHumanTests
             await model.CommitTicketsAsync();
             Assert.NotNull(model.PrivateSeat);
             Assert.False(model.PrivateSeat.MustChooseTickets);
+            Assert.False(model.ShowSoloOpeningTicketsOnBoard);
             Assert.True(model.PrivateSeat.CanDrawBlind);
 
             await model.DrawBlindCardAsync();

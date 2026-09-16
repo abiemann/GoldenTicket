@@ -199,8 +199,8 @@ public sealed partial class PrivateSeatViewModel : ObservableObject
     }
 
     public string TicketInstruction => IsSetupOffer
-        ? $"Keep at least {MinimumKeep} of these {Offer.Count} opening tickets. " +
+        ? $"Keep at least {MinimumKeep} of these {Offer.Count} opening destinations. " +
           "An unfinished destination costs its value at the end."
-        : $"Keep at least {MinimumKeep} of these {Offer.Count} tickets. " +
+        : $"Keep at least {MinimumKeep} of these {Offer.Count} destinations. " +
           "The rest go under the deck in the order shown.";
 }

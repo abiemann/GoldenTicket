@@ -101,7 +101,7 @@
                     <StackPanel>
                         <TextBlock Style="{StaticResource Heading}" Text="Check the saved board before resuming" />
                         <TextBlock TextWrapping="Wrap"
-                                   Text="Rebuild every claimed route listed below with the correct colour, lane and train count. All other lanes must be empty. Remove any uncommitted placement for now; a pending claim will be offered again after this check. Cards, tickets and turn progress remain saved." />
+                                   Text="Rebuild every claimed route listed below with the correct colour, lane and train count. All other lanes must be empty. Remove any uncommitted placement for now; a pending claim will be offered again after this check. Cards, destinations and turn progress remain saved." />
                         <CheckBox Margin="0,10,0,8" IsChecked="{Binding BoardReconciliationAcknowledged}">
                             <TextBlock TextWrapping="Wrap" Text="I have checked the whole board against the saved route list, including empty lanes. Continue using manual verification." />
                         </CheckBox>
@@ -292,7 +292,7 @@
                     <StackPanel>
                         <TextBlock Style="{StaticResource Heading}" Text="Scores" />
                         <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8"
-                                   Text="Route points only. Destination tickets and the longest continuous route are settled at the end." />
+                                   Text="Route points only. Destinations and the longest continuous route are settled at the end." />
 
                         <ItemsControl ItemsSource="{Binding Table.Seats}">
                             <ItemsControl.ItemTemplate>
@@ -327,7 +327,7 @@
                                             </TextBlock>
                                             <TextBlock Style="{StaticResource Caption}">
                                                 <Run Text="{Binding CardCount, Mode=OneWay}" /><Run Text=" cards · " /><Run
-                                                    Text="{Binding TicketCount, Mode=OneWay}" /><Run Text=" tickets · " /><Run
+                                                    Text="{Binding TicketCount, Mode=OneWay}" /><Run Text=" destinations · " /><Run
                                                     Text="{Binding RoutesClaimed, Mode=OneWay}" /><Run Text=" routes" />
                                             </TextBlock>
                                         </StackPanel>

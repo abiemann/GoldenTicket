@@ -19,7 +19,7 @@
 
             <TextBlock Style="{StaticResource Display}" Text="GoldenTicket" />
             <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,4"
-                       Text="A companion for a physical game of Ticket to Ride. The board and trains stay on the table; cards, decks and destination tickets are digital." />
+                       Text="A companion for a physical game of Ticket to Ride. The board and trains stay on the table; cards, decks and destinations are digital." />
             <TextBlock Style="{StaticResource Caption}" Text="{Binding Setup.EditionSummary}" Margin="0,0,0,16" />
 
             <!-- DESIGN 6.3: say plainly whether the board data has been checked. -->
@@ -88,7 +88,7 @@
                 <StackPanel>
                     <TextBlock FontWeight="SemiBold" Text="Before you start" />
                     <TextBlock Style="{StaticResource Caption}"
-                               Text="Leave the physical train cards and destination tickets in the box: this application deals and holds every card, for every seat. Put the board and the plastic trains on the table as usual." />
+                               Text="Leave the physical train cards and destinations in the box: this application deals and holds every card, for every seat. Put the board and the plastic trains on the table as usual." />
                     <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
                                Text="You confirm each physical placement on the laptop. The Camera tab offers preview and reference photos; automatic train verification is not enabled." />
                     <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"

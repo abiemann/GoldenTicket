@@ -165,13 +165,13 @@ public sealed partial class GameScreenViewModel : ObservableObject
 
     private void TableSeatsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        // Two seats face one another. Additional seats occupy the top, sides and foot of the board.
+        // The first two seats face one another. Four seats flank the board; a fifth sits below it.
         (double Left, double Top)[] positions = _main.Table.Seats.Count switch
         {
             2 => [(10, 330), (1180, 330)],
-            3 => [(285, 14), (905, 14), (315, 765)],
-            4 => [(285, 14), (905, 14), (10, 330), (1180, 330)],
-            _ => [(285, 14), (905, 14), (1180, 330), (315, 765), (10, 330)],
+            3 => [(10, 330), (1180, 330), (595, 755)],
+            4 => [(10, 265), (1180, 265), (10, 530), (1180, 530)],
+            _ => [(10, 265), (1180, 265), (10, 530), (1180, 530), (595, 755)],
         };
         TableSeats = _main.Table.Seats.Select((seat, index) =>
         {

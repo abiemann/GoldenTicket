@@ -99,8 +99,10 @@ This build implements the core game plus initial phone, camera and photo workflo
   colors. The portraits cycle through human, computer and unselected. You can also reopen the
   most recently updated save. Shift+Escape reveals the existing technical screens; **Return to
   game** slides the game layer back. Both presentations use the same match and camera objects.
-- With one human, cards and destination choices open on the laptop when that player needs to act.
-  **Your cards** and **Back to table** replace handoff prompts, and **Connect phone** is hidden.
+- With one human, the three opening destinations appear over the game board. Keep all three or
+  click one to drop it, confirm, and watch it leave before the two kept tickets are saved. Later
+  private cards open on the laptop when that player needs to act. **Your cards** and **Back to table**
+  replace handoff prompts, and **Connect phone** is hidden.
   Matches with multiple humans keep pass-and-hide and can optionally use the phone companion.
 - A laptop-hosted HTTPS phone PWA with private human cards/tickets, digital draws and route/payment
   choices. One shared controller is paired and explicitly approved on the laptop. Private views
@@ -293,11 +295,17 @@ turn, status and players; **Packed away** is a status, not the save's name.
 3. **PLAY!** opens the game table with a live, cropped board from the accepted four camera corners.
    A persistent panel above the board identifies the current phase, the acting player, and the
    instruction humans should follow next.
+   In a one-human game, opening destinations appear over the board. Select **KEEP ALL THREE** or
+   click one card and confirm its drop; at least two must be kept. The dropped card leaves the
+   screen before the saved ticket count updates. The computer chooses its own tickets by value
+   and estimated route cost and may keep all three.
    The chosen players sit around it with their matching portraits, train colors, remaining trains,
-   and face-down card and ticket stacks showing public counts. During opening selection, each
+   and face-down card and destination stacks showing public counts. The first two face each other;
+   with five players, two tiles flank each side of the board and the fifth sits centered below it.
+   Each tile shows that player's latest public action along its bottom edge. During opening selection, each
    unresolved three-ticket offer is included in its player's public count without revealing any
-   ticket identity. The five face-up train cards appear
-   beside the board. The complete scene scales together when the window is resized or maximized.
+   destination identity. The five face-up train cards appear at the bottom right edge of the table.
+   The complete scene scales together when the window is resized or maximized.
    **Your cards** opens the current human's private view when it is their turn; **Game controls**
    opens the public turn, placement, and save controls. A camera restart or format change requires
    checking and restoring the board crop through the technical Camera screen.

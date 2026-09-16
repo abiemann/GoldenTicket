@@ -42,7 +42,7 @@
 
                                 <TextBlock Margin="0,8,0,0">
                                     <Run Text="Routes " /><Run Text="{Binding RoutePoints, Mode=OneWay}" /><Run
-                                        Text="   ·   tickets +" /><Run Text="{Binding TicketsGained, Mode=OneWay}" /><Run
+                                        Text="   ·   destinations +" /><Run Text="{Binding TicketsGained, Mode=OneWay}" /><Run
                                         Text=" / -" /><Run Text="{Binding TicketsLost, Mode=OneWay}" /><Run
                                         Text="   ·   longest-route bonus " /><Run Text="{Binding LongestBonus, Mode=OneWay}" />
                                 </TextBlock>

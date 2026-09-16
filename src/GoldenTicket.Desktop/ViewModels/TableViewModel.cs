@@ -19,7 +19,8 @@ public sealed record SeatRow(
     int CardCount,
     int TicketCount,
     int RoutesClaimed,
-    bool IsActive);
+    bool IsActive,
+    string LastAction);
 
 public sealed record MarketSlotRow(int Slot, TrainCardKind? Kind, string Label);
 
@@ -104,7 +105,7 @@ public sealed partial class TableViewModel : ObservableObject
         Instruction = DescribeInstruction(view, active);
 
         SupplyText = $"Draw pile {view.TrainDeckCount}  ·  discards {view.TrainDiscardCount}  ·  " +
-                     $"destination tickets {view.TicketDeckCount}";
+                     $"destinations {view.TicketDeckCount}";
 
         VerificationText = view.VerificationMode == VerificationMode.Manual
             ? "Physical verification: operator confirms each placement. Camera verification is not available in this build."
@@ -140,7 +141,8 @@ public sealed partial class TableViewModel : ObservableObject
                 seat.TrainCardCount,
                 seat.TicketCount + seat.PendingTicketOfferCount,
                 seat.ClaimedRoutes.Length,
-                seat.SeatId == view.ActiveSeatId));
+                seat.SeatId == view.ActiveSeatId,
+                LastActionFor(seat.SeatId, history)));
         }
 
         Market.Clear();
@@ -166,12 +168,51 @@ public sealed partial class TableViewModel : ObservableObject
         foreach (var entry in history.TakeLast(40))
         {
             var who = entry.Seat is { } seat ? view.SeatOf(seat).DisplayName + ": " : "";
-            History.Add(who + entry.Text);
+            History.Add(who + entry.Text.Replace("destination ticket", "destination", StringComparison.Ordinal));
         }
 
         Placement = !view.IsGameplaySuspended && view.PendingClaim is { } pending
             ? BuildPlacement(view, pending)
             : null;
+    }
+
+    private static string LastActionFor(SeatId seatId, IReadOnlyList<PublicEventEntry> history)
+    {
+        for (var index = history.Count - 1; index >= 0; index--)
+        {
+            var entry = history[index];
+            if (entry.Seat != seatId) continue;
+
+            switch (entry.Kind)
+            {
+                case "FaceUpCardTaken":
+                case "BlindCardDrawn":
+                    var faceUp = 0;
+                    var blind = 0;
+                    for (var draw = index; draw >= 0; draw--)
+                    {
+                        var prior = history[draw];
+                        if (prior.Seat != seatId) continue;
+                        if (prior.Kind == "TurnStarted") break;
+                        if (prior.Kind == "FaceUpCardTaken") faceUp++;
+                        if (prior.Kind == "BlindCardDrawn") blind++;
+                    }
+                    var count = faceUp + blind;
+                    var source = faceUp > 0 && blind > 0 ? "face-up and blind" :
+                        faceUp > 0 ? "face-up" : "blind";
+                    return $"Drew {count} {source} train card{(count == 1 ? "" : "s")}.";
+                case "TicketsKept":
+                    return entry.Text.Replace("destination ticket", "destination", StringComparison.Ordinal);
+                case "TicketOfferCreated":
+                    return entry.Text.Replace("destination ticket", "destination", StringComparison.Ordinal);
+                case "ClaimCommitted":
+                case "ClaimCancelled":
+                case "ClaimPlanned":
+                    return entry.Text;
+            }
+        }
+
+        return "Waiting for first action.";
     }
 
     private PlacementInstruction BuildPlacement(PublicView view, PublicPendingClaim pending)
@@ -245,7 +286,7 @@ public sealed partial class TableViewModel : ObservableObject
             TurnPhase.AwaitingSecondTrainCard =>
                 "When you resume, the active seat still owes the second card of its draw.",
             TurnPhase.AwaitingTicketKeep =>
-                "When you resume, the active seat is still choosing which destination tickets to keep.",
+                "When you resume, the active seat is still choosing which destinations to keep.",
             TurnPhase.AwaitingPhysicalPlacement =>
                 "A route claim was waiting for its trains. Those trains are NOT part of the saved board " +
                 "below; after resuming, place them and confirm as usual. Nothing has been spent.",
@@ -286,10 +327,10 @@ public sealed partial class TableViewModel : ObservableObject
 
     private static string DescribePhase(PublicView view) => view.TurnPhase switch
     {
-        TurnPhase.SetupTicketSelection => "Choosing opening destination tickets",
+        TurnPhase.SetupTicketSelection => "Choosing opening destinations",
         TurnPhase.TurnStart => "Choosing an action",
         TurnPhase.AwaitingSecondTrainCard => "Taking a second train card",
-        TurnPhase.AwaitingTicketKeep => "Choosing which destination tickets to keep",
+        TurnPhase.AwaitingTicketKeep => "Choosing which destinations to keep",
         TurnPhase.AwaitingPhysicalPlacement => "Waiting for trains to be placed",
         TurnPhase.RestoreBeforeState => "Waiting for the board to be put back",
         TurnPhase.FinalScoring => "Final scoring",
@@ -308,10 +349,13 @@ public sealed partial class TableViewModel : ObservableObject
             "Rebuild the saved target, including empty lanes, before resuming play.",
         TurnPhase.RulesDecisionRequired =>
             "Review the supply policy below before continuing the match.",
+        TurnPhase.SetupTicketSelection when view.Seats.Count(seat => seat.Kind == SeatKind.Human) == 1 =>
+            $"{view.Seats.Single(seat => seat.Kind == SeatKind.Human).DisplayName}: " +
+            "choose whether to keep all destinations or drop one.",
         TurnPhase.SetupTicketSelection =>
             "Each seat keeps at least " +
             $"{_manifest.RulesConstants.SetupTicketMinimumKeep} of its {_manifest.RulesConstants.SetupTicketOffer} " +
-            "opening tickets. Hand the laptop to each human in turn.",
+            "opening destinations.",
 
         TurnPhase.AwaitingPhysicalPlacement when view.PendingClaim is { } pending =>
             $"Place {active.DisplayName}'s {pending.TrainCount} {active.Color} trains on " +

@@ -96,6 +96,8 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _boardReconciliationAcknowledged;
 
     public bool IsPrivateVisible => PrivateSeat is not null;
+    public bool ShowSoloOpeningTicketsOnBoard => IsSingleHumanGame &&
+        PrivateSeat is { IsSetupOffer: true, MustChooseTickets: true };
 
     private int HumanSeatCount => _coordinator?.Public.Seats.Count(seat => seat.Kind == SeatKind.Human) ?? Setup.HumanSeatCount;
     public bool IsSingleHumanGame => HumanSeatCount == 1;
@@ -126,6 +128,7 @@ public sealed partial class MainViewModel : ObservableObject
     private void NotifyHumanPresentation()
     {
         OnPropertyChanged(nameof(IsSingleHumanGame));
+        OnPropertyChanged(nameof(ShowSoloOpeningTicketsOnBoard));
         OnPropertyChanged(nameof(CanConnectPhone));
         OnPropertyChanged(nameof(RevealPrompt));
         ShowConnectionCommand.NotifyCanExecuteChanged();
@@ -146,7 +149,11 @@ public sealed partial class MainViewModel : ObservableObject
             : $"Pass the laptop to {seat.Name}, then reveal their private view."
         : "No human seat needs the screen right now.";
 
-    partial void OnPrivateSeatChanged(PrivateSeatViewModel? value) => OnPropertyChanged(nameof(IsPrivateVisible));
+    partial void OnPrivateSeatChanged(PrivateSeatViewModel? value)
+    {
+        OnPropertyChanged(nameof(IsPrivateVisible));
+        OnPropertyChanged(nameof(ShowSoloOpeningTicketsOnBoard));
+    }
 
     partial void OnScreenChanged(Screen value)
     {
