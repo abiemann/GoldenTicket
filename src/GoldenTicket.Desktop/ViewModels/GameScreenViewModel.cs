@@ -1,5 +1,6 @@
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Collections.Specialized;
 using CommunityToolkit.Mvvm.ComponentModel;
 using GoldenTicket.Domain;
 
@@ -48,6 +49,10 @@ public sealed partial class GameSeatChoice(int number) : ObservableObject
         CharacterRole.Computer => _robotPortrait ??= LoadPortrait(true),
         _ => _unselectedPortrait ??= UnselectedPortrait(),
     };
+
+    public ImageSource PortraitFor(bool computer) => computer
+        ? _robotPortrait ??= LoadPortrait(true)
+        : _humanPortrait ??= LoadPortrait(false);
 
     [ObservableProperty] private CharacterRole _role;
     [ObservableProperty] private int _roleNumber;
@@ -138,6 +143,9 @@ public sealed partial class GameSeatChoice(int number) : ObservableObject
     }
 }
 
+/// <summary>Public seat information placed around the live board, with no private card contents.</summary>
+public sealed record GameTableSeat(SeatRow Seat, ImageSource Portrait, double Left, double Top);
+
 /// <summary>Five character choices become the shared setup seats only when a new match starts.</summary>
 public sealed partial class GameScreenViewModel : ObservableObject
 {
@@ -148,10 +156,31 @@ public sealed partial class GameScreenViewModel : ObservableObject
         _main = main;
         SeatChoices = Enumerable.Range(1, 5).Select(number => new GameSeatChoice(number)).ToArray();
         _main.Setup.SavedSessions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasPreviousGame));
+        _main.Table.Seats.CollectionChanged += TableSeatsChanged;
         UpdateSelection();
     }
 
     public IReadOnlyList<GameSeatChoice> SeatChoices { get; }
+    public IReadOnlyList<GameTableSeat> TableSeats { get; private set; } = [];
+
+    private void TableSeatsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        // Two seats face one another. Additional seats occupy the top, sides and foot of the board.
+        (double Left, double Top)[] positions = _main.Table.Seats.Count switch
+        {
+            2 => [(10, 330), (1180, 330)],
+            3 => [(285, 14), (905, 14), (315, 765)],
+            4 => [(285, 14), (905, 14), (10, 330), (1180, 330)],
+            _ => [(285, 14), (905, 14), (1180, 330), (315, 765), (10, 330)],
+        };
+        TableSeats = _main.Table.Seats.Select((seat, index) =>
+        {
+            var choice = SeatChoices.SingleOrDefault(candidate => candidate.TrainColor == seat.Color);
+            var portrait = choice?.PortraitFor(seat.Operator == "computer") ?? SeatChoices[index].PortraitFor(seat.Operator == "computer");
+            return new GameTableSeat(seat, portrait, positions[index].Left, positions[index].Top);
+        }).ToArray();
+        OnPropertyChanged(nameof(TableSeats));
+    }
     public bool HasPreviousGame => _main.Setup.SavedSessions.Count > 0;
     public int SelectedSeatCount => SeatChoices.Count(choice => choice.IsChosen);
     public bool CanPlay => SelectedSeatCount >= _main.Setup.MinPlayers && !IsFaceFlipping;
@@ -195,7 +224,11 @@ public sealed partial class GameScreenViewModel : ObservableObject
         OnPropertyChanged(nameof(IsPlaySelected));
     }
 
-    public void ShowPlaying() => Stage = GameScreenStage.Playing;
+    public void ShowPlaying()
+    {
+        Stage = GameScreenStage.Playing;
+        _main.Camera.RequestGameTablePreview();
+    }
 
     public void Back()
     {

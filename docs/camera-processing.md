@@ -27,9 +27,11 @@ backend. Rules and game AI remain on the CPU.
    On Pixel, choose **Webcam** in USB preferences. Use the phone's webcam
    preview to select the intended camera, framing and focus. Google documents the
    [Pixel USB webcam workflow](https://support.google.com/pixelcamera/answer/14274129?hl=en).
-2. In **Camera**, select the device and **4K preferred · best available**, then **Start preview**.
-   The app requests the largest usable mode advertised by the camera up to 3840 × 2160. An
-   unavailable mode falls back to a smaller native mode; **Balanced 1080p** remains available.
+2. In **Camera**, select the device and keep **1080p preferred · best available**, then
+   **Start preview**. The app first requests exact 1920 × 1080 at the native frame rate closest
+   to 30 fps, then falls back through smaller usable native modes. Select **4K preferred · best
+   available** when the overhead camera advertises a useful native 4K mode; it permits modes up
+   to 3840 × 2160 and falls back when necessary.
    **Shared current format** reads the camera's existing mode without changing its owner's format.
 3. Check the reported camera dimensions and processing dimensions separately. A 1920 × 1080
    source enhanced to 3840 × 2160 is explicitly identified as upscaled. Larger output pixels do

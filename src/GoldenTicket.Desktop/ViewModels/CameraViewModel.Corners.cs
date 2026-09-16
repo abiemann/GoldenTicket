@@ -25,6 +25,7 @@ public sealed partial class CameraViewModel
     private DateTimeOffset _gameMarkersAcceptedAt = DateTimeOffset.MinValue;
     private (long Epoch, int Width, int Height)? _gameMarkersCapture;
     private bool _gameMarkersReady;
+    private int? _gameBoardOrientationIndex;
 
     private static readonly TimeSpan GameBoardCheckInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan GameBoardResultLifetime = TimeSpan.FromSeconds(2.5);
@@ -62,6 +63,7 @@ public sealed partial class CameraViewModel
 
     public void BeginGameBoardFraming(IReadOnlyCollection<MarkerColor>? selectedColors = null)
     {
+        EndGameTablePreview();
         _gameBoardFramingActive = true;
         _gameBoardFramingRevision++;
         _gameSetupColors = selectedColors?.Distinct().ToArray() ?? [];
@@ -83,6 +85,7 @@ public sealed partial class CameraViewModel
     private void ClearGameMarkerCheck()
     {
         _gameMarkersReady = false;
+        _gameBoardOrientationIndex = null;
         _gameMarkersCapture = null;
         _gameMarkersAcceptedAt = DateTimeOffset.MinValue;
         OnPropertyChanged(nameof(CanStartGameWithBoard));
@@ -261,6 +264,7 @@ public sealed partial class CameraViewModel
             _registration = registration;
             BoardPreview = preview;
             HasBoardCrop = true;
+            AdoptTechnicalBoardCrop(current, registration);
             _previewSequence = -1;
             Problem = null;
             CropText = "ML selected the board with a small outer margin to protect score pieces. Zoom in and drag any numbered handle to adjust the crop." +
@@ -333,6 +337,7 @@ public sealed partial class CameraViewModel
                 return;
             }
             _gameMarkersReady = check.Ready;
+            _gameBoardOrientationIndex = check.Ready ? check.OrientationIndex : null;
             _gameMarkersCapture = (frame.Epoch, frame.Width, frame.Height);
             _gameMarkersAcceptedAt = DateTimeOffset.UtcNow;
             GameBoardFramingStatus = check.Message;

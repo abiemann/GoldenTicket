@@ -25,6 +25,11 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     private readonly SceneReferenceMonitor _monitor = new();
     private readonly CancellationTokenSource _lifetime = new();
     private BoardRegistration? _registration;
+    private BoardRegistration? _gameTableRegistration;
+    private bool _gameTablePreviewRequested;
+    private long _gameTableCropRevision;
+    private bool _gameTableCropBusy;
+    private DateTimeOffset _lastGameTableCropAt = DateTimeOffset.MinValue;
     private (long Epoch, int Width, int Height)? _cornerCapture;
     private long _previewSequence = -1;
     private long _cropRevision;
@@ -46,7 +51,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             Interval = TimeSpan.FromMilliseconds(200)
         };
         _previewTimer.Tick += PreviewTick;
-        SelectedPreference = Preferences[0];
+        SelectedPreference = Preferences.First(option => option.Value == CameraCapturePreference.Balanced1080p);
         SelectedProcessor = ProcessorModes.First(option => option.Value ==
             Services.FrameProcessingPreferences.Load(processingSettingsPath));
     }
@@ -57,8 +62,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<NormalizedPoint> SelectedCorners { get; } = [];
     public IReadOnlyList<CameraPreferenceOption> Preferences { get; } =
     [
+        new(CameraCapturePreference.Balanced1080p, "1080p preferred · best available"),
         new(CameraCapturePreference.HighDetail2160p, "4K preferred · best available"),
-        new(CameraCapturePreference.Balanced1080p, "Balanced · up to 1080p"),
         new(CameraCapturePreference.SharedCurrent, "Shared · current Windows format")
     ];
 
@@ -66,6 +71,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private CameraPreferenceOption _selectedPreference = null!;
     [ObservableProperty] private BitmapSource? _preview;
     [ObservableProperty] private BitmapSource? _boardPreview;
+    [ObservableProperty] private BitmapSource? _gameTablePreview;
+    [ObservableProperty] private string _gameTablePreviewStatus = "Waiting for the live board view.";
     [ObservableProperty] private bool _isRunning;
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private bool _safetyHeld = true;
@@ -132,6 +139,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         Status = "Starting camera… Windows may request camera permission.";
         try
         {
+            InvalidateGameTablePreview();
             ClearRegistration();
             await InitializeProcessingAsync();
             await Capture.StartAsync(SelectedDevice, SelectedPreference.Value, _lifetime.Token);
@@ -161,6 +169,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         if (IsBusy || _disposed) return;
         IsBusy = true;
         // Clear readings and invalidate pending inference before camera teardown can wait.
+        InvalidateGameTablePreview();
         ClearRegistration();
         try
         {
@@ -189,6 +198,11 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         var frame = Capture.LatestFrame;
         if (!Capture.IsRunning || frame is null || frame.Age > TimeSpan.FromSeconds(2))
         {
+            if (_gameTableRegistration is not null)
+            {
+                GameTablePreview = null;
+                GameTablePreviewStatus = "Camera unavailable. Reconnect it and check the board framing.";
+            }
             ExpireGameBoardFraming(null);
             ClearDetectionPreview();
             _monitor.MarkStale();
@@ -215,6 +229,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
                 if (!registration.Matches(frame)) ClearRegistration();
                 else BoardPreview = ToBitmap(registration.Rectify(frame, 480, 300));
             }
+            QueueGameTablePreview(frame);
             var comparison = _monitor.Observe(frame);
             SafetyHeld = comparison.SafetyHeld;
             ComparisonText = comparison.State switch
@@ -356,6 +371,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             _registration = registration;
             BoardPreview = preview;
             HasBoardCrop = true;
+            AdoptTechnicalBoardCrop(frame, registration);
             CropText = "Board photo crop selected. Drag any numbered corner to adjust it. Check that every route and the complete score track are inside the outline.";
             Problem = null;
         }
@@ -453,6 +469,92 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     }
 
     private const string StartCropInstruction = "ML will try to select the four outer board corners when the preview starts. Use Detect board corners to try again, or Select four board corners to place them yourself.";
+
+    /// <summary>Keep the accepted setup crop for the public table without opening another camera stream.</summary>
+    public void BeginGameTablePreview()
+    {
+        if (!CanStartGameWithBoard || Capture.LatestFrame is not { } frame) return;
+        _gameTablePreviewRequested = true;
+        var orientation = _gameBoardOrientationIndex ?? 0;
+        var corners = GameBoardOrientations.Enumerate(GameBoardCorners)[orientation];
+        _gameTableRegistration = BoardRegistration.Create(frame, corners);
+        _gameTableCropRevision++;
+        _lastGameTableCropAt = DateTimeOffset.MinValue;
+        GameTablePreviewStatus = "Preparing the live board crop…";
+        QueueGameTablePreview(frame);
+    }
+
+    /// <summary>Used for restored games: an accepted technical crop can rejoin this table later.</summary>
+    public void RequestGameTablePreview()
+    {
+        _gameTablePreviewRequested = true;
+        if (_gameTableRegistration is not null) return;
+        if (_registration is { } registration && Capture.LatestFrame is { } frame && registration.Matches(frame))
+            AdoptTechnicalBoardCrop(frame, registration);
+        else GameTablePreviewStatus = "Open Camera in the utility screens to find the board again.";
+    }
+
+    public void EndGameTablePreview()
+    {
+        _gameTablePreviewRequested = false;
+        InvalidateGameTablePreview();
+    }
+
+    private void InvalidateGameTablePreview()
+    {
+        _gameTableRegistration = null;
+        _gameTableCropRevision++;
+        GameTablePreview = null;
+        GameTablePreviewStatus = _gameTablePreviewRequested
+            ? "Open Camera in the utility screens to find the board again."
+            : "Waiting for the live board view.";
+    }
+
+    private void AdoptTechnicalBoardCrop(CameraFrame frame, BoardRegistration registration)
+    {
+        if (!_gameTablePreviewRequested || _gameTableRegistration is not null) return;
+        _gameTableRegistration = registration;
+        _gameTableCropRevision++;
+        _lastGameTableCropAt = DateTimeOffset.MinValue;
+        GameTablePreviewStatus = "Preparing the live board crop…";
+        QueueGameTablePreview(frame);
+    }
+
+    private void QueueGameTablePreview(CameraFrame frame)
+    {
+        if (_gameTableRegistration is not { } registration || _gameTableCropBusy) return;
+        if (!registration.Matches(frame))
+        {
+            InvalidateGameTablePreview();
+            GameTablePreviewStatus = "Camera format changed. Recheck the board framing.";
+            return;
+        }
+        if (DateTimeOffset.UtcNow - _lastGameTableCropAt < TimeSpan.FromMilliseconds(350)) return;
+        _lastGameTableCropAt = DateTimeOffset.UtcNow;
+        _ = RenderGameTablePreviewAsync(frame, registration, _gameTableCropRevision);
+    }
+
+    private async Task RenderGameTablePreviewAsync(CameraFrame frame, BoardRegistration registration, long revision)
+    {
+        _gameTableCropBusy = true;
+        try
+        {
+            var bitmap = await Task.Run(() => ToBitmap(registration.Rectify(frame, 960, 600)), _lifetime.Token);
+            if (_disposed || revision != _gameTableCropRevision ||
+                !ReferenceEquals(registration, _gameTableRegistration) || !Capture.IsRunning ||
+                Capture.LatestFrame is not { } latest || latest.Age > TimeSpan.FromSeconds(2) ||
+                !registration.Matches(latest)) return;
+            GameTablePreview = bitmap;
+            GameTablePreviewStatus = "";
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            if (revision != _gameTableCropRevision || _disposed) return;
+            GameTablePreviewStatus = "The live board crop is unavailable: " + ex.Message;
+        }
+        finally { _gameTableCropBusy = false; }
+    }
 
     private void ClearRegistration()
     {

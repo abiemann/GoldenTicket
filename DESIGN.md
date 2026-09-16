@@ -181,10 +181,14 @@ Show the affected region on the preview. A format that is nominally 4K but blurr
 
 The public screen contains:
 
+- A persistent guidance panel above the board: the current phase, the acting seat, and a concise
+  instruction telling the humans what is happening or what they need to do next.
 - Active player name, color, symbol, and turn status.
 - Live board view with transforms synchronized to its displayed frame.
 - Current route instruction or a short explanation of the current card action.
-- Public card market, public scores, and remaining-train indicators.
+- Public card market, public scores, and remaining-train indicators. Public ticket stacks include
+  the count of a pending offer, including all three opening tickets, while ticket identities remain
+  confined to the owning seat's private view.
 - A public event history that omits private draws and unplayed tickets.
 - Always-reachable Pause, Save and pack away, Recheck, Repeat instruction, and sound controls.
 - Camera status and the actual inference backend in use.
@@ -391,9 +395,18 @@ rules in section 4.7 when leaving their workflow.
 
 The transition lasts 260 ms when Windows client-area animations are enabled and is immediate
 when they are disabled. Only the active layer accepts input, focus moves to it, and the game
-layer fills the resized or maximized content area. The existing table, rebuild and final-score
-views are shown as the first player-facing gameplay views after PLAY or Reload. This UI step
-does not complete the separate voice, story and audio work.
+layer fills the resized or maximized content area. After new-game **PLAY!**, the player-facing
+table shows a live 8:5 crop of the accepted board from the same camera stream. The setup check's
+selected rotation orients the crop. Two to five selected seats occupy positions around the board,
+with their portraits, physical train colors, remaining train counts and face-down card/ticket
+stacks labeled only with public counts. The public five-card market sits beside it. The whole
+scene scales uniformly when the window changes size or is maximized. **Your cards** opens the
+current human's private view; **Game controls** opens the existing public table controls for
+turn actions, manual placement checks and saving. The technical layer remains available with
+Shift+Escape. A stale or changed camera frame hides the crop rather than presenting an old image
+as live. A resumed game uses the same seat layout and can acquire a crop when the operator
+registers the board in the technical Camera screen. Rebuild and final-score views retain their
+existing presentation. This UI step does not complete the separate voice, story and audio work.
 
 ## 5. Digital cards and private information
 
@@ -1051,11 +1064,12 @@ OpenCvSharp supplies image analysis, not capture. Its [slim runtime](https://www
 
 #### Implemented capture and output policy, September 12, 2026
 
-The current direct WinRT implementation defaults to **4K preferred · best available**. It ranks
-native modes advertised across color Record/Preview sources by pixel area up to 3840 × 2160,
-then proximity to 15 fps within the supported 5–60 fps range. A rejected mode or reader startup
-falls through to another advertised candidate within the startup budget. Balanced mode caps the
-request at 1080p; Shared current mode never changes another camera owner's format. The reader
+The current direct WinRT implementation defaults to **1080p preferred · best available**. It
+prefers an exact native 1920 × 1080 mode and proximity to 30 fps, then falls back through native
+modes up to that pixel budget. **4K preferred · best available** remains a Camera utility option;
+it ranks native modes by pixel area up to 3840 × 2160, then proximity to 15 fps within the
+supported 5–60 fps range. A rejected mode or reader startup falls through to another advertised
+candidate within the startup budget. Shared current mode never changes another camera owner's format. The reader
 does not request an artificial output size. Its actual delivered bitmap dimensions are reported
 separately from negotiated source metadata and subsequent enhancement dimensions.
 

@@ -292,11 +292,10 @@
             </Border>
         </Viewbox>
 
-        <!-- Gameplay reuses the existing public views and the same MainViewModel. The technical
-             layer remains alive underneath this view while it is covered. -->
+        <!-- Gameplay and utility screens share the same MainViewModel and camera stream. -->
         <Grid Background="{StaticResource Surface.Window}"
               Visibility="{Binding Game.IsPlaying, Converter={StaticResource BoolToVisibility}}">
-            <views:TableView Visibility="{Binding GameplayScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=Table}" />
+            <views:GameTableView Visibility="{Binding GameplayScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=Table}" />
             <views:RebuildView Visibility="{Binding GameplayScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=Rebuild}" />
             <views:FinalScoreView Visibility="{Binding GameplayScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=FinalScore}" />
         </Grid>

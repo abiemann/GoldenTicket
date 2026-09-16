@@ -41,6 +41,7 @@ public class DesktopFlowTests
 
         // Both computer seats have already chosen; only the human is outstanding.
         Assert.Equal(3, model.Table.Seats.Count);
+        Assert.Equal(3, model.Table.Seats.Single(seat => seat.DisplayName == "Alex").TicketCount);
         Assert.Contains("opening ticket", model.Table.Instruction, StringComparison.OrdinalIgnoreCase);
     }
 

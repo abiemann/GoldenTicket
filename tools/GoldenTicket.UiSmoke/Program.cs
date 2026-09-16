@@ -62,6 +62,7 @@ internal static partial class Program
                 await VerifyWindowShutdown();
                 await VerifyWindowExitConfirmation();
                 await VerifyGameMenu();
+                await VerifyGameTableLayout();
                 await VerifyGameLayerTransition();
                 await VerifySavedMatchSelection();
                 await VerifySavedMatchName();
@@ -648,10 +649,34 @@ internal static partial class Program
                         if (!camera.CanStartGameWithBoard || !play.IsEnabled || notice.Visibility != Visibility.Collapsed)
                             throw new InvalidOperationException("Fresh corners and score pieces must enable PLAY and hide the board notice.");
                     }, [(875, 680), (1280, 800)]);
+                var freshBoardFrame = CameraFrame.CopyFromBgra32(320, 180, pixels, 2, 1);
+                captureType.GetField("_latest", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .SetValue(capture, freshBoardFrame);
+                camera.BeginGameTablePreview();
+                for (var attempt = 0; attempt < 20 && camera.GameTablePreview is null; attempt++)
+                    await Task.Delay(100);
+                camera.EndGameBoardFraming();
+                if (camera.GameTablePreview is not { PixelWidth: 960, PixelHeight: 600 })
+                    throw new InvalidOperationException("PLAY must retain a cropped live board from the accepted camera frame.");
+                camera.EndGameTablePreview();
+                camera.RequestGameTablePreview();
+                captureType.GetField("_latest", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .SetValue(capture, CameraFrame.CopyFromBgra32(320, 180, pixels, 3, 1));
+                foreach (var corner in new[] { new NormalizedPoint(.1, .12), new(.9, .12),
+                    new(.9, .88), new(.1, .88) }) camera.SelectedCorners.Add(corner);
+                cameraType.GetMethod("UpdateBoardCrop", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(camera, null);
+                for (var attempt = 0; attempt < 20 && camera.GameTablePreview is null; attempt++)
+                    await Task.Delay(100);
+                if (camera.GameTablePreview is not { PixelWidth: 960, PixelHeight: 600 })
+                    throw new InvalidOperationException("Re-registering the board in Camera must restore the game's live crop.");
+                camera.SelectedCorners.Clear();
+                camera.EndGameTablePreview();
             }
             finally
             {
                 camera.EndGameBoardFraming();
+                camera.EndGameTablePreview();
                 camera.Preview = null;
                 camera.IsRunning = false;
                 captureType.GetField("_running", BindingFlags.Instance | BindingFlags.NonPublic)!
@@ -759,6 +784,95 @@ internal static partial class Program
                 await savedMenu.DisposeToolsAsync();
             }
             Console.WriteLine("Game menu: staged renders, hover/click and cursor/Enter interactions passed.");
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    private static async Task VerifyGameTableLayout()
+    {
+        var model = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
+        try
+        {
+            var pixels = new byte[960 * 600 * 4];
+            for (var index = 0; index < pixels.Length; index += 4)
+            {
+                pixels[index] = 85;
+                pixels[index + 1] = 120;
+                pixels[index + 2] = 155;
+                pixels[index + 3] = 255;
+            }
+            model.Game.ShowPlaying();
+            model.Camera.GameTablePreview = BitmapSource.Create(960, 600, 96, 96,
+                PixelFormats.Bgra32, null, pixels, 960 * 4);
+            model.Camera.GameTablePreviewStatus = "";
+            model.Screen = Screen.Table;
+            model.Table.TurnText = "Setup";
+            model.Table.ActiveSeatName = "Player 1";
+            model.Table.Instruction = "Each seat keeps at least 2 of its 3 opening tickets.";
+            var colors = new[] { PlayerColor.Red, PlayerColor.Blue, PlayerColor.Green,
+                PlayerColor.Black, PlayerColor.Yellow };
+            void AddSeat(int index) => model.Table.Seats.Add(new SeatRow(new SeatId(index + 1),
+                index is 1 or 3 ? $"Computer {index / 2 + 1}" : $"Player {index / 2 + 1}",
+                colors[index], "★", index is 1 or 3 ? "computer" : "human",
+                0, 45, 4, 3, 0, index == 0));
+            AddSeat(0);
+            AddSeat(1);
+            for (var index = 0; index < 5; index++)
+                model.Table.Market.Add(new MarketSlotRow(index, null, index == 0 ? "Locomotive" : "Card"));
+
+            void Verify(UserControl view)
+            {
+                var gameTable = view is GameTableView table ? table :
+                    Descendants<GameTableView>(view).Single();
+                var scene = (Canvas)gameTable.FindName("TableScene");
+                var board = (Image)gameTable.FindName("LiveBoardImage");
+                var stations = (ItemsControl)gameTable.FindName("PlayerStations");
+                var phase = (TextBlock)gameTable.FindName("GuidancePhaseText");
+                var seat = (TextBlock)gameTable.FindName("GuidanceSeatText");
+                var instruction = (TextBlock)gameTable.FindName("GuidanceInstructionText");
+                var market = Descendants<ItemsControl>(gameTable)
+                    .Single(control => ReferenceEquals(control.ItemsSource, model.Table.Market));
+                var locomotive = Descendants<TextBlock>(market)
+                    .Single(text => text.DataContext is MarketSlotRow { Label: "Locomotive" });
+                var locomotiveCard = Ancestors(locomotive).OfType<Border>()
+                    .First(border => border.DataContext is MarketSlotRow);
+                if (!IsElementShown(gameTable) || scene.Width != 1440 || scene.Height != 900 ||
+                    !ReferenceEquals(board.Source, model.Camera.GameTablePreview) ||
+                    stations.Items.Count != model.Table.Seats.Count || market.Items.Count != 5 ||
+                    locomotive.TextWrapping != TextWrapping.NoWrap || locomotiveCard.Width < 80 ||
+                    phase.Text != "Setup" || seat.Text != "Player 1" ||
+                    instruction.Text != "Each seat keeps at least 2 of its 3 opening tickets." ||
+                    !IsElementShown((Button)gameTable.FindName("OpenControlsButton")))
+                    throw new InvalidOperationException("The game table must retain its phase, acting-seat and human-instruction guidance above the shared board crop.");
+                var sceneBounds = scene.TransformToAncestor(view).TransformBounds(new Rect(scene.RenderSize));
+                if (sceneBounds.Left < -1 || sceneBounds.Top < -1 ||
+                    sceneBounds.Right > view.ActualWidth + 1 || sceneBounds.Bottom > view.ActualHeight + 1)
+                    throw new InvalidOperationException("The whole game-table scene must fit in windowed and maximized layouts.");
+                var stationBorders = Descendants<Border>(gameTable)
+                    .Where(border => border.DataContext is GameTableSeat && border.Width == 250).ToArray();
+                if (stationBorders.Length != model.Table.Seats.Count ||
+                    stationBorders.Any(border =>
+                    {
+                        var bounds = border.TransformToAncestor(view).TransformBounds(new Rect(border.RenderSize));
+                        return bounds.Left < -1 || bounds.Top < -1 ||
+                            bounds.Right > view.ActualWidth + 1 || bounds.Bottom > view.ActualHeight + 1;
+                    }))
+                    throw new InvalidOperationException("Every player portrait and card stack must remain inside the scaled game table.");
+            }
+
+            await RenderSizes("game-table-two", () => new GameScreenView { DataContext = model }, Verify,
+                [(1000, 620), (1280, 800)]);
+            for (var index = 2; index < 5; index++) AddSeat(index);
+            await RenderSizes("game-table-five", () => new GameScreenView { DataContext = model }, Verify,
+                [(1000, 620), (1280, 800)]);
+
+            var controlsView = new GameTableView { DataContext = model };
+            await Arrange(controlsView, 1000, 620);
+            ((Button)controlsView.FindName("OpenControlsButton"))
+                .RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            if (((Grid)controlsView.FindName("ControlsOverlay")).Visibility != Visibility.Visible)
+                throw new InvalidOperationException("The complete game controls must open from the table.");
+            Console.WriteLine("Game table: persistent human guidance, 2/5 player stations, public card stacks, shared crop, controls, and uniform resize passed.");
         }
         finally { await model.DisposeToolsAsync(); }
     }
@@ -1041,9 +1155,10 @@ internal static partial class Program
     private static async Task VerifyProcessingPresentation()
     {
         await using var camera = new CameraViewModel();
-        if (camera.SelectedPreference.Value != CameraCapturePreference.HighDetail2160p ||
+        if (camera.SelectedPreference.Value != CameraCapturePreference.Balanced1080p ||
+            !camera.Preferences.Any(option => option.Value == CameraCapturePreference.HighDetail2160p) ||
             camera.SelectedProcessor.Value != FrameComputeMode.Auto)
-            throw new InvalidOperationException("Camera defaults must request native4K and automatic hardware processing.");
+            throw new InvalidOperationException("Camera defaults must request the best native 1080p mode, retain the 4K option, and use automatic hardware processing.");
         camera.Preview = SyntheticCropFixture();
         camera.IsRunning = true;
         camera.FormatText = "Camera delivered 1920 × 1080 · synthetic presentation fixture";
@@ -1078,7 +1193,7 @@ internal static partial class Program
         camera.ClearPieceReferenceCommand.Execute(null);
         if (camera.PieceOutlines.Count != 0 || camera.HasPieceReference)
             throw new InvalidOperationException("Clearing the piece reference must immediately remove all outlines.");
-        Console.WriteLine("Processing presentation:4K/Auto defaults, white train/player geometry, square marker, toggle and reference clearing passed.");
+        Console.WriteLine("Processing presentation:1080p/Auto defaults with a 4K option, white train/player geometry, square marker, toggle and reference clearing passed.");
     }
 
     private static async Task VerifyKeyboardCornerHandler()
@@ -1255,6 +1370,13 @@ internal static partial class Program
             if (child is T match) yield return match;
             foreach (var nested in Descendants<T>(child)) yield return nested;
         }
+    }
+
+    private static IEnumerable<DependencyObject> Ancestors(DependencyObject element)
+    {
+        for (var current = VisualTreeHelper.GetParent(element); current is not null;
+             current = VisualTreeHelper.GetParent(current))
+            yield return current;
     }
 
     private sealed class BindingListener : TraceListener

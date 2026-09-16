@@ -15,7 +15,7 @@ public static class GameBoardOrientations
 public sealed record GameSetupBoardObservation(IReadOnlyList<PieceCandidate> Candidates,
     IReadOnlyList<ScoreMarkerReading> Markers);
 
-public sealed record GameSetupBoardCheck(bool Ready, string Message);
+public sealed record GameSetupBoardCheck(bool Ready, string Message, int? OrientationIndex = null);
 
 /// <summary>Conservative setup gate over all four board rotations and the current ML piece detections.</summary>
 public static class GameSetupBoardValidator
@@ -43,8 +43,9 @@ public static class GameSetupBoardValidator
             return new(false, message);
         }
 
-        var best = orientations.OrderByDescending(view => selected.Count(color =>
-            view.Markers.Any(marker => marker.Color == color && NearOne(view, marker)))).First();
+        var bestIndex = Enumerable.Range(0, orientations.Count).OrderByDescending(index => selected.Count(color =>
+            orientations[index].Markers.Any(marker => marker.Color == color && NearOne(orientations[index], marker)))).First();
+        var best = orientations[bestIndex];
         if (best.Candidates.Any(candidate => candidate.Kind == PieceCandidateKind.Train))
             return new(false, "Remove all trains from the board before starting.");
         if (!selected.Any(color => best.Markers.Any(marker => marker.Color == color && NearOne(best, marker))))
@@ -65,7 +66,7 @@ public static class GameSetupBoardValidator
         var extra = best.Markers.FirstOrDefault(marker => marker.Color is { } color && !selected.Contains(color));
         if (extra is not null)
             return new(false, $"Remove the unused {extra.Color!.Value.ToString().ToLowerInvariant()} scoring marker.");
-        return new(true, "");
+        return new(true, "", bestIndex);
     }
 
     private static bool NearOne(GameSetupBoardObservation view, ScoreMarkerReading marker)

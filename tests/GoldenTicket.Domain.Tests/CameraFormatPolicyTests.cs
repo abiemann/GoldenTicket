@@ -31,6 +31,24 @@ public sealed class CameraFormatPolicyTests
     }
 
     [Fact]
+    public void Balanced_mode_prefers_exact_full_hd_at_30fps()
+    {
+        CameraFormat[] formats =
+        [
+            new(1440, 1440, 30, "NV12"),
+            new(1920, 1080, 15, "NV12"),
+            new(1920, 1080, 60, "NV12"),
+            new(1920, 1080, 30, "NV12"),
+            new(1600, 1200, 30, "NV12"),
+        ];
+
+        var ranked = CameraFormatPolicy.RankFormats(formats, CameraCapturePreference.Balanced1080p);
+
+        Assert.Equal(formats[3], ranked[0]);
+        Assert.All(ranked.Take(3), format => Assert.Equal((1920, 1080), (format.Width, format.Height)));
+    }
+
+    [Fact]
     public void Equal_resolution_prefers_15fps_but_preserves_native_format_fallbacks()
     {
         CameraFormat[] formats = [new(3840, 2160, 60, "MJPG"), new(3840, 2160, 30, "MJPG"), new(3840, 2160, 15, "NV12"),

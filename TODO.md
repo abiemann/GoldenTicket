@@ -30,12 +30,19 @@ See the
   for every selected color near printed 1. Missing colors and trains appear as actionable notices;
   the notice disappears when the camera, train, and marker checks are ready.
   Manual placement verification remains.
+- [x] After PLAY, show the accepted live board crop in a uniformly scaled game table. Position
+  2–5 player portraits and their public train/card/ticket counts around it, with face-down stacks
+  and the five-card market nearby. Keep private card contents off the public table and provide
+  Your cards and Game controls actions. Preserve the panel above the board as the human guidance
+  area for the current phase, acting seat and next instruction throughout the game.
+- [ ] Re-register the live board crop automatically after a saved game is reloaded or the camera
+  restarts; for now, use the technical Camera screen to register it again.
 - [ ] Validate score-piece color and printed-1 acceptance with the real overhead camera for all
   five colors and rotated board orientations; synthetic tests do not establish live accuracy.
 - [ ] Recognize the board's printed score-track orientation independently of marker placement;
   the current four-rotation proximity check can mistake a marker cluster at another corner for 1.
 - [x] The affected corner and score-piece tests pass (72 focused cases). Synthetic WPF checks
-  cover 73 render cases, selection input, repeated transitions, resizing, privacy hiding and
+  cover 77 render cases, selection input, repeated transitions, resizing, privacy hiding and
   shared game/camera ownership, with no binding warnings.
 - [ ] Rerun the full automated suite under a loaded Windows user profile after the latest
   corner and score-piece changes; the sandboxed run cannot use Windows user-profile encryption.
@@ -117,8 +124,9 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
 - [x] **Manual board-photo export.** A valid live crop can be exported to PNG without a scene
   reference, including while the scene has changed. Fresh-frame and crop/camera identity checks
   remain; encrypted checkpoint-photo capture retains its separate reference checks.
-- [x] **Native-resolution preference and truthful 4K processing.** Prefer an advertised native mode
-  up to 3840 × 2160; try smaller usable modes when necessary, and display the actual delivered
+- [x] **Native-resolution preference and truthful 4K processing.** Default to exact native
+  1920 × 1080 near 30 fps, try smaller usable modes when necessary, and retain selectable native
+  4K capture up to 3840 × 2160. Display the actual delivered
   dimensions separately from processing output. Shared-read-only inspection confirms the current
   Pixel UVC connection advertises 1080p at most. Physical native-4K camera acceptance remains open.
 - [x] **CPU/GPU preprocessing implementation.** Real Direct3D 11 compute performs bounded

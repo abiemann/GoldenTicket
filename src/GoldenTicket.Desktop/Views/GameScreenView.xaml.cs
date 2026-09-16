@@ -267,12 +267,14 @@ public partial class GameScreenView : UserControl
         if (DataContext is not MainViewModel model ||
             model.Game is not { IsCameraSetup: true, IsBusy: false } game ||
             !model.Camera.CanStartGameWithBoard) return;
+        model.Camera.BeginGameTablePreview();
         await game.ConfirmCameraSetupAndPlayAsync();
         if (game.IsPlaying)
         {
             model.Camera.EndGameBoardFraming();
             _setupCameraEpoch = null;
         }
+        else model.Camera.EndGameTablePreview();
         if (game.IsCameraSetup) Keyboard.Focus(ConfirmationPlayButton);
         else FocusCurrentChoice();
     }

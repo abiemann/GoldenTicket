@@ -138,7 +138,7 @@ public sealed partial class TableViewModel : ObservableObject
                 seat.RouteScore,
                 seat.TrainsRemaining,
                 seat.TrainCardCount,
-                seat.TicketCount,
+                seat.TicketCount + seat.PendingTicketOfferCount,
                 seat.ClaimedRoutes.Length,
                 seat.SeatId == view.ActiveSeatId));
         }

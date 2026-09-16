@@ -23,6 +23,11 @@ public static class Projector
                 state.RouteScore[seat.SeatId],
                 state.HandOf(seat.SeatId).Count,
                 state.TicketsOf(seat.SeatId).Count,
+                state.SetupOffers.TryGetValue(seat.SeatId, out var setupOffer)
+                    ? setupOffer.Length
+                    : state.CurrentTicketOffer is { } offer && offer.SeatId == seat.SeatId
+                        ? offer.Offered.Length
+                        : 0,
                 [.. state.RoutesOwnedBy(seat.SeatId)]))
             .ToImmutableArray();
 

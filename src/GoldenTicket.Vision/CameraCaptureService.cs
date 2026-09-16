@@ -26,11 +26,14 @@ public static class CameraFormatPolicy
         if (preference is not (CameraCapturePreference.Balanced1080p or CameraCapturePreference.HighDetail2160p))
             throw new ArgumentOutOfRangeException(nameof(preference), "Shared capture keeps the camera's current format.");
         var maxPixels = preference == CameraCapturePreference.HighDetail2160p ? 3840L * 2160 : 1920L * 1080;
+        var preferredFramesPerSecond = preference == CameraCapturePreference.Balanced1080p ? 30 : 15;
         return formats.Where(f => FitsFrameBounds(f) && (long)f.Width * f.Height <= maxPixels &&
                 double.IsFinite(f.FramesPerSecond) && f.FramesPerSecond is >= 5 and <= 60)
             .Distinct()
-            .OrderByDescending(f => (long)f.Width * f.Height)
-            .ThenBy(f => Math.Abs(f.FramesPerSecond - 15))
+            .OrderByDescending(f => preference == CameraCapturePreference.Balanced1080p &&
+                f.Width == 1920 && f.Height == 1080)
+            .ThenByDescending(f => (long)f.Width * f.Height)
+            .ThenBy(f => Math.Abs(f.FramesPerSecond - preferredFramesPerSecond))
             .ThenBy(f => f.Subtype, StringComparer.Ordinal)
             .ToArray();
     }
@@ -76,7 +79,7 @@ public sealed class CameraCaptureService : IAsyncDisposable
     }
 
     public async Task StartAsync(CameraDevice device,
-        CameraCapturePreference preference = CameraCapturePreference.HighDetail2160p,
+        CameraCapturePreference preference = CameraCapturePreference.Balanced1080p,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(device);

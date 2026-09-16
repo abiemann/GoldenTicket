@@ -115,9 +115,11 @@ This build implements the core game plus initial phone, camera and photo workflo
   dragging a numbered handle adjusts that corner. **Pan**, Space + drag and middle-button drag
   are also available. Keys **1–4** bring a crop corner into view; arrow nudges
   become finer when zoomed. Zooming leaves the crop, camera references and exported image unchanged.
-- **4K preferred · best available** capture selects the largest usable advertised mode up to
-  3840 × 2160, falling back to a smaller native mode when needed. The UI distinguishes delivered
-  camera resolution from the enhanced processing size. The connected Pixel's USB webcam currently
+- **1080p preferred · best available** is the default capture profile. It selects exact
+  1920 × 1080 at the native frame rate closest to 30 fps when advertised, then falls back through
+  smaller usable native modes. **4K preferred · best available** remains selectable in the Camera
+  utility and permits advertised modes up to 3840 × 2160. The UI distinguishes delivered camera
+  resolution from the enhanced processing size. The connected Pixel's USB webcam currently
   advertises a maximum of 1920 × 1080; a 4K preview from it is explicitly labeled upscaled.
 - **Auto · prefer GPU**, **CPU only**, and **GPU · CPU fallback** processing, with a remembered
   preference and the actual backend/adapter shown. A hardware Direct3D 11 compute path validates
@@ -281,17 +283,28 @@ turn, status and players; **Packed away** is a status, not the save's name.
    **PLAY!** stays disabled. Every train placement still requires a manual whole-board check. Human-only
    and computer-only games are allowed; a person must still place and verify computer trains. The
    technical setup screen offers seat names, colours and AI difficulty.
-3. With one human, opening destination choices appear directly on the laptop. With multiple
+3. **PLAY!** opens the game table with a live, cropped board from the accepted four camera corners.
+   A persistent panel above the board identifies the current phase, the acting player, and the
+   instruction humans should follow next.
+   The chosen players sit around it with their matching portraits, train colors, remaining trains,
+   and face-down card and ticket stacks showing public counts. During opening selection, each
+   unresolved three-ticket offer is included in its player's public count without revealing any
+   ticket identity. The five face-up train cards appear
+   beside the board. The complete scene scales together when the window is resized or maximized.
+   **Your cards** opens the current human's private view when it is their turn; **Game controls**
+   opens the public turn, placement, and save controls. A camera restart or format change requires
+   checking and restoring the board crop through the technical Camera screen.
+4. With one human, opening destination choices appear directly on the laptop. With multiple
    humans, each player reveals their private view in turn; the screen is covered between seats.
-4. On a solo human's turn, their cards open on the laptop for draws, destination tickets, or route
+5. On a solo human's turn, their cards open on the laptop for draws, destination tickets, or route
    and payment choices. **Back to table** returns to the public screen; **Your cards** reopens the
    hand. With multiple humans, the active player explicitly reveals their private view.
 
-5. When any seat claims a route, the public screen names the seat, its colour and symbol, both
+6. When any seat claims a route, the public screen names the seat, its colour and symbol, both
    endpoint cities, the exact lane, and how many trains to place. Place them in any order, then
    check the entire board, including previously claimed routes, tick the attestation checkbox, and
    confirm. Nothing is spent or scored until you do.
-6. After someone finishes a turn with two trains or fewer, every seat takes one more turn, and then
+7. After someone finishes a turn with two trains or fewer, every seat takes one more turn, and then
    the results screen shows each seat's route points, destination tickets, longest continuous route
    and the trail that achieved it.
 

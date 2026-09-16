@@ -26,6 +26,7 @@ public sealed class GameSetupScoreMarkerTests
         var check = GameSetupBoardValidator.Check([MarkerColor.Red, MarkerColor.Blue], views);
         Assert.True(check.Ready);
         Assert.Equal("", check.Message);
+        Assert.Equal(3, check.OrientationIndex);
     }
 
     [Fact]

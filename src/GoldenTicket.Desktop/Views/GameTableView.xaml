@@ -1,0 +1,228 @@
+<UserControl x:Class="GoldenTicket.Desktop.Views.GameTableView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:GoldenTicket.Desktop"
+             xmlns:views="clr-namespace:GoldenTicket.Desktop.Views">
+    <UserControl.Resources>
+        <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+        <local:EmptyStringToVisibilityConverter x:Key="MessageVisibility" />
+        <local:PlayerColorBrushConverter x:Key="PlayerColorBrush" />
+        <local:CardKindBrushConverter x:Key="CardKindBrush" />
+        <Style x:Key="TableAction" TargetType="Button">
+            <Setter Property="Background" Value="#ED1A2531" />
+            <Setter Property="Foreground" Value="#FFFFE7B0" />
+            <Setter Property="BorderBrush" Value="#FFBF9453" />
+            <Setter Property="BorderThickness" Value="1.5" />
+            <Setter Property="FontSize" Value="17" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Frame" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="7"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Frame" Property="Opacity" Value="0.48" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#FF53372D" />
+                    <Setter Property="BorderBrush" Value="#FFFFD576" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Background="#FF101821">
+        <Image Source="/GoldenTicket;component/Assets/golden-ticket-snowy-twilight.png"
+               Stretch="UniformToFill" Opacity="0.42" IsHitTestVisible="False" />
+        <!-- One uniformly scaled scene keeps the board, all seats, and market in frame at every window size. -->
+        <Viewbox Stretch="Uniform" StretchDirection="Both" HorizontalAlignment="Center"
+                 VerticalAlignment="Center" Margin="8">
+            <Canvas x:Name="TableScene" Width="1440" Height="900">
+                <Border Canvas.Left="270" Canvas.Top="190" Width="900" Height="562.5"
+                        CornerRadius="8" Background="#FF0D151E" BorderBrush="#FFE1BD79"
+                        BorderThickness="3" ClipToBounds="True">
+                    <Grid>
+                        <Image x:Name="LiveBoardImage" Source="{Binding Camera.GameTablePreview}"
+                               Stretch="Fill" AutomationProperties.Name="Live cropped board" />
+                        <TextBlock x:Name="LiveBoardStatus" Text="{Binding Camera.GameTablePreviewStatus}"
+                                   Foreground="#FFFFE7B0" FontSize="22" TextAlignment="Center"
+                                   TextWrapping="Wrap" Width="680" HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   Visibility="{Binding Camera.GameTablePreviewStatus, Converter={StaticResource MessageVisibility}}" />
+                    </Grid>
+                </Border>
+
+                <Border x:Name="HumanGuidancePanel" Canvas.Left="555" Canvas.Top="22" Width="330" Height="150" CornerRadius="10"
+                        Background="#F21A2531" BorderBrush="#FFB18C52" BorderThickness="1.5"
+                        Padding="16,10" AutomationProperties.LiveSetting="Polite">
+                    <StackPanel>
+                        <TextBlock Text="THE GAME TABLE" Foreground="#FFFFE7B0" FontSize="21"
+                                   FontWeight="Bold" HorizontalAlignment="Center" />
+                        <TextBlock x:Name="GuidancePhaseText" Text="{Binding Table.TurnText}" Foreground="#FFDCC18A" FontSize="15"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock x:Name="GuidanceSeatText" Text="{Binding Table.ActiveSeatName}" Foreground="White" FontSize="18"
+                                   FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <TextBlock x:Name="GuidanceInstructionText" Text="{Binding Table.Instruction}" Foreground="#FFF8EEDC" FontSize="13"
+                                   TextWrapping="Wrap" TextAlignment="Center" MaxHeight="65" />
+                    </StackPanel>
+                </Border>
+
+                <ItemsControl x:Name="PlayerStations" ItemsSource="{Binding Game.TableSeats}"
+                              Width="1440" Height="900" IsHitTestVisible="False">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemContainerStyle>
+                        <Style TargetType="ContentPresenter">
+                            <Setter Property="Canvas.Left" Value="{Binding Left}" />
+                            <Setter Property="Canvas.Top" Value="{Binding Top}" />
+                        </Style>
+                    </ItemsControl.ItemContainerStyle>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Width="250" Height="142" CornerRadius="10" Background="#F01A2531"
+                                    BorderBrush="#FFD4AC6B" BorderThickness="2" Padding="9">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="80" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <Border Width="72" Height="72" CornerRadius="5" ClipToBounds="True"
+                                                BorderBrush="{Binding Seat.Color, Converter={StaticResource PlayerColorBrush}}"
+                                                BorderThickness="3">
+                                            <Image Source="{Binding Portrait}" Stretch="UniformToFill" />
+                                        </Border>
+                                        <TextBlock Text="{Binding Seat.DisplayName}" Foreground="#FFFFE7B0"
+                                                   FontSize="13" FontWeight="Bold" TextAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" Margin="0,5,0,0" />
+                                        <TextBlock Foreground="#FFE6D9C3" FontSize="12" TextAlignment="Center">
+                                            <Run Text="{Binding Seat.Score}" /><Run Text=" pts" />
+                                        </TextBlock>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                                        <StackPanel Orientation="Horizontal" Margin="0,1,0,7">
+                                            <Border Width="20" Height="8" CornerRadius="2" Margin="0,0,3,0"
+                                                    Background="{Binding Seat.Color, Converter={StaticResource PlayerColorBrush}}" />
+                                            <Border Width="20" Height="8" CornerRadius="2" Margin="0,0,3,0"
+                                                    Background="{Binding Seat.Color, Converter={StaticResource PlayerColorBrush}}" />
+                                            <Border Width="20" Height="8" CornerRadius="2" Margin="0,0,7,0"
+                                                    Background="{Binding Seat.Color, Converter={StaticResource PlayerColorBrush}}" />
+                                            <TextBlock Foreground="#FFF8EEDC" FontSize="11">
+                                                <Run Text="{Binding Seat.TrainsRemaining}" /><Run Text=" trains" />
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <Grid Height="42">
+                                            <Border Width="36" Height="35" HorizontalAlignment="Left" Margin="9,0,0,0"
+                                                    Background="#FF69412F" BorderBrush="#FFF0D7A0" BorderThickness="1" />
+                                            <Border Width="36" Height="35" HorizontalAlignment="Left" Margin="5,3,0,0"
+                                                    Background="#FF865337" BorderBrush="#FFF0D7A0" BorderThickness="1" />
+                                            <Border Width="36" Height="35" HorizontalAlignment="Left" Margin="1,6,0,0"
+                                                    Background="#FF9B613C" BorderBrush="#FFF0D7A0" BorderThickness="1">
+                                                <TextBlock Text="T" Foreground="#FFFFE7B0" FontWeight="Bold"
+                                                           FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Border>
+                                            <Border Width="36" Height="35" HorizontalAlignment="Right" Margin="0,0,9,0"
+                                                    Background="#FF426481" BorderBrush="#FFF0D7A0" BorderThickness="1" />
+                                            <Border Width="36" Height="35" HorizontalAlignment="Right" Margin="0,3,5,0"
+                                                    Background="#FF527797" BorderBrush="#FFF0D7A0" BorderThickness="1" />
+                                            <Border Width="36" Height="35" HorizontalAlignment="Right" Margin="0,6,1,0"
+                                                    Background="#FF648AA7" BorderBrush="#FFF0D7A0" BorderThickness="1">
+                                                <TextBlock Text="D" Foreground="#FFFFE7B0" FontWeight="Bold"
+                                                           FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Border>
+                                        </Grid>
+                                        <TextBlock Foreground="#FFF8EEDC" FontSize="11" Margin="0,8,0,0">
+                                            <Run Text="{Binding Seat.CardCount}" /><Run Text=" train cards  ·  " />
+                                            <Run Text="{Binding Seat.TicketCount}" /><Run Text=" tickets" />
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <StackPanel Canvas.Left="14" Canvas.Top="18" Width="236">
+                    <Button Content="YOUR CARDS" Style="{StaticResource TableAction}" Height="47"
+                            Command="{Binding RevealPrivateSeatCommand}" IsEnabled="{Binding CanRevealPrivateSeat}" />
+                    <Button x:Name="OpenControlsButton" Content="GAME CONTROLS" Style="{StaticResource TableAction}"
+                            Height="47" Margin="0,8,0,0" Click="OpenControls_Click" />
+                    <TextBlock Text="Shift+Esc opens the utility screens" Foreground="#FFE6D9C3"
+                               FontSize="12" TextAlignment="Center" Margin="0,9,0,0" />
+                </StackPanel>
+
+                <Border Canvas.Left="14" Canvas.Top="768" Width="236" Height="116" CornerRadius="9"
+                        Background="#EF1A2531" BorderBrush="#FFB18C52" BorderThickness="1.5" Padding="9,5">
+                    <StackPanel>
+                        <TextBlock Text="DRAW PILES" Foreground="#FFFFE7B0" FontSize="14"
+                                   FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
+                            <StackPanel Margin="0,0,14,0">
+                                <Border Width="50" Height="54" Background="#FF9B613C" BorderBrush="#FFF0D7A0"
+                                        BorderThickness="2" CornerRadius="3">
+                                    <TextBlock Text="T" Foreground="#FFFFE7B0" FontSize="25" FontWeight="Bold"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <TextBlock Text="TRAIN" Foreground="#FFF8EEDC" FontSize="10"
+                                           HorizontalAlignment="Center" />
+                            </StackPanel>
+                            <StackPanel>
+                                <Border Width="50" Height="54" Background="#FF648AA7" BorderBrush="#FFF0D7A0"
+                                        BorderThickness="2" CornerRadius="3">
+                                    <TextBlock Text="D" Foreground="#FFFFE7B0" FontSize="25" FontWeight="Bold"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <TextBlock Text="TICKETS" Foreground="#FFF8EEDC" FontSize="10"
+                                           HorizontalAlignment="Center" />
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Canvas.Left="720" Canvas.Top="768" Width="450" Height="116" CornerRadius="9"
+                        Background="#EF1A2531" BorderBrush="#FFB18C52" BorderThickness="1.5" Padding="9,5">
+                    <StackPanel>
+                        <TextBlock Text="FACE-UP TRAIN CARDS" Foreground="#FFFFE7B0" FontSize="14"
+                                   FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <ItemsControl ItemsSource="{Binding Table.Market}" HorizontalAlignment="Center" Margin="0,5,0,0">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Width="80" Height="71" CornerRadius="4" Margin="3,0"
+                                            Background="{Binding Kind, Converter={StaticResource CardKindBrush}}"
+                                            BorderBrush="#FFF0D7A0" BorderThickness="2">
+                                        <TextBlock Text="{Binding Label}" Foreground="#FF1A2531" FontSize="11"
+                                                   FontWeight="Bold" TextAlignment="Center" TextWrapping="NoWrap"
+                                                   VerticalAlignment="Bottom" Background="#DDF5EAD5" Padding="2" />
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+            </Canvas>
+        </Viewbox>
+
+        <Grid x:Name="ControlsOverlay" Visibility="Collapsed" Background="#F4101822">
+            <views:TableView Margin="12,62,12,12" />
+            <Button Content="←  BACK TO BOARD" Style="{StaticResource TableAction}"
+                    HorizontalAlignment="Left" VerticalAlignment="Top" Height="43" Width="210"
+                    Margin="25,12,0,0" Click="CloseControls_Click" />
+        </Grid>
+    </Grid>
+</UserControl>

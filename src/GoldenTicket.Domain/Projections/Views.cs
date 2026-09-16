@@ -14,6 +14,7 @@ public sealed record PublicSeatSummary(
     int RouteScore,
     int TrainCardCount,
     int TicketCount,
+    int PendingTicketOfferCount,
     ImmutableArray<RouteId> ClaimedRoutes);
 
 /// <summary>The seat and route of a pending claim. The reserved cards are deliberately absent.</summary>

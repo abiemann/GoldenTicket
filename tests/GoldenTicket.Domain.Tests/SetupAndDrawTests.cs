@@ -22,6 +22,9 @@ public class SetupAndDrawTests
             Assert.Equal(constants.StartingTrainCards, harness.State.HandOf(seat.SeatId).Count);
             Assert.Equal(constants.StartingTrainsPerSeat, harness.State.TrainStock[seat.SeatId]);
             Assert.Equal(constants.SetupTicketOffer, harness.State.SetupOffers[seat.SeatId].Length);
+            var publicSeat = harness.PublicView().SeatOf(seat.SeatId);
+            Assert.Equal(0, publicSeat.TicketCount);
+            Assert.Equal(constants.SetupTicketOffer, publicSeat.PendingTicketOfferCount);
         });
 
         Assert.Equal(constants.FaceUpMarketSize, harness.State.FaceUp.Count(card => card is not null));
@@ -55,6 +58,9 @@ public class SetupAndDrawTests
 
         // One seat has chosen; nothing may be recycled yet.
         Assert.Single(harness.State.PendingTicketReturns);
+        var selectedSeat = harness.PublicView().SeatOf(seats[0]);
+        Assert.Equal(2, selectedSeat.TicketCount);
+        Assert.Equal(0, selectedSeat.PendingTicketOfferCount);
         Assert.Equal(SessionLifecycle.Setup, harness.State.Lifecycle);
         Assert.DoesNotContain(harness.Journal, row => row.Event is SetupReturnsRecycled);
 
