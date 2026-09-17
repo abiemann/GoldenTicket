@@ -870,6 +870,7 @@ internal static partial class Program
                 var scene = (Canvas)gameTable.FindName("TableScene");
                 var board = (Image)gameTable.FindName("LiveBoardImage");
                 var stations = (ItemsControl)gameTable.FindName("PlayerStations");
+                var drawPilesPanel = (Border)gameTable.FindName("DrawPilesPanel");
                 var marketPanel = (Border)gameTable.FindName("FaceUpMarketPanel");
                 var phase = (TextBlock)gameTable.FindName("GuidancePhaseText");
                 var seat = (TextBlock)gameTable.FindName("GuidanceSeatText");
@@ -883,11 +884,13 @@ internal static partial class Program
                 if (!IsElementShown(gameTable) || scene.Width != 1440 || scene.Height != 900 ||
                     !ReferenceEquals(board.Source, model.Camera.GameTablePreview) ||
                     stations.Items.Count != model.Table.Seats.Count || market.Items.Count != 5 ||
-                    Canvas.GetLeft(marketPanel) != 975 || Canvas.GetTop(marketPanel) != 768 ||
+                    Canvas.GetLeft(drawPilesPanel) != (model.Table.Seats.Count < 5 ? 368 : 14) ||
+                    Canvas.GetLeft(marketPanel) != (model.Table.Seats.Count < 5 ? 622 : 975) ||
+                    Canvas.GetTop(marketPanel) != 768 ||
                     locomotive.TextWrapping != TextWrapping.NoWrap || locomotiveCard.Width < 80 ||
                     phase.Text != "Setup" || seat.Text != "Player 1" ||
                     instruction.Text != "Each seat keeps at least 2 of its 3 opening destinations." ||
-                    Descendants<Button>(gameTable).Any() ||
+                    Descendants<Button>(gameTable).Any(IsElementShown) ||
                     VisibleText(gameTable).Contains("Shift+Esc opens the utility screens", StringComparison.Ordinal))
                     throw new InvalidOperationException("The game table must retain its phase, acting-seat and human-instruction guidance above the shared board crop.");
                 var sceneBounds = scene.TransformToAncestor(view).TransformBounds(new Rect(scene.RenderSize));
@@ -925,6 +928,8 @@ internal static partial class Program
                              trainLabel.TranslatePoint(new Point(), tileGrid).X) > 0.5)
                     throw new InvalidOperationException("Remaining trains must sit above the T card and align with Train cards.");
                 if (model.Game.TableSeats[0].Left != 10 || model.Game.TableSeats[1].Left != 1180 ||
+                    (model.Table.Seats.Count == 3 &&
+                     (model.Game.TableSeats[2].Left != 10 || model.Game.TableSeats[2].Top != 530)) ||
                     (model.Table.Seats.Count == 5 &&
                      (model.Game.TableSeats[2].Left != 10 || model.Game.TableSeats[3].Left != 1180 ||
                       model.Game.TableSeats[4].Left != 595 || model.Game.TableSeats[4].Top != 755)))
@@ -939,7 +944,13 @@ internal static partial class Program
 
             await RenderSizes("game-table-two", () => new GameScreenView { DataContext = model }, Verify,
                 [(1000, 620), (1280, 800)]);
-            for (var index = 2; index < 5; index++) AddSeat(index);
+            AddSeat(2);
+            await RenderSizes("game-table-three", () => new GameScreenView { DataContext = model }, Verify,
+                [(1000, 620), (1280, 800)]);
+            AddSeat(3);
+            await RenderSizes("game-table-four", () => new GameScreenView { DataContext = model }, Verify,
+                [(1000, 620), (1280, 800)]);
+            AddSeat(4);
             await RenderSizes("game-table-five", () => new GameScreenView { DataContext = model }, Verify,
                 [(1000, 620), (1280, 800)]);
 
@@ -1112,6 +1123,10 @@ internal static partial class Program
             });
             checks.Add("Starting a solo match presents three private destinations over the board.");
 
+            var animatedTable = new GameTableView { DataContext = solo };
+            await Arrange(animatedTable, 1280, 800);
+            var animatedPiles = (Border)animatedTable.FindName("DrawPilesPanel");
+            var animatedMarket = (Border)animatedTable.FindName("FaceUpMarketPanel");
             var openingView = new PrivateSeatView { DataContext = solo };
             await Arrange(openingView, 1280, 800);
             var dropped = solo.PrivateSeat!.Offer[2];
@@ -1133,20 +1148,50 @@ internal static partial class Program
             card.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             Descendants<Button>(confirmation).Single(button => button.Content as string == "YES, DROP IT")
                 .RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-            if (solo.PrivateSeat.DestinationLines.Single(line => ReferenceEquals(line.Choice, dropped)).IsVisible)
-                throw new InvalidOperationException("A dropped destination's connection must disappear with its city rings.");
-            await Task.Delay(160);
-            if (card.Opacity >= 1 || card.RenderTransform is not TranslateTransform { Y: < 0 })
-                throw new InvalidOperationException("A confirmed destination must animate off the board.");
-            await Task.Delay(550);
+            if (card.Visibility != Visibility.Collapsed ||
+                solo.PrivateSeat.DestinationLines.Single(line => ReferenceEquals(line.Choice, dropped)).IsVisible)
+                throw new InvalidOperationException("The rejected card and its board connection must disappear together.");
+            await Task.Delay(330);
+            var cardsTile = (Border)openingView.FindName("SoloCardsTile");
+            if (SystemParameters.ClientAreaAnimation &&
+                cardsTile.RenderTransform is not TranslateTransform { Y: > 0 and < 225 })
+                throw new InvalidOperationException("The remaining Your Cards tile must slide down after the rejected card disappears.");
+            for (var attempt = 0; attempt < 50 && solo.ShowSoloOpeningTicketsOnBoard; attempt++)
+                await Task.Delay(50);
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            animatedTable.UpdateLayout();
+            if (solo.ShowSoloOpeningTicketsOnBoard || !IsElementShown(animatedPiles) ||
+                !IsElementShown(animatedMarket))
+                throw new InvalidOperationException("The table panels must become visible after the card tile exits.");
+            await Task.Delay(180);
+            var pilesDuringSlide = Canvas.GetLeft(animatedPiles);
+            var marketDuringSlide = Canvas.GetLeft(animatedMarket);
+            if (SystemParameters.ClientAreaAnimation &&
+                (pilesDuringSlide <= 14 || pilesDuringSlide >= 368 ||
+                 marketDuringSlide <= 622 || marketDuringSlide >= 975))
+                throw new InvalidOperationException("The draw piles and face-up cards must slide toward the center after the opening choice.");
+            for (var attempt = 0; attempt < 50 && !solo.CanRevealPrivateSeat; attempt++)
+                await Task.Delay(50);
             if (solo.Table.Seats.Single(seat => seat.DisplayName == "Solo test player").TicketCount != 2 ||
-                solo.ShowSoloOpeningTicketsOnBoard ||
-                solo.PrivateSeat?.Tickets.Any(ticket => ticket.TicketId == dropped.TicketId) == true)
-                throw new InvalidOperationException("Confirming a drop must commit only the two kept destinations.");
+                solo.PrivateSeat is not null || !solo.CanRevealPrivateSeat)
+                throw new InvalidOperationException("Confirming a drop must save two destinations and return to the public board.");
+            await Task.Delay(600);
+            if (Math.Abs(Canvas.GetLeft(animatedPiles) - 368) > 0.5 ||
+                Math.Abs(Canvas.GetLeft(animatedMarket) - 622) > 0.5)
+                throw new InvalidOperationException("The bottom panels must finish centered for a two-player game.");
+            var humanTile = Descendants<Button>(animatedTable).Single(button =>
+                button.DataContext is GameTableSeat tile && tile.Seat.DisplayName == "Solo test player" &&
+                IsElementShown(button));
+            if (humanTile.Command is null || !humanTile.Command.CanExecute(null))
+                throw new InvalidOperationException("The solo human tile must open its bound private-card command.");
+            humanTile.Command.Execute(null);
+            for (var attempt = 0; attempt < 20 && solo.PrivateSeat is null; attempt++) await Task.Delay(50);
             RequireHumanPrivateView(solo, "Solo test player", mustChooseTickets: false);
+            if (solo.PrivateSeat!.Tickets.Any(ticket => ticket.TicketId == dropped.TicketId))
+                throw new InvalidOperationException("The dropped destination must be absent when the player opens their cards.");
             await RenderSizes("solo-turn-cards-synthetic", () => new PrivateSeatView { DataContext = solo },
                 view => VerifyPrivateLabels(view, solo, "Solo test player", singleHuman: true));
-            checks.Add("Cancel keeps all three; confirmed drop animates away, saves two and opens the human turn.");
+            checks.Add("Confirmed drop clears its card and track, slides Your Cards away, centers the draw panels, and leaves the board visible.");
 
             keepAll.Setup.ManualVerificationAccepted = true;
             await keepAll.StartMatchCommand.ExecuteAsync(null);
@@ -1157,9 +1202,9 @@ internal static partial class Program
             for (var attempt = 0; attempt < 20 && keepAll.ShowSoloOpeningTicketsOnBoard; attempt++)
                 await Task.Delay(50);
             if (keepAll.Table.Seats.Single(seat => seat.Operator == "human").TicketCount != 3 ||
-                keepAll.ShowSoloOpeningTicketsOnBoard)
-                throw new InvalidOperationException("Keep all three must commit every opening destination.");
-            checks.Add("Keep all three commits the full opening offer without dropping a destination.");
+                keepAll.ShowSoloOpeningTicketsOnBoard || keepAll.PrivateSeat is not null)
+                throw new InvalidOperationException("Keep all three must commit every opening destination and return to the board.");
+            checks.Add("Keep all three commits the full opening offer and returns to the board.");
 
             solo.HidePrivateSeatCommand.Execute(null);
             if (solo.IsPrivateVisible || solo.PrivateSeat is not null)

@@ -25,7 +25,7 @@ public sealed class SavedMatchNameTests : IDisposable
         var saved = await coordinator.SaveAndPackAwayAsync("  test2  ", token);
         Assert.True(saved.SafeToPack, saved.Problem);
 
-        // A fresh SQLite store has no coordinator or encryption cache to supply the display name.
+        // A fresh SQLite store has no coordinator cache to supply the display name.
         store = useSqlite ? new SqliteSessionStore(_root) : store;
         var summary = Assert.Single(await store.ListSessionsAsync(token));
         Assert.Equal("test2", summary.LatestCheckpointName);
@@ -107,10 +107,10 @@ public sealed class SavedMatchNameTests : IDisposable
         command.CommandText = """
             INSERT INTO PackAwayCheckpoint (
                 SessionId, CheckpointId, Name, CreatedAt, FormatVersion, SourceStateVersion,
-                SourceJournalSeq, TargetProvenance, PhotoHash, Status, Payload, Nonce)
+                SourceJournalSeq, TargetProvenance, PhotoHash, Status, Payload)
             SELECT $otherSession, CheckpointId, $otherName, CreatedAt, FormatVersion,
                 SourceStateVersion + 100, SourceJournalSeq, TargetProvenance, PhotoHash,
-                Status, Payload, Nonce
+                Status, Payload
             FROM PackAwayCheckpoint WHERE SessionId = $sessionId;
             """;
         command.Parameters.AddWithValue("$otherSession", SessionId.New().Value);
@@ -123,7 +123,7 @@ public sealed class SavedMatchNameTests : IDisposable
     }
 
     [Fact]
-    public async Task LegacyMatchWithoutCheckpointTableStaysListableWithoutSchemaChanges()
+    public async Task UnsupportedSchemaIsOmittedFromSavedMatchListWithoutSchemaChanges()
     {
         var token = TestContext.Current.CancellationToken;
         var store = new SqliteSessionStore(_root);
@@ -137,10 +137,7 @@ public sealed class SavedMatchNameTests : IDisposable
             """;
         await command.ExecuteNonQueryAsync(token);
 
-        var summary = Assert.Single(await new SqliteSessionStore(_root).ListSessionsAsync(token));
-        Assert.Equal(coordinator.SessionId, summary.SessionId);
-        Assert.Null(summary.LatestCheckpointName);
-        Assert.Null(summary.UnavailableReason);
+        Assert.Empty(await new SqliteSessionStore(_root).ListSessionsAsync(token));
 
         command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'PackAwayCheckpoint';";
         Assert.Equal(0L, await command.ExecuteScalarAsync(token));

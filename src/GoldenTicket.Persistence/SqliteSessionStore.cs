@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -20,12 +19,10 @@ namespace GoldenTicket.Persistence;
 /// </summary>
 public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
 {
-    public const int StoreSchemaVersion = 3;
+    public const int StoreSchemaVersion = 4;
 
     /// <summary>Unit separator; seat names are free text and must not collide with it.</summary>
     private const char SeatNameSeparator = '\u001f';
-
-    private readonly ConcurrentDictionary<SessionId, SessionEncryption> _encryption = new();
 
     /// <summary>DESIGN 19.1: settings and matches live outside the installation directory.</summary>
     public static string DefaultRoot => Path.Combine(
@@ -78,8 +75,6 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
             throw new InvalidOperationException($"Session {state.SessionId} already exists.");
         Directory.CreateDirectory(SessionDirectory(state.SessionId));
 
-        var (encryption, protectedKey) = SessionEncryption.CreateForNewSession();
-
         await using var connection = await OpenAsync(state.SessionId, cancellationToken, create: true);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -90,18 +85,16 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
         await ExecuteAsync(connection, """
             INSERT INTO Session (
                 SessionId, ProfileId, ManifestHash, StoreSchemaVersion, RulesPolicyVersion,
-                EncryptionVersion, ProtectedDataKey, Lifecycle, TurnNumber, SeatNames, CreatedAt, UpdatedAt)
+                Lifecycle, TurnNumber, SeatNames, CreatedAt, UpdatedAt)
             VALUES (
                 $sessionId, $profileId, $manifestHash, $storeSchema, $rulesPolicy,
-                $encryptionVersion, $protectedKey, $lifecycle, $turnNumber, $seatNames, $createdAt, $updatedAt);
+                $lifecycle, $turnNumber, $seatNames, $createdAt, $updatedAt);
             """, cancellationToken,
             ("$sessionId", state.SessionId.Value),
             ("$profileId", state.Manifest.ProfileId),
             ("$manifestHash", state.Manifest.DataHash),
             ("$storeSchema", StoreSchemaVersion),
             ("$rulesPolicy", state.Manifest.RulesPolicyVersion),
-            ("$encryptionVersion", SessionEncryption.FormatVersion),
-            ("$protectedKey", protectedKey),
             ("$lifecycle", state.Lifecycle.ToString()),
             ("$turnNumber", state.TurnNumber),
             ("$seatNames", string.Join(SeatNameSeparator, state.Seats.Select(seat => seat.DisplayName))),
@@ -113,7 +106,7 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
             cancellationToken, ("$version", StoreSchemaVersion), ("$appliedAt", now));
 
         await AppendEventsAsync(
-            connection, state.SessionId, encryption, state.StateVersion, transition.Events, cancellationToken);
+            connection, state.SessionId, state.StateVersion, transition.Events, cancellationToken);
 
         await WriteSnapshotAsync(connection, state.SessionId, state.StateVersion,
             state.JournalSequence, state.BoardRevision, stateHash, cancellationToken);
@@ -122,8 +115,6 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
             new StoredCommandOutcome(commandId, true, state.StateVersion, null, null), cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
-        // A failed create must never replace the key of an existing match in this process.
-        _encryption[state.SessionId] = encryption;
     }
 
     // ---- Commands ---------------------------------------------------------------------------
@@ -160,8 +151,6 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
         CancellationToken cancellationToken)
     {
         var sessionId = state.SessionId;
-        var encryption = await GetEncryptionAsync(sessionId, cancellationToken);
-
         await using var connection = await OpenAsync(sessionId, cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -173,7 +162,7 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
             throw new SessionIntegrityException("The save has changed or the proposed transaction is inconsistent. Reopen the match before continuing.");
 
         await AppendEventsAsync(
-            connection, sessionId, encryption, state.StateVersion, transition.Events, cancellationToken);
+            connection, sessionId, state.StateVersion, transition.Events, cancellationToken);
 
         await WriteSnapshotAsync(
             connection, sessionId, state.StateVersion, state.JournalSequence, state.BoardRevision, stateHash, cancellationToken);
@@ -186,7 +175,7 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
             transition.Events.Any(e => e is PackAwayCheckpointCommitted or PackAwayCheckpointVerified
                                             or PackAwayCheckpointFaulted))
         {
-            await WriteCheckpointAsync(connection, encryption, checkpoint, cancellationToken);
+            await WriteCheckpointAsync(connection, checkpoint, cancellationToken);
         }
 
         await ExecuteAsync(connection,
@@ -226,10 +215,8 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
         await using var connection = await OpenAsync(sessionId, cancellationToken);
         // Keep metadata, journal and snapshot on a single consistent SQLite read transaction.
         await using var transaction = connection.BeginTransaction(deferred: true);
-        var schemaVersion = await VerifyCompatibilityAsync(connection, sessionId, manifest, cancellationToken);
-
-        var encryption = await GetEncryptionAsync(sessionId, cancellationToken, reload: true);
-        var journal = await ReadJournalAsync(connection, sessionId, encryption, cancellationToken);
+        await VerifyCompatibilityAsync(connection, sessionId, manifest, cancellationToken);
+        var journal = await ReadJournalAsync(connection, sessionId, cancellationToken);
 
         if (journal.Count == 0 || journal[0].Event is not SessionCreated created ||
             created.SessionId != sessionId || created.ProfileId != manifest.ProfileId ||
@@ -248,13 +235,8 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
 
         // DESIGN 19.4 step 3 / invariant 12: the replayed state must reproduce the stored hash.
         var snapshot = await ReadLatestSnapshotAsync(connection, sessionId, cancellationToken);
-        // Schema 1 creation used an event count but subsequent commits used the last zero-based
-        // row index. Schema 2 consistently stores the GameState event count.
-        var sequenceMatches = snapshot.JournalSequence == state.JournalSequence ||
-            (schemaVersion == 1 && snapshot.JournalSequence == state.JournalSequence - 1);
-
         if (!StateHash.Matches(state, snapshot.StateHash) ||
-            snapshot.StateVersion != state.StateVersion || !sequenceMatches ||
+            snapshot.StateVersion != state.StateVersion || snapshot.JournalSequence != state.JournalSequence ||
             snapshot.BoardRevision != state.BoardRevision)
         {
             throw new SessionIntegrityException(
@@ -268,28 +250,6 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
             throw new SessionIntegrityException(
                 $"The restored match failed {problems.Count} integrity checks. " +
                 "Restoration stops without exposing private cards or changing the save.");
-        }
-
-        if (schemaVersion < StoreSchemaVersion)
-        {
-            // Back up the validated read snapshot before taking this transaction's first write.
-            // A concurrent writer makes the read-to-write upgrade fail rather than migrating
-            // state different from the journal we just checked.
-            await BackupBeforeMigrationAsync(connection, sessionId, schemaVersion, cancellationToken);
-            await CreateCheckpointSchemaAsync(connection, cancellationToken);
-            await ExecuteAsync(connection, """
-                UPDATE Snapshot SET JournalSequence = $sequence, StateHash = $hash
-                WHERE SessionId = $sessionId AND StateVersion = $stateVersion;
-                UPDATE Session SET StoreSchemaVersion = $schema WHERE SessionId = $sessionId;
-                INSERT OR IGNORE INTO MigrationHistory (Version, AppliedAt) VALUES ($schema, $appliedAt);
-                """, cancellationToken,
-                ("$sequence", state.JournalSequence),
-                ("$hash", StateHash.Compute(state)),
-                ("$sessionId", sessionId.Value),
-                ("$stateVersion", state.StateVersion),
-                ("$schema", StoreSchemaVersion),
-                ("$appliedAt", DateTimeOffset.UtcNow.ToString("O")));
-            await transaction.CommitAsync(cancellationToken);
         }
 
         return new RestoredSession(state, journal);
@@ -317,20 +277,22 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
                     throw new FileNotFoundException("The saved-match database is missing.");
                 await using var connection = await OpenAsync(sessionId, cancellationToken);
                 await using var command = connection.CreateCommand();
-                // Older saves can predate named checkpoints. Listing them must not require a
-                // migration or opening private state. The name is already public save metadata.
-                command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'PackAwayCheckpoint';";
-                var hasCheckpoints = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)) > 0;
-                var checkpointName = hasCheckpoints ? """
+                command.CommandText = "SELECT StoreSchemaVersion FROM Session WHERE SessionId = $sessionId;";
+                command.Parameters.AddWithValue("$sessionId", sessionId.Value);
+                var listedSchema = await command.ExecuteScalarAsync(cancellationToken);
+                if (listedSchema is null or DBNull)
+                    throw new SessionIntegrityException("The saved match has no session metadata.");
+                if (Convert.ToInt32(listedSchema) != StoreSchemaVersion)
+                    continue;
+                var checkpointName = """
                     (SELECT p.Name FROM PackAwayCheckpoint AS p WHERE p.SessionId = s.SessionId
                      ORDER BY p.SourceStateVersion DESC, p.CreatedAt DESC, p.CheckpointId DESC LIMIT 1)
-                    """ : "NULL";
+                    """;
                 command.CommandText = $"""
                     SELECT s.ProfileId, s.Lifecycle, s.TurnNumber, s.SeatNames, s.CreatedAt, s.UpdatedAt,
                            {checkpointName}
                     FROM Session AS s WHERE s.SessionId = $sessionId;
                     """;
-                command.Parameters.AddWithValue("$sessionId", sessionId.Value);
 
                 await using var reader = await command.ExecuteReaderAsync(cancellationToken);
                 if (!await reader.ReadAsync(cancellationToken))
@@ -368,7 +330,6 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         var directory = SessionDirectory(sessionId);
-        _encryption.TryRemove(sessionId, out _);
         SqliteConnection.ClearAllPools();
 
         if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
@@ -419,8 +380,6 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
                 ManifestHash       TEXT NOT NULL,
                 StoreSchemaVersion INTEGER NOT NULL,
                 RulesPolicyVersion INTEGER NOT NULL,
-                EncryptionVersion  INTEGER NOT NULL,
-                ProtectedDataKey   BLOB NOT NULL,
                 Lifecycle          TEXT NOT NULL,
                 TurnNumber         INTEGER NOT NULL,
                 SeatNames          TEXT NOT NULL,
@@ -435,8 +394,6 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
                 Type          TEXT NOT NULL,
                 SchemaVersion INTEGER NOT NULL,
                 Visibility    TEXT NOT NULL,
-                Encrypted     INTEGER NOT NULL,
-                Nonce         BLOB NULL,
                 Payload       BLOB NOT NULL,
                 PriorHash     TEXT NOT NULL,
                 PRIMARY KEY (SessionId, Sequence)
@@ -486,61 +443,14 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
                 PhotoHash           TEXT NULL,
                 Status              TEXT NOT NULL,
                 Payload             BLOB NOT NULL,
-                Nonce               BLOB NOT NULL,
                 PRIMARY KEY (SessionId, CheckpointId)
             );
             """, cancellationToken);
-
-    private async Task BackupBeforeMigrationAsync(
-        SqliteConnection source, SessionId sessionId, int sourceVersion, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var directory = Path.Combine(SessionDirectory(sessionId), "backups");
-        Directory.CreateDirectory(directory);
-        if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
-            throw new IOException("A saved-match backup directory cannot be a filesystem link.");
-
-        var name = $"migration-v{sourceVersion}-to-v{StoreSchemaVersion}-{DateTimeOffset.UtcNow:yyyyMMddTHHmmssfff}-{Guid.NewGuid():N}";
-        var temporary = Path.Combine(directory, name + ".tmp");
-        var target = Path.Combine(directory, name + ".db");
-        try
-        {
-            await using (var backup = new SqliteConnection(new SqliteConnectionStringBuilder
-            {
-                DataSource = temporary,
-                Mode = SqliteOpenMode.ReadWriteCreate,
-                Pooling = false,
-            }.ToString()))
-            {
-                await backup.OpenAsync(cancellationToken);
-                await ExecuteAsync(backup, "PRAGMA synchronous=FULL;", cancellationToken);
-                // SQLite's backup API includes committed WAL pages, unlike copying session.db.
-                source.BackupDatabase(backup);
-                // Leave a standalone database, with no required WAL sidecar.
-                await ExecuteAsync(backup, "PRAGMA journal_mode=DELETE;", cancellationToken);
-            }
-
-            using (var file = new FileStream(temporary, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
-                file.Flush(flushToDisk: true);
-            cancellationToken.ThrowIfCancellationRequested();
-            File.Move(temporary, target);
-        }
-        finally
-        {
-            if (File.Exists(temporary))
-            {
-                try { File.Delete(temporary); }
-                catch (IOException) { }
-                catch (UnauthorizedAccessException) { }
-            }
-        }
-    }
 
     /// <summary>Appends the events of one transaction and returns the last sequence number used.</summary>
     private static async Task<long> AppendEventsAsync(
         SqliteConnection connection,
         SessionId sessionId,
-        SessionEncryption encryption,
         long stateVersion,
         IReadOnlyList<GameEvent> events,
         CancellationToken cancellationToken)
@@ -549,25 +459,17 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
 
         foreach (var domainEvent in events)
         {
-            var plaintext = EventSerializer.Serialize(domainEvent);
-
-            // DESIGN 19.2: public payloads may stay readable; everything else is protected.
-            var encrypt = domainEvent.Visibility != EventVisibility.Public;
-            byte[] payload;
-            byte[]? nonce = null;
-
-            if (encrypt) payload = encryption.Encrypt(plaintext, out nonce);
-            else payload = plaintext;
+            var payload = EventSerializer.Serialize(domainEvent);
 
             priorHash = ChainHash(priorHash, domainEvent.GetType().Name, payload);
 
             await ExecuteAsync(connection, """
                 INSERT INTO Event (
                     SessionId, Sequence, StateVersion, Type, SchemaVersion,
-                    Visibility, Encrypted, Nonce, Payload, PriorHash)
+                    Visibility, Payload, PriorHash)
                 VALUES (
                     $sessionId, $sequence, $stateVersion, $type, $schemaVersion,
-                    $visibility, $encrypted, $nonce, $payload, $priorHash);
+                    $visibility, $payload, $priorHash);
                 """, cancellationToken,
                 ("$sessionId", sessionId.Value),
                 ("$sequence", ++sequence),
@@ -575,8 +477,6 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
                 ("$type", domainEvent.GetType().Name),
                 ("$schemaVersion", domainEvent.SchemaVersion),
                 ("$visibility", domainEvent.Visibility.ToString()),
-                ("$encrypted", encrypt ? 1 : 0),
-                ("$nonce", (object?)nonce ?? DBNull.Value),
                 ("$payload", payload),
                 ("$priorHash", priorHash));
         }
@@ -603,7 +503,6 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
     private static async Task<List<JournaledEvent>> ReadJournalAsync(
         SqliteConnection connection,
         SessionId sessionId,
-        SessionEncryption encryption,
         CancellationToken cancellationToken)
     {
         var journal = new List<JournaledEvent>();
@@ -612,7 +511,7 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Sequence, StateVersion, Type, Encrypted, Nonce, Payload, PriorHash, SchemaVersion, Visibility
+            SELECT Sequence, StateVersion, Type, Payload, PriorHash, SchemaVersion, Visibility
             FROM Event WHERE SessionId = $sessionId ORDER BY Sequence ASC;
             """;
         command.Parameters.AddWithValue("$sessionId", sessionId.Value);
@@ -623,17 +522,13 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
             var sequence = reader.GetInt64(0);
             var stateVersion = reader.GetInt64(1);
             var type = reader.GetString(2);
-            var encryptionMarker = reader.GetInt32(3);
-            var encrypted = encryptionMarker == 1;
-            var nonce = reader.IsDBNull(4) ? null : (byte[])reader["Nonce"];
             var payload = (byte[])reader["Payload"];
-            var recordedHash = reader.GetString(6);
-            var schemaVersion = reader.GetInt32(7);
-            var visibility = reader.GetString(8);
+            var recordedHash = reader.GetString(4);
+            var schemaVersion = reader.GetInt32(5);
+            var visibility = reader.GetString(6);
 
             if (sequence != journal.Count || stateVersion < previousVersion || stateVersion > previousVersion + 1 ||
-                (sequence == 0 && stateVersion != 1) || encryptionMarker is < 0 or > 1 || schemaVersion != 1 ||
-                (encrypted ? nonce?.Length != 12 : nonce is not null))
+                (sequence == 0 && stateVersion != 1) || schemaVersion != 1)
                 throw new SessionIntegrityException($"Journal row {sequence} has invalid ordering or format metadata.");
             previousVersion = stateVersion;
 
@@ -646,18 +541,16 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
 
             try
             {
-                var plaintext = encrypted ? encryption.Decrypt(payload, nonce!) : payload;
-                var domainEvent = EventSerializer.Deserialize(plaintext);
+                var domainEvent = EventSerializer.Deserialize(payload);
                 if (domainEvent.GetType().Name != type || domainEvent.SchemaVersion != schemaVersion ||
-                    domainEvent.Visibility.ToString() != visibility ||
-                    (domainEvent.Visibility != EventVisibility.Public) != encrypted)
+                    domainEvent.Visibility.ToString() != visibility)
                     throw new SessionIntegrityException($"Journal row {sequence} does not match its event metadata.");
                 journal.Add(new JournaledEvent(sequence, stateVersion, domainEvent));
             }
-            catch (Exception error) when (error is CryptographicException or JsonException or InvalidDataException or NotSupportedException)
+            catch (Exception error) when (error is JsonException or InvalidDataException or NotSupportedException)
             {
                 // Do not include payloads or deserializer messages in diagnostics; events can be private.
-                throw new SessionIntegrityException($"Journal row {sequence} could not be authenticated or decoded.");
+                throw new SessionIntegrityException($"Journal row {sequence} could not be decoded.");
             }
         }
 
@@ -682,12 +575,12 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
         return new SnapshotHead(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2), reader.GetString(3));
     }
 
-    private static async Task<int> VerifyCompatibilityAsync(
+    private static async Task VerifyCompatibilityAsync(
         SqliteConnection connection, SessionId sessionId, BoardManifest manifest, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.CommandText =
-            "SELECT ProfileId, ManifestHash, StoreSchemaVersion, RulesPolicyVersion, EncryptionVersion FROM Session WHERE SessionId = $sessionId;";
+            "SELECT ProfileId, ManifestHash, StoreSchemaVersion, RulesPolicyVersion FROM Session WHERE SessionId = $sessionId;";
         command.Parameters.AddWithValue("$sessionId", sessionId.Value);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -698,14 +591,14 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
         var manifestHash = reader.GetString(1);
         var schemaVersion = reader.GetInt32(2);
 
-        if (schemaVersion is < 1 or > StoreSchemaVersion)
+        if (schemaVersion != StoreSchemaVersion)
         {
             throw new SessionIntegrityException(
                 $"That save uses an unsupported GoldenTicket store schema ({schemaVersion}).");
         }
 
-        if (reader.GetInt32(3) != manifest.RulesPolicyVersion || reader.GetInt32(4) != SessionEncryption.FormatVersion)
-            throw new SessionIntegrityException("That save uses an unsupported rules or encryption version.");
+        if (reader.GetInt32(3) != manifest.RulesPolicyVersion)
+            throw new SessionIntegrityException("That save uses an unsupported rules version.");
 
         if (!string.Equals(profileId, manifest.ProfileId, StringComparison.Ordinal))
         {
@@ -720,31 +613,24 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
                 "Restoring it against different route or ticket data would silently alter the game.");
         }
 
-        return schemaVersion;
     }
 
-    /// <summary>
-    /// Writes or re-statuses one checkpoint. Only the columns a listing genuinely needs are stored in
-    /// the clear; the record itself is encrypted because DESIGN 19.2 protects referee state, and the
-    /// logical-state fingerprint is derived from hands, deck order and private offers.
-    /// </summary>
+    /// <summary>Writes or re-statuses one checkpoint as JSON.</summary>
     private static async Task WriteCheckpointAsync(
         SqliteConnection connection,
-        SessionEncryption encryption,
         PackAwayCheckpoint checkpoint,
         CancellationToken cancellationToken)
     {
-        var plaintext = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+        var payload = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
             checkpoint, CheckpointSerializerOptions);
-        var payload = encryption.Encrypt(plaintext, out var nonce);
 
         await ExecuteAsync(connection, """
             INSERT OR REPLACE INTO PackAwayCheckpoint (
                 SessionId, CheckpointId, Name, CreatedAt, FormatVersion, SourceStateVersion,
-                SourceJournalSeq, TargetProvenance, PhotoHash, Status, Payload, Nonce)
+                SourceJournalSeq, TargetProvenance, PhotoHash, Status, Payload)
             VALUES (
                 $sessionId, $checkpointId, $name, $createdAt, $formatVersion, $sourceStateVersion,
-                $sourceJournalSeq, $targetProvenance, $photoHash, $status, $payload, $nonce);
+                $sourceJournalSeq, $targetProvenance, $photoHash, $status, $payload);
             """, cancellationToken,
             ("$sessionId", checkpoint.SessionId.Value),
             ("$checkpointId", checkpoint.CheckpointId.Value),
@@ -756,8 +642,7 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
             ("$targetProvenance", checkpoint.TargetProvenance.ToString()),
             ("$photoHash", (object?)checkpoint.PhotoHash ?? DBNull.Value),
             ("$status", checkpoint.Status.ToString()),
-            ("$payload", payload),
-            ("$nonce", nonce));
+            ("$payload", payload));
     }
 
     private static readonly System.Text.Json.JsonSerializerOptions CheckpointSerializerOptions = new()
@@ -772,12 +657,10 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
     public async Task<PackAwayCheckpoint?> ReadCheckpointAsync(
         SessionId sessionId, CheckpointId checkpointId, CancellationToken cancellationToken)
     {
-        var encryption = await GetEncryptionAsync(sessionId, cancellationToken);
-
         await using var connection = await OpenAsync(sessionId, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Payload, Nonce, Name, CreatedAt, FormatVersion, SourceStateVersion,
+            SELECT Payload, Name, CreatedAt, FormatVersion, SourceStateVersion,
                 SourceJournalSeq, TargetProvenance, PhotoHash, Status FROM PackAwayCheckpoint
             WHERE SessionId = $sessionId AND CheckpointId = $checkpointId;
             """;
@@ -790,24 +673,24 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
         byte[]? plaintext = null;
         try
         {
-            plaintext = encryption.Decrypt((byte[])reader["Payload"], (byte[])reader["Nonce"]);
+            plaintext = (byte[])reader["Payload"];
             var checkpoint = JsonSerializer.Deserialize<PackAwayCheckpoint>(plaintext, CheckpointSerializerOptions);
             if (checkpoint is null || checkpoint.SessionId != sessionId || checkpoint.CheckpointId != checkpointId ||
                 checkpoint.FormatVersion != PackAwayCheckpoint.CurrentFormatVersion ||
-                checkpoint.Name != reader.GetString(2) || checkpoint.CreatedAt.ToString("O") != reader.GetString(3) ||
-                checkpoint.FormatVersion != reader.GetInt32(4) || checkpoint.SourceStateVersion != reader.GetInt64(5) ||
-                checkpoint.SourceJournalSequence != reader.GetInt64(6) ||
-                checkpoint.TargetProvenance.ToString() != reader.GetString(7) ||
-                checkpoint.PhotoHash != (reader.IsDBNull(8) ? null : reader.GetString(8)) ||
-                checkpoint.Status.ToString() != reader.GetString(9) ||
+                checkpoint.Name != reader.GetString(1) || checkpoint.CreatedAt.ToString("O") != reader.GetString(2) ||
+                checkpoint.FormatVersion != reader.GetInt32(3) || checkpoint.SourceStateVersion != reader.GetInt64(4) ||
+                checkpoint.SourceJournalSequence != reader.GetInt64(5) ||
+                checkpoint.TargetProvenance.ToString() != reader.GetString(6) ||
+                checkpoint.PhotoHash != (reader.IsDBNull(7) ? null : reader.GetString(7)) ||
+                checkpoint.Status.ToString() != reader.GetString(8) ||
                 checkpoint.PhysicalTarget.IsDefault ||
                 checkpoint.PhysicalTargetHash != PackAwayCheckpoint.HashTarget(checkpoint.PhysicalTarget))
-                throw new SessionIntegrityException("The stored checkpoint does not match its authenticated metadata or target.");
+                throw new SessionIntegrityException("The stored checkpoint does not match its metadata or target.");
             return checkpoint;
         }
-        catch (Exception error) when (error is CryptographicException or JsonException or NotSupportedException or InvalidCastException)
+        catch (Exception error) when (error is JsonException or NotSupportedException or InvalidCastException)
         {
-            throw new SessionIntegrityException("The stored checkpoint could not be authenticated or decoded.");
+            throw new SessionIntegrityException("The stored checkpoint could not be decoded.");
         }
         finally
         {
@@ -851,31 +734,6 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
             ("$code", (object?)outcome.RejectionCode ?? DBNull.Value),
             ("$message", (object?)outcome.RejectionMessage ?? DBNull.Value),
             ("$recordedAt", DateTimeOffset.UtcNow.ToString("O")));
-
-    private async Task<SessionEncryption> GetEncryptionAsync(
-        SessionId sessionId, CancellationToken cancellationToken, bool reload = false)
-    {
-        if (!reload && _encryption.TryGetValue(sessionId, out var cached)) return cached;
-
-        await using var connection = await OpenAsync(sessionId, cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT ProtectedDataKey FROM Session WHERE SessionId = $sessionId;";
-        command.Parameters.AddWithValue("$sessionId", sessionId.Value);
-
-        if (await command.ExecuteScalarAsync(cancellationToken) is not byte[] protectedKey)
-            throw new SessionIntegrityException($"The save for {sessionId} has no data key.");
-
-        try
-        {
-            var encryption = SessionEncryption.Open(protectedKey);
-            _encryption[sessionId] = encryption;
-            return encryption;
-        }
-        catch (CryptographicException)
-        {
-            throw new SessionIntegrityException("The saved match's data key could not be opened for this Windows user. The original save has been retained.");
-        }
-    }
 
     private static async Task ExecuteAsync(
         SqliteConnection connection,

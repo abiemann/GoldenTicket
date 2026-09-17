@@ -45,17 +45,23 @@ public partial class PrivateSeatView : UserControl
         SoloKeepAllButton.IsEnabled = false;
         foreach (var choice in seat.Offer) choice.Keep = !ReferenceEquals(choice, ticket);
         seat.RefreshKeepValidity();
+        // Keep drives the board's line and city rings. Remove the rejected card at the
+        // same time, then let the player see the updated board before the whole tile exits.
+        card.Visibility = Visibility.Collapsed;
         try
         {
-            var move = new TranslateTransform();
-            card.RenderTransform = move;
-            var duration = new Duration(TimeSpan.FromMilliseconds(440));
-            move.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, -900, duration)
+            if (SystemParameters.ClientAreaAnimation)
             {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
-            });
-            card.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, duration));
-            await Task.Delay(duration.TimeSpan);
+                await Task.Delay(180);
+                var move = new TranslateTransform();
+                SoloCardsTile.RenderTransform = move;
+                var duration = new Duration(TimeSpan.FromMilliseconds(500));
+                move.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, 225, duration)
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
+                });
+                await Task.Delay(duration.TimeSpan);
+            }
             if (ReferenceEquals(model.PrivateSeat, seat)) await model.CommitTicketsAsync();
         }
         finally
@@ -66,9 +72,10 @@ public partial class PrivateSeatView : UserControl
                 ticket.Keep = true;
                 seat.RefreshKeepValidity();
             }
-            card.BeginAnimation(OpacityProperty, null);
-            card.Opacity = 1;
-            card.RenderTransform = Transform.Identity;
+            card.Visibility = Visibility.Visible;
+            if (SoloCardsTile.RenderTransform is TranslateTransform tileMove)
+                tileMove.BeginAnimation(TranslateTransform.YProperty, null);
+            SoloCardsTile.RenderTransform = Transform.Identity;
             _committing = false;
             SoloDestinationCards.IsEnabled = true;
             SoloKeepAllButton.IsEnabled = true;

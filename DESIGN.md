@@ -189,7 +189,8 @@ The public screen contains:
   The first two seats face each other; a fifth seat is centered below the board, with two on each
   side. Each tile aligns the player name, train cards, and destinations on one row with score and
   counts beneath; remaining trains are text above the stacks, and the action line is centered.
-  The face-up train market sits along the bottom right edge.
+  With two to four players, the draw piles and face-up train market sit centered along the
+  bottom after setup; with five, they stay at the outer edges to leave the fifth seat below the board.
 - Live board view with transforms synchronized to its displayed frame.
 - Current route instruction or a short explanation of the current card action.
 - Public card market, public scores, and remaining-train indicators. Public destination stacks include
@@ -253,7 +254,7 @@ Select the experience separately from voice/visual output: **Standard** uses ess
 
 ### 4.7 Pass-and-hide
 
-For exactly one human, show the three opening destination tickets in a compact **Your Cards** row below the live board. Shift the board upward so it partially underlays the persistent game-table guidance, and hide the draw piles and face-up market during this opening choice. In the board's rectified canonical coordinates, draw thick rings around both endpoint cities of every offered destination, with a thin line connecting each card's pair of rings. Start from calibrated city-dot coordinates and refine each ring against the printed orange dot in the live crop when the dot is identifiable; retain the calibrated coordinate when detection is uncertain. Keep the rings in register as the window scales; remove a dropped destination's line and rings immediately, retaining a ring for any endpoint shared with another kept card. The player may keep all three or click one ticket to drop it, confirm the choice, and see it animate off the screen before the existing ticket-selection command durably records the two kept tickets. A canceled drop changes nothing. Keep the live table guidance visible above the board. The unresolved opening choice has no **Back to table** action, and plain Escape does not dismiss it; the player must keep all three or confirm one drop to continue normal play. Use **Your cards** on the laptop and **Back to table** instead of pass-the-device wording for later private actions. Open the human's card or ticket choices when a human decision becomes available, then return to the table for physical placement and AI guidance. A deliberate Back to table or Escape remains respected for later private views; ordinary focus loss and idle time do not cover the solo opening choice. Shift+Escape and system privacy or recovery paths remain available, and refreshing the public state must not reopen a deliberately hidden hand. Normal board-check, pack-away and rebuild gates still apply before card actions. Derive the mode from the actual match roster, including resumed matches; setup edits affect only a future match. Hide **Connect phone** and prevent starting companion gameplay in single-human mode.
+For exactly one human, show the three opening destination tickets in a compact **Your Cards** row below the live board. Shift the board upward so it partially underlays the persistent game-table guidance, and hide the draw piles and face-up market during this opening choice. In the board's rectified canonical coordinates, draw thick rings around both endpoint cities of every offered destination, with a thin line connecting each card's pair of rings. Start from calibrated city-dot coordinates and refine each ring against the printed orange dot in the live crop when the dot is identifiable; retain the calibrated coordinate when detection is uncertain. Keep the rings in register as the window scales. On a confirmed drop, hide the rejected card and its line and rings together, retaining a ring for any endpoint shared with another kept card. Then slide the remaining **Your Cards** panel vertically down and off-screen before the existing ticket-selection command durably records the two kept destinations. A canceled drop changes nothing. Keep the live table guidance visible above the board. The unresolved opening choice has no **Back to table** action, and plain Escape does not dismiss it; the player must keep all three or confirm one drop to continue normal play. After either choice, retain the public board rather than automatically covering it with the solo private view; the human's tile opens their turn cards. Animate the draw piles and face-up market from the outer bottom edges to centered positions for two to four players; keep the outer positions with five players to leave room for the fifth seat. Use **Your cards** on the laptop and **Back to table** instead of pass-the-device wording for later private actions. A deliberate Back to table or Escape remains respected for later private views; ordinary focus loss and idle time do not cover the solo opening choice. Shift+Escape and system privacy or recovery paths remain available, and refreshing the public state must not reopen a deliberately hidden hand. Normal board-check, pack-away and rebuild gates still apply before card actions. Derive the mode from the actual match roster, including resumed matches; setup edits affect only a future match. Hide **Connect phone** and prevent starting companion gameplay in single-human mode.
 
 With multiple humans, at a human handoff first show a neutral curtain on the companion: “Pass this device to Alex.” Reveal the active seat's private view only after an explicit action and a fresh laptop-issued private-view grant. The user can hold a touch target to peek at their hand; releasing it returns to the curtain. A persistent reveal option is permitted with a visible Hide control and inactivity timeout. The laptop remains on the public board view when using the companion. Laptop-only play uses the equivalent curtain and keyboard/mouse controls.
 
@@ -1294,7 +1295,7 @@ src/
   GoldenTicket.AI/              strategies, synthetic simulations
   GoldenTicket.Vision/          geometry, observations, matching, model contract
   GoldenTicket.Windows/         capture, inference adapter, audio, OS integration
-  GoldenTicket.Persistence/     SQLite, replay, backup, migrations
+  GoldenTicket.Persistence/     SQLite journal, replay, integrity checks
   GoldenTicket.Desktop/         WPF views and view models, composition root
   GoldenTicket.CompanionHost/   embedded Kestrel, pairing, device/seat grants, API
 companion/                     TypeScript PWA, manifest, service worker, touch UI
@@ -1459,7 +1460,7 @@ Use `%LOCALAPPDATA%\GoldenTicket\` for settings and match storage, independent o
 settings.json
 companion-host/                 local endpoint settings, protected TLS keys, pairing registry
 sessions/<session-id>/session.db
-sessions/<session-id>/images/<hash>.png
+sessions/<session-id>/checkpoint-photos/<checkpoint-id>.gtphoto
 sessions/<session-id>/backups/
 diagnostics/                    bounded, user-clearable
 ```
@@ -1471,21 +1472,30 @@ Game images are board-only references, not desktop screenshots containing privat
 | Table | Key fields | Purpose |
 |---|---|---|
 | `Session` | ID, schema/profile/policy versions, manifest hash, lifecycle | Match identity and compatibility |
-| `Event` | session, sequence, command ID, type/version, visibility, encrypted payload, prior hash | Append-only authoritative history |
-| `Snapshot` | sequence, state version, board revision, encrypted state, checksum | Fast restore and replay check |
+| `Event` | session, sequence, command ID, type/version, visibility, payload, prior hash | Append-only authoritative history with plaintext payloads |
+| `Snapshot` | sequence, state version, board revision, state hash | Restore and replay validation metadata |
 | `Operation` | operation ID, type, status, base revision, payload | Pending physical/digital operation recovery |
 | `CommandResult` | command ID, result/version | Idempotency across retries and crashes |
 | `Calibration` | camera identity, epoch/revision, fixture/profile, fit metadata | Saved starting hints and diagnostics |
 | `ImageReference` | hash, capture context, relative filename, retention owner | Board-only image; required for a checkpoint labeled as saved with photo |
-| `PackAwayCheckpoint` | ID, source snapshot/version/sequence, state/target hashes, pending mask, photo reference, status | Immutable named reconstruction checkpoint linked to the complete encrypted game state |
+| `PackAwayCheckpoint` | ID, source snapshot/version/sequence, state/target hashes, pending mask, photo reference, status | Immutable named reconstruction checkpoint linked to the complete game state |
 | `PresentationCheckpoint` | story version, last event, repetitions, settings | Resume without replaying stale narration |
 | `MigrationHistory` | version, timestamp, completion | Controlled save upgrades |
 
 Keep paired-device credentials and local TLS material in a separate protected host registry, not in portable match exports. Private-view grants and active controller leases are ephemeral and revoked on restart. The companion caches only its public shell; all match snapshots, deck state, and pending operations stay on Windows.
 
-Public events may retain public payloads, but protect full referee state, deck permutations, hands, private offers, and private event payloads. Use a random per-session data key with authenticated encryption; protect the key with Windows DPAPI for the current user. Record format/algorithm versions and nonces. Windows file permissions provide an additional local boundary.
+Local saves store event and checkpoint payloads in plaintext. Preserve the journal hash chain,
+state fingerprints, replay checks, checkpoint binding and readback validation for integrity. Current
+checkpoint-photo sidecars use plaintext format v2 with a SHA-256 checksum over the stored metadata
+and PNG. A checksum detects accidental or unsophisticated modification; it does not authenticate
+against a person who can rewrite the save. Keep private hands out of the public UI and companion
+cache, and rely on normal Windows file permissions for local access. Do not describe local saves as
+encrypted or promise secrecy from someone who can read the files.
 
-This prevents casual reading of a copied database but does not protect secrets from the running Windows account or a process debugger. Do not sell pass-and-hide as adversarial security.
+The former encrypted game-save and format-v1 photo formats are unsupported; users may delete those
+old saved matches. Creating and reading a current save must not require DPAPI. Keep the companion's
+TLS private keys separately protected as specified in section 18; the local game-save format does
+not change the companion's transport security.
 
 ### 19.3 Transaction discipline
 
@@ -1506,10 +1516,10 @@ match never bypasses physical reconciliation or reveals private cards on its own
 
 Display the most recently committed checkpoint name first, followed by the updated date, turn,
 readable lifecycle status (for example, **Packed away**) and player names. Read the name from existing
-checkpoint metadata without decrypting private cards or requiring a resave. Choose the latest
+checkpoint metadata without loading private cards or requiring a resave. Choose the latest
 checkpoint by source state version, retain its name when play resumes, and replace it on the next
-committed named save. Older saves without a checkpoint table or name show date, turn, status and
-players. A listed name or status does not replace checkpoint integrity and readback verification.
+committed named save. A listed name or status does not replace checkpoint integrity and readback
+verification.
 
 1. Open a selected session without displaying private state.
 2. Validate schema, manifest, model compatibility, checksums, and the latest durable command.
@@ -1519,15 +1529,9 @@ players. A listed name or status does not replace checkpoint integrity and readb
 6. Highlight missing, extra, displaced, or wrong-color trains.
 7. Resume the saved operation only after the physical board agrees or a recorded manual reconciliation is completed.
 
-Store schema 3 makes the checkpoint table part of the required save structure. On restoring schema
-1 or 2, first complete compatibility, journal replay, snapshot and invariant checks. Before the first
-upgrade write, use SQLite's backup API to retain the validated database, including committed WAL
-pages, as a standalone file under the match's `backups` directory. Then create the checkpoint table
-if absent, normalize the latest legacy snapshot sequence/hash, and record schema 3 and its migration
-history in one transaction. Preserve existing checkpoint rows, journal events, command outcomes and
-game state. A failed backup or migration must not admit the match for play or leave a partial schema
-upgrade. Listing saves remains read-only with respect to their schema, and already-upgraded restores
-do not create another migration backup.
+The checkpoint table is part of the required save structure. Restore only supported current-format
+saves after schema, journal replay, snapshot and invariant checks. An unsupported former encrypted
+save must not be admitted for play; the user may delete it and start a new match.
 
 If the durable lifecycle is `PreparingPackAway`, `PackedAway`, or `Rebuilding`, recover that paused workflow first. Do not perform ordinary auto-resume or launch AI thinking. A packed checkpoint uses its saved physical target and section 19.8's explicit Resume gate, including any separately identified pending placement.
 
@@ -1558,7 +1562,11 @@ Undo cannot erase information someone already saw. If rollback crosses private d
 
 ### 19.7 Portability and retention
 
-Same-machine resume is required. Optional manual export can create a portable encrypted archive using a user-supplied passphrase, because DPAPI alone is tied to the Windows account/machine context. Include the compatible data manifest, selected checkpoints and their photographs, and preserve original package hashes; importing must not execute content. A copied board photograph alone is not a portable game save.
+Same-machine resume is required. Optional manual export may create a portable archive, with
+user-supplied passphrase protection only if that feature is explicitly offered; ordinary local
+saves are unencrypted. Include the compatible data manifest, selected checkpoints and their
+photographs, and preserve original package hashes; importing must not execute content. A copied
+board photograph alone is not a portable game save.
 
 Offer delete-session and clear-diagnostics controls. Apply explicit size limits to recordings, retaining no raw video by default. Uninstall preserves saves unless the user explicitly selects their removal.
 
@@ -1571,7 +1579,7 @@ Pin a named pack-away checkpoint's source snapshot, required journal history, an
 `SaveAndPackAway` is a coordinator operation around the existing foreground game action, not another gameplay action. It may suspend a partial digital draw, an offered ticket choice, or an authorized physical placement without forcing the player to finish the turn.
 
 1. Serialize the request on the referee writer queue. Finish any transaction already executing, then durably enter `PreparingPackAway`, record the request ID and suspended phase, and advance `stateVersion`. Revoke private-view grants, cover both interfaces, stop move narration, cancel AI work, and reject gameplay callbacks from the earlier version. Keep the existing operation ID and reservations. A client retry resolves the same request instead of opening a second save operation.
-2. Freeze the resulting source state. Record its snapshot ID, state version, board revision, journal sequence, manifest hash, pending operation ID, and state hash. Save all deck permutations, hands, temporary offers, selected first draws, random state, final-round progress, and narrative checkpoint with the existing encrypted persistence scheme. No game command may mutate that state while capture is underway; camera readiness may still change.
+2. Freeze the resulting source state. Record its snapshot ID, state version, board revision, journal sequence, manifest hash, pending operation ID, and state hash. Save all deck permutations, hands, temporary offers, selected first draws, random state, final-round progress, and narrative checkpoint with the local persistence scheme and its integrity checks. No game command may mutate that state while capture is underway; camera readiness may still change.
 3. Acquire a fresh full-board observation and its source frame. Require valid geometry, adequate sharpness/exposure, no occlusion, and the normal temporal stability checks. Bind both observation and image to the save request, frozen source version, board revision, pending operation, camera epoch, and calibration revision. Recheck those values on the coordinator before accepting the capture. A jog, stale frame, or changed operation invalidates the attempt.
 4. Compare the entire board with the committed ownership map. An authorized pending claim may add a verified subset of its own cells in the correct lane and color. Store that subset as `pendingPlacementMask`, distinct from committed route ownership. Any missing old train, unexplained extra train, uncertain cell, or unauthorized board-first placement blocks the verified-photo path. Guide correction or offer the explicitly labeled state-only fallback below.
 5. Encode the actual accepted camera frame as a board-only PNG, retaining enough detail to identify individual trains. A normalized preview is optional; retain capture metadata that maps it to the stored route diagram. Hash, flush, atomically finalize, decode, and validate the stored image before referencing it. Never substitute a renderer screenshot or a last-known preview and label it a new board photograph.
@@ -1828,7 +1836,7 @@ Each milestone ends with a runnable, reviewable artifact and relevant validation
 | M4: Verification loop | Baseline recognition, full-board matcher, planned and board-first claims, correction UI, automatic recovery, wake gesture, verified pack-away photos and guided reconstruction | Recorded and live claim/recovery scenarios plus complete pack-away/rebuild with no incorrect commits or duplicate scoring |
 | M5: Recognition model if needed | Developer dataset expansion, small model, ONNX export, backend comparison, bundle versioning; Auto/CPU/GPU launch policy and effective-backend indicator for the selected inference path | Held-out evidence showing required improvement over baseline when training is needed; provider-selection/fallback tests, compatibility manifest and licenses |
 | M6: Game experience | Complete non-audio AI/theme/accessibility work first; implement Training/Story, voice/visual modes, original narration/sounds, and private-output filtering as the final feature pass after photographed save-and-rebuild and packaging foundation | Complete Training and Story mixed-seat matches; Training produces no sound effects; verified theme contrast and player-color distinction; no hidden-information leakage; measured AI completion/latency |
-| M7: Hardening and release candidate | Offline installer/PWA distribution, native dependencies, certificate renewal, mobile lifecycle/cache updates, suspend/reconnect, disk faults, photo/checkpoint crash recovery and retention, save migration, extended sessions, documentation | Full acceptance matrix, clean-machine/local-network install, real-device report, known limitations, reviewed release artifacts |
+| M7: Hardening and release candidate | Offline installer/PWA distribution, native dependencies, certificate renewal, mobile lifecycle/cache updates, suspend/reconnect, disk faults, photo/checkpoint crash recovery and retention, save-format validation, extended sessions, documentation | Full acceptance matrix, clean-machine/local-network install, real-device report, known limitations, reviewed release artifacts |
 
 M1 may proceed alongside M0's camera experiments because rules do not depend on capture. Dataset collection begins as soon as M3 tooling produces trustworthy synchronized labels. M5's model training is conditional on measured need; skipping training is acceptable only if M4's recognizer meets the same final criteria. Processor selection and truthful status remain required for whichever recognition path is implemented.
 
@@ -1897,13 +1905,17 @@ The subsequent work adds state-only named checkpoints, pack-away/rebuild lifecyc
 The follow-up implementation adds `GoldenTicket.CompanionHost`, an embedded local HTTPS game PWA
 with laptop-approved controller pairing, short private-view grants and the four human digital
 actions; `GoldenTicket.Vision`, with real Windows capture, manual board cropping and scene-reference
-comparison; and encrypted optional checkpoint-reference photos. The Windows shell now exposes
+comparison; and optional checkpoint-reference photos. The Windows shell now exposes
 camera, connection and photo screens. These changes are described in
 [the implementation record and acceptance checklist](docs/IMPLEMENTATION-2026-09-12.md).
 
 Single-human play now uses the laptop's card view directly for opening destinations and human
 decisions. The unresolved opening choice has no **Back to table** action and ignores plain Escape;
 later private views use **Your cards** and **Back to table**, with no **Connect phone** navigation.
+On a confirmed opening drop, the rejected card and board highlight vanish together, then the
+remaining cards panel slides down. Either opening choice returns to the public table. The human
+tile opens turn cards; the draw panels animate to the centered bottom layout for two to four
+players and remain at the outer edges with five.
 Setup changes update the proposed mode; an active or resumed match uses its own human-seat count.
 Multiple-human pass-and-hide and the optional companion remain available. The solo workflow keeps
 the table available for placements and AI instructions, respects explicit covering, and retains
@@ -1951,7 +1963,7 @@ The photo foundation explicitly distinguishes a digital checkpoint, a live unsav
 photo attachment. Save and pack away does not capture a photo automatically. The photo page shows
 the missing prerequisite (camera, crop, stable reference or operator confirmation), links to camera
 setup and labels its live crop as unsaved. Capture is disabled outside packed/rebuilding sessions
-or while the camera is not ready. Only successful encrypted attachment readback supplies the saved
+or while the camera is not ready. Only successful checksum and checkpoint-binding readback supplies the saved
 image. The rebuild page shows that image above the authoritative route list, and supplies clear
 messages for missing photos and zero-route positions. A checkpoint with no attachment cannot
 recreate a historical board picture after the physical board has been cleared.
@@ -1967,12 +1979,12 @@ bounded photo-pair/GPU evidence and remaining physical acceptance are described 
 Current deviations remain explicit: the PWA uses bundled plain JavaScript and two-second public
 snapshot polling instead of the specified TypeScript/WSS event cursor. Controller sessions are
 process-local and each page reload requires fresh laptop-approved pairing. The device uses a
-30-second reveal timeout and Hide, without hold-to-peek. Photos are operator-attested encrypted
-sidecars to `LogicalStateOnly` checkpoints, not `VerifiedBoardPhoto` evidence. Automatic train/
-landmark/gesture recognition, learned models, model-provider inference selection and measured full
+30-second reveal timeout and Hide, without hold-to-peek. Photos are operator-attested plaintext
+sidecars with SHA-256 checksums for `LogicalStateOnly` checkpoints, not `VerifiedBoardPhoto` evidence.
+Automatic train/landmark/gesture recognition, learned models, model-provider inference selection and measured full
 camera recovery remain absent. Experimental piece candidates and a return-to-reference image
 comparison do not satisfy those requirements. The rebuild target remains a route list rather than a geometry-based diagram.
-Snapshot rows hold validation metadata and state hashes rather than complete encrypted snapshots.
+Snapshot rows hold validation metadata and state hashes rather than complete state snapshots.
 Physical board-data review, narrated story/audio and installer acceptance remain outstanding.
 The normal developer build is framework-dependent; the offline packaging workflow produces a
 separate self-contained x64 ZIP after documented source validation. These are implementation gaps,

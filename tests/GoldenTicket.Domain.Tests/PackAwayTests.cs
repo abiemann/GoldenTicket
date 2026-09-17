@@ -729,7 +729,7 @@ public class PackAwayTests
 }
 
 /// <summary>
-/// The same protocol against the real SQLite store, so the checkpoint table, its encryption and the
+/// The same protocol against the real SQLite store, so the checkpoint table, its readable payload and the
 /// readback path are exercised rather than an in-memory stand-in.
 /// </summary>
 public class PackAwayDurabilityTests : IDisposable
@@ -809,7 +809,7 @@ public class PackAwayDurabilityTests : IDisposable
         var saved = await coordinator.SaveAndPackAwayAsync("On disk", token);
         Assert.True(saved.SafeToPack, saved.Problem);
 
-        // The row is really in the database and decrypts to the same checkpoint.
+        // The row is really in the database and reads back as the same checkpoint.
         var stored = await store.ReadCheckpointAsync(coordinator.SessionId, saved.Checkpoint!.CheckpointId, token);
         Assert.NotNull(stored);
         Assert.Equal(saved.Checkpoint.LogicalStateHash, stored!.LogicalStateHash);
@@ -839,11 +839,11 @@ public class PackAwayDurabilityTests : IDisposable
     }
 
     /// <summary>
-    /// DESIGN 19.2: the checkpoint carries the logical-state fingerprint, so its row is encrypted
-    /// like every other non-public payload rather than sitting in the file in clear text.
+    /// The checkpoint carries the logical-state fingerprint in a readable local save. The
+    /// redundant metadata columns still have to agree with that payload on readback.
     /// </summary>
     [Fact]
-    public async Task TheCheckpointRowIsNotReadableInTheDatabaseFile()
+    public async Task TheCheckpointRowIsReadableInTheDatabaseFile()
     {
         var token = TestContext.Current.CancellationToken;
         var store = new Persistence.SqliteSessionStore(_root);
@@ -857,17 +857,25 @@ public class PackAwayDurabilityTests : IDisposable
         var saved = await coordinator.SaveAndPackAwayAsync("Secretive", token);
         Assert.True(saved.SafeToPack, saved.Problem);
 
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        var text = System.Text.Encoding.UTF8.GetString(
-            await File.ReadAllBytesAsync(store.DatabasePath(coordinator.SessionId), token));
-
-        // The fingerprint is derived from hands, deck order and private offers, so it belongs inside
-        // the encrypted payload and must not appear as a readable column.
-        Assert.DoesNotContain(saved.Checkpoint!.LogicalStateHash, text, StringComparison.Ordinal);
-        Assert.DoesNotContain(saved.Checkpoint.PhysicalTargetHash, text, StringComparison.Ordinal);
-
-        // The name is the operator's own label and is deliberately listable without decrypting.
-        Assert.Contains("Secretive", text, StringComparison.Ordinal);
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+            $"Data Source={store.DatabasePath(coordinator.SessionId)}");
+        await connection.OpenAsync(token);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Payload, Name FROM PackAwayCheckpoint WHERE CheckpointId = $id;";
+        command.Parameters.AddWithValue("$id", saved.Checkpoint!.CheckpointId.Value);
+        await using var reader = await command.ExecuteReaderAsync(token);
+        Assert.True(await reader.ReadAsync(token));
+        var text = System.Text.Encoding.UTF8.GetString((byte[])reader["Payload"]);
+        Assert.Equal("Secretive", reader.GetString(1));
+        Assert.Contains(saved.Checkpoint.LogicalStateHash, text, StringComparison.Ordinal);
+        Assert.Contains(saved.Checkpoint.PhysicalTargetHash, text, StringComparison.Ordinal);
+        var restored = await store.ReadCheckpointAsync(
+            coordinator.SessionId, saved.Checkpoint.CheckpointId, token);
+        Assert.NotNull(restored);
+        Assert.Equal(saved.Checkpoint.CheckpointId, restored.CheckpointId);
+        Assert.Equal(saved.Checkpoint.LogicalStateHash, restored.LogicalStateHash);
+        Assert.Equal(saved.Checkpoint.PhysicalTargetHash, restored.PhysicalTargetHash);
+        Assert.True(saved.Checkpoint.PhysicalTarget.SequenceEqual(restored.PhysicalTarget));
     }
 
     [Theory]

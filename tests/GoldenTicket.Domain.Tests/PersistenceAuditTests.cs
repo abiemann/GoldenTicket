@@ -115,7 +115,7 @@ public sealed class PersistenceAuditTests : IDisposable
     }
 
     [Fact]
-    public async Task DuplicateCreateCannotReplaceAnExistingSessionsEncryptionKey()
+    public async Task DuplicateCreateCannotReplaceAnExistingSession()
     {
         var rules = new GameRules(TestManifest.Manifest, TestManifest.Catalog);
         var store = new SqliteSessionStore(_root);
@@ -142,13 +142,9 @@ public sealed class PersistenceAuditTests : IDisposable
     [InlineData("UPDATE Event SET StateVersion = StateVersion + 100;")]
     [InlineData("UPDATE Event SET SchemaVersion = 999;")]
     [InlineData("UPDATE Event SET Visibility = 'Public';")]
-    [InlineData("UPDATE Event SET Nonce = zeroblob(12) WHERE Encrypted = 1;")]
-    [InlineData("UPDATE Event SET Encrypted = 2;")]
     [InlineData("UPDATE Session SET StoreSchemaVersion = 0;")]
     [InlineData("UPDATE Session SET StoreSchemaVersion = 999;")]
-    [InlineData("UPDATE Session SET EncryptionVersion = 999;")]
     [InlineData("UPDATE Session SET RulesPolicyVersion = 999;")]
-    [InlineData("UPDATE Session SET ProtectedDataKey = X'00';")]
     public async Task MissingOrCorruptSaveMetadataStopsRestore(string mutation)
     {
         var (rules, store, coordinator) = await CreateAsync();
@@ -210,28 +206,6 @@ public sealed class PersistenceAuditTests : IDisposable
 
         Assert.Equal(restored.State.JournalSequence, sequence);
         Assert.Equal(restored.Journal.Count, sequence);
-    }
-
-    [Fact]
-    public async Task LegacySnapshotEncodingAndHashRemainUsableAfterRestoreUpgrade()
-    {
-        var (rules, store, coordinator) = await CreateAsync();
-        var restored = await store.RestoreAsync(coordinator.SessionId, rules.Manifest, rules.Catalog, CancellationToken.None);
-        var legacyHash = StateHash.ComputeLegacy(restored.State);
-        await MutateAsync(store, coordinator.SessionId,
-            $"UPDATE Session SET StoreSchemaVersion = 1; UPDATE Snapshot SET JournalSequence = JournalSequence - 1, StateHash = '{legacyHash}';");
-
-        var reopened = await GameCoordinator.RestoreAsync(rules, new SqliteSessionStore(_root), coordinator.SessionId);
-        Assert.Equal(await coordinator.ComputeStateHashAsync(), await reopened.ComputeStateHashAsync());
-        Assert.True((await SelectOpeningTicketsAsync(reopened)).IsAccepted);
-
-        await using var connection = new SqliteConnection($"Data Source={store.DatabasePath(coordinator.SessionId)}");
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT StoreSchemaVersion FROM Session;";
-        Assert.Equal(SqliteSessionStore.StoreSchemaVersion, Convert.ToInt32(await command.ExecuteScalarAsync()));
-        var upgraded = await store.RestoreAsync(coordinator.SessionId, rules.Manifest, rules.Catalog, CancellationToken.None);
-        Assert.Equal(await reopened.ComputeStateHashAsync(), StateHash.Compute(upgraded.State));
     }
 
     public void Dispose()

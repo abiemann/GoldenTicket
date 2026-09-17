@@ -365,8 +365,8 @@ public sealed partial class MainViewModel : ObservableObject
 
     private async Task ShowSingleHumanCardsAsync(long generation)
     {
-        // Automatic presentation follows a completed game action, never an idle refresh or
-        // window activation. An explicit Hide or deactivation still cancels delayed reveals.
+        // Automatic presentation follows a completed game action except the opening destination
+        // choice, which returns to the public board. Hide or deactivation cancels delayed reveals.
         if (!IsSingleHumanGame || generation != _revealGeneration || !CanRevealPrivateSeat) return;
         try { await RevealPrivateSeatAsync(); }
         catch (Exception) { RequireReload(); }
@@ -433,6 +433,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         var turnNumber = coordinator.Public.TurnNumber;
         var lifecycle = coordinator.Public.Lifecycle;
+        var completedSoloOpeningChoice = IsSingleHumanGame && seat is { IsSetupOffer: true, MustChooseTickets: true };
         SetOperationInProgress(true);
         HidePrivateSeat();
         var generation = _revealGeneration;
@@ -471,7 +472,9 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         // A delayed save/AI result cannot undo Hide, window deactivation, or a seat handoff.
-        if (accepted && generation == _revealGeneration && ReferenceEquals(coordinator, _coordinator) &&
+        // After the solo opening choice, leave the board visible and let its player tile reopen cards.
+        if (accepted && !completedSoloOpeningChoice && generation == _revealGeneration &&
+            ReferenceEquals(coordinator, _coordinator) &&
             (IsSingleHumanGame || (coordinator.Public.TurnNumber == turnNumber && coordinator.Public.Lifecycle == lifecycle)) &&
             _revealable is { } next && next.SeatId == seat.SeatId)
         {

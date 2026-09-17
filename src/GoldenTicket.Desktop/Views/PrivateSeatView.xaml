@@ -285,8 +285,8 @@
             Visibility="{Binding ShowSoloOpeningTicketsOnBoard, Converter={StaticResource BoolToVisibility}}">
         <Viewbox Stretch="Uniform" StretchDirection="Both" HorizontalAlignment="Center"
                  VerticalAlignment="Center" Margin="8">
-          <Canvas Width="1440" Height="900">
-            <Border Canvas.Left="270" Canvas.Top="690" Width="900" Height="205"
+          <Canvas Width="1440" Height="900" ClipToBounds="True">
+            <Border x:Name="SoloCardsTile" Canvas.Left="270" Canvas.Top="690" Width="900" Height="205"
                     Padding="12,8" CornerRadius="10" Background="#F01A2531"
                     BorderBrush="#FFD6AD5C" BorderThickness="2">
               <Grid>

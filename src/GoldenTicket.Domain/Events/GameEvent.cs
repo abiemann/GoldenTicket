@@ -403,7 +403,7 @@ public sealed record PackAwayPreparationCancelled(CommandId RequestId, string Re
 public sealed record PackAwayCheckpointCommitted(PackAwayCheckpoint Checkpoint) : GameEvent
 {
     // The checkpoint carries the logical-state fingerprint, which is derived from hands, deck order
-    // and private offers, so DESIGN 19.2 keeps this payload encrypted. The public history line below
+    // and private offers, so the UI must not expose this payload. The public history line below
     // is built from allowlisted fields and is unaffected.
     public override EventVisibility Visibility => EventVisibility.Referee;
 

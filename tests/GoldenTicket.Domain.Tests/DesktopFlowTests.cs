@@ -77,6 +77,7 @@ public class DesktopFlowTests
         var model = NewMatch();
         await model.StartMatchCommand.ExecuteAsync(null);
         await model.CommitTicketsCommand.ExecuteAsync(null);
+        await model.RevealPrivateSeatCommand.ExecuteAsync(null);
 
         await model.DrawBlindCardAsync();
         Assert.Equal("Drew 1 blind train card.", model.Table.Seats.Single(seat => seat.DisplayName == "Alex").LastAction);
@@ -86,7 +87,7 @@ public class DesktopFlowTests
     }
 
     [Fact]
-    public async Task KeepingOpeningTicketsStartsPlayAndShowsTheSoloHumansHand()
+    public async Task KeepingOpeningTicketsReturnsToTableAndCanOpenTheSoloHumansHand()
     {
         var model = NewMatch();
         await model.StartMatchCommand.ExecuteAsync(null);
@@ -105,8 +106,11 @@ public class DesktopFlowTests
         Assert.Equal(2, human.TicketCount);
         Assert.Equal("Kept 2 destinations and returned 1.", human.LastAction);
 
-        // The sole human can continue on the laptop without another reveal or phone handoff.
+        // The board stays visible until the sole human opens their cards from the player tile.
         Assert.All(offered, ticket => Assert.NotEqual(default, ticket));
+        Assert.Null(model.PrivateSeat);
+        Assert.True(model.CanRevealPrivateSeat);
+        await model.RevealPrivateSeatAsync();
         Assert.NotNull(model.PrivateSeat);
         Assert.Equal(human.SeatId, model.PrivateSeat.SeatId);
         Assert.False(model.PrivateSeat.MustChooseTickets);

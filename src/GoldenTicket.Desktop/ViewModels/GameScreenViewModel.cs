@@ -170,13 +170,13 @@ public sealed partial class GameScreenViewModel : ObservableObject
 
     private void TableSeatsChanged(object? sender, NotifyCollectionChangedEventArgs? e)
     {
-        // The first two seats face one another. Four seats flank the board; a fifth sits below it.
-        // The solo opening cards use the space below the board, so move that seat into the cleared corner.
+        // The first two seats face one another. Up to four seats flank the board; only a fifth
+        // sits below it. The solo opening cards temporarily use that bottom space.
         var extraSeatPosition = _main.ShowSoloOpeningTicketsOnBoard ? (14d, 18d) : (595d, 755d);
         (double Left, double Top)[] positions = _main.Table.Seats.Count switch
         {
             2 => [(10, 330), (1180, 330)],
-            3 => [(10, 330), (1180, 330), extraSeatPosition],
+            3 => [(10, 330), (1180, 330), _main.ShowSoloOpeningTicketsOnBoard ? (14, 18) : (10, 530)],
             4 => [(10, 265), (1180, 265), (10, 530), (1180, 530)],
             _ => [(10, 265), (1180, 265), (10, 530), (1180, 530), extraSeatPosition],
         };

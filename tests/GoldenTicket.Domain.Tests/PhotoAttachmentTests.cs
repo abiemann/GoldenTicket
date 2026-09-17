@@ -13,7 +13,7 @@ using GoldenTicket.Vision;
 
 namespace GoldenTicket.Domain.Tests;
 
-/// <summary>Real DPAPI/AES-GCM files and full PNG validation; no train-recognition claim.</summary>
+/// <summary>Readable, checksummed photo attachments and full PNG validation; no train-recognition claim.</summary>
 public sealed class PhotoAttachmentTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "GoldenTicket.PhotoTests", Guid.NewGuid().ToString("N"));
@@ -56,18 +56,40 @@ public sealed class PhotoAttachmentTests : IDisposable
         Assert.Equal(original, checkpoint);
         Assert.Null(checkpoint.PhotoHash);
         Assert.Equal(TargetProvenance.LogicalStateOnly, checkpoint.TargetProvenance);
-        var encrypted = await File.ReadAllBytesAsync(store.AttachmentPath(checkpoint.SessionId, checkpoint.CheckpointId), Token);
-        Assert.False(encrypted.AsSpan().IndexOf(png) >= 0);
-        Assert.DoesNotContain(checkpoint.LogicalStateHash, Encoding.UTF8.GetString(encrypted));
-        Assert.DoesNotContain(capture.CameraId, Encoding.UTF8.GetString(encrypted));
+        var envelope = await File.ReadAllBytesAsync(store.AttachmentPath(checkpoint.SessionId, checkpoint.CheckpointId), Token);
+        Assert.True(envelope.AsSpan(0, 8).SequenceEqual("GTPHOTO1"u8));
+        Assert.Equal(2, BinaryPrimitives.ReadInt32LittleEndian(envelope.AsSpan(8)));
+        Assert.Equal(0, BinaryPrimitives.ReadInt32LittleEndian(envelope.AsSpan(12)));
+        var plaintext = envelope.AsSpan(52);
+        Assert.Equal(plaintext.Length, BinaryPrimitives.ReadInt32LittleEndian(envelope.AsSpan(16)));
+        Assert.True(envelope.AsSpan(20, 32).SequenceEqual(SHA256.HashData(plaintext)));
+        var metadataLength = BinaryPrimitives.ReadInt32LittleEndian(plaintext);
+        var metadata = Encoding.UTF8.GetString(plaintext.Slice(4, metadataLength));
+        Assert.Contains(checkpoint.LogicalStateHash, metadata, StringComparison.Ordinal);
+        Assert.Contains(capture.CameraId, metadata, StringComparison.Ordinal);
+        Assert.True(plaintext[(4 + metadataLength)..].SequenceEqual(png));
         Assert.Empty(Directory.EnumerateFiles(_root, "*.pending", SearchOption.AllDirectories));
     }
 
     [Fact]
-    public async Task LegacyCheckpointHasNoPhotoAndDoesNotCreateDirectories()
+    public async Task CheckpointWithoutPhotoDoesNotCreateDirectories()
     {
         Assert.Null(await new CheckpointPhotoStore(_root).ReadReferenceAsync(Checkpoint(), Token));
         Assert.False(Directory.Exists(_root));
+    }
+
+    [Fact]
+    public async Task VersionOnePhotoFormatIsRejected()
+    {
+        var checkpoint = Checkpoint();
+        var store = new CheckpointPhotoStore(_root);
+        await store.SaveReferenceAsync(checkpoint, WpfPng(), Capture(), Token);
+        var path = store.AttachmentPath(checkpoint.SessionId, checkpoint.CheckpointId);
+        var envelope = await File.ReadAllBytesAsync(path, Token);
+        BinaryPrimitives.WriteInt32LittleEndian(envelope.AsSpan(8), 1);
+        await File.WriteAllBytesAsync(path, envelope, Token);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.ReadReferenceAsync(checkpoint, Token));
     }
 
     [Fact]
@@ -182,8 +204,9 @@ public sealed class PhotoAttachmentTests : IDisposable
     [InlineData(8)]
     [InlineData(12)]
     [InlineData(16)]
+    [InlineData(20)]
     [InlineData(-1)]
-    public async Task HeaderAndCiphertextCorruptionAreRejected(int offset)
+    public async Task HeaderChecksumAndPayloadCorruptionAreRejected(int offset)
     {
         var checkpoint = Checkpoint();
         var store = new CheckpointPhotoStore(_root);
@@ -193,11 +216,11 @@ public sealed class PhotoAttachmentTests : IDisposable
         bytes[offset < 0 ? bytes.Length - 1 : offset] ^= 0x40;
         await File.WriteAllBytesAsync(path, bytes, Token);
         var exception = await Record.ExceptionAsync(() => store.ReadReferenceAsync(checkpoint, Token));
-        Assert.True(exception is InvalidDataException or CryptographicException);
+        Assert.IsType<InvalidDataException>(exception);
     }
 
     [Fact]
-    public async Task TruncatedOrOversizedAttachmentIsRejectedBeforeDecryption()
+    public async Task TruncatedOrOversizedAttachmentIsRejectedBeforeDecoding()
     {
         var checkpoint = Checkpoint();
         var store = new CheckpointPhotoStore(_root);

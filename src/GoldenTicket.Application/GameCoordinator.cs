@@ -286,7 +286,7 @@ public sealed class GameCoordinator
 
     // ---- Save, pack away and rebuild (DESIGN 19.8) -------------------------------------------
 
-    /// <summary>Immutable checkpoint metadata for the local encrypted-photo workflow. This does
+    /// <summary>Immutable checkpoint metadata for the local reference-photo workflow. This does
     /// not expose hands, ticket choices, decks, or referee journal payloads.</summary>
     public async Task<PackAwayCheckpoint?> GetCheckpointAsync(CancellationToken cancellationToken = default)
     {

@@ -33,10 +33,11 @@ See the
   Manual placement verification remains.
 - [x] After PLAY, show the accepted live board crop in a uniformly scaled game table. Position
   2–5 player portraits and their public train/card/destination counts around it, with face-down
-  stacks and a latest-public-action line per seat. Put up to two seats on each side, a fifth below
-  the board, and the five-card market at the bottom right edge. Keep private card contents off the
-  public table; provide Your cards and Game controls actions. Preserve the panel above the board
-  as the human guidance area for the current phase, acting seat and next instruction throughout the game.
+  stacks and a latest-public-action line per seat. Put up to two seats on each side and a fifth
+  below the board. Center the draw piles and five-card market along the bottom for fewer than five
+  seats, keeping them at the outer edges for five. Keep private card contents off the public table;
+  the solo human opens turn cards from their tile. Preserve the panel above the board as the human
+  guidance area for the current phase, acting seat and next instruction throughout the game.
 - [ ] Re-register the live board crop automatically after a saved game is reloaded or the camera
   restarts; for now, use the technical Camera screen to register it again.
 - [ ] Validate score-piece color and printed-1 acceptance with the real overhead camera for all
@@ -44,10 +45,10 @@ See the
 - [ ] Recognize the board's printed score-track orientation independently of marker placement;
   the current four-rotation proximity check can mistake a marker cluster at another corner for 1.
 - [x] The affected corner and score-piece tests pass (72 focused cases). Synthetic WPF checks
-  cover 77 render cases, selection input, repeated transitions, resizing, privacy hiding and
+  cover 88 render cases, selection input, repeated transitions, resizing, privacy hiding and
   shared game/camera ownership, with no binding warnings.
-- [ ] Rerun the full automated suite under a loaded Windows user profile after the latest
-  corner and score-piece changes; the sandboxed run cannot use Windows user-profile encryption.
+- [x] The full automated suite passed under the signed-in Windows user profile (719 cases).
+  Game-save storage tests also passed in a restricted context without DPAPI.
 - [ ] Perform a hands-on desktop check of focus, maximization, animation/reduced-motion settings
   and the live camera while switching layers on the target Windows machine.
 
@@ -67,8 +68,9 @@ validation requirements; mark each feature complete only after those checks pass
   hardware/provider acceptance matrix remain M4/M5; preprocessing is not ML inference.
 - [ ] **Photographed save and rebuild** — the state-only half is implemented (M2): named checkpoints,
   the `PreparingPackAway`/`PackedAway`/`Rebuilding` lifecycle, commit-then-readback validation,
-  route-list guided reconstruction and exactly-once resume. Optional encrypted, operator-attested
-  reference photos now have immutable checkpoint binding and authenticated readback. Still missing:
+  route-list guided reconstruction and exactly-once resume. Optional operator-attested
+  reference photos use plaintext format v2 with a SHA-256 checksum, immutable checkpoint binding
+  and readback verification. Still missing:
   the board diagram, machine-verified photograph, pending-placement mask and full evidence lifecycle.
 - [ ] **Offline installer packaging** — self-contained Windows x64 distribution with required runtimes and assets included (M7).
 - [ ] **Training mode, voice, story, and audio: last feature pass** — Training follows Story without effects/ambience; narration follows visual/voice/both settings. Complete photo save-and-rebuild and packaging foundation first (M6).
@@ -92,7 +94,7 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
 - [x] Bound browser installation/network checks, prevent false reload/cache success reports, and
   constrain the service worker to its own explicitly allowed shell assets.
 - [x] Confine save paths and reject linked/unsupported paths before filesystem operations.
-- [x] Check snapshot/journal/version integrity, prevent competing writers, and preserve old save compatibility.
+- [x] Check snapshot/journal/version integrity and prevent competing writers for supported saves.
 - [x] Keep unreadable saves visible, sanitize recovery errors, and block gameplay after uncertain writes.
 - [x] Validate claim actors, revision, lane, manual mode, and attestation metadata.
 - [x] Preserve rare depleted-supply states without silently advancing turns.
@@ -121,12 +123,12 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   resumed roster determines this behavior; multiple humans retain explicit pass-and-hide and an
   optional shared companion. Board verification, AI secrecy and later explicit Hide remain in force.
 - [x] **Camera and photo foundation.** Windows video-only capture, selectable formats, manual
-  four-corner crop and conservative scene-reference checks; optional encrypted operator-attested
-  checkpoint photos with integrity/readback and stale-capture protection. No automated train
+  four-corner crop and conservative scene-reference checks; optional plaintext, checksummed,
+  operator-attested checkpoint photos with integrity/readback and stale-capture protection. No automated train
   verification or machine-verified photo checkpoint is claimed.
 - [x] **Manual board-photo export.** A valid live crop can be exported to PNG without a scene
   reference, including while the scene has changed. Fresh-frame and crop/camera identity checks
-  remain; encrypted checkpoint-photo capture retains its separate reference checks.
+  remain; checkpoint-photo capture retains its separate reference checks.
 - [x] **Native-resolution preference and truthful 4K processing.** Default to exact native
   1920 × 1080 near 30 fps, try smaller usable modes when necessary, and retain selectable native
   4K capture up to 3840 × 2160. Display the actual delivered
@@ -302,9 +304,8 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
 - [x] **Obvious saved-match selection.** Show a checkmark, automatically select a sole save, keep
   selection across refreshes, and enable Resume only with a selected match. Display selection
   guidance and restore errors in the saved-matches panel; retain the board reconciliation gate.
-- [x] **Saved-match names.** Show the entered name first, including names already stored in existing
-  checkpoints. Keep the latest committed name after resuming, use readable status text, and retain
-  support for older unnamed saves without a schema migration.
+- [x] **Saved-match names.** Show the entered name first, keep the latest committed name after
+  resuming, and use readable status text.
 - [x] **Offline package build workflow.** A clean-source, locked-dependency PowerShell builder creates
   a self-contained Windows x64 ZIP with runtime/assets checks, notices, provenance and checksums.
   Actual package output is recorded separately in [packaging evidence](docs/offline-package.md);
@@ -375,15 +376,12 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   frozen source state, commit-then-readback validation before any safe-to-pack result, suspended
   partial operations preserved, route-list guided reconstruction with whole-target attestation,
   and exactly-once resume. Verified by `PackAwayTests` and `PackAwayDurabilityTests`.
-- [x] **Legacy checkpoint schema upgrade.** After verified restore, migrate schema 1/2 saves to
-  schema 3 with a standalone SQLite backup before changes. Preserve existing checkpoints and
-  recover interrupted pack-away preparation; failed validation or backup leaves the schema intact.
 - [x] **Desktop exit confirmation.** An unfinished match prompts before exit with No selected;
   wording distinguishes automatic digital saves from a verified pack-away checkpoint. No warning
   for an already verified packed/rebuilding game solely because its optional photo is absent.
   Pending writes block closing; storage faults show uncertainty. Cancel retains usable tools and
   covers private hands. Confirm preserves deferred cleanup and final close without WPF reentry.
-- [ ] **M2/M4: persistence and pack away, remaining.** Add the geometry-based rebuild diagram, complete encrypted snapshots,
+- [ ] **M2/M4: persistence and pack away, remaining.** Add the geometry-based rebuild diagram, complete snapshots,
   full evidence pinning and machine-verified board photographs,
   partial-operation (pending placement) targets, and current-checkpoint success receipts for the
   companion. Add correction branches and optional encrypted portable export/import.
@@ -416,5 +414,6 @@ dotnet run --project tools/GoldenTicket.Simulator --no-build --no-restore -- sim
 dotnet list GoldenTicket.sln package --vulnerable --include-transitive --no-restore
 ```
 
-Persistence tests require Windows DPAPI under a loaded user profile. Do not replace encryption with
-plaintext or skip those tests to make a restricted execution context report success.
+Game-save and photo persistence tests exercise plaintext payloads and integrity checks without
+DPAPI. Former encrypted saved matches are unsupported and may be deleted. The companion's local TLS
+private keys still use DPAPI and require the user profile.

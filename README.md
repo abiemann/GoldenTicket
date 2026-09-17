@@ -13,7 +13,7 @@ the corrected bugs and security issues, and separates automated evidence from re
 [TODO.md](TODO.md) tracks the work needed to complete the product.
 
 The subsequent [September 12 implementation update](docs/IMPLEMENTATION-2026-09-12.md) adds the
-game phone companion, camera tools, and encrypted board reference photos. Use its morning
+game phone companion, camera tools, and board reference photos. Use its morning
 acceptance checklist and [local phone setup](docs/phone-setup.md). Real-device acceptance remains
 in progress; automatic train recognition is not enabled.
 
@@ -79,8 +79,9 @@ This build implements the core game plus initial phone, camera and photo workflo
   with the witness trail shown.
 - Heuristic computer opponents at three difficulty levels, which see only their own seat's view.
 - Durable local saves: an append-only event journal in SQLite with a tamper-evident hash chain,
-  DPAPI-protected AES-GCM encryption for referee-only and private payloads, command deduplication,
-  and restore by replay verified against a stored state fingerprint.
+  plaintext local payloads, command deduplication, and restore by replay verified against a stored
+  state fingerprint. Game saves are not encrypted; saves written in the former encrypted format
+  are no longer supported and may be deleted before starting a new game.
 - Save and pack away: the game suspends mid-turn, writes a named checkpoint, reads it back and only
   then says the pieces may be cleared away. Reopening shows the saved position route by route with
   per-seat stock guidance, takes the operator's whole-board confirmation, and resumes the exact
@@ -88,9 +89,6 @@ This build implements the core game plus initial phone, camera and photo workflo
 - Save paths are confined to valid session directories; concurrent writers, inconsistent journal
   metadata, missing snapshots, and corrupted state stop the operation. An uncertain save outcome
   requires a reload. Unreadable saves remain listed with recovery guidance.
-- Restoring a compatible older save upgrades its checkpoint schema after replay validation. A
-  standalone SQLite backup is retained in that match's `backups` folder before the upgrade;
-  older games can then pack away, including games interrupted during checkpoint preparation.
 - A WPF interface in the box-derived palette: a public table screen, an opaque privacy curtain with
   a per-seat private view, the operator's placement instruction and confirmation, and a results
   screen.
@@ -100,9 +98,11 @@ This build implements the core game plus initial phone, camera and photo workflo
   most recently updated save. Shift+Escape reveals the existing technical screens; **Return to
   game** slides the game layer back. Both presentations use the same match and camera objects.
 - With one human, the three opening destinations appear over the game board. Keep all three or
-  click one to drop it, confirm, and watch it leave before the two kept tickets are saved. Later
-  private cards open on the laptop when that player needs to act. The unresolved opening choice
-  has no **Back to table** action and plain Escape does not dismiss it. Later private views use
+  click one to drop it. A confirmed drop removes that card and its board highlight together, then
+  slides the remaining **Your Cards** panel down before saving the two kept destinations. The
+  public table stays visible after either opening choice; select the human's tile to open their
+  turn cards. The unresolved opening choice has no **Back to table** action, and plain Escape does
+  not dismiss it. Later private views use
   **Your cards** and **Back to table** instead of handoff prompts, and **Connect phone** is hidden.
   Matches with multiple humans keep pass-and-hide and can optionally use the phone companion.
 - A laptop-hosted HTTPS phone PWA with private human cards/tickets, digital draws and route/payment
@@ -141,8 +141,9 @@ This build implements the core game plus initial phone, camera and photo workflo
   model hash, predictions and your optional review note. Predictions are marked unreviewed;
   saving an example does not automatically add it to training. Colors and route ownership are
   not inferred by this two-class model.
-- Optional encrypted, immutable board reference photos attached to validated saved checkpoints.
-  Photos are cropped from fresh camera frames and authenticated on readback. They assist manual
+- Optional immutable board reference photos attached to validated saved checkpoints. New photo
+  sidecars use plaintext format v2 with a SHA-256 checksum. Photos are cropped from fresh camera
+  frames and checked on readback. They assist manual
   rebuilding; checkpoints retain their explicit state-only provenance.
 - Explicit manual-verification opt-in, per-placement whole-board attestation, and a board-check
   gate before restored games can resume AI or human actions. Hiding a private view invalidates late
@@ -163,7 +164,7 @@ These are later milestones in `DESIGN.md`, and nothing here pretends they exist:
   laptop pairing after page reload; WSS/event-cursor recovery and durable controller registration
   remain design gaps. See [implementation details](docs/IMPLEMENTATION-2026-09-12.md).
 - **No machine-verified photo checkpoint.** Optional operator-attested reference photos are saved
-  separately with encryption, checkpoint association and readback checks. Checkpoints remain
+  separately with a checksum, checkpoint association and readback checks. Checkpoints remain
   `LogicalStateOnly`; partial placement masks and automatic whole-board reconciliation are still M4.
 - **No story mode, narration or sound.** That is M6.
 - **No installer.** M7.
@@ -247,9 +248,8 @@ projects also have `packages.win-x64.lock.json` for the self-contained package's
 Only an explicit `-p:GoldenTicketOfflinePackage=true` selects those locks; the
 [packaging workflow](docs/offline-package.md) sets it for both restore and publish and documents
 how to regenerate and verify both lock sets without changing normal development locks.
-The persistence tests
-need a normal Windows user profile with DPAPI access. A restricted or impersonated test context
-can fail data protection even when the same tests pass as the signed-in Windows user.
+Game-save and photo persistence tests do not need DPAPI. Companion TLS private keys still use
+DPAPI, so tests of that separate certificate path can fail in a restricted or impersonated context.
 
 ### Headless matches
 
@@ -300,13 +300,14 @@ turn, status and players; **Packed away** is a status, not the save's name.
    In a one-human game's opening setup, the board moves up beneath the guidance panel, while a
    compact **Your Cards** row below it shows all three destinations at the same time. Thick rings
    mark their endpoint cities on the live board, and a line connects each card's city pair.
-   Confirming a drop removes that destination's line and rings, while an endpoint shared with
-   another kept destination stays marked. The draw piles and face-up train cards stay hidden until
+   Confirming a drop removes its card, line, and rings together, while an endpoint shared with
+   another kept destination stays marked. The remaining **Your Cards** panel then slides down and
+   off-screen before the choice is saved. The draw piles and face-up train cards stay hidden until
    the opening choice is complete. Select **KEEP ALL THREE** or click one card and confirm its drop;
    at least two must be kept. There is no **Back to table** action for this choice, and plain Escape
-   leaves it open. The dropped card leaves the screen before the saved ticket count updates.
-   The computer chooses its own tickets by value
-   and estimated route cost and may keep all three.
+   leaves it open. After either choice, the public board stays visible; click the solo human's tile
+   when it is their turn to open their private cards. The computer chooses its own destinations by
+   value and estimated route cost and may keep all three.
    The chosen players sit around it with their matching portraits, train colors, remaining trains,
    and face-down card and destination stacks showing public counts. The first two face each other;
    with five players, two tiles flank each side of the board and the fifth sits centered below it
@@ -315,16 +316,19 @@ turn, status and players; **Packed away** is a status, not the save's name.
    score and card counts directly below. Remaining trains appear as text above the card stacks,
    and the latest public action is centered along the tile's bottom edge. During opening selection, each
    unresolved three-ticket offer is included in its player's public count without revealing any
-   destination identity. The five face-up train cards appear at the bottom right edge of the table.
+   destination identity. With two to four players, the draw piles and five face-up train cards
+   slide into centered positions along the bottom after opening setup. With five players, they
+   remain at the outer bottom edges to leave room for the fifth player tile.
    The complete scene scales together when the window is resized or maximized.
    Press **Shift+Escape** to open the technical screens. Their **Game table** screen contains the
    private-card reveal and public turn, placement, and save controls. A camera restart or format change requires
    checking and restoring the board crop through the technical Camera screen.
 4. With one human, opening destination choices appear directly on the laptop. With multiple
    humans, each player reveals their private view in turn; the screen is covered between seats.
-5. On a solo human's turn, their cards open on the laptop for draws, destination tickets, or route
-   and payment choices. **Back to table** returns to the public screen; the technical **Game table**
-   screen can reopen the hand. With multiple humans, the active player explicitly reveals their private view.
+5. On a solo human's turn, select their tile to open the laptop's private view for draws,
+   destinations, or route and payment choices. **Back to table** returns to the public screen;
+   the technical **Game table** screen can reopen the hand. With multiple humans, the active
+   player explicitly reveals their private view.
 
 6. When any seat claims a route, the public screen names the seat, its colour and symbol, both
    endpoint cities, the exact lane, and how many trains to place. Place them in any order, then
@@ -375,7 +379,7 @@ continuing. Any pending placement or cancellation still needs its own normal com
 src/GoldenTicket.Domain/        rules, cards, graph, events, projections, scoring
 src/GoldenTicket.Application/   coordinator, command pipeline, computer-seat driver
 src/GoldenTicket.AI/            heuristic opponents and route planning
-src/GoldenTicket.Persistence/   SQLite journal, encryption, restore
+src/GoldenTicket.Persistence/   SQLite journal, checkpoint photos, restore
 src/GoldenTicket.Desktop/       WPF views and view models
 src/GoldenTicket.Vision/        capture, crop, CPU/GPU preprocessing, experimental piece candidates
 src/GoldenTicket.CompanionHost/ embedded local HTTPS game PWA and controller protocol

@@ -44,10 +44,9 @@ public sealed record CheckpointPhotoReference(
 public sealed record CheckpointPhotoAttachment(CheckpointPhotoReference Reference, byte[] PngBytes);
 
 /// <summary>
-/// Optional same-Windows-account reference images. This sidecar deliberately leaves the game
-/// journal and legacy checkpoint schema untouched. Losing an image never destroys a digital save.
-/// Each attachment is one immutable, authenticated envelope, atomically finalized and read back
-/// before success. Its independent random data key is protected with current-user Windows DPAPI.
+/// Optional local reference images. This sidecar leaves the game journal and checkpoint schema
+/// untouched. Losing an image never destroys a digital save. Each attachment is
+/// one immutable, checksummed envelope, atomically finalized and read back before success.
 /// </summary>
 public sealed class CheckpointPhotoStore
 {
@@ -55,11 +54,11 @@ public sealed class CheckpointPhotoStore
     public const int MaximumDimension = 8192;
     public const long MaximumPixels = 32_000_000;
     private const int MaximumMetadataBytes = 32 * 1024;
-    private const int MaximumProtectedKeyBytes = 16 * 1024;
-    private const int MaximumEnvelopeBytes = MaximumPngBytes + MaximumMetadataBytes + MaximumProtectedKeyBytes + 64;
     private const int FixedHeaderLength = 20;
+    private const int ChecksumLength = 32;
+    private const int PlainHeaderLength = FixedHeaderLength + ChecksumLength;
+    private const int MaximumEnvelopeBytes = MaximumPngBytes + MaximumMetadataBytes + 4 + PlainHeaderLength;
     private static readonly byte[] Magic = "GTPHOTO1"u8.ToArray();
-    private static readonly byte[] Entropy = "GoldenTicket.CheckpointPhoto.v1"u8.ToArray();
     private readonly string _root;
     private readonly TimeProvider _clock;
 
@@ -122,7 +121,7 @@ public sealed class CheckpointPhotoStore
             BinaryPrimitives.WriteInt32LittleEndian(plaintext, metadata.Length);
             metadata.CopyTo(plaintext, 4);
             image.CopyTo(plaintext, 4 + metadata.Length);
-            var envelope = Encrypt(plaintext);
+            var envelope = EncodePlaintext(plaintext);
             var directory = Path.GetDirectoryName(path)!;
             RejectLinks(directory);
             Directory.CreateDirectory(directory);
@@ -172,7 +171,7 @@ public sealed class CheckpointPhotoStore
         }
     }
 
-    /// <summary>Missing references are normal for legacy saves; corrupt or mismatched ones fail closed.</summary>
+    /// <summary>Missing references are normal for checkpoints without photos; corrupt or mismatched ones fail closed.</summary>
     public async Task<CheckpointPhotoAttachment?> ReadReferenceAsync(
         PackAwayCheckpoint checkpoint, CancellationToken cancellationToken = default)
     {
@@ -188,7 +187,7 @@ public sealed class CheckpointPhotoStore
             envelope = new byte[checked((int)stream.Length)];
             await stream.ReadExactlyAsync(envelope, cancellationToken);
         }
-        var plaintext = Decrypt(envelope);
+        var plaintext = DecodeEnvelope(envelope);
         try
         {
             if (plaintext.Length < 4) throw new InvalidDataException("Photo metadata is missing.");
@@ -299,52 +298,37 @@ public sealed class CheckpointPhotoStore
         }
     }
 
-    private static byte[] Encrypt(byte[] plaintext)
+    private static byte[] EncodePlaintext(byte[] plaintext)
     {
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Reference photos use Windows current-user DPAPI.");
-        var key = RandomNumberGenerator.GetBytes(32);
-        try
-        {
-            var protectedKey = ProtectedData.Protect(key, Entropy, DataProtectionScope.CurrentUser);
-            var headerLength = FixedHeaderLength + protectedKey.Length + 12;
-            var result = new byte[headerLength + 16 + plaintext.Length];
-            Magic.CopyTo(result, 0);
-            BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(8), 1);
-            BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(12), protectedKey.Length);
-            BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(16), plaintext.Length);
-            protectedKey.CopyTo(result, FixedHeaderLength);
-            RandomNumberGenerator.Fill(result.AsSpan(headerLength - 12, 12));
-            using var aes = new AesGcm(key, 16);
-            aes.Encrypt(result.AsSpan(headerLength - 12, 12), plaintext,
-                result.AsSpan(headerLength + 16), result.AsSpan(headerLength, 16), result.AsSpan(0, headerLength));
-            return result;
-        }
-        finally { CryptographicOperations.ZeroMemory(key); }
+        var result = new byte[PlainHeaderLength + plaintext.Length];
+        Magic.CopyTo(result, 0);
+        BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(8), 2);
+        BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(16), plaintext.Length);
+        SHA256.HashData(plaintext).CopyTo(result, FixedHeaderLength);
+        plaintext.CopyTo(result, PlainHeaderLength);
+        return result;
     }
 
-    private static byte[] Decrypt(byte[] envelope)
+    private static byte[] DecodeEnvelope(byte[] envelope)
     {
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Reference photos use Windows current-user DPAPI.");
-        if (envelope.Length < FixedHeaderLength || !envelope.AsSpan(0, 8).SequenceEqual(Magic) ||
-            BinaryPrimitives.ReadInt32LittleEndian(envelope.AsSpan(8)) != 1)
+        if (envelope.Length < PlainHeaderLength || !envelope.AsSpan(0, Magic.Length).SequenceEqual(Magic) ||
+            BinaryPrimitives.ReadInt32LittleEndian(envelope.AsSpan(8)) != 2)
             throw new InvalidDataException("The reference photo format is unsupported.");
-        var keyLength = BinaryPrimitives.ReadInt32LittleEndian(envelope.AsSpan(12));
-        var plaintextLength = BinaryPrimitives.ReadInt32LittleEndian(envelope.AsSpan(16));
-        if (keyLength is <= 0 or > MaximumProtectedKeyBytes || plaintextLength is <= 4 or > MaximumPngBytes + MaximumMetadataBytes + 4 ||
-            (long)FixedHeaderLength + keyLength + 12 + 16 + plaintextLength != envelope.Length)
-            throw new InvalidDataException("The reference photo envelope is truncated or has invalid bounds.");
-        var headerLength = FixedHeaderLength + keyLength + 12;
-        var key = ProtectedData.Unprotect(envelope.AsSpan(FixedHeaderLength, keyLength).ToArray(), Entropy, DataProtectionScope.CurrentUser);
-        var plaintext = new byte[plaintextLength];
-        try
-        {
-            if (key.Length != 32) throw new CryptographicException("The reference photo key has an invalid length.");
-            using var aes = new AesGcm(key, 16);
-            aes.Decrypt(envelope.AsSpan(headerLength - 12, 12), envelope.AsSpan(headerLength + 16),
-                envelope.AsSpan(headerLength, 16), plaintext, envelope.AsSpan(0, headerLength));
-            return plaintext;
-        }
-        catch { CryptographicOperations.ZeroMemory(plaintext); throw; }
-        finally { CryptographicOperations.ZeroMemory(key); }
+        return DecodePlaintext(envelope);
     }
+
+    private static byte[] DecodePlaintext(byte[] envelope)
+    {
+        var reserved = BinaryPrimitives.ReadInt32LittleEndian(envelope.AsSpan(12));
+        var plaintextLength = BinaryPrimitives.ReadInt32LittleEndian(envelope.AsSpan(16));
+        if (reserved != 0 || plaintextLength is <= 4 or > MaximumPngBytes + MaximumMetadataBytes + 4 ||
+            (long)PlainHeaderLength + plaintextLength != envelope.Length)
+            throw new InvalidDataException("The reference photo envelope is truncated or has invalid bounds.");
+        var plaintext = envelope.AsSpan(PlainHeaderLength);
+        var checksum = SHA256.HashData(plaintext);
+        if (!CryptographicOperations.FixedTimeEquals(checksum, envelope.AsSpan(FixedHeaderLength, ChecksumLength)))
+            throw new InvalidDataException("The reference photo checksum is incorrect.");
+        return plaintext.ToArray();
+    }
+
 }

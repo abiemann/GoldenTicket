@@ -230,6 +230,8 @@ public sealed class DesktopExitTests
         await model.StartMatchAsync();
         Assert.NotNull(model.PrivateSeat);
         await model.CommitTicketsAsync();
+        Assert.Null(model.PrivateSeat);
+        await model.RevealPrivateSeatAsync();
         Assert.NotNull(model.PrivateSeat);
         Assert.True(model.PrivateSeat.CanDrawBlind);
         return model;

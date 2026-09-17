@@ -10,7 +10,7 @@ namespace GoldenTicket.Domain.Tests;
 
 /// <summary>
 /// Durability and idempotency (DESIGN 8.1, 19.3, 19.4). These run against the real SQLite store, so
-/// they exercise the encryption, the hash chain and the restore verification rather than a stub.
+/// they exercise readable storage, the hash chain and restore verification rather than a stub.
 /// </summary>
 public class PersistenceTests : IDisposable
 {
@@ -144,7 +144,7 @@ public class PersistenceTests : IDisposable
     }
 
     [Fact]
-    public async Task PrivatePayloadsAreNotReadableInTheDatabaseFile()
+    public async Task PrivatePayloadsAreReadableInTheDatabaseAndStillRestore()
     {
         var (rules, store) = Build();
 
@@ -155,12 +155,28 @@ public class PersistenceTests : IDisposable
         var view = await coordinator.GetSeatViewAsync(seat);
         var ticket = view.SetupOffer[0];
 
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        var bytes = await File.ReadAllBytesAsync(store.DatabasePath(coordinator.SessionId));
-        var text = System.Text.Encoding.UTF8.GetString(bytes);
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+            $"Data Source={store.DatabasePath(coordinator.SessionId)}");
+        await connection.OpenAsync();
+        await using (var sessionCommand = connection.CreateCommand())
+        {
+            sessionCommand.CommandText = "SELECT StoreSchemaVersion FROM Session;";
+            Assert.Equal(SqliteSessionStore.StoreSchemaVersion,
+                Convert.ToInt32(await sessionCommand.ExecuteScalarAsync()));
+        }
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Payload FROM Event WHERE Visibility = 'Referee';";
+        await using var reader = await command.ExecuteReaderAsync();
+        var payloads = new List<string>();
+        while (await reader.ReadAsync())
+        {
+            payloads.Add(System.Text.Encoding.UTF8.GetString((byte[])reader["Payload"]));
+        }
 
-        // A referee-only event carries the ticket deck order; it must not be sitting in plain text.
-        Assert.DoesNotContain(ticket.Value, text, StringComparison.Ordinal);
+        // The local save is intentionally readable, including the referee's ticket deck.
+        Assert.Contains(payloads, payload => payload.Contains(ticket.Value, StringComparison.Ordinal));
+        var reopened = await GameCoordinator.RestoreAsync(rules, new SqliteSessionStore(_root), coordinator.SessionId);
+        Assert.Equal(await coordinator.ComputeStateHashAsync(), await reopened.ComputeStateHashAsync());
     }
 
     [Fact]

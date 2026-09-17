@@ -169,7 +169,7 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
         var generation = _generation;
         if (!CanCaptureReference() || checkpoint is null) return;
         IsBusy = true;
-        Status = "Capturing a fresh board frame and verifying its encrypted storage…";
+        Status = "Capturing a fresh board frame and verifying its saved copy…";
         CheckpointPhotoCaptureInput? input = null;
         CheckpointPhotoAttachment? attachment = null;
         var attemptedStorage = false;

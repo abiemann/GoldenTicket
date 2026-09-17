@@ -30,9 +30,12 @@ public sealed class DesktopSingleHumanTests
             Assert.NotNull(model.PrivateSeat);
 
             await model.CommitTicketsAsync();
+            Assert.Null(model.PrivateSeat);
+            Assert.False(model.ShowSoloOpeningTicketsOnBoard);
+            Assert.True(model.CanRevealPrivateSeat);
+            await model.RevealPrivateSeatAsync();
             Assert.NotNull(model.PrivateSeat);
             Assert.False(model.PrivateSeat.MustChooseTickets);
-            Assert.False(model.ShowSoloOpeningTicketsOnBoard);
             Assert.True(model.PrivateSeat.CanDrawBlind);
 
             await model.DrawBlindCardAsync();
@@ -75,6 +78,9 @@ public sealed class DesktopSingleHumanTests
             await model.CommitTicketsAsync();
             Assert.Equal(2, model.Table.Seats[0].TicketCount);
             Assert.False(model.ShowSoloOpeningTicketsOnBoard);
+            Assert.Null(model.PrivateSeat);
+            Assert.True(model.CanRevealPrivateSeat);
+            await model.RevealPrivateSeatAsync();
             Assert.NotNull(model.PrivateSeat);
 
             model.SetWindowActive(false);
@@ -338,6 +344,8 @@ public sealed class DesktopSingleHumanTests
         await model.StartMatchAsync();
         Assert.NotNull(model.PrivateSeat);
         await model.CommitTicketsAsync();
+        Assert.Null(model.PrivateSeat);
+        await model.RevealPrivateSeatAsync();
         Assert.NotNull(model.PrivateSeat);
         return model;
     }

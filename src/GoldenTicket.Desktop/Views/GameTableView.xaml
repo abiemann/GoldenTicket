@@ -93,7 +93,7 @@
                 </Border>
 
                 <ItemsControl x:Name="PlayerStations" ItemsSource="{Binding Game.TableSeats}"
-                              Width="1440" Height="900" IsHitTestVisible="False">
+                              Width="1440" Height="900">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
@@ -170,6 +170,43 @@
                                     <TextBlock Grid.Row="3" Grid.ColumnSpan="3" Text="{Binding Seat.LastAction}"
                                                ToolTip="{Binding Seat.LastAction}" Foreground="#FFDCC18A"
                                                FontSize="10" TextAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    <Button Grid.RowSpan="4" Grid.ColumnSpan="3" Cursor="Hand"
+                                            ToolTip="Open your cards"
+                                            AutomationProperties.Name="{Binding Seat.DisplayName, StringFormat=Open {0} cards}"
+                                            Command="{Binding DataContext.RevealPrivateSeatCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}">
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <Border x:Name="HitArea" Background="Transparent" BorderBrush="Transparent"
+                                                                    BorderThickness="2" CornerRadius="8" />
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter TargetName="HitArea" Property="BorderBrush" Value="#99E1BD79" />
+                                                                </Trigger>
+                                                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                                                    <Setter TargetName="HitArea" Property="BorderBrush" Value="#FFE1BD79" />
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                                <Style.Triggers>
+                                                    <MultiDataTrigger>
+                                                        <MultiDataTrigger.Conditions>
+                                                            <Condition Binding="{Binding Seat.Operator}" Value="human" />
+                                                            <Condition Binding="{Binding DataContext.IsSingleHumanGame, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" Value="True" />
+                                                            <Condition Binding="{Binding DataContext.CanRevealPrivateSeat, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" Value="True" />
+                                                            <Condition Binding="{Binding DataContext.ShowSoloOpeningTicketsOnBoard, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" Value="False" />
+                                                        </MultiDataTrigger.Conditions>
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </MultiDataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
                                 </Grid>
                             </Border>
                         </DataTemplate>
