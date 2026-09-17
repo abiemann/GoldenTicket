@@ -1076,9 +1076,11 @@ internal static partial class Program
                 var drawPiles = Descendants<Border>(view).Single(border => border.Name == "DrawPilesPanel");
                 var faceUp = Descendants<Border>(view).Single(border => border.Name == "FaceUpMarketPanel");
                 var cityMarkers = Descendants<ItemsControl>(view).Single(control => control.Name == "DestinationCityMarkers");
+                var destinationLines = Descendants<ItemsControl>(view).Single(control => control.Name == "DestinationLines");
                 if (!IsShown(overlay, view) || !VisibleText(view).Contains("Your Cards", StringComparison.Ordinal) ||
                     Canvas.GetTop(board) != 120 || board.ActualHeight + Canvas.GetTop(board) > 690 ||
                     !IsShown(cityMarkers, view) || cityMarkers.Items.Count == 0 ||
+                    !IsShown(destinationLines, view) || destinationLines.Items.Count != 3 ||
                     IsShown(drawPiles, view) || IsShown(faceUp, view) ||
                     !VisibleText(view).Contains("Solo test player: choose whether to keep all destinations or drop one.", StringComparison.Ordinal))
                     throw new InvalidOperationException("Solo setup must keep the board and cards visible together without the usual table controls or draw piles.");
@@ -1101,6 +1103,12 @@ internal static partial class Program
             card.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             if (confirmation.Visibility != Visibility.Visible)
                 throw new InvalidOperationException("Clicking a destination must ask for confirmation before dropping it.");
+            var openingSeat = solo.PrivateSeat;
+            solo.SetWindowActive(false);
+            if (!ReferenceEquals(openingSeat, solo.PrivateSeat) ||
+                !solo.ShowSoloOpeningTicketsOnBoard || confirmation.Visibility != Visibility.Visible)
+                throw new InvalidOperationException("Losing focus must preserve the opening destination choice and its drop confirmation.");
+            solo.SetWindowActive(true);
             Descendants<Button>(confirmation).Single(button => button.Content as string == "NO, GO BACK")
                 .RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             if (confirmation.Visibility != Visibility.Collapsed || solo.PrivateSeat.Offer.Any(choice => !choice.Keep))
@@ -1108,6 +1116,8 @@ internal static partial class Program
             card.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             Descendants<Button>(confirmation).Single(button => button.Content as string == "YES, DROP IT")
                 .RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            if (solo.PrivateSeat.DestinationLines.Single(line => ReferenceEquals(line.Choice, dropped)).IsVisible)
+                throw new InvalidOperationException("A dropped destination's connection must disappear with its city rings.");
             await Task.Delay(160);
             if (card.Opacity >= 1 || card.RenderTransform is not TranslateTransform { Y: < 0 })
                 throw new InvalidOperationException("A confirmed destination must animate off the board.");

@@ -298,11 +298,11 @@ turn, status and players; **Packed away** is a status, not the save's name.
    instruction humans should follow next.
    In a one-human game's opening setup, the board moves up beneath the guidance panel, while a
    compact **Your Cards** row below it shows all three destinations at the same time. Thick rings
-   mark their endpoint cities on the live board; confirming a drop removes that destination's
-   rings, while an endpoint shared with another kept destination stays marked. The draw piles and
-   face-up train cards stay hidden until the opening choice is complete.
-   Select **KEEP ALL THREE** or
-   click one card and confirm its drop; at least two must be kept. The dropped card leaves the
+   mark their endpoint cities on the live board, and a line connects each card's city pair.
+   Confirming a drop removes that destination's line and rings, while an endpoint shared with
+   another kept destination stays marked. The draw piles and face-up train cards stay hidden until
+   the opening choice is complete. Select **KEEP ALL THREE** or click one card and confirm its drop;
+   at least two must be kept. The dropped card leaves the
    screen before the saved ticket count updates. The computer chooses its own tickets by value
    and estimated route cost and may keep all three.
    The chosen players sit around it with their matching portraits, train colors, remaining trains,
@@ -358,9 +358,10 @@ away** before clearing the physical board. A verified packed checkpoint (includi
 rebuild) needs no exit warning, even without a photo. An action or photo save still running must
 finish before you retry closing. If the latest save is uncertain, the app warns you.
 
-Press **Escape** at any time to cover a private view.
-Private views also hide on deactivation and after 60 seconds without input. Lock/suspend handlers
-request covering; real Windows lifecycle behavior remains an interactive acceptance test.
+Press **Escape** at any time to cover a private view. The solo opening destination choice stays
+visible when the game loses focus or sits idle; **Back to table** still covers it. Other private
+views hide on deactivation and after 60 seconds without input. Lock/suspend handlers request
+covering; real Windows lifecycle behavior remains an interactive acceptance test.
 When reopening a save, check the list of committed routes and attest to the physical board before
 continuing. Any pending placement or cancellation still needs its own normal completion checks.
 

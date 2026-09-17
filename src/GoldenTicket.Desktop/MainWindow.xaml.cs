@@ -58,7 +58,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        // DESIGN 4.7: hide the private view on deactivation, and give Escape the same effect as Hide.
+        // DESIGN 4.7: preserve the solo opening destination choice on focus loss; cover other
+        // private views on deactivation. Escape still covers either one.
         Deactivated += (_, _) => _model.SetWindowActive(false);
         Activated += (_, _) => _model.SetWindowActive(true);
         PreviewKeyDown += OnPreviewKeyDown;
@@ -78,7 +79,8 @@ public partial class MainWindow : Window
         {
             // The phone owns its own reveal timeout. An idle, already-covered laptop must not
             // revoke an active phone hand every time this timer ticks.
-            if (_model.PrivateSeat is not null && Environment.TickCount64 - _lastInteraction >= 60_000)
+            if (_model.PrivateSeat is not null && !_model.ShowSoloOpeningTicketsOnBoard &&
+                Environment.TickCount64 - _lastInteraction >= 60_000)
                 _model.HidePrivateSeat();
         };
         _privacyTimer.Start();

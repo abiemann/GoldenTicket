@@ -51,6 +51,41 @@ public sealed class DesktopSingleHumanTests
     }
 
     [Fact]
+    public async Task OpeningDestinationChoiceSurvivesFocusLossButLaterPrivateHandsDoNot()
+    {
+        var model = NewSingleHumanMatch();
+        try
+        {
+            await model.StartMatchAsync();
+            var opening = Assert.IsType<PrivateSeatViewModel>(model.PrivateSeat);
+            var dropped = opening.Offer[0];
+            dropped.Keep = false;
+            opening.RefreshKeepValidity();
+
+            model.SetWindowActive(false);
+            Assert.Same(opening, model.PrivateSeat);
+            Assert.True(model.ShowSoloOpeningTicketsOnBoard);
+            Assert.False(model.CanRevealPrivateSeat);
+            Assert.False(dropped.Keep);
+            await model.CommitTicketsAsync();
+            Assert.Same(opening, model.PrivateSeat);
+
+            model.SetWindowActive(true);
+            Assert.Same(opening, model.PrivateSeat);
+            await model.CommitTicketsAsync();
+            Assert.Equal(2, model.Table.Seats[0].TicketCount);
+            Assert.False(model.ShowSoloOpeningTicketsOnBoard);
+            Assert.NotNull(model.PrivateSeat);
+
+            model.SetWindowActive(false);
+            Assert.Null(model.PrivateSeat);
+            model.SetWindowActive(true);
+            Assert.Null(model.PrivateSeat);
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Fact]
     public async Task AutomaticCardsBelongToTheOnlyHumanEvenWhenAnAiStarts()
     {
         var model = NewSingleHumanMatch(humanIndex: 2);

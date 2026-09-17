@@ -25,29 +25,49 @@
                                Stretch="Fill" AutomationProperties.Name="Live cropped board" />
                         <Viewbox Stretch="Fill" IsHitTestVisible="False"
                                  Visibility="{Binding ShowSoloOpeningTicketsOnBoard, Converter={StaticResource BoolToVisibility}}">
-                            <ItemsControl x:Name="DestinationCityMarkers" Width="960" Height="600"
-                                          Visibility="{Binding Camera.GameTablePreview, Converter={StaticResource NullToVisibility}}"
-                                          ItemsSource="{Binding PrivateSeat.DestinationMarkers}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemContainerStyle>
-                                    <Style TargetType="ContentPresenter">
-                                        <Setter Property="Canvas.Left" Value="{Binding Left}" />
-                                        <Setter Property="Canvas.Top" Value="{Binding Top}" />
-                                    </Style>
-                                </ItemsControl.ItemContainerStyle>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid Width="{Binding Diameter}" Height="{Binding Diameter}"
-                                              Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibility}}"
-                                              AutomationProperties.Name="{Binding CityName}">
-                                            <Ellipse Stroke="#F01A2531" StrokeThickness="8" />
-                                            <Ellipse Stroke="#FFFFD576" StrokeThickness="5" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                            <Grid Width="960" Height="600"
+                                  Visibility="{Binding Camera.GameTablePreview, Converter={StaticResource NullToVisibility}}">
+                                <ItemsControl x:Name="DestinationLines" Width="960" Height="600"
+                                              ItemsSource="{Binding PrivateSeat.DestinationLines}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Canvas Width="960" Height="600"
+                                                    Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibility}}">
+                                                <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}"
+                                                      Stroke="#A0101822" StrokeThickness="5" />
+                                                <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}"
+                                                      Stroke="#F0FFD576" StrokeThickness="2.5" StrokeDashArray="3,3"
+                                                      StrokeDashCap="Round" />
+                                            </Canvas>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <ItemsControl x:Name="DestinationCityMarkers" Width="960" Height="600"
+                                              ItemsSource="{Binding PrivateSeat.DestinationMarkers}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemContainerStyle>
+                                        <Style TargetType="ContentPresenter">
+                                            <Setter Property="Canvas.Left" Value="{Binding Left}" />
+                                            <Setter Property="Canvas.Top" Value="{Binding Top}" />
+                                        </Style>
+                                    </ItemsControl.ItemContainerStyle>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Width="{Binding Diameter}" Height="{Binding Diameter}"
+                                                  Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibility}}"
+                                                  AutomationProperties.Name="{Binding CityName}">
+                                                <Ellipse Stroke="#F01A2531" StrokeThickness="8" />
+                                                <Ellipse Stroke="#FFFFD576" StrokeThickness="5" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
                         </Viewbox>
                         <TextBlock x:Name="LiveBoardStatus" Text="{Binding Camera.GameTablePreviewStatus}"
                                    Foreground="#FFFFE7B0" FontSize="22" TextAlignment="Center"

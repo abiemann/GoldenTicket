@@ -373,7 +373,8 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// DESIGN 4.7: hide on seat changes, deactivation, recovery dialogs and entry into public mode.
+    /// DESIGN 4.7: hide on seat changes, ordinary private-view deactivation, recovery dialogs
+    /// and entry into public mode. The solo opening destination choice stays visible on focus loss.
     /// Dropping the view model clears the hand, its tickets and its pending choices together.
     /// </summary>
     [RelayCommand]
@@ -387,7 +388,7 @@ public sealed partial class MainViewModel : ObservableObject
     public void SetWindowActive(bool active)
     {
         _windowActive = active;
-        if (!active) HidePrivateSeat();
+        if (!active && !ShowSoloOpeningTicketsOnBoard) HidePrivateSeat();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
     }
 

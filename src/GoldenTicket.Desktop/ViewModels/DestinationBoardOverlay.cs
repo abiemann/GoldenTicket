@@ -34,10 +34,12 @@ public sealed class DestinationMarkerRow : ObservableObject
 
     public CityId CityId { get; }
     public string CityName { get; }
-    public double Left { get => _left; private set => SetProperty(ref _left, value); }
-    public double Top { get => _top; private set => SetProperty(ref _top, value); }
+    public double Left => _left;
+    public double Top => _top;
     // Keep the printed city dot fully visible inside the ring, including a small margin.
     public double Diameter => 40;
+    public double CenterX => Left + Diameter / 2;
+    public double CenterY => Top + Diameter / 2;
     public bool IsVisible => _choices.Any(choice => choice.Keep);
 
     internal double ReferenceX => _referenceX;
@@ -45,8 +47,8 @@ public sealed class DestinationMarkerRow : ObservableObject
 
     internal void MoveTo(double x, double y)
     {
-        Left = x - Diameter / 2;
-        Top = y - Diameter / 2;
+        if (SetProperty(ref _left, x - Diameter / 2, nameof(Left))) OnPropertyChanged(nameof(CenterX));
+        if (SetProperty(ref _top, y - Diameter / 2, nameof(Top))) OnPropertyChanged(nameof(CenterY));
     }
 
     internal void ResetToReference() => MoveTo(_referenceX, _referenceY);
@@ -54,6 +56,49 @@ public sealed class DestinationMarkerRow : ObservableObject
     private void ChoiceChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(TicketChoiceRow.Keep)) OnPropertyChanged(nameof(IsVisible));
+    }
+}
+
+/// <summary>A single offered destination, drawn between the outside edges of its city rings.</summary>
+public sealed class DestinationLineRow : ObservableObject
+{
+    private const double EndpointGap = 2;
+
+    internal DestinationLineRow(TicketChoiceRow choice, DestinationMarkerRow start, DestinationMarkerRow end)
+    {
+        Choice = choice;
+        Start = start;
+        End = end;
+        choice.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(TicketChoiceRow.Keep)) OnPropertyChanged(nameof(IsVisible));
+        };
+        start.PropertyChanged += MarkerChanged;
+        end.PropertyChanged += MarkerChanged;
+    }
+
+    public TicketChoiceRow Choice { get; }
+    public DestinationMarkerRow Start { get; }
+    public DestinationMarkerRow End { get; }
+    public bool IsVisible => Choice.Keep;
+
+    private double Length => Math.Max(1, Math.Sqrt(
+        Math.Pow(End.CenterX - Start.CenterX, 2) + Math.Pow(End.CenterY - Start.CenterY, 2)));
+    private double UnitX => (End.CenterX - Start.CenterX) / Length;
+    private double UnitY => (End.CenterY - Start.CenterY) / Length;
+    public double X1 => Start.CenterX + UnitX * (Start.Diameter / 2 + EndpointGap);
+    public double Y1 => Start.CenterY + UnitY * (Start.Diameter / 2 + EndpointGap);
+    public double X2 => End.CenterX - UnitX * (End.Diameter / 2 + EndpointGap);
+    public double Y2 => End.CenterY - UnitY * (End.Diameter / 2 + EndpointGap);
+
+    private void MarkerChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName is not (nameof(DestinationMarkerRow.CenterX) or nameof(DestinationMarkerRow.CenterY)))
+            return;
+        OnPropertyChanged(nameof(X1));
+        OnPropertyChanged(nameof(Y1));
+        OnPropertyChanged(nameof(X2));
+        OnPropertyChanged(nameof(Y2));
     }
 }
 
@@ -170,5 +215,25 @@ public static class DestinationBoardOverlay
                 choicesByCity.Add(city, choices = []);
             choices.Add(choice);
         }
+    }
+
+    public static IReadOnlyList<DestinationLineRow> BuildLines(BoardManifest manifest,
+        IEnumerable<TicketChoiceRow> offer, IEnumerable<DestinationMarkerRow> markers)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentNullException.ThrowIfNull(offer);
+        ArgumentNullException.ThrowIfNull(markers);
+        if (manifest.ProfileId != "ttr-us-classic-en-v1") return [];
+
+        var byCity = markers.ToDictionary(marker => marker.CityId);
+        var lines = new List<DestinationLineRow>();
+        foreach (var choice in offer)
+        {
+            var ticket = manifest.Ticket(choice.TicketId);
+            if (byCity.TryGetValue(ticket.CityA, out var start) &&
+                byCity.TryGetValue(ticket.CityB, out var end))
+                lines.Add(new DestinationLineRow(choice, start, end));
+        }
+        return lines;
     }
 }

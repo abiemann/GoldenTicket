@@ -96,8 +96,12 @@ public sealed partial class PrivateSeatViewModel : ObservableObject
         }
 
         if (IsSetupOffer && view.Public.Seats.Count(seat => seat.Kind == SeatKind.Human) == 1)
+        {
             foreach (var marker in DestinationBoardOverlay.Build(manifest, Offer))
                 DestinationMarkers.Add(marker);
+            foreach (var line in DestinationBoardOverlay.BuildLines(manifest, Offer, DestinationMarkers))
+                DestinationLines.Add(line);
+        }
 
         MustChooseTickets = legal.MustCommitTicketSelection && Offer.Count > 0;
         CanDrawBlind = legal.CanDrawBlindTrainCard;
@@ -145,6 +149,9 @@ public sealed partial class PrivateSeatViewModel : ObservableObject
 
     /// <summary>Opening-destination city rings, positioned over the upright live board crop.</summary>
     public ObservableCollection<DestinationMarkerRow> DestinationMarkers { get; } = [];
+
+    /// <summary>One connection between the two highlighted cities on each opening destination.</summary>
+    public ObservableCollection<DestinationLineRow> DestinationLines { get; } = [];
 
     public ObservableCollection<MarketSlotRow> DrawableSlots { get; } = [];
 
