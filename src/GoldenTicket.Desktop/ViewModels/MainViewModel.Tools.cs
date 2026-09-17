@@ -125,9 +125,14 @@ public sealed partial class MainViewModel
         var checkpoint = coordinator is null ? null : await coordinator.GetCheckpointAsync();
         if (coordinator != _coordinator) return;
         var key = checkpoint is null ? null : $"{checkpoint.SessionId.Value}/{checkpoint.CheckpointId.Value}/{checkpoint.Status}";
-        if (_loadedPhotoCheckpoint == key && key is not null) return;
+        if (_loadedPhotoCheckpoint == key && key is not null)
+        {
+            Camera.SetGameTableReference(CheckpointPhoto.PhotoImage);
+            return;
+        }
         _loadedPhotoCheckpoint = key;
         await CheckpointPhoto.LoadCheckpointAsync(checkpoint);
+        Camera.SetGameTableReference(CheckpointPhoto.PhotoImage);
     }
 
     public async Task SetSystemAvailableAsync(bool available)

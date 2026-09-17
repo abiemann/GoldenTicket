@@ -23,6 +23,16 @@ independently read the printed numeral. A marker cluster at another score-track 
 therefore pass this proximity check. Rotated-board and marker checks have synthetic coverage;
 real overhead-camera accuracy still needs validation.
 
+During play, the game table compares its current upright crop with the accepted board image. A
+changed or rotated view pauses the board preview and piece readings while the corner model locates
+fresh corners. The game tries all four rotations of those corners and resumes only when one matches
+the upright reference. A saved game can use its upright checkpoint photo for this check after
+resume. Keep the whole board in the camera frame; if corners or orientation are uncertain, the
+table waits for a clearer view rather than displaying a possibly upside-down board. The game crop
+also receives the same narrow outward margin described below, once per newly detected quad.
+If the detected edge remains too tight, adjust the corners in the technical Camera screen; the
+table checks that corrected crop against the upright reference before using it.
+
 Automatic selection adds a narrow outward margin before setting the handles: a 0.5% expansion about
 the detected quadrilateral's center, equivalent to 0.25% of each board dimension on each side for a
 rectangular board. This leaves a thin border beyond the board edge, approximately 4 pixels for a

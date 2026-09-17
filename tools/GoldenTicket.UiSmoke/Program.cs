@@ -628,9 +628,14 @@ internal static partial class Program
             var captureType = typeof(CameraCaptureService);
             var cameraType = typeof(CameraViewModel);
             var pixels = new byte[320 * 180 * 4];
-            for (var pixel = 0; pixel < pixels.Length; pixel += 4)
+            for (var y = 0; y < 180; y++)
+            for (var x = 0; x < 320; x++)
             {
-                pixels[pixel] = pixels[pixel + 1] = pixels[pixel + 2] = 145;
+                var pixel = (y * 320 + x) * 4;
+                // Distinct printed-board detail lets the orientation check reject a 180° turn.
+                pixels[pixel] = (byte)(35 + (x * 7 + y * 3 + x * y / 11) % 175);
+                pixels[pixel + 1] = (byte)(30 + (x * 5 + y * 13 + x * y / 7) % 180);
+                pixels[pixel + 2] = (byte)(45 + (x * 11 + y * 9 + x * y / 9) % 165);
                 pixels[pixel + 3] = 255;
             }
             var frameForCorners = CameraFrame.CopyFromBgra32(320, 180, pixels, 1, 1);
@@ -675,10 +680,18 @@ internal static partial class Program
                     .SetValue(camera, (1L, 320, 180));
                 cameraType.GetField("_gameMarkersAcceptedAt", BindingFlags.Instance | BindingFlags.NonPublic)!
                     .SetValue(camera, DateTimeOffset.UtcNow);
+                var setupCorners = new NormalizedPoint[]
+                    { new(.1, .12), new(.9, .12), new(.9, .88), new(.1, .88) };
+                cameraType.GetField("_gameBoardOrientationIndex", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .SetValue(camera, 0);
+                var setupRegistration = BoardRegistration.Create(frameForCorners,
+                    GameBoardOrientations.Enumerate(BoardCropPadding.Expand(frameForCorners,
+                        setupCorners).Corners)[0]);
+                cameraType.GetMethod("SetAcceptedSetupReference", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(camera, [frameForCorners, setupRegistration]);
                 camera.GameBoardFramingStatus = "";
                 cameraType.GetProperty(nameof(CameraViewModel.GameBoardCorners))!.GetSetMethod(true)!
-                    .Invoke(camera, [new NormalizedPoint[]
-                    { new(.1, .12), new(.9, .12), new(.9, .88), new(.1, .88) }]);
+                    .Invoke(camera, [setupCorners]);
                 await RenderSizes("game-camera-pieces-ready-synthetic",
                     () => new GameScreenView { DataContext = model }, view =>
                     {
@@ -696,6 +709,7 @@ internal static partial class Program
                 camera.EndGameBoardFraming();
                 if (camera.GameTablePreview is not { PixelWidth: 960, PixelHeight: 600 })
                     throw new InvalidOperationException("PLAY must retain a cropped live board from the accepted camera frame.");
+                var savedUprightPhoto = camera.GameTablePreview;
                 camera.EndGameTablePreview();
                 camera.RequestGameTablePreview();
                 captureType.GetField("_latest", BindingFlags.Instance | BindingFlags.NonPublic)!
@@ -704,6 +718,7 @@ internal static partial class Program
                     new(.9, .88), new(.1, .88) }) camera.SelectedCorners.Add(corner);
                 cameraType.GetMethod("UpdateBoardCrop", BindingFlags.Instance | BindingFlags.NonPublic)!
                     .Invoke(camera, null);
+                camera.SetGameTableReference(savedUprightPhoto);
                 for (var attempt = 0; attempt < 20 && camera.GameTablePreview is null; attempt++)
                     await Task.Delay(100);
                 if (camera.GameTablePreview is not { PixelWidth: 960, PixelHeight: 600 })

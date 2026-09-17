@@ -246,6 +246,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
                 if (!registration.Matches(frame)) ClearRegistration();
                 else BoardPreview = ToBitmap(registration.Rectify(frame, 480, 300));
             }
+            CheckLiveBoardAlignment(frame);
             QueueGameTablePreview(frame);
             QueueGameTableAnalysis(frame);
             var comparison = _monitor.Observe(frame);
@@ -261,7 +262,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
                 _ => "Waiting for fresh camera frames."
             };
             if (_gameBoardFramingActive) QueueGameBoardFraming(frame);
-            else QueueAutomaticCornerDetection(frame);
+            else if (!_gameTablePreviewRequested) QueueAutomaticCornerDetection(frame);
             if (!(_gameTablePreviewRequested && IsGameTablePreviewUpright))
                 QueueFrameProcessing(frame);
         }
@@ -535,14 +536,26 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         ClearGameTableAnalysis();
         _gameTablePreviewRequested = true;
         var orientation = _gameBoardOrientationIndex ?? 0;
-        var corners = GameBoardOrientations.Enumerate(GameBoardCorners)[orientation];
+        var padded = BoardCropPadding.Expand(frame, GameBoardCorners);
+        var corners = GameBoardOrientations.Enumerate(padded.Corners)[orientation];
         _gameTableRegistration = BoardRegistration.Create(frame, corners);
-        IsGameTablePreviewUpright = _gameBoardOrientationIndex is not null;
+        _gameTableReference = _acceptedSetupReference;
+        _gameTableReferencePhoto = null;
+        _lastLiveBoardCheckAt = DateTimeOffset.MinValue;
+        IsGameTablePreviewUpright = _gameTableReference is not null &&
+            _gameTableReference.IsAligned(_gameTableRegistration.Rectify(frame,
+                BoardOrientationReference.Width, BoardOrientationReference.Height));
         _gameTableCropRevision++;
         _lastGameTableCropAt = DateTimeOffset.MinValue;
-        GameTablePreviewStatus = "Preparing the live board crop…";
-        QueueGameTablePreview(frame);
-        QueueGameTableAnalysis(frame);
+        GameTablePreviewStatus = IsGameTablePreviewUpright
+            ? "Preparing the live board crop…"
+            : "The board moved during setup. Checking its corners and orientation again…";
+        if (IsGameTablePreviewUpright)
+        {
+            QueueGameTablePreview(frame);
+            QueueGameTableAnalysis(frame);
+        }
+        else QueueLiveBoardCheck(frame);
     }
 
     /// <summary>Used for restored games: an accepted technical crop can rejoin this table later.</summary>
@@ -552,12 +565,20 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         if (_gameTableRegistration is not null) return;
         if (_registration is { } registration && Capture.LatestFrame is { } frame && registration.Matches(frame))
             AdoptTechnicalBoardCrop(frame, registration);
-        else GameTablePreviewStatus = "Open Camera in the utility screens to find the board again.";
+        else
+        {
+            GameTablePreviewStatus = _gameTableReference is null
+                ? "Board orientation is unverified. Open Camera to find the board again."
+                : "Checking the board corners and orientation…";
+            if (Capture.LatestFrame is { } current) QueueLiveBoardCheck(current);
+        }
     }
 
     public void EndGameTablePreview()
     {
         _gameTablePreviewRequested = false;
+        _gameTableReference = null;
+        _gameTableReferencePhoto = null;
         InvalidateGameTablePreview();
     }
 
@@ -576,19 +597,38 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
 
     private void AdoptTechnicalBoardCrop(CameraFrame frame, BoardRegistration registration)
     {
-        if (!_gameTablePreviewRequested || _gameTableRegistration is not null) return;
+        if (!_gameTablePreviewRequested) return;
+        if (_gameTableReference is not { } reference)
+        {
+            HoldLiveBoardAlignment("Board orientation is unverified. A saved board photo or new setup is needed.");
+            return;
+        }
+        // A manually edited utility crop is authoritative for its *corners*, but image ordering
+        // says nothing about physical orientation. Evaluate all four rotations before adopting it.
+        var registrations = GameBoardOrientations.Enumerate(registration.Corners)
+            .Select(corners => BoardRegistration.Create(frame, corners)).ToArray();
+        var crops = registrations.Select(candidate => candidate.Rectify(frame,
+            BoardOrientationReference.Width, BoardOrientationReference.Height)).ToArray();
+        var orientation = reference.ChooseOrientation(crops);
+        if (orientation is null)
+        {
+            HoldLiveBoardAlignment("The edited crop does not clearly match the upright board. Adjust its corners or lighting.");
+            return;
+        }
         ClearGameTableAnalysis();
-        _gameTableRegistration = registration;
-        IsGameTablePreviewUpright = false;
+        _gameTableRegistration = registrations[orientation.Value];
         _gameTableCropRevision++;
         _lastGameTableCropAt = DateTimeOffset.MinValue;
-        GameTablePreviewStatus = "Preparing the live board crop…";
+        GameTablePreview = null;
+        IsGameTablePreviewUpright = true;
+        GameTablePreviewStatus = "Preparing the corrected upright board crop…";
         QueueGameTablePreview(frame);
+        QueueGameTableAnalysis(frame);
     }
 
     private void QueueGameTablePreview(CameraFrame frame)
     {
-        if (_gameTableRegistration is not { } registration || _gameTableCropBusy) return;
+        if (!IsGameTablePreviewUpright || _gameTableRegistration is not { } registration || _gameTableCropBusy) return;
         if (!registration.Matches(frame))
         {
             InvalidateGameTablePreview();
@@ -606,7 +646,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         try
         {
             var bitmap = await Task.Run(() => ToBitmap(registration.Rectify(frame, 960, 600)), _lifetime.Token);
-            if (_disposed || revision != _gameTableCropRevision ||
+            if (_disposed || !IsGameTablePreviewUpright || revision != _gameTableCropRevision ||
                 !ReferenceEquals(registration, _gameTableRegistration) || !Capture.IsRunning ||
                 Capture.LatestFrame is not { } latest || latest.Age > TimeSpan.FromSeconds(2) ||
                 !registration.Matches(latest)) return;
@@ -661,6 +701,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             try
             {
                 await _gameTableAnalysisWork;
+                await _liveBoardCheckWork;
                 await DisposeCornerDetectionAsync();
                 await DisposeProcessingAsync();
             }

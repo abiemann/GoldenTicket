@@ -316,6 +316,11 @@ turn, status and players; **Packed away** is a status, not the save's name.
    **PLAY!** stays disabled. Human-only and computer-only games are allowed; a person places computer trains. The
    technical setup screen offers seat names, colours and AI difficulty.
 3. **PLAY!** opens the game table with a live, cropped board from the accepted four camera corners.
+   The table keeps an upright board reference and checks the live crop during play. If the board
+   moves or turns, it reacquires the corners and compares all four orientations before resuming the
+   preview, so Miami remains at the lower right. While the view cannot be verified, the board and
+   automatic piece readings pause rather than showing an uncertain orientation. A resumed saved
+   game uses its saved upright board photo as the reference.
    A persistent panel above the board identifies the current phase, the acting player, and the
    instruction humans should follow next.
    In a one-human game's opening setup, the board moves up beneath the guidance panel, while a

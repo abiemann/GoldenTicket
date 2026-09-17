@@ -143,6 +143,88 @@ public sealed class CameraCornerLearningFlowTests
         Assert.Contains("blue", fixture.Camera.GameBoardFramingStatus);
     }
 
+    [Fact]
+    public async Task Rotating_a_live_board_half_a_turn_holds_then_restores_Miami_bottom_right()
+    {
+        using var pieces = new FakePieceModel();
+        await using var fixture = new Fixture(pieceFactory: (_, _) => pieces);
+        NormalizedPoint[] corners = [new(.1, .12), new(.9, .12), new(.9, .88), new(.1, .88)];
+        fixture.Model.DetectedCorners = corners;
+        var halfTurn = false;
+        fixture.FramePainter = (pixels, width, height) =>
+        {
+            PaintAsymmetricBoard(pixels, width, height, halfTurn);
+            if (!halfTurn)
+            {
+                PaintScorePiece(pixels, width, height, corners, .017, .9266, (138, 55, 48));
+                PaintScorePiece(pixels, width, height, corners, .055, .9266, (0, 48, 100));
+            }
+        };
+        fixture.Refresh();
+        fixture.Camera.BeginGameBoardFraming([MarkerColor.Red, MarkerColor.Blue]);
+        await fixture.CheckGameBoardAsync();
+        Assert.True(fixture.Camera.CanStartGameWithBoard, fixture.Camera.GameBoardFramingStatus);
+        fixture.Camera.BeginGameTablePreview();
+        fixture.Camera.EndGameBoardFraming();
+        Assert.True(fixture.Camera.IsGameTablePreviewUpright);
+
+        halfTurn = true;
+        fixture.Refresh();
+        typeof(CameraViewModel).GetField("_lastLiveBoardCheckAt", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(fixture.Camera, DateTimeOffset.UtcNow);
+        typeof(CameraViewModel).GetMethod("CheckLiveBoardAlignment", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(fixture.Camera, [fixture.Frame]);
+        Assert.False(fixture.Camera.IsGameTablePreviewUpright);
+        Assert.Null(fixture.Camera.GameTablePreview);
+
+        await (Task)typeof(CameraViewModel)
+            .GetMethod("DetectLiveBoardAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(fixture.Camera, [fixture.Frame])!;
+        Assert.True(fixture.Camera.IsGameTablePreviewUpright, fixture.Camera.GameTablePreviewStatus);
+        var restored = (BoardRegistration)typeof(CameraViewModel)
+            .GetField("_gameTableRegistration", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(fixture.Camera)!;
+        Assert.Equal(corners[2], restored.Corners[0], NormalizedPointComparer.Instance);
+        Assert.Equal(corners[0], restored.Corners[2], NormalizedPointComparer.Instance);
+
+        NormalizedPoint[] adjusted = [new(.096, .116), new(.904, .116), new(.904, .884), new(.096, .884)];
+        var manual = BoardRegistration.Create(fixture.Frame, adjusted);
+        typeof(CameraViewModel).GetMethod("AdoptTechnicalBoardCrop", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(fixture.Camera, [fixture.Frame, manual]);
+        Assert.True(fixture.Camera.IsGameTablePreviewUpright, fixture.Camera.GameTablePreviewStatus);
+        restored = (BoardRegistration)typeof(CameraViewModel)
+            .GetField("_gameTableRegistration", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(fixture.Camera)!;
+        Assert.Equal(adjusted[2], restored.Corners[0], NormalizedPointComparer.Instance);
+    }
+
+    private static void PaintAsymmetricBoard(byte[] pixels, int width, int height, bool halfTurn)
+    {
+        for (var y = 0; y < height; y++)
+        for (var x = 0; x < width; x++)
+        {
+            var u = (x / (double)(width - 1) - .1) / .8;
+            var v = (y / (double)(height - 1) - .12) / .76;
+            if (u is < 0 or > 1 || v is < 0 or > 1) continue;
+            if (halfTurn) { u = 1 - u; v = 1 - v; }
+            var column = (int)(u * 13);
+            var row = (int)(v * 9);
+            var offset = (y * width + x) * 4;
+            pixels[offset] = (byte)(40 + (column * 23 + row * 17 + column * row * 3) % 170);
+            pixels[offset + 1] = (byte)(30 + (column * 19 + row * 31 + column * row * 5) % 180);
+            pixels[offset + 2] = (byte)(50 + (column * 29 + row * 11 + column * row * 7) % 160);
+            pixels[offset + 3] = 255;
+        }
+    }
+
+    private sealed class NormalizedPointComparer : IEqualityComparer<NormalizedPoint>
+    {
+        public static readonly NormalizedPointComparer Instance = new();
+        public bool Equals(NormalizedPoint left, NormalizedPoint right) =>
+            Math.Abs(left.X - right.X) < .003 && Math.Abs(left.Y - right.Y) < .003;
+        public int GetHashCode(NormalizedPoint point) => 0;
+    }
+
     private static void PaintScorePiece(byte[] pixels, int width, int height,
         IReadOnlyList<NormalizedPoint> corners, double u, double v, (byte R, byte G, byte B) color)
     {

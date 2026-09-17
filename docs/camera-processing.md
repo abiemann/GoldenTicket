@@ -93,8 +93,11 @@ frame/crop identity and your note. It is marked unreviewed. Saving does not trai
 model; examples are reviewed and corrected before a later training round.
 
 Crop, camera, processor and model changes clear old outlines and wait for a current result.
-If the camera moves, choose **Detect board corners** again or reposition the handles. Initial
-ML corner selection does not continuously track the board or detect hands.
+If the camera moves on the technical camera screen, choose **Detect board corners** again or
+reposition the handles. That screen's initial ML corner selection does not continuously track the
+board or detect hands. The game table separately checks its live board against the upright board
+reference and reacquires corners during play when the view changes; see
+[board corner behavior](board-corners-ml.md).
 **Camera framing reference** remains a separate scene-safety
 check for checkpoint photos; it does not provide the ML detector's input reference.
 

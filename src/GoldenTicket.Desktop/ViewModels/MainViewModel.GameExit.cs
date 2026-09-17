@@ -312,6 +312,7 @@ public sealed partial class MainViewModel
         _incompleteGameExitSaveCheckpointId = null;
         Status = null;
         await Connection.StopCommand.ExecuteAsync(null);
+        Camera.EndGameTablePreview();
         await Camera.StopCommand.ExecuteAsync(null);
         ShowGameplayScreen(Screen.Setup);
         Game.ShowWelcome();

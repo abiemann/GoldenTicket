@@ -413,16 +413,25 @@ The transition lasts 260 ms when Windows client-area animations are enabled and 
 when they are disabled. Only the active layer accepts input, focus moves to it, and the game
 layer fills the resized or maximized content area. After new-game **PLAY!**, the player-facing
 table shows a live 8:5 crop of the accepted board from the same camera stream. The setup check's
-selected rotation orients the crop. Two to five selected seats occupy positions around the board,
-with their portraits, physical train colors, remaining train counts and face-down card/ticket
+selected rotation orients the crop.
+
+During play, compare the current crop with the accepted upright board reference. A moved or
+rotated board invalidates the old registration and its piece readings. Redetect the four corners,
+apply the narrow outward crop margin once, and compare all four rotations before presenting new
+frames. Only a uniquely verified upright match can resume the live crop and automatic actions;
+the board waits when orientation is uncertain. A saved upright board photo provides the reference
+after resuming a saved game. The canonical display keeps Miami at the lower right.
+
+Two to five selected seats occupy positions around the board,
+with their portraits, physical train colors, remaining train counts and face-down card/destination
 stacks labeled only with public counts. The public five-card market sits beside it. The whole
 scene scales uniformly when the window changes size or is maximized. The game-table view has no
 top-left card or control buttons and no on-screen Shift+Escape hint. Shift+Escape opens the
 technical layer, whose **Game table** screen provides the private-card reveal, turn actions,
 manual placement checks and saving. A stale or changed camera frame hides the crop rather than presenting an old image
-as live. A resumed game uses the same seat layout and can acquire a crop when the operator
-registers the board in the technical Camera screen. Rebuild and final-score views retain their
-existing presentation. This UI step does not complete the separate voice, story and audio work.
+as live. A resumed game uses the same seat layout and verifies the live crop against its saved
+upright board photo. Rebuild and final-score views retain their existing presentation. This UI
+step does not complete the separate voice, story and audio work.
 
 ## 5. Digital cards and private information
 

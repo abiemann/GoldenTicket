@@ -86,6 +86,7 @@ public sealed partial class CameraViewModel
     {
         _gameMarkersReady = false;
         _gameBoardOrientationIndex = null;
+        _acceptedSetupReference = null;
         _gameMarkersCapture = null;
         _gameMarkersAcceptedAt = DateTimeOffset.MinValue;
         OnPropertyChanged(nameof(CanStartGameWithBoard));
@@ -145,7 +146,7 @@ public sealed partial class CameraViewModel
         _cornerWork = DetectBoardCornersCoreAsync(forGameBoard: true);
     }
 
-    public bool CanDetectBoardCorners => IsRunning && !IsBusy && !IsCornerDetectionBusy && !_disposed;
+    public bool CanDetectBoardCorners => IsRunning && !IsBusy && !IsCornerDetectionBusy && !_liveBoardCheckBusy && !_disposed;
     partial void OnIsCornerDetectionBusyChanged(bool value) => OnPropertyChanged(nameof(CanDetectBoardCorners));
 
     private void QueueAutomaticCornerDetection(CameraFrame frame)
@@ -338,6 +339,14 @@ public sealed partial class CameraViewModel
             }
             _gameMarkersReady = check.Ready;
             _gameBoardOrientationIndex = check.Ready ? check.OrientationIndex : null;
+            if (check.Ready && check.OrientationIndex is { } orientation)
+            {
+                var padded = BoardCropPadding.Expand(frame, GameBoardCorners);
+                var upright = BoardRegistration.Create(frame,
+                    GameBoardOrientations.Enumerate(padded.Corners)[orientation]);
+                SetAcceptedSetupReference(frame, upright);
+            }
+            else _acceptedSetupReference = null;
             _gameMarkersCapture = (frame.Epoch, frame.Width, frame.Height);
             _gameMarkersAcceptedAt = DateTimeOffset.UtcNow;
             GameBoardFramingStatus = check.Message;
