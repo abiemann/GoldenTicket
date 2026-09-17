@@ -95,6 +95,12 @@ This build implements the core game plus initial phone, camera and photo workflo
   then says the pieces may be cleared away. Reopening shows the saved position route by route with
   per-seat stock guidance, takes the operator's whole-board confirmation, and resumes the exact
   suspended action once. Packing away and rebuilding provably change nothing about the game.
+- During play, **Escape** opens **Save Game**, **Quit to Menu**, and **Return to Game**. Save Game
+  compares every visible train position and color with the claimed routes across fresh camera
+  frames, writes and reads back the digital checkpoint, captures an unprocessed board photo with
+  the observed color totals, checks fresh frames again, and returns to the main menu. If any check
+  fails, the game stays open so the board and camera can be corrected. Quit to Menu discards the
+  current unsaved progress; a prior verified save remains available when one exists.
 - Save paths are confined to valid session directories; concurrent writers, inconsistent journal
   metadata, missing snapshots, and corrupted state stop the operation. An uncertain save outcome
   requires a reload. Unreadable saves remain listed with recovery guidance.
@@ -111,7 +117,7 @@ This build implements the core game plus initial phone, camera and photo workflo
   slides the remaining **Your Cards** panel down before saving the two kept destinations. The
   public table stays visible after either opening choice; click the human's T or D stack to see
   compact card previews. The unresolved opening choice has no **Back to table** action, and plain
-  Escape does not dismiss it. Later laptop private controls are available through
+  Escape does not dismiss it; the exit menu covers it until **Return to Game**. Later laptop private controls are available through
   **Shift+Escape**, and **Connect phone** is hidden.
   With multiple humans, the game table presents phone setup so one shared phone can be passed
   between players. Hosting still requires an explicit start on a selected Private LAN connection;
@@ -176,8 +182,9 @@ These are later milestones in `DESIGN.md`, and nothing here pretends they exist:
   device acceptance remain outstanding. This slice uses two-second snapshot polling and fresh
   laptop pairing after page reload; WSS/event-cursor recovery and durable controller registration
   remain design gaps. See [implementation details](docs/IMPLEMENTATION-2026-09-12.md).
-- **No machine-verified photo checkpoint.** Optional operator-attested reference photos are saved
-  separately with a checksum, checkpoint association and readback checks. Checkpoints remain
+- **No machine-verified photo checkpoint.** The Escape save checks live train positions and colors
+  against claimed routes before and after its board photo. The image remains an operator-attested
+  reference with a checksum, checkpoint association and readback checks. Checkpoints remain
   `LogicalStateOnly`; partial placement masks and automatic whole-board reconciliation are still M4.
 - **No story mode, narration or sound.** That is M6.
 - **No installer.** M7.
@@ -389,8 +396,8 @@ away** before clearing the physical board. A verified packed checkpoint (includi
 rebuild) needs no exit warning, even without a photo. An action or photo save still running must
 finish before you retry closing. If the latest save is uncertain, the app warns you.
 
-Press **Escape** to cover later private views. An unresolved solo opening destination choice has
-no **Back to table** action and stays visible after plain Escape, focus loss, or idle time; choose
+Press **Escape** on the game table to open the save/quit dialog. An unresolved solo opening
+destination choice remains underneath the dialog and returns unchanged if you dismiss it; choose
 whether to keep all three or drop one to continue. **Shift+Escape** still opens the technical
 screens for recovery. Other private views hide on deactivation and after 60 seconds without input.
 Lock/suspend handlers request covering; real Windows lifecycle behavior remains an interactive

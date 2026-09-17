@@ -395,8 +395,13 @@ Every placement still requires manual whole-board verification. All-human and al
 rosters are allowed; an operator still places and verifies any computer player's physical trains.
 
 Shift+Escape slides the game screen to the right to reveal the technical interface. Plain
-Escape retains later private-card hiding and child-control cancellation, but does not dismiss
-the unresolved solo opening destination choice. Held-key repeats do not repeat the reveal.
+Escape opens a modal dialog with **Save Game** and **Quit to Menu** while a game is in progress.
+Save Game requires a fresh accepted board crop, checks train positions and player colors against
+the committed routes, reads back the digital checkpoint and an unprocessed board photo with
+observed color totals, then returns to the main menu. A failed check leaves the game open.
+Quit to Menu discards later auto-journaled play while retaining an earlier verified checkpoint,
+or removes a never-saved match. Dismissing the dialog preserves an unresolved solo opening
+destination choice. Held-key repeats do not reopen the dialog or repeat the reveal.
 
 A **Return to game** button at the top of the technical interface reverses the transition and
 brings the game layer back over the entire content area. Both layers bind to the same game
@@ -1910,7 +1915,8 @@ camera, connection and photo screens. These changes are described in
 [the implementation record and acceptance checklist](docs/IMPLEMENTATION-2026-09-12.md).
 
 Single-human play now uses the laptop's card view directly for opening destinations. The unresolved
-opening choice has no **Back to table** action and ignores plain Escape. Later gameplay stays on
+opening choice has no **Back to table** action; plain Escape covers it with the save/quit dialog.
+Later gameplay stays on
 **THE GAME TABLE** after human and computer actions, including physical scoring-marker confirmation.
 Clicking the solo human's T or D stack opens a compact read-only card panel beneath the tile; the
 technical private controls for taking a turn are available after **Shift+Escape**.

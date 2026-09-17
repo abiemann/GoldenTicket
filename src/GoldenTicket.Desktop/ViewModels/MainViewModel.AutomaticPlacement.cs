@@ -50,7 +50,7 @@ public sealed partial class MainViewModel
             return;
         }
 
-        if (_coordinator is not { } coordinator || !IsGameplayScreenActive(Screen.Table) ||
+        if (_coordinator is not { } coordinator || IsGameExitMenuOpen || !IsGameplayScreenActive(Screen.Table) ||
             _mustReload || NeedsBoardReconciliation) return;
 
         if (_scoreMarkerStep is { ThankYouFinished: true } scoreStep)

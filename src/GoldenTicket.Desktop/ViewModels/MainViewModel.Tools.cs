@@ -51,7 +51,8 @@ public sealed partial class MainViewModel
         }, Camera, ShowCameraCommand) { CaptureAllowed = false };
     }
 
-    private bool CanCompanionControl => CanConnectPhone && !_toolsDisposed && !_exitRequested && _systemAvailable && !_mustReload &&
+    private bool CanCompanionControl => CanConnectPhone && !_toolsDisposed && !_exitRequested &&
+        !IsGameExitMenuOpen && _systemAvailable && !_mustReload &&
         (!_operationInProgress || _handlingRemoteCommand) && !NeedsBoardReconciliation &&
         IsGameplayScreenActive(Screen.Table) && _coordinator is { StorageFaulted: false };
 

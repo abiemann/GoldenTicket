@@ -18,6 +18,48 @@
         <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
         <local:EmptyStringToVisibilityConverter x:Key="EmptyStringToVisibility" />
         <local:ScreenVisibilityConverter x:Key="ScreenVisibility" />
+        <Style x:Key="ExitMenuButton" TargetType="Button">
+            <Setter Property="Background" Value="#DB17212C" />
+            <Setter Property="Foreground" Value="#FFFFE7B0" />
+            <Setter Property="BorderBrush" Value="#FFD4AC6B" />
+            <Setter Property="BorderThickness" Value="2" />
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="MinHeight" Value="50" />
+            <Setter Property="Padding" Value="16,10" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Frame" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Frame" Property="Background" Value="#EC522D26" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Frame" Property="Background" Value="#E14E2F2B" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Frame" Property="BorderBrush" Value="#FFFFD576" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Frame" Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ExitMenuSaveButton" TargetType="Button" BasedOn="{StaticResource ExitMenuButton}">
+            <Setter Property="Background" Value="#EC522D26" />
+            <Setter Property="BorderThickness" Value="3" />
+        </Style>
     </Window.Resources>
 
     <Grid x:Name="Root" ClipToBounds="True">
@@ -101,5 +143,43 @@
         -->
         <views:PrivateSeatView
             Visibility="{Binding IsPrivateVisible, Converter={StaticResource BoolToVisibility}}" />
+
+        <Grid x:Name="GameExitMenuOverlay" Background="#C9000912"
+              Visibility="{Binding IsGameExitMenuOpen, Converter={StaticResource BoolToVisibility}}">
+            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" Margin="24">
+                <Border Width="540" Padding="28" CornerRadius="12"
+                        Background="#F51A2531" BorderBrush="#FFD4AC6B" BorderThickness="2">
+                    <StackPanel>
+                        <TextBlock Text="Leave the game?" Foreground="#FFFFE7B0"
+                                   FontSize="30" FontWeight="Bold" TextAlignment="Center" />
+                        <TextBlock Text="Save Game compares the trains and their colors with the claimed routes, takes a fresh board photo, and returns to the menu. Choosing it confirms that the camera shows only the board."
+                                   Foreground="#FFF8EEDC" FontSize="16" TextWrapping="Wrap"
+                                   TextAlignment="Center" Margin="0,12,0,8" />
+                        <TextBlock Text="Quit to Menu discards changes since the last saved game."
+                                   Foreground="#FFE6D9C3" FontSize="14" TextWrapping="Wrap"
+                                   TextAlignment="Center" Margin="0,0,0,10" />
+                        <TextBlock Text="{Binding GameExitInventorySummary}"
+                                   Foreground="#FFE6D9C3" FontSize="14" TextWrapping="Wrap"
+                                   TextAlignment="Center" Margin="0,0,0,14" />
+                        <TextBlock Text="{Binding GameExitStatus}"
+                                   Foreground="#FFFFD576" FontSize="14" TextWrapping="Wrap"
+                                   TextAlignment="Center" Margin="0,0,0,12"
+                                   Visibility="{Binding GameExitStatus, Converter={StaticResource EmptyStringToVisibility}}"
+                                   AutomationProperties.LiveSetting="Polite" />
+                        <Button x:Name="SaveGameMenuButton" Content="Save Game"
+                                Command="{Binding SaveGameToMenuCommand}"
+                                Style="{StaticResource ExitMenuSaveButton}" Margin="0,0,0,10"
+                                AutomationProperties.Name="Save Game and return to menu" />
+                        <Button Content="Quit to Menu"
+                                Command="{Binding QuitToMenuCommand}"
+                                Style="{StaticResource ExitMenuButton}" Margin="0,0,0,10"
+                                AutomationProperties.Name="Quit to Menu without saving" />
+                        <Button Content="Return to Game" Click="CloseGameExitMenu_Click"
+                                Style="{StaticResource ExitMenuButton}"
+                                AutomationProperties.Name="Return to Game" />
+                    </StackPanel>
+                </Border>
+            </Viewbox>
+        </Grid>
     </Grid>
 </Window>

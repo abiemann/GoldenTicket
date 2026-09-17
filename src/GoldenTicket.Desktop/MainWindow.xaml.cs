@@ -194,7 +194,7 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(async () =>
         {
             if (_cleanupStarted) return;
-            _model?.HidePrivateSeat();
+            if (_model?.ShowSoloOpeningTicketsOnBoard != true) _model?.HidePrivateSeat();
             _model?.SetWindowActive(canInteract && IsActive);
             if (_model is not null) await _model.SetSystemAvailableAsync(canInteract);
         }));
@@ -205,9 +205,41 @@ public partial class MainWindow : Window
         _lastInteraction = Environment.TickCount64;
         if (e.Key != Key.Escape || _model is null) return;
 
+        if (_model.IsGameExitSaving)
+        {
+            e.Handled = true;
+            return;
+        }
+
         if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0)
         {
-            if (!e.IsRepeat) RevealTechnicalLayer();
+            if (!e.IsRepeat)
+            {
+                _model.CloseGameExitMenu();
+                RevealTechnicalLayer();
+            }
+            e.Handled = true;
+            return;
+        }
+
+        if (_model.IsGameExitMenuOpen)
+        {
+            if (!e.IsRepeat)
+            {
+                _model.CloseGameExitMenu();
+                GameLayer.FocusCurrentChoice();
+            }
+            e.Handled = true;
+            return;
+        }
+
+        if (_model.Game.IsPlaying && !_technicalVisible && !_layerTransition && GameLayer.IsEnabled)
+        {
+            if (!e.IsRepeat)
+            {
+                _model.OpenGameExitMenu();
+                if (_model.IsGameExitMenuOpen) SaveGameMenuButton.Focus();
+            }
             e.Handled = true;
             return;
         }
@@ -223,6 +255,13 @@ public partial class MainWindow : Window
             _model.HidePrivateSeatCommand.Execute(null);
             e.Handled = true;
         }
+    }
+
+    private void CloseGameExitMenu_Click(object sender, RoutedEventArgs e)
+    {
+        if (_model?.IsGameExitSaving == true) return;
+        _model?.CloseGameExitMenu();
+        GameLayer.FocusCurrentChoice();
     }
 
     private void ReturnToGame_Click(object sender, RoutedEventArgs e) => ReturnToGameLayer();

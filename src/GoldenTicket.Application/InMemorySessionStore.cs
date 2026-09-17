@@ -202,6 +202,35 @@ public sealed class InMemorySessionStore : ISessionStore
         return Task.CompletedTask;
     }
 
+    public Task<RestoredSession> RewindToVerifiedCheckpointAsync(
+        SessionId sessionId, CheckpointId checkpointId, BoardManifest manifest, CardCatalog catalog,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var entry = Require(sessionId);
+            var current = GameReducer.Rebuild(manifest, catalog, entry.Journal);
+            if (entry.LatestStateHash is null || !StateHash.Matches(current, entry.LatestStateHash))
+                throw new SessionIntegrityException("The match changed or is damaged; it was not rewound.");
+
+            var restored = CheckpointJournalRewind.AtVerifiedCheckpoint(
+                entry.Journal, checkpointId, manifest, catalog);
+            var existing = entry.Journal.Count;
+            entry.Journal.RemoveRange(restored.Journal.Count, existing - restored.Journal.Count);
+            foreach (var id in entry.Outcomes.Where(pair => !pair.Value.Accepted ||
+                         pair.Value.StateVersionAfter > restored.State.StateVersion)
+                         .Select(pair => pair.Key).ToArray())
+                entry.Outcomes.Remove(id);
+            entry.Lifecycle = restored.State.Lifecycle;
+            entry.TurnNumber = restored.State.TurnNumber;
+            entry.StateVersion = restored.State.StateVersion;
+            entry.LatestStateHash = StateHash.Compute(restored.State);
+            entry.UpdatedAt = DateTimeOffset.UtcNow;
+            return Task.FromResult(restored);
+        }
+    }
+
     /// <summary>The journal as stored, for replay and privacy tests.</summary>
     public IReadOnlyList<JournaledEvent> JournalOf(SessionId sessionId)
     {

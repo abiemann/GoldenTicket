@@ -56,6 +56,7 @@ public sealed class PhotoAttachmentTests : IDisposable
         Assert.Equal(original, checkpoint);
         Assert.Null(checkpoint.PhotoHash);
         Assert.Equal(TargetProvenance.LogicalStateOnly, checkpoint.TargetProvenance);
+        Assert.Null(restored.Reference.ObservedTrainInventory); // Older references have no inventory field.
         var envelope = await File.ReadAllBytesAsync(store.AttachmentPath(checkpoint.SessionId, checkpoint.CheckpointId), Token);
         Assert.True(envelope.AsSpan(0, 8).SequenceEqual("GTPHOTO1"u8));
         Assert.Equal(2, BinaryPrimitives.ReadInt32LittleEndian(envelope.AsSpan(8)));
@@ -67,8 +68,70 @@ public sealed class PhotoAttachmentTests : IDisposable
         var metadata = Encoding.UTF8.GetString(plaintext.Slice(4, metadataLength));
         Assert.Contains(checkpoint.LogicalStateHash, metadata, StringComparison.Ordinal);
         Assert.Contains(capture.CameraId, metadata, StringComparison.Ordinal);
+        Assert.DoesNotContain("ObservedTrainInventory", metadata, StringComparison.Ordinal);
         Assert.True(plaintext[(4 + metadataLength)..].SequenceEqual(png));
         Assert.Empty(Directory.EnumerateFiles(_root, "*.pending", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public async Task ObservedTrainColorsRoundTripBesideThePhotoWithoutChangingTheCheckpoint()
+    {
+        var checkpoint = Checkpoint();
+        var inventory = new CheckpointTrainInventory(1, 0, 2, 0, 0,
+            CheckpointTrainInventoryProvenance.CameraObserved);
+        var store = new CheckpointPhotoStore(_root);
+        var png = WpfPng();
+        var capture = Capture();
+
+        var saved = await store.SaveReferenceAsync(checkpoint, png, capture, Token, inventory);
+        var restored = await new CheckpointPhotoStore(_root).ReadReferenceAsync(checkpoint, Token);
+
+        Assert.Equal(inventory, saved.ObservedTrainInventory);
+        Assert.Equal(inventory, restored!.Reference.ObservedTrainInventory);
+        Assert.Equal(3, inventory.Total);
+        Assert.Equal(saved, await store.SaveReferenceAsync(checkpoint, png, capture, Token, inventory));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.SaveReferenceAsync(checkpoint, png, capture, Token,
+                new CheckpointTrainInventory(0, 0, 3, 0, 0,
+                    CheckpointTrainInventoryProvenance.CameraObserved)));
+        Assert.Null(checkpoint.PhotoHash);
+        Assert.Equal(TargetProvenance.LogicalStateOnly, checkpoint.TargetProvenance);
+    }
+
+    [Theory]
+    [InlineData(-1, 4, 0, 0, 0, 1)]
+    [InlineData(1, 0, 1, 0, 0, 1)]
+    [InlineData(3, 0, 0, 0, 0, 0)]
+    public async Task InvalidObservedInventoryCannotBeSaved(
+        int blue, int red, int green, int yellow, int black, int provenance)
+    {
+        var inventory = new CheckpointTrainInventory(blue, red, green, yellow, black,
+            (CheckpointTrainInventoryProvenance)provenance);
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            new CheckpointPhotoStore(_root).SaveReferenceAsync(Checkpoint(), WpfPng(), Capture(), Token, inventory));
+        Assert.False(Directory.Exists(_root));
+    }
+
+    [Fact]
+    public async Task ObservedInventoryIsValidatedWhenReadingAnOtherwiseChecksummedAttachment()
+    {
+        var checkpoint = Checkpoint();
+        var store = new CheckpointPhotoStore(_root);
+        await store.SaveReferenceAsync(checkpoint, WpfPng(), Capture(), Token,
+            new CheckpointTrainInventory(3, 0, 0, 0, 0,
+                CheckpointTrainInventoryProvenance.CameraObserved));
+        var path = store.AttachmentPath(checkpoint.SessionId, checkpoint.CheckpointId);
+        var envelope = await File.ReadAllBytesAsync(path, Token);
+        var plaintext = envelope.AsSpan(52);
+        var metadataLength = BinaryPrimitives.ReadInt32LittleEndian(plaintext);
+        var metadata = plaintext.Slice(4, metadataLength);
+        var blueCount = metadata.IndexOf("\"Blue\":3"u8);
+        Assert.True(blueCount >= 0);
+        metadata[blueCount + "\"Blue\":"u8.Length] = (byte)'2';
+        SHA256.HashData(plaintext).CopyTo(envelope.AsSpan(20, 32));
+        await File.WriteAllBytesAsync(path, envelope, Token);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.ReadReferenceAsync(checkpoint, Token));
     }
 
     [Fact]

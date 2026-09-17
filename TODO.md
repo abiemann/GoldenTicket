@@ -13,8 +13,8 @@ See the
 - [x] Add a player-facing game layer that covers the entire application content area, including
   the current technical navigation. Keep the existing technical interface available underneath.
 - [x] Slide the game layer out of view to reveal the technical interface with Shift+Escape.
-  Preserve plain Escape-to-hide/cancel behavior for later private views and child controls, while
-  leaving the unresolved solo opening choice visible. Ignore held-key repeats.
+  Plain Escape opens the save/quit dialog during play without clearing an unresolved solo opening
+  choice. Ignore held-key repeats.
 - [x] Add a **Return to game** button at the top of the technical interface. Slide the game
   layer back over 100% of the content area, preserving the active game and technical tool state.
 - [x] Add snowy-twilight launch art, Start/Reload choices, and five portraits with grayscale faces
@@ -83,6 +83,9 @@ validation requirements; mark each feature complete only after those checks pass
   reference photos use plaintext format v2 with a SHA-256 checksum, immutable checkpoint binding
   and readback verification. Still missing:
   the board diagram, machine-verified photograph, pending-placement mask and full evidence lifecycle.
+  The in-game Escape save now checks route positions and player colors from live frames, stores an
+  observed color inventory beside a fresh board reference photo, and returns to the main menu;
+  this does not yet make the photograph itself a machine-verified checkpoint.
 - [ ] **Offline installer packaging** — self-contained Windows x64 distribution with required runtimes and assets included (M7).
 - [ ] **Training mode, voice, story, and audio: last feature pass** — Training follows Story without effects/ambience; narration follows visual/voice/both settings. Complete photo save-and-rebuild and packaging foundation first (M6).
 
@@ -143,8 +146,9 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   private cards, and pass-and-hide on a real shared phone before claiming the PWA workflow is finished.
 - [x] **Camera and photo foundation.** Windows video-only capture, selectable formats, manual
   four-corner crop and conservative scene-reference checks; optional plaintext, checksummed,
-  operator-attested checkpoint photos with integrity/readback and stale-capture protection. No automated train
-  verification or machine-verified photo checkpoint is claimed.
+  operator-attested checkpoint photos with integrity/readback and stale-capture protection.
+  The Escape save verifies live train positions and colors against claimed routes on fresh frames;
+  the photo itself is still an operator-attested reference, not a machine-verified checkpoint.
 - [x] **Manual board-photo export.** A valid live crop can be exported to PNG without a scene
   reference, including while the scene has changed. Fresh-frame and crop/camera identity checks
   remain; checkpoint-photo capture retains its separate reference checks.

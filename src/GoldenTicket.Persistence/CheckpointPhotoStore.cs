@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using GoldenTicket.Domain;
 using GoldenTicket.Domain.Model;
 
@@ -14,6 +15,29 @@ public sealed record CheckpointPhotoCapture(
     long CameraEpoch,
     long CalibrationRevision,
     bool OperatorConfirmedBoardOnlyAndTarget);
+
+/// <summary>How the physical train counts beside a saved board photo were established.</summary>
+public enum CheckpointTrainInventoryProvenance
+{
+    CameraObserved = 1,
+    OperatorAttested = 2,
+}
+
+/// <summary>
+/// Physical plastic trains visible on the saved board, grouped by player colour. This is an
+/// observation, separate from the checkpoint's authoritative route ownership target.
+/// </summary>
+public sealed record CheckpointTrainInventory(
+    int Blue,
+    int Red,
+    int Green,
+    int Yellow,
+    int Black,
+    CheckpointTrainInventoryProvenance Provenance)
+{
+    [JsonIgnore]
+    public long Total => (long)Blue + Red + Green + Yellow + Black;
+}
 
 /// <summary>
 /// An immutable, operator-attested reference beside a state-only checkpoint. It does not upgrade
@@ -36,7 +60,9 @@ public sealed record CheckpointPhotoReference(
     int Height,
     int ByteLength,
     DateTimeOffset StoredAt,
-    CheckpointPhotoCapture Capture)
+    CheckpointPhotoCapture Capture,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    CheckpointTrainInventory? ObservedTrainInventory = null)
 {
     public const string DisplayLabel = "Operator-attested reference photo. Rebuild from the saved route list and check the whole board before resuming.";
 }
@@ -90,9 +116,11 @@ public sealed class CheckpointPhotoStore
         PackAwayCheckpoint checkpoint,
         ReadOnlyMemory<byte> png,
         CheckpointPhotoCapture capture,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        CheckpointTrainInventory? observedTrainInventory = null)
     {
         ValidateCheckpoint(checkpoint);
+        ValidateInventory(observedTrainInventory, checkpoint);
         ArgumentNullException.ThrowIfNull(capture);
         ValidateCapture(capture, checkpoint, requireFresh: true);
         cancellationToken.ThrowIfCancellationRequested();
@@ -109,7 +137,8 @@ public sealed class CheckpointPhotoStore
                 checkpoint.CheckpointId.Value, ContentHash(checkpoint), checkpoint.LogicalStateHash,
                 checkpoint.PhysicalTargetHash, checkpoint.ProfileId, checkpoint.ManifestHash,
                 checkpoint.SourceStateVersion, checkpoint.SourceJournalSequence, checkpoint.BoardRevision,
-                Hash(image), width, height, image.Length, _clock.GetUtcNow(), capture);
+                Hash(image), width, height, image.Length, _clock.GetUtcNow(), capture,
+                observedTrainInventory);
             var path = AttachmentPath(checkpoint.SessionId, checkpoint.CheckpointId);
             if (File.Exists(path))
                 return await ReadMatchingExistingAsync(checkpoint, reference, cancellationToken);
@@ -223,7 +252,8 @@ public sealed class CheckpointPhotoStore
             ?? throw new IOException("The saved reference photo disappeared during readback.");
         try
         {
-            if (existing.Reference.ImageHash != requested.ImageHash || existing.Reference.Capture != requested.Capture)
+            if (existing.Reference.ImageHash != requested.ImageHash || existing.Reference.Capture != requested.Capture ||
+                existing.Reference.ObservedTrainInventory != requested.ObservedTrainInventory)
                 throw new InvalidOperationException("This checkpoint already has its immutable reference photo. Save a new checkpoint for a different photo.");
             return existing.Reference;
         }
@@ -244,6 +274,17 @@ public sealed class CheckpointPhotoStore
             reference.StoredAt < reference.Capture.CapturedAt - TimeSpan.FromSeconds(5))
             throw new InvalidDataException("The reference photo does not belong to this exact saved checkpoint.");
         ValidateCapture(reference.Capture, checkpoint, requireFresh: false);
+        ValidateInventory(reference.ObservedTrainInventory, checkpoint);
+    }
+
+    private static void ValidateInventory(CheckpointTrainInventory? inventory, PackAwayCheckpoint checkpoint)
+    {
+        // Legacy photo references did not contain an observed inventory. They remain readable.
+        if (inventory is null) return;
+        if (!Enum.IsDefined(inventory.Provenance) || inventory.Blue < 0 || inventory.Red < 0 ||
+            inventory.Green < 0 || inventory.Yellow < 0 || inventory.Black < 0 ||
+            inventory.Total != checkpoint.TotalTrainsOnBoard)
+            throw new InvalidDataException("The observed train inventory must identify its source and match the saved board's total train count.");
     }
 
     private void ValidateCapture(CheckpointPhotoCapture capture, PackAwayCheckpoint checkpoint, bool requireFresh)

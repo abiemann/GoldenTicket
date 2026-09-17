@@ -337,6 +337,82 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Restore the previously completed save and discard later auto-journaled play in one SQLite
+    /// transaction. The chosen checkpoint remains packed, along with its reference photo sidecar.
+    /// </summary>
+    public async Task<RestoredSession> RewindToVerifiedCheckpointAsync(
+        SessionId sessionId, CheckpointId checkpointId, BoardManifest manifest, CardCatalog catalog,
+        CancellationToken cancellationToken)
+    {
+        await using (var connection = await OpenAsync(sessionId, cancellationToken))
+        {
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await VerifyCompatibilityAsync(connection, sessionId, manifest, cancellationToken);
+            var journal = await ReadJournalAsync(connection, sessionId, cancellationToken);
+            var current = GameReducer.Rebuild(manifest, catalog, journal);
+            var head = await ReadLatestSnapshotAsync(connection, sessionId, cancellationToken);
+            if (!StateHash.Matches(current, head.StateHash) ||
+                head.StateVersion != current.StateVersion ||
+                head.JournalSequence != current.JournalSequence ||
+                head.BoardRevision != current.BoardRevision ||
+                InvariantChecker.Check(current).Count > 0)
+                throw new SessionIntegrityException("The current save is damaged; it was not rewound.");
+
+            var target = CheckpointJournalRewind.AtVerifiedCheckpoint(
+                journal, checkpointId, manifest, catalog);
+            var state = target.State;
+            await using (var snapshotCommand = connection.CreateCommand())
+            {
+                snapshotCommand.CommandText = """
+                    SELECT JournalSequence, BoardRevision, StateHash FROM Snapshot
+                    WHERE SessionId = $sessionId AND StateVersion = $version;
+                    """;
+                snapshotCommand.Parameters.AddWithValue("$sessionId", sessionId.Value);
+                snapshotCommand.Parameters.AddWithValue("$version", state.StateVersion);
+                await using var reader = await snapshotCommand.ExecuteReaderAsync(cancellationToken);
+                if (!await reader.ReadAsync(cancellationToken) ||
+                    reader.GetInt64(0) != state.JournalSequence ||
+                    reader.GetInt64(1) != state.BoardRevision ||
+                    !StateHash.Matches(state, reader.GetString(2)))
+                    throw new SessionIntegrityException("The selected checkpoint snapshot is damaged; it was not rewound.");
+            }
+
+            await ExecuteAsync(connection,
+                "DELETE FROM Event WHERE SessionId = $sessionId AND Sequence >= $sequence;",
+                cancellationToken, ("$sessionId", sessionId.Value),
+                ("$sequence", state.JournalSequence));
+            await ExecuteAsync(connection,
+                "DELETE FROM Snapshot WHERE SessionId = $sessionId AND StateVersion > $version;",
+                cancellationToken, ("$sessionId", sessionId.Value),
+                ("$version", state.StateVersion));
+            await ExecuteAsync(connection,
+                "DELETE FROM CommandResult WHERE SessionId = $sessionId AND (Accepted = 0 OR StateVersionAfter > $version);",
+                cancellationToken, ("$sessionId", sessionId.Value),
+                ("$version", state.StateVersion));
+            await ExecuteAsync(connection,
+                "DELETE FROM PackAwayCheckpoint WHERE SessionId = $sessionId AND SourceStateVersion > $version;",
+                cancellationToken, ("$sessionId", sessionId.Value),
+                ("$version", state.StateVersion));
+            await WriteCheckpointAsync(connection, state.Checkpoint!, cancellationToken);
+            await ExecuteAsync(connection, """
+                UPDATE Session SET Lifecycle = $lifecycle, TurnNumber = $turn, UpdatedAt = $updatedAt
+                WHERE SessionId = $sessionId;
+                """, cancellationToken,
+                ("$lifecycle", state.Lifecycle.ToString()),
+                ("$turn", state.TurnNumber),
+                ("$updatedAt", DateTimeOffset.UtcNow.ToString("O")),
+                ("$sessionId", sessionId.Value));
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        var readback = await RestoreAsync(sessionId, manifest, catalog, cancellationToken);
+        if (readback.State.Checkpoint?.CheckpointId != checkpointId ||
+            readback.State.Lifecycle != SessionLifecycle.PackedAway)
+            throw new SessionIntegrityException("The restored save did not match the selected checkpoint.");
+        return readback;
+    }
+
     // ---- Internals --------------------------------------------------------------------------
 
     private async Task<SqliteConnection> OpenAsync(

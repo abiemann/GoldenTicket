@@ -91,6 +91,25 @@ public interface ISessionStore
 
     Task<IReadOnlyList<SessionSummary>> ListSessionsAsync(CancellationToken cancellationToken);
 
+    /// <summary>Finds the most recent verified save, optionally omitting an incomplete new attempt.</summary>
+    async Task<PackAwayCheckpoint?> FindLatestVerifiedCheckpointAsync(
+        SessionId sessionId, BoardManifest manifest, CardCatalog catalog,
+        CheckpointId? excludedCheckpointId, CancellationToken cancellationToken)
+    {
+        var restored = await RestoreAsync(sessionId, manifest, catalog, cancellationToken);
+        return CheckpointJournalRewind.LatestVerified(restored.Journal, excludedCheckpointId);
+    }
+
+    /// <summary>
+    /// Discards the auto-journal after a previously verified save, leaving that save packed and
+    /// resumable. The caller must choose a checkpoint that represents a completed Save Game and
+    /// stop all writers before rewinding. Implementations perform this as one durable transaction.
+    /// </summary>
+    Task<RestoredSession> RewindToVerifiedCheckpointAsync(
+        SessionId sessionId, CheckpointId checkpointId, BoardManifest manifest, CardCatalog catalog,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException("This session store cannot rewind to an earlier save.");
+
     Task DeleteSessionAsync(SessionId sessionId, CancellationToken cancellationToken);
 }
 

@@ -70,7 +70,10 @@ public sealed partial class MainViewModel : ObservableObject
             if (args.PropertyName == nameof(CameraViewModel.GameTablePreview))
                 AlignDestinationMarkers();
             if (args.PropertyName == nameof(CameraViewModel.GameTableAnalysis))
+            {
                 ObserveGameTableAnalysis();
+                ObserveGameExitInventory();
+            }
         };
         Setup.PropertyChanged += (_, args) =>
         {
@@ -152,7 +155,8 @@ public sealed partial class MainViewModel : ObservableObject
     private (SeatId SeatId, string Name)? _revealable;
 
     public bool CanRevealPrivateSeat => _revealable is not null && !_operationInProgress && !_exitRequested
-        && _windowActive && _systemAvailable && !_toolsDisposed && IsGameplayScreenActive(Screen.Table) && !NeedsBoardReconciliation && !_mustReload
+        && !IsGameExitMenuOpen && _windowActive && _systemAvailable && !_toolsDisposed &&
+        IsGameplayScreenActive(Screen.Table) && !NeedsBoardReconciliation && !_mustReload
         && _scoreMarkerStep is null
         && BoardFirstProposal is null
         && _coordinator is { StorageFaulted: false }
@@ -438,7 +442,8 @@ public sealed partial class MainViewModel : ObservableObject
     /// </summary>
     private async Task SubmitPrivateAsync(Func<CommandEnvelope, PrivateSeatViewModel, GameCommand?> build)
     {
-        if (_coordinator is not { } coordinator || _operationInProgress || BoardFirstProposal is not null ||
+        if (_coordinator is not { } coordinator || _operationInProgress || IsGameExitMenuOpen ||
+            BoardFirstProposal is not null ||
             _exitRequested || !_windowActive || _mustReload ||
             NeedsBoardReconciliation || PrivateSeat is not { } seat) return;
 
@@ -552,7 +557,8 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private bool CanSubmitOperator() => !_operationInProgress && _scoreMarkerStep is null && !_exitRequested && !_mustReload &&
+    private bool CanSubmitOperator() => !_operationInProgress && !IsGameExitMenuOpen &&
+        _scoreMarkerStep is null && !_exitRequested && !_mustReload &&
         !NeedsBoardReconciliation && IsGameplayScreenActive(Screen.Table);
 
     /// <summary>
@@ -764,7 +770,7 @@ public sealed partial class MainViewModel : ObservableObject
     /// </summary>
     private async Task PumpAsync()
     {
-        if (_coordinator is null || _driver is null || _scoreMarkerStep is not null ||
+        if (_coordinator is null || _driver is null || IsGameExitMenuOpen || _scoreMarkerStep is not null ||
             NeedsBoardReconciliation || _mustReload) return;
 
         Busy = "Computer seats are playing...";

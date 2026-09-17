@@ -349,6 +349,13 @@ public sealed partial class GameScreenViewModel : ObservableObject
         _main.Camera.RequestGameTablePreview();
     }
 
+    public void ShowWelcome()
+    {
+        Stage = GameScreenStage.Welcome;
+        WelcomeSelection = 0;
+        SeatSelection = -1;
+    }
+
     public void Back()
     {
         if (IsBusy) return;

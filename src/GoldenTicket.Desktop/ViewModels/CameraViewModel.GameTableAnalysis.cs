@@ -25,6 +25,7 @@ public sealed partial class CameraViewModel
             if (ReferenceEquals(_gameTableAnalysis, value)) return;
             _gameTableAnalysis = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(CanCaptureGameTablePhoto));
         }
     }
 
@@ -33,6 +34,7 @@ public sealed partial class CameraViewModel
     partial void OnIsGameTablePreviewUprightChanged(bool value)
     {
         if (!value) ClearGameTableAnalysis();
+        OnPropertyChanged(nameof(CanCaptureGameTablePhoto));
     }
 
     private void QueueGameTableAnalysis(CameraFrame frame)

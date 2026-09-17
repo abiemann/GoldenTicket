@@ -1062,8 +1062,21 @@ internal static partial class Program
                 RoutedEvent = Keyboard.PreviewKeyDownEvent
             };
             window.RaiseEvent(escape);
-            if (!escape.Handled || !model.ShowSoloOpeningTicketsOnBoard || !model.IsPrivateVisible)
-                throw new InvalidOperationException("Plain Escape must not dismiss an unresolved solo opening choice.");
+            var exitMenu = (Grid)window.FindName("GameExitMenuOverlay");
+            if (!escape.Handled || !model.IsGameExitMenuOpen ||
+                exitMenu.Visibility != Visibility.Visible ||
+                !model.ShowSoloOpeningTicketsOnBoard || !model.IsPrivateVisible)
+                throw new InvalidOperationException("Plain Escape must show the exit menu without dismissing an unresolved solo opening choice.");
+            await Arrange(root, 1000, 620);
+            Save(root, "game-exit-menu-1000x620.png", 1000, 620);
+            await Arrange(root, 1280, 800);
+            Save(root, "game-exit-menu-1280x800.png", 1280, 800);
+            var closeExitMenu = new KeyEventArgs(Keyboard.PrimaryDevice, source,
+                Environment.TickCount, Key.Escape) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+            window.RaiseEvent(closeExitMenu);
+            if (!closeExitMenu.Handled || model.IsGameExitMenuOpen ||
+                !model.ShowSoloOpeningTicketsOnBoard || !model.IsPrivateVisible)
+                throw new InvalidOperationException("A second Escape must return to the unchanged opening choice.");
             reveal.Invoke(window, null);
             reveal.Invoke(window, null);
             await Task.Delay(400);

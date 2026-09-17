@@ -88,6 +88,14 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string? _lastExportPath;
     public bool CanExportPhoto => IsRunning && HasBoardCrop && !IsBusy && !_disposed;
     public bool CanCapturePhoto => CanExportPhoto && !SafetyHeld;
+    /// <summary>A fresh accepted game-table view can be photographed without a separate utility-screen crop.</summary>
+    public bool CanCaptureGameTablePhoto => !_disposed && IsRunning && !IsBusy && Capture.IsRunning &&
+        IsGameTablePreviewUpright && _gameTableRegistration is { } registration &&
+        GameTableAnalysis is { } analysis && analysis.Board.Age <= TimeSpan.FromSeconds(2) &&
+        analysis.CropRevision == _gameTableCropRevision && analysis.ModelRevision == _modelRevision &&
+        Capture.LatestFrame is { } frame && frame.Age <= TimeSpan.FromSeconds(1) &&
+        frame.Epoch == analysis.Board.Epoch && frame.Sequence >= analysis.Board.Sequence &&
+        registration.Matches(frame) && Capture.ActiveDevice is not null;
 
     partial void OnIsRunningChanged(bool value)
     {
@@ -104,6 +112,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     {
         OnPropertyChanged(nameof(CanExportPhoto));
         OnPropertyChanged(nameof(CanCapturePhoto));
+        OnPropertyChanged(nameof(CanCaptureGameTablePhoto));
         OnPropertyChanged(nameof(CanApplyProcessor));
         OnPropertyChanged(nameof(CanDetectBoardCorners));
     }
@@ -395,6 +404,45 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     public Task<CameraPhoto> CapturePhotoAsync(CancellationToken cancellationToken = default) =>
         CaptureCroppedPhotoAsync(requireSceneReference: true, cancellationToken);
 
+    /// <summary>
+    /// Capture the accepted upright GAME TABLE board without the utility-screen crop or image enhancement.
+    /// The caller must separately verify the physical train inventory against fresh model observations.
+    /// </summary>
+    public async Task<CameraPhoto> CaptureGameTablePhotoAsync(CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!CanCaptureGameTablePhoto)
+            throw new InvalidOperationException("Wait for a fresh, upright GAME TABLE camera analysis before saving a board photo.");
+        var registration = _gameTableRegistration!;
+        var cropRevision = _gameTableCropRevision;
+        var analysis = GameTableAnalysis!;
+        var frame = Capture.GetFreshFrame(TimeSpan.FromSeconds(1));
+        var cameraId = Capture.ActiveDevice!.Id;
+        if (!registration.Matches(frame) || frame.Epoch != analysis.Board.Epoch ||
+            frame.Sequence < analysis.Board.Sequence)
+            throw new InvalidOperationException("Camera or board crop changed before the photo could be captured.");
+
+        // The checkpoint records the camera pixels, not the utility preview's sharpening pipeline.
+        var cropped = await Task.Run(() => registration.Rectify(frame, 3456, 2160), cancellationToken);
+        var png = await cropped.EncodePngAsync(cancellationToken);
+        if (_disposed || !IsRunning || !Capture.IsRunning || Capture.Epoch != frame.Epoch ||
+            Capture.ActiveDevice?.Id != cameraId ||
+            !IsGameTablePreviewUpright || !ReferenceEquals(registration, _gameTableRegistration) ||
+            cropRevision != _gameTableCropRevision ||
+            GameTableAnalysis is not { } currentAnalysis ||
+            currentAnalysis.CropRevision != cropRevision ||
+            currentAnalysis.ModelRevision != analysis.ModelRevision ||
+            currentAnalysis.Board.Epoch != frame.Epoch ||
+            Capture.LatestFrame is not { } latest || latest.Sequence < frame.Sequence ||
+            latest.Epoch != frame.Epoch || !registration.Matches(latest))
+        {
+            CryptographicOperations.ZeroMemory(png);
+            throw new InvalidOperationException("Camera, board crop or analysis changed while the photo was captured. Try again.");
+        }
+        return new(png, cropped.Sequence, cropped.Epoch, cropped.CapturedAt,
+            cropped.Width, cropped.Height, true, cropRevision, cameraId);
+    }
+
     /// <summary>A user-requested PNG export needs current crop geometry, independently of scene comparison.</summary>
     public Task<CameraPhoto> CaptureExportPhotoAsync(CancellationToken cancellationToken = default) =>
         CaptureCroppedPhotoAsync(requireSceneReference: false, cancellationToken);
@@ -523,6 +571,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         GameTablePreviewStatus = _gameTablePreviewRequested
             ? "Open Camera in the utility screens to find the board again."
             : "Waiting for the live board view.";
+        OnPropertyChanged(nameof(CanCaptureGameTablePhoto));
     }
 
     private void AdoptTechnicalBoardCrop(CameraFrame frame, BoardRegistration registration)
