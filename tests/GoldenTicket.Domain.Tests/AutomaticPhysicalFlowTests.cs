@@ -2,12 +2,129 @@ using System.Reflection;
 using GoldenTicket.Application;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain.Engine;
+using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Vision;
 
 namespace GoldenTicket.Domain.Tests;
 
 public sealed class AutomaticPhysicalFlowTests
 {
+    [Fact]
+    public async Task Solo_human_can_authorize_a_route_detected_from_trains_placed_first()
+    {
+        var manifest = ManifestLoader.LoadClassicUs();
+        var model = new MainViewModel(manifest, new InMemorySessionStore());
+        model.Setup.ManualVerificationAccepted = true;
+        try
+        {
+            await model.StartMatchAsync();
+            await model.CommitTicketsAsync();
+            Assert.Null(model.PrivateSeat);
+            Assert.Equal(TurnPhase.TurnStart, GetCoordinator(model).Public.TurnPhase);
+            Assert.Contains("Place trains on a route", model.Game.GuidanceInstruction);
+
+            var coordinator = GetCoordinator(model);
+            var active = coordinator.Public.ActiveSeatId;
+            var legal = await coordinator.GetLegalActionsAsync(active,
+                TestContext.Current.CancellationToken);
+            var route = legal.Claims.First(claim =>
+                RoutePlacementVerifier.Supports(claim.RouteId.Value, claim.Length));
+            var at = DateTimeOffset.UtcNow;
+            model.Camera.IsGameTablePreviewUpright = true;
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 1, at);
+            await Task.Delay(50, TestContext.Current.CancellationToken);
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 2, at.AddSeconds(1.1));
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 3, at.AddSeconds(2.2));
+            await WaitUntilAsync(() => model.BoardFirstProposal is not null);
+
+            var proposal = Assert.IsType<BoardFirstClaimProposal>(model.BoardFirstProposal);
+            Assert.Equal(route.RouteId, proposal.RouteId);
+            Assert.NotEmpty(proposal.Payments);
+            Assert.Contains("Choose which train cards to spend", model.Game.GuidanceInstruction);
+            Assert.Null(coordinator.Public.PendingClaim);
+
+            await model.AuthorizeBoardFirstClaimCommand.ExecuteAsync(proposal.Payments[0]);
+            Assert.Null(model.BoardFirstProposal);
+            Assert.NotNull(coordinator.Public.PendingClaim);
+            Assert.Contains("Keep your", model.Game.GuidanceInstruction);
+
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 4, at.AddSeconds(3.3));
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 5, at.AddSeconds(4.4));
+            await WaitUntilAsync(() => model.Game.GuidanceInstruction == "Thank you");
+            Assert.Null(coordinator.Public.PendingClaim);
+            Assert.Equal(Screen.Table, model.Screen);
+            Assert.Null(model.PrivateSeat);
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Fact]
+    public async Task Manual_claim_also_waits_for_the_physical_score_marker_before_the_next_turn()
+    {
+        var model = new MainViewModel(TestManifest.Manifest, new InMemorySessionStore());
+        model.Setup.ManualVerificationAccepted = true;
+        foreach (var seat in model.Setup.Seats) seat.IsComputer = true;
+        try
+        {
+            await model.StartMatchAsync();
+            var placement = Assert.IsType<PlacementInstruction>(model.Table.Placement);
+            var scoreBefore = model.Table.Seats.Single(seat => seat.SeatId == placement.SeatId).Score;
+
+            model.Table.WholeBoardAcknowledged = true;
+            var confirmation = model.ConfirmPlacementAsync();
+            await WaitUntilAsync(() => model.Game.GuidanceInstruction == "Thank you");
+            Assert.Null(model.Table.Placement);
+            Assert.False(model.Table.WholeBoardAcknowledged);
+            Assert.Equal(scoreBefore + TestManifest.Manifest.RulesConstants.ScoreForLength(placement.TrainCount),
+                model.Table.Seats.Single(seat => seat.SeatId == placement.SeatId).Score);
+            await confirmation;
+            Assert.Contains("Move", model.Game.GuidanceInstruction);
+            Assert.Equal("Scoring", model.Game.GuidanceTurn);
+
+            var target = model.Table.Seats.Single(seat => seat.SeatId == placement.SeatId).Score % 100 + 1;
+            model.Camera.IsGameTablePreviewUpright = true;
+            var color = Enum.Parse<MarkerColor>(placement.Color.ToString());
+            var firstAt = DateTimeOffset.UtcNow;
+            PublishScore(model.Camera, 1, firstAt, color, target);
+            Assert.Equal("Scoring", model.Game.GuidanceTurn);
+            PublishScore(model.Camera, 2, firstAt.AddSeconds(1.1), color, target);
+            await WaitUntilAsync(() => model.Game.GuidanceTurn != "Scoring");
+            Assert.NotEqual(placement.OperationId, model.Table.Placement?.OperationId);
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Fact]
+    public async Task Marker_can_be_confirmed_on_the_public_table_when_the_camera_cannot_read_it()
+    {
+        var model = new MainViewModel(TestManifest.Manifest, new InMemorySessionStore());
+        model.Setup.ManualVerificationAccepted = true;
+        foreach (var seat in model.Setup.Seats) seat.IsComputer = true;
+        try
+        {
+            await model.StartMatchAsync();
+            var placement = Assert.IsType<PlacementInstruction>(model.Table.Placement);
+            model.Table.WholeBoardAcknowledged = true;
+
+            var confirmation = model.ConfirmPlacementAsync();
+            await WaitUntilAsync(() => model.Game.GuidanceInstruction == "Thank you");
+            Assert.False(model.ShowScoreMarkerConfirmation);
+            await model.ConfirmScoreMarkerMovedCommand.ExecuteAsync(null);
+            Assert.Equal("Scoring", model.Game.GuidanceTurn);
+
+            await confirmation;
+            Assert.True(model.ShowScoreMarkerConfirmation);
+            Assert.Equal(Screen.Table, model.Screen);
+            await model.ConfirmScoreMarkerMovedCommand.ExecuteAsync(null);
+
+            Assert.False(model.ShowScoreMarkerConfirmation);
+            Assert.NotEqual("Scoring", model.Game.GuidanceTurn);
+            Assert.NotEqual(placement.OperationId, model.Table.Placement?.OperationId);
+            Assert.Equal(Screen.Table, model.Screen);
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
     [Fact]
     public async Task Camera_claim_thanks_for_three_seconds_then_waits_for_the_moved_score_marker()
     {
@@ -105,6 +222,49 @@ public sealed class AutomaticPhysicalFlowTests
             [new ScoreMarkerReading(0, color, score, ScoreMarkerReadingStatus.Read,
                 "Printed score track position read.")],
             1, 1, "synthetic-test-model");
+        typeof(CameraViewModel).GetProperty(nameof(CameraViewModel.GameTableAnalysis))!
+            .GetSetMethod(nonPublic: true)!.Invoke(camera, [analysis]);
+    }
+
+    private static GameCoordinator GetCoordinator(MainViewModel model) =>
+        Assert.IsType<GameCoordinator>(typeof(MainViewModel)
+            .GetField("_coordinator", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(model));
+
+    private static void PublishBlueTrains(CameraViewModel camera, string routeId,
+        long sequence, DateTimeOffset capturedAt)
+    {
+        const int width = 960;
+        const int height = 600;
+        var pixels = new byte[width * height * 4];
+        for (var offset = 0; offset < pixels.Length; offset += 4)
+            pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = pixels[offset + 3] = 180;
+        ClassicUsRouteGeometry.TryGetSlots(routeId, out var slots);
+        var candidates = new List<PieceCandidate>();
+        foreach (var spot in slots)
+        {
+            var x = (int)Math.Round(spot.X * width);
+            var y = (int)Math.Round(spot.Y * height);
+            const int halfWidth = 11;
+            const int halfHeight = 7;
+            for (var py = y - halfHeight; py <= y + halfHeight; py++)
+            for (var px = x - halfWidth; px <= x + halfWidth; px++)
+            {
+                var offset = (py * width + px) * 4;
+                pixels[offset] = 195;
+                pixels[offset + 1] = 75;
+                pixels[offset + 2] = 20;
+            }
+            candidates.Add(new(PieceCandidateKind.Train,
+                [new((double)(x - halfWidth) / width, (double)(y - halfHeight) / height),
+                 new((double)(x + halfWidth) / width, (double)(y - halfHeight) / height),
+                 new((double)(x + halfWidth) / width, (double)(y + halfHeight) / height),
+                 new((double)(x - halfWidth) / width, (double)(y + halfHeight) / height)], .9));
+        }
+
+        var frame = CameraFrame.CopyFromBgra32(width, height, pixels, sequence,
+            epoch: 1, capturedAt: capturedAt);
+        var analysis = new GameTableAnalysis(frame, candidates, [], 1, 1, "synthetic-test-model");
         typeof(CameraViewModel).GetProperty(nameof(CameraViewModel.GameTableAnalysis))!
             .GetSetMethod(nonPublic: true)!.Invoke(camera, [analysis]);
     }

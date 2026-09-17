@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using GoldenTicket.Application;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain.Model;
+using GoldenTicket.Vision;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
@@ -305,11 +306,26 @@ public class DesktopPackAwayFlowTests
         // Play far enough that some routes are actually on the board.
         for (var step = 0; step < 40 && model.Table.ClaimedRoutes.Count < 3; step++)
         {
-            if (model.Table.Placement is not null) model.Table.WholeBoardAcknowledged = true;
+            if (model.Table.Placement is not { } placement) continue;
+
+            model.Table.WholeBoardAcknowledged = true;
             await model.ConfirmPlacementCommand.ExecuteAsync(null);
+
+            // A route claim now waits for its physical score marker before the next AI turn.
+            // Complete that public-table step so this test can reach several claimed routes.
+            var target = model.Table.Seats.Single(seat => seat.SeatId == placement.SeatId).Score % 100 + 1;
+            var color = Enum.Parse<MarkerColor>(placement.Color.ToString());
+            model.Camera.IsGameTablePreviewUpright = true;
+            var firstAt = DateTimeOffset.UtcNow;
+            PublishScore(model.Camera, 1, firstAt, color, target);
+            PublishScore(model.Camera, 2, firstAt.AddSeconds(1.1), color, target);
+            await WaitUntilAsync(() => model.Game.GuidanceTurn != "Scoring" &&
+                model.Table.Placement is not null);
         }
 
-        Assert.True(model.Table.ClaimedRoutes.Count >= 3, "No routes were claimed to rebuild.");
+        Assert.True(model.Table.ClaimedRoutes.Count >= 3,
+            $"No routes were claimed to rebuild. Placement={model.Table.Placement}, " +
+            $"Guidance={model.Game.GuidanceTurn}/{model.Game.GuidanceInstruction}, Status={model.Status}");
 
         var claimed = model.Table.ClaimedRoutes.Count;
         model.Table.SaveName = "Mid game";
@@ -333,6 +349,26 @@ public class DesktopPackAwayFlowTests
             Assert.Contains(" - ", row.RouteText, StringComparison.Ordinal);
             Assert.InRange(row.TrainCount, 1, 6);
         });
+    }
+
+    private static void PublishScore(CameraViewModel camera, long sequence,
+        DateTimeOffset capturedAt, MarkerColor color, int score)
+    {
+        var frame = CameraFrame.CopyFromBgra32(320, 200, new byte[320 * 200 * 4],
+            sequence: sequence, epoch: 1, capturedAt: capturedAt);
+        var analysis = new GameTableAnalysis(frame, [],
+            [new ScoreMarkerReading(0, color, score, ScoreMarkerReadingStatus.Read,
+                "Printed score track position read.")],
+            1, 1, "synthetic-test-model");
+        typeof(CameraViewModel).GetProperty(nameof(CameraViewModel.GameTableAnalysis))!
+            .GetSetMethod(nonPublic: true)!.Invoke(camera, [analysis]);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        for (var attempt = 0; attempt < 500 && !condition(); attempt++)
+            await Task.Delay(20, TestContext.Current.CancellationToken);
+        Assert.True(condition(), "The score-marker step did not finish.");
     }
 
     [Fact]

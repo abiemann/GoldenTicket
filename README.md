@@ -342,17 +342,22 @@ turn, status and players; **Packed away** is a status, not the save's name.
    on a selected Private LAN connection before scanning its QR. The phone's card display and
    handoff still need real-device PWA validation.
 5. The laptop stays on **THE GAME TABLE** after turns and scoring-marker detection. In solo play,
-   the T and D stacks show read-only mini cards on the table when clicked. To take a turn on the
-   laptop, press **Shift+Escape** and use the technical **Game table** screen's private controls;
-   return to the game layer afterward. With multiple humans, the shared phone is the intended
-   private controller; actions do not automatically reveal a private screen on the laptop.
+   the T and D stacks show read-only mini cards on the table when clicked. A human can place trains
+   on a legal, camera-measured route before choosing it digitally: after stable detection, the table
+   asks which of the legal train-card payments to spend. The game then checks the placed trains in
+   fresh frames before committing the claim. Train-card and destination draws still use the technical
+   **Game table** controls under **Shift+Escape**; return to the game layer afterward. With multiple
+   humans, the shared phone is the intended private controller; actions do not automatically reveal
+   a private screen on the laptop.
 
 6. When any seat claims a route, the public screen names the seat, its colour and symbol, both
-   endpoint cities, the exact lane, and how many trains to place. Place them in any order. For
+   endpoint cities, the exact lane, and how many trains to place. Place them in any order.
    The board shows one pulsing yellow cue in each requested train space. The camera checks all of
    those spaces automatically, shows “Thank you” for three seconds, then asks you to move that
    player's scoring marker. It waits until the marker appears at the new printed score before
-   continuing on **THE GAME TABLE**. Nothing is spent or scored until placement is verified.
+   continuing on **THE GAME TABLE**. If the camera cannot read the marker, use the public-table
+   **I MOVED THE SCORING MARKER** confirmation after moving it. Nothing is spent or scored until
+   placement is verified.
 7. After someone finishes a turn with two trains or fewer, every seat takes one more turn, and then
    the results screen shows each seat's route points, destination tickets, longest continuous route
    and the trail that achieved it.

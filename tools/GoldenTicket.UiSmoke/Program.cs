@@ -20,6 +20,7 @@ using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Desktop.Views;
 using GoldenTicket.Application;
 using GoldenTicket.Domain;
+using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Model;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Vision;
@@ -858,7 +859,9 @@ internal static partial class Program
                 index is 1 or 3 ? $"Computer {index / 2 + 1}" : $"Player {index / 2 + 1}",
                 colors[index], "★", index is 1 or 3 ? "computer" : "human",
                 0, 45, 4, index == 0 ? 2 : 3, 0, index == 0,
-                index == 0 ? "Kept 2 destinations and returned 1." : "Waiting for first action."));
+                index == 0 ? "Kept 2 destinations and returned 1." :
+                index == 1 ? "Claimed Kansas City - Saint Louis (lane A) for 2 points." :
+                "Waiting for first action."));
             AddSeat(0);
             AddSeat(1);
             for (var index = 0; index < 5; index++)
@@ -947,14 +950,16 @@ internal static partial class Program
                      (model.Game.TableSeats[2].Left != 10 || model.Game.TableSeats[2].Top != 530)) ||
                     (model.Table.Seats.Count == 5 &&
                      (model.Game.TableSeats[2].Left != 10 || model.Game.TableSeats[3].Left != 1180 ||
-                      model.Game.TableSeats[4].Left != 595 || model.Game.TableSeats[4].Top != 755)))
+                      model.Game.TableSeats[4].Left != 595 || model.Game.TableSeats[4].Top != 735)))
                     throw new InvalidOperationException("Players one and two must face each other, with the fifth centered below the board.");
                 var status = Descendants<TextBlock>(gameTable)
                     .Single(text => text.DataContext is GameTableSeat tableSeat && tableSeat.Seat.SeatId.Value == 1 &&
                                     text.Text == "Kept 2 destinations and returned 1.");
                 if (!IsElementShown(status) || status.TextAlignment != TextAlignment.Center ||
+                    status.TextWrapping != TextWrapping.Wrap || status.Height != 26 ||
+                    tileGrid.RowDefinitions[3].ActualHeight < 26 ||
                     Grid.GetRow(status) != 3 || Grid.GetColumnSpan(status) != 3)
-                    throw new InvalidOperationException("The latest public action must appear along the bottom of the player tile.");
+                    throw new InvalidOperationException("The latest public action must have two centered lines reserved along the bottom of the player tile.");
             }
 
             await RenderSizes("game-table-two", () => new GameScreenView { DataContext = model }, Verify,
@@ -968,6 +973,24 @@ internal static partial class Program
             AddSeat(4);
             await RenderSizes("game-table-five", () => new GameScreenView { DataContext = model }, Verify,
                 [(1000, 620), (1280, 800)]);
+
+            var proposal = new BoardFirstClaimProposal(SessionId.New(), new SeatId(1),
+                "Player 1", new RouteId("atlanta--raleigh--a"), "Atlanta - Raleigh (lane A)",
+                1, 1, 1, 1,
+                [new BoardFirstPaymentRow(new PaymentOption(TrainCardKind.Blue, 2, 0), "2 Blue")]);
+            typeof(MainViewModel).GetProperty(nameof(MainViewModel.BoardFirstProposal))!
+                .GetSetMethod(nonPublic: true)!.Invoke(model, [proposal]);
+            await RenderSizes("game-table-board-first-payment",
+                () => new GameScreenView { DataContext = model }, view =>
+                {
+                    var gameTable = Descendants<GameTableView>(view).Single();
+                    var panel = (Border)gameTable.FindName("BoardFirstClaimPanel");
+                    var choice = Descendants<Button>(panel).Single();
+                    if (!IsElementShown(panel) || choice.Content as string != "2 Blue" ||
+                        !ReferenceEquals(choice.Command, model.AuthorizeBoardFirstClaimCommand) ||
+                        !ReferenceEquals(choice.CommandParameter, proposal.Payments[0]))
+                        throw new InvalidOperationException("A detected solo route must show its explicit card-payment choice on the game table.");
+                }, [(1000, 620), (1280, 800)]);
 
             Console.WriteLine("Game table: persistent human guidance, 2/5 player stations, public card stacks, shared crop, no top-left controls, and uniform resize passed.");
         }

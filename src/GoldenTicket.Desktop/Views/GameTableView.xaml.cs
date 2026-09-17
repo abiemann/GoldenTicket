@@ -14,6 +14,7 @@ public partial class GameTableView : UserControl
     private const double CenteredFaceUpMarketLeft = 622;
     private const double OuterDrawPilesLeft = 14;
     private const double OuterFaceUpMarketLeft = 975;
+    private const double PlayerStationHeight = 160;
 
     private MainViewModel? _model;
     private bool _updateQueued;
@@ -100,7 +101,7 @@ public partial class GameTableView : UserControl
 
         Canvas.SetLeft(SoloCardPanel, Math.Clamp(station.Left, 8, TableScene.Width - SoloCardPanel.Width - 8));
         const double estimatedPanelHeight = 214;
-        var below = station.Top + 148;
+        var below = station.Top + PlayerStationHeight + 6;
         Canvas.SetTop(SoloCardPanel, below + estimatedPanelHeight <= TableScene.Height - 8
             ? below
             : Math.Max(8, station.Top - estimatedPanelHeight - 8));

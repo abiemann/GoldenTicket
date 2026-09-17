@@ -20,6 +20,12 @@ public sealed partial class MainViewModel
     private bool _scoreCompletionInProgress;
     private long _automaticFlowGeneration;
 
+    public bool ShowScoreMarkerConfirmation => _scoreMarkerStep is { ThankYouFinished: true } &&
+        !_mustReload && !NeedsBoardReconciliation && IsGameplayScreenActive(Screen.Table);
+
+    private void NotifyScoreMarkerConfirmationChanged() =>
+        OnPropertyChanged(nameof(ShowScoreMarkerConfirmation));
+
     private void ResetAutomaticPhysicalFlow()
     {
         _automaticFlowGeneration++;
@@ -28,7 +34,9 @@ public sealed partial class MainViewModel
         _scoreCompletionInProgress = false;
         _routePlacementVerifier.Reset();
         _scoreMarkerMoveVerifier.Reset();
+        ResetBoardFirstClaimFlow();
         Game.ClearGuidance();
+        NotifyScoreMarkerConfirmationChanged();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
     }
 
@@ -65,6 +73,9 @@ public sealed partial class MainViewModel
             !RoutePlacementVerifier.Supports(placement.RouteId.Value, placement.TrainCount))
         {
             _routePlacementVerifier.Reset();
+            if (_scoreMarkerStep is null && !_claimCompletionInProgress && !_operationInProgress &&
+                Table.Placement is null)
+                ObserveBoardFirstClaim(analysis);
             return;
         }
 
@@ -110,6 +121,7 @@ public sealed partial class MainViewModel
                 return;
             }
 
+            Status = null;
             await RefreshAsync();
             if (!ReferenceEquals(coordinator, _coordinator) || generation != _automaticFlowGeneration) return;
             var points = _manifest.RulesConstants.ScoreForLength(
@@ -125,6 +137,7 @@ public sealed partial class MainViewModel
                 PrintedScore(beforeScore), PrintedScore(beforeScore + points), points);
             _scoreMarkerStep = step;
             _scoreMarkerMoveVerifier.Reset();
+            NotifyScoreMarkerConfirmationChanged();
             OnPropertyChanged(nameof(CanRevealPrivateSeat));
             Game.ShowGuidance("Scoring", placement.SeatName, "Thank you");
             await Task.Delay(TimeSpan.FromSeconds(3));
@@ -135,6 +148,7 @@ public sealed partial class MainViewModel
                 $"Move {step.SeatName}'s {step.Color} scoring marker {step.Points} spaces " +
                 $"from {step.FromPrintedScore} to {step.ToPrintedScore}. " +
                 $"The camera will continue when it sees the marker on {step.ToPrintedScore}.");
+            NotifyScoreMarkerConfirmationChanged();
         }
         catch (Exception)
         {
@@ -157,6 +171,7 @@ public sealed partial class MainViewModel
         {
             _scoreMarkerStep = null;
             _scoreMarkerMoveVerifier.Reset();
+            NotifyScoreMarkerConfirmationChanged();
             Game.ClearGuidance();
             await PumpAsync();
         }
@@ -169,6 +184,23 @@ public sealed partial class MainViewModel
             _scoreCompletionInProgress = false;
             SetOperationInProgress(false);
         }
+    }
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private Task ConfirmScoreMarkerMovedAsync()
+    {
+        if (_scoreMarkerStep is not { ThankYouFinished: true } step ||
+            _scoreCompletionInProgress || _operationInProgress || _exitRequested || _mustReload ||
+            NeedsBoardReconciliation || !_windowActive || !_systemAvailable ||
+            !IsGameplayScreenActive(Screen.Table) ||
+            _coordinator is not { StorageFaulted: false } coordinator ||
+            coordinator.SessionId != step.SessionId ||
+            PrintedScore(coordinator.Public.SeatOf(step.SeatId).RouteScore) != step.ToPrintedScore)
+            return Task.CompletedTask;
+
+        // This is an explicit operator fallback for a marker the camera cannot read. The
+        // scoring step is already committed; this acknowledgement only releases the next turn.
+        return FinishScoreMarkerStepAsync(step);
     }
 
     private static int PrintedScore(int routeScore) => routeScore % 100 + 1;

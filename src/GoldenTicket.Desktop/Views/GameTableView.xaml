@@ -186,6 +186,57 @@
                     </StackPanel>
                 </Border>
 
+                <Border x:Name="BoardFirstClaimPanel" Canvas.Left="510" Canvas.Top="478"
+                        Width="420" MaxHeight="255" CornerRadius="10" Padding="13"
+                        Visibility="{Binding ShowBoardFirstClaimProposal, Converter={StaticResource BoolToVisibility}}"
+                        Background="#F51A2531" BorderBrush="#FFE1BD79" BorderThickness="2"
+                        AutomationProperties.LiveSetting="Polite">
+                    <StackPanel>
+                        <TextBlock Text="Your route was detected" Foreground="#FFFFE7B0"
+                                   FontSize="17" FontWeight="Bold" TextAlignment="Center" />
+                        <TextBlock Text="{Binding BoardFirstProposal.RouteText}" Foreground="White"
+                                   FontSize="14" FontWeight="SemiBold" TextAlignment="Center"
+                                   TextWrapping="Wrap" Margin="0,3,0,4" />
+                        <TextBlock Text="Choose which cards to spend. Claiming the route uses your turn."
+                                   Foreground="#FFF8EEDC" FontSize="11" TextAlignment="Center"
+                                   TextWrapping="Wrap" Margin="0,0,0,7" />
+                        <ScrollViewer MaxHeight="118" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding BoardFirstProposal.Payments}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Content="{Binding Description}" MinHeight="30" Margin="0,0,0,5"
+                                                Background="#FF69412F" Foreground="#FFFFE7B0"
+                                                BorderBrush="#FFF0D7A0" BorderThickness="1.5"
+                                                Command="{Binding DataContext.AuthorizeBoardFirstClaimCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                CommandParameter="{Binding}" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <TextBlock Text="If this is the wrong route, remove the pieces to clear the suggestion."
+                                   Foreground="#FFDCC18A" FontSize="10" TextWrapping="Wrap"
+                                   TextAlignment="Center" Margin="0,3,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="ScoreMarkerConfirmationPanel" Canvas.Left="510" Canvas.Top="478"
+                        Width="420" CornerRadius="10" Padding="13"
+                        Visibility="{Binding ShowScoreMarkerConfirmation, Converter={StaticResource BoolToVisibility}}"
+                        Background="#F51A2531" BorderBrush="#FFE1BD79" BorderThickness="2"
+                        AutomationProperties.LiveSetting="Polite">
+                    <StackPanel>
+                        <TextBlock Text="Move the scoring marker" Foreground="#FFFFE7B0"
+                                   FontSize="17" FontWeight="Bold" TextAlignment="Center" />
+                        <TextBlock Text="The camera will continue when it sees the marker. If it cannot read it, check the number above and confirm the move here."
+                                   Foreground="#FFF8EEDC" FontSize="11" TextAlignment="Center"
+                                   TextWrapping="Wrap" Margin="0,5,0,9" />
+                        <Button Content="I MOVED THE SCORING MARKER" Height="34"
+                                Background="#FF69412F" Foreground="#FFFFE7B0"
+                                BorderBrush="#FFF0D7A0" BorderThickness="1.5"
+                                Command="{Binding ConfirmScoreMarkerMovedCommand}" />
+                    </StackPanel>
+                </Border>
+
                 <Border Canvas.Left="1180" Canvas.Top="96" Width="250" Height="147" CornerRadius="9"
                         Visibility="{Binding Game.ShowManualPlacementControls, Converter={StaticResource BoolToVisibility}}"
                         Background="#F21A2531" BorderBrush="#FFB18C52" BorderThickness="1.5"
@@ -221,7 +272,7 @@
                     </ItemsControl.ItemContainerStyle>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Width="250" Height="142" CornerRadius="10" Background="#F01A2531"
+                            <Border Width="250" Height="160" CornerRadius="10" Background="#F01A2531"
                                     BorderBrush="#FFD4AC6B" BorderThickness="2" Padding="9">
                                 <Grid>
                                     <Grid.RowDefinitions>
@@ -289,7 +340,8 @@
                                                Foreground="#FFE6D9C3" FontSize="12" TextAlignment="Center" />
                                     <TextBlock Grid.Row="3" Grid.ColumnSpan="3" Text="{Binding Seat.LastAction}"
                                                ToolTip="{Binding Seat.LastAction}" Foreground="#FFDCC18A"
-                                               FontSize="10" TextAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                               FontSize="10" TextAlignment="Center" TextWrapping="Wrap"
+                                               Height="26" LineHeight="13" VerticalAlignment="Center" />
                                     <Button Grid.Row="0" Grid.Column="1" Width="54" Height="44"
                                             HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,1"
                                             Style="{StaticResource SoloDeckButtonStyle}"

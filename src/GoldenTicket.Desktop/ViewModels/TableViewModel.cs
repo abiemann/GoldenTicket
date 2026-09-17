@@ -360,6 +360,20 @@ public sealed partial class TableViewModel : ObservableObject
             $"{_manifest.RulesConstants.SetupTicketMinimumKeep} of its {_manifest.RulesConstants.SetupTicketOffer} " +
             "opening destinations.",
 
+        TurnPhase.TurnStart when active.Kind == SeatKind.Human &&
+                                 view.Seats.Count(seat => seat.Kind == SeatKind.Human) == 1 =>
+            "Place trains on a route you can pay for to claim it, or use Shift+Esc " +
+            "to draw train cards or destinations. A route claim uses your turn.",
+        TurnPhase.TurnStart when active.Kind == SeatKind.Human =>
+            "Use Shift+Esc to choose a route to claim, draw train cards, or draw destinations. " +
+            "A route claim uses your turn.",
+        TurnPhase.AwaitingSecondTrainCard when active.Kind == SeatKind.Human =>
+            "Use Shift+Esc to draw one more train card. " +
+            "A face-up locomotive cannot be the second card.",
+        TurnPhase.AwaitingTicketKeep when active.Kind == SeatKind.Human =>
+            $"Keep at least {_manifest.RulesConstants.InGameTicketMinimumKeep} " +
+            "of the destinations you drew using Shift+Esc.",
+
         TurnPhase.AwaitingPhysicalPlacement when view.PendingClaim is { } pending =>
             $"Place {active.DisplayName}'s {pending.TrainCount} {active.Color} trains on " +
             $"{_manifest.Describe(pending.RouteId)}. " +
@@ -374,7 +388,7 @@ public sealed partial class TableViewModel : ObservableObject
 
         _ when active.Kind == SeatKind.Computer => $"{active.DisplayName} is thinking.",
 
-        _ => $"{active.DisplayName}: open your private view to take your turn.",
+        _ => "Choose a legal action for your turn.",
     };
 }
 

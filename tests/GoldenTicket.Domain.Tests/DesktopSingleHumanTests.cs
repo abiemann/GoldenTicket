@@ -1,8 +1,10 @@
+using System.Reflection;
 using GoldenTicket.Application;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Domain.Model;
+using GoldenTicket.Vision;
 
 namespace GoldenTicket.Domain.Tests;
 
@@ -411,12 +413,40 @@ public sealed class DesktopSingleHumanTests
         // At most two computer turns intervene before this match's only human acts.
         for (var step = 0; model.Table.Placement is not null && step < 5; step++)
         {
+            var placement = model.Table.Placement;
             Assert.Null(model.PrivateSeat);
             Assert.False(model.CanRevealPrivateSeat);
             model.Table.WholeBoardAcknowledged = true;
             await model.ConfirmPlacementAsync();
+            Assert.Equal("Scoring", model.Game.GuidanceTurn);
+            var target = model.Table.Seats.Single(seat => seat.SeatId == placement.SeatId).Score % 100 + 1;
+            var color = Enum.Parse<MarkerColor>(placement.Color.ToString());
+            var firstAt = DateTimeOffset.UtcNow;
+            model.Camera.IsGameTablePreviewUpright = true;
+            PublishScore(model.Camera, 1, firstAt, color, target);
+            PublishScore(model.Camera, 2, firstAt.AddSeconds(1.1), color, target);
+            for (var attempt = 0; attempt < 250 &&
+                 (model.Game.GuidanceTurn == "Scoring" ||
+                  (model.Table.Placement is null && !model.CanRevealPrivateSeat)); attempt++)
+                await Task.Delay(20, TestContext.Current.CancellationToken);
+            Assert.NotEqual("Scoring", model.Game.GuidanceTurn);
+            Assert.True(model.Table.Placement is not null || model.CanRevealPrivateSeat,
+                "A scored computer turn must advance to another placement or the human turn.");
         }
         Assert.Null(model.Table.Placement);
+    }
+
+    private static void PublishScore(CameraViewModel camera, long sequence,
+        DateTimeOffset capturedAt, MarkerColor color, int score)
+    {
+        var frame = CameraFrame.CopyFromBgra32(320, 200, new byte[320 * 200 * 4],
+            sequence: sequence, epoch: 1, capturedAt: capturedAt);
+        var analysis = new GameTableAnalysis(frame, [],
+            [new ScoreMarkerReading(0, color, score, ScoreMarkerReadingStatus.Read,
+                "Printed score track position read.")],
+            1, 1, "synthetic-test-model");
+        typeof(CameraViewModel).GetProperty(nameof(CameraViewModel.GameTableAnalysis))!
+            .GetSetMethod(nonPublic: true)!.Invoke(camera, [analysis]);
     }
 
     private sealed class DelayedStore : ISessionStore

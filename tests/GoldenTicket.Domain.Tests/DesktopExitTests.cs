@@ -188,6 +188,8 @@ public sealed class DesktopExitTests
             Assert.NotNull(model.PrivateSeat);
             await model.DrawBlindCardAsync();
             Assert.Equal(5, model.Table.Seats[0].CardCount);
+            Assert.Null(model.PrivateSeat);
+            await model.RevealPrivateSeatAsync();
             Assert.NotNull(model.PrivateSeat);
             Assert.True(model.PrivateSeat.IsSecondDraw);
         }

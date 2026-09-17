@@ -381,9 +381,12 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   camera choice, native-format fallback, preview, CPU/GPU preprocessing and manual crop against
   the real board. Evaluate the experimental empty-board detector. Add printable markers, board
   landmarks, automatic calibration, detailed quality gates and recording/replay.
-- [ ] **M4: verification.** Implement whole-board recognition, authorized pending evidence,
-  board-first human placement, occlusion/unknown foreground rejection, jog/reconnect recovery,
-  stale-epoch rejection, wake gesture, and explicit mode-change reconciliation.
+- [ ] **M4: verification.** A first board-first solo-human path now proposes one legal route from
+  stable camera observations, asks the player to choose its card payment, and requires fresh
+  placement evidence before committing. Complete the durable authorization substate, whole-board
+  recognition, occlusion/unknown foreground rejection, jog/reconnect recovery, stale-epoch
+  rejection, wake gesture, and explicit mode-change reconciliation. Persist the score-marker
+  move obligation with the claim so an app restart cannot skip the physical marker check.
 - [ ] **M4/M5: model inference.** Build on the implemented preprocessing preference/status flow.
   For any required learned recognizer, default to Auto: detect adapters at launch, validate GPU execution with
   the packaged model, and fall back to CPU on absence, incompatibility, timeout, or failure. Retain

@@ -154,6 +154,7 @@ public sealed partial class MainViewModel : ObservableObject
     public bool CanRevealPrivateSeat => _revealable is not null && !_operationInProgress && !_exitRequested
         && _windowActive && _systemAvailable && !_toolsDisposed && IsGameplayScreenActive(Screen.Table) && !NeedsBoardReconciliation && !_mustReload
         && _scoreMarkerStep is null
+        && BoardFirstProposal is null
         && _coordinator is { StorageFaulted: false }
         && _coordinator.Public.Lifecycle is SessionLifecycle.Setup or SessionLifecycle.Active
         && _coordinator.Public.TurnPhase != TurnPhase.RulesDecisionRequired;
@@ -437,7 +438,8 @@ public sealed partial class MainViewModel : ObservableObject
     /// </summary>
     private async Task SubmitPrivateAsync(Func<CommandEnvelope, PrivateSeatViewModel, GameCommand?> build)
     {
-        if (_coordinator is not { } coordinator || _operationInProgress || _exitRequested || !_windowActive || _mustReload ||
+        if (_coordinator is not { } coordinator || _operationInProgress || BoardFirstProposal is not null ||
+            _exitRequested || !_windowActive || _mustReload ||
             NeedsBoardReconciliation || PrivateSeat is not { } seat) return;
 
         var envelope = new CommandEnvelope(
@@ -493,16 +495,9 @@ public sealed partial class MainViewModel : ObservableObject
         if (_coordinator is null || !CanSubmitOperator() || !Table.WholeBoardAcknowledged ||
             Table.Placement is not { AwaitingRestore: false } placement) return;
 
-        HidePrivateSeat();
-
-        var command = new SubmitClaimEvidence(
-            new CommandEnvelope(_coordinator.SessionId, CommandId.New(), placement.StateVersion, placement.SeatId),
-            placement.OperationId,
-            EvidenceKind.ManualAttestation,
-            Environment.UserName,
-            "Operator confirmed the whole board matches the expected placement.");
-
-        await SubmitOperatorAsync(command);
+        Table.WholeBoardAcknowledged = false;
+        await AcceptPhysicalPlacementAsync(placement, EvidenceKind.ManualAttestation,
+            Environment.UserName, "Operator confirmed the whole board matches the expected placement.");
     }
 
     [RelayCommand]
@@ -791,6 +786,7 @@ public sealed partial class MainViewModel : ObservableObject
         CloseSoloCardPanel();
 
         var view = _coordinator.Public;
+        ReconcileBoardFirstClaimFlow(view);
         Table.Update(view, _coordinator.PublicHistory);
         await RefreshCheckpointPhotoAsync();
         if (NeedsBoardReconciliation)
@@ -803,7 +799,9 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
         OnPropertyChanged(nameof(RevealPrompt));
 
-        if (view.FinalResult is { } result)
+        // A final claim can finish the digital match while its physical score marker still needs
+        // to move. Keep the public board visible until that last movement has been observed.
+        if (view.FinalResult is { } result && !_claimCompletionInProgress && _scoreMarkerStep is null)
         {
             BuildFinalScores(result);
             ShowGameplayScreen(Screen.FinalScore);

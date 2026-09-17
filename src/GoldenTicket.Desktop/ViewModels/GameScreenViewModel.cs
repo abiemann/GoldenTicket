@@ -282,7 +282,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
     {
         // The first two seats face one another. Up to four seats flank the board; only a fifth
         // sits below it. The solo opening cards temporarily use that bottom space.
-        var extraSeatPosition = _main.ShowSoloOpeningTicketsOnBoard ? (14d, 18d) : (595d, 755d);
+        var extraSeatPosition = _main.ShowSoloOpeningTicketsOnBoard ? (14d, 18d) : (595d, 735d);
         (double Left, double Top)[] positions = _main.Table.Seats.Count switch
         {
             2 => [(10, 330), (1180, 330)],
