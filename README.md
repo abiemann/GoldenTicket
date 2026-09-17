@@ -299,8 +299,8 @@ turn, status and players; **Packed away** is a status, not the save's name.
    In a one-human game's opening setup, the board moves up beneath the guidance panel, while a
    compact **Your Cards** row below it shows all three destinations at the same time. Thick rings
    mark their endpoint cities on the live board; confirming a drop removes that destination's
-   rings, while an endpoint shared with another kept destination stays marked. The quick-action
-   buttons, draw piles, and face-up train cards stay hidden until the opening choice is complete.
+   rings, while an endpoint shared with another kept destination stays marked. The draw piles and
+   face-up train cards stay hidden until the opening choice is complete.
    Select **KEEP ALL THREE** or
    click one card and confirm its drop; at least two must be kept. The dropped card leaves the
    screen before the saved ticket count updates. The computer chooses its own tickets by value
@@ -315,14 +315,14 @@ turn, status and players; **Packed away** is a status, not the save's name.
    unresolved three-ticket offer is included in its player's public count without revealing any
    destination identity. The five face-up train cards appear at the bottom right edge of the table.
    The complete scene scales together when the window is resized or maximized.
-   **Your cards** opens the current human's private view when it is their turn; **Game controls**
-   opens the public turn, placement, and save controls. A camera restart or format change requires
+   Press **Shift+Escape** to open the technical screens. Their **Game table** screen contains the
+   private-card reveal and public turn, placement, and save controls. A camera restart or format change requires
    checking and restoring the board crop through the technical Camera screen.
 4. With one human, opening destination choices appear directly on the laptop. With multiple
    humans, each player reveals their private view in turn; the screen is covered between seats.
 5. On a solo human's turn, their cards open on the laptop for draws, destination tickets, or route
-   and payment choices. **Back to table** returns to the public screen; **Your cards** reopens the
-   hand. With multiple humans, the active player explicitly reveals their private view.
+   and payment choices. **Back to table** returns to the public screen; the technical **Game table**
+   screen can reopen the hand. With multiple humans, the active player explicitly reveals their private view.
 
 6. When any seat claims a route, the public screen names the seat, its colour and symbol, both
    endpoint cities, the exact lane, and how many trains to place. Place them in any order, then

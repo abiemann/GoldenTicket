@@ -1,4 +1,7 @@
+using System.Buffers;
 using System.ComponentModel;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using GoldenTicket.Domain;
 using GoldenTicket.Domain.Manifest;
@@ -12,24 +15,41 @@ namespace GoldenTicket.Desktop.ViewModels;
 public sealed class DestinationMarkerRow : ObservableObject
 {
     private readonly IReadOnlyList<TicketChoiceRow> _choices;
+    private readonly double _referenceX;
+    private readonly double _referenceY;
+    private double _left;
+    private double _top;
 
     internal DestinationMarkerRow(CityId cityId, string cityName, double x, double y,
         IReadOnlyList<TicketChoiceRow> choices)
     {
         CityId = cityId;
         CityName = cityName;
-        Left = x * DestinationBoardOverlay.Width - Diameter / 2;
-        Top = y * DestinationBoardOverlay.Height - Diameter / 2;
+        _referenceX = x * DestinationBoardOverlay.Width;
+        _referenceY = y * DestinationBoardOverlay.Height;
+        MoveTo(_referenceX, _referenceY);
         _choices = choices;
         foreach (var choice in choices) choice.PropertyChanged += ChoiceChanged;
     }
 
     public CityId CityId { get; }
     public string CityName { get; }
-    public double Left { get; }
-    public double Top { get; }
-    public double Diameter => 34;
+    public double Left { get => _left; private set => SetProperty(ref _left, value); }
+    public double Top { get => _top; private set => SetProperty(ref _top, value); }
+    // Keep the printed city dot fully visible inside the ring, including a small margin.
+    public double Diameter => 40;
     public bool IsVisible => _choices.Any(choice => choice.Keep);
+
+    internal double ReferenceX => _referenceX;
+    internal double ReferenceY => _referenceY;
+
+    internal void MoveTo(double x, double y)
+    {
+        Left = x - Diameter / 2;
+        Top = y - Diameter / 2;
+    }
+
+    internal void ResetToReference() => MoveTo(_referenceX, _referenceY);
 
     private void ChoiceChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -47,47 +67,77 @@ public static class DestinationBoardOverlay
     public const double Width = 960;
     public const double Height = 600;
 
-    // City centers in the 1996 x 1248 upright reference image. Each value is normalized below,
-    // so the rings stay on the same printed cities when the window or live crop size changes.
+    /// <summary>Refine the reference positions against the printed city dots in the live crop.</summary>
+    public static void AlignToPreview(BitmapSource? preview, IEnumerable<DestinationMarkerRow> markers)
+    {
+        ArgumentNullException.ThrowIfNull(markers);
+        if (preview is null || preview.PixelWidth != Width || preview.PixelHeight != Height ||
+            preview.Format != PixelFormats.Bgra32) return;
+
+        var stride = checked(preview.PixelWidth * 4);
+        var length = checked(stride * preview.PixelHeight);
+        var rented = ArrayPool<byte>.Shared.Rent(length);
+        try
+        {
+            preview.CopyPixels(rented, stride, 0);
+            var pixels = rented.AsSpan(0, length);
+            foreach (var marker in markers)
+            {
+                if (CityDotLocator.TryLocate(pixels, preview.PixelWidth, preview.PixelHeight,
+                        marker.ReferenceX, marker.ReferenceY, out var x, out var y))
+                    marker.MoveTo(x, y);
+                else
+                    marker.ResetToReference();
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+    }
+
+    // Centers of the printed city-dot rims, redigitized from the 3456 x 2160 upright board photo
+    // and expressed in 1996 x 1248 reference coordinates. Normalize below so the rings follow
+    // the same printed dots when the window or live crop size changes.
     private static readonly IReadOnlyDictionary<string, (int X, int Y)> CityCenters =
         new Dictionary<string, (int, int)>(StringComparer.Ordinal)
         {
             ["atlanta"] = (1554, 790),
-            ["boston"] = (1877, 264),
-            ["calgary"] = (462, 162),
-            ["charleston"] = (1738, 802),
-            ["chicago"] = (1357, 508),
-            ["dallas"] = (1107, 970),
-            ["denver"] = (779, 686),
-            ["duluth"] = (1120, 395),
-            ["el-paso"] = (755, 1013),
-            ["helena"] = (661, 403),
-            ["houston"] = (1187, 1042),
-            ["kansas-city"] = (1103, 655),
-            ["las-vegas"] = (415, 832),
-            ["little-rock"] = (1241, 817),
+            ["boston"] = (1877, 263),
+            ["calgary"] = (460, 164),
+            ["charleston"] = (1737, 802),
+            ["chicago"] = (1358, 509),
+            ["dallas"] = (1105, 971),
+            ["denver"] = (777, 686),
+            ["duluth"] = (1119, 396),
+            ["el-paso"] = (754, 1016),
+            ["helena"] = (662, 404),
+            ["houston"] = (1187, 1043),
+            ["kansas-city"] = (1104, 653),
+            ["las-vegas"] = (414, 830),
+            ["little-rock"] = (1240, 818),
             ["los-angeles"] = (284, 941),
-            ["miami"] = (1802, 1088),
-            ["montreal"] = (1740, 156),
-            ["nashville"] = (1457, 725),
+            ["miami"] = (1800, 1089),
+            ["montreal"] = (1738, 157),
+            ["nashville"] = (1455, 726),
             ["new-orleans"] = (1371, 1027),
-            ["new-york"] = (1779, 397),
-            ["oklahoma-city"] = (1068, 809),
-            ["omaha"] = (1062, 562),
-            ["phoenix"] = (525, 946),
-            ["pittsburgh"] = (1613, 479),
-            ["portland"] = (159, 386),
-            ["raleigh"] = (1681, 684),
-            ["saint-louis"] = (1270, 655),
-            ["salt-lake-city"] = (518, 630),
-            ["san-francisco"] = (142, 743),
-            ["santa-fe"] = (766, 851),
-            ["sault-st-marie"] = (1366, 270),
-            ["seattle"] = (202, 295),
-            ["toronto"] = (1581, 313),
-            ["vancouver"] = (208, 191),
-            ["washington"] = (1796, 559),
-            ["winnipeg"] = (907, 176),
+            ["new-york"] = (1778, 398),
+            ["oklahoma-city"] = (1064, 810),
+            ["omaha"] = (1060, 563),
+            ["phoenix"] = (523, 948),
+            ["pittsburgh"] = (1615, 480),
+            ["portland"] = (161, 387),
+            ["raleigh"] = (1683, 685),
+            ["saint-louis"] = (1272, 656),
+            ["salt-lake-city"] = (519, 630),
+            ["san-francisco"] = (143, 745),
+            ["santa-fe"] = (764, 850),
+            ["sault-st-marie"] = (1367, 275),
+            ["seattle"] = (201, 295),
+            ["toronto"] = (1580, 313),
+            ["vancouver"] = (209, 194),
+            ["washington"] = (1794, 563),
+            ["winnipeg"] = (905, 179),
         };
 
     public static IReadOnlyList<DestinationMarkerRow> Build(BoardManifest manifest,

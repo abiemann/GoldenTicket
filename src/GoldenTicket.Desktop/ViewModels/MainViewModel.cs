@@ -46,6 +46,7 @@ public sealed partial class MainViewModel : ObservableObject
     private bool _mustReload;
     private bool _gameLayerVisible;
     private long _revealGeneration;
+    private DateTime _lastDestinationAlignmentUtc = DateTime.MinValue;
 
     public MainViewModel()
         : this(ManifestLoader.LoadClassicUs(), SqliteSessionStore.CreateDefault())
@@ -63,6 +64,11 @@ public sealed partial class MainViewModel : ObservableObject
         Table = new TableViewModel(manifest);
         Game = new GameScreenViewModel(this);
         InitializeTools();
+        Camera.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(CameraViewModel.GameTablePreview))
+                AlignDestinationMarkers();
+        };
         Setup.PropertyChanged += (_, args) =>
         {
             if (_coordinator is null && args.PropertyName == nameof(SetupViewModel.HumanSeatCount)) NotifyHumanPresentation();
@@ -156,6 +162,19 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(IsPrivateVisible));
         OnPropertyChanged(nameof(ShowSoloOpeningTicketsOnBoard));
         OnPropertyChanged(nameof(GameTableBoardTop));
+        _lastDestinationAlignmentUtc = DateTime.MinValue;
+        AlignDestinationMarkers();
+    }
+
+    private void AlignDestinationMarkers()
+    {
+        if (!ShowSoloOpeningTicketsOnBoard ||
+            PrivateSeat is not { DestinationMarkers.Count: > 0 } seat ||
+            Camera.GameTablePreview is not { } preview) return;
+        var now = DateTime.UtcNow;
+        if (now - _lastDestinationAlignmentUtc < TimeSpan.FromMilliseconds(500)) return;
+        _lastDestinationAlignmentUtc = now;
+        DestinationBoardOverlay.AlignToPreview(preview, seat.DestinationMarkers);
     }
 
     partial void OnScreenChanged(Screen value)

@@ -887,7 +887,8 @@ internal static partial class Program
                     locomotive.TextWrapping != TextWrapping.NoWrap || locomotiveCard.Width < 80 ||
                     phase.Text != "Setup" || seat.Text != "Player 1" ||
                     instruction.Text != "Each seat keeps at least 2 of its 3 opening destinations." ||
-                    !IsElementShown((Button)gameTable.FindName("OpenControlsButton")))
+                    Descendants<Button>(gameTable).Any() ||
+                    VisibleText(gameTable).Contains("Shift+Esc opens the utility screens", StringComparison.Ordinal))
                     throw new InvalidOperationException("The game table must retain its phase, acting-seat and human-instruction guidance above the shared board crop.");
                 var sceneBounds = scene.TransformToAncestor(view).TransformBounds(new Rect(scene.RenderSize));
                 if (sceneBounds.Left < -1 || sceneBounds.Top < -1 ||
@@ -937,13 +938,7 @@ internal static partial class Program
             await RenderSizes("game-table-five", () => new GameScreenView { DataContext = model }, Verify,
                 [(1000, 620), (1280, 800)]);
 
-            var controlsView = new GameTableView { DataContext = model };
-            await Arrange(controlsView, 1000, 620);
-            ((Button)controlsView.FindName("OpenControlsButton"))
-                .RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-            if (((Grid)controlsView.FindName("ControlsOverlay")).Visibility != Visibility.Visible)
-                throw new InvalidOperationException("The complete game controls must open from the table.");
-            Console.WriteLine("Game table: persistent human guidance, 2/5 player stations, public card stacks, shared crop, controls, and uniform resize passed.");
+            Console.WriteLine("Game table: persistent human guidance, 2/5 player stations, public card stacks, shared crop, no top-left controls, and uniform resize passed.");
         }
         finally { await model.DisposeToolsAsync(); }
     }
@@ -1078,14 +1073,13 @@ internal static partial class Program
             {
                 var overlay = Descendants<Grid>(view).Single(grid => grid.Name == "SoloOpeningOverlay");
                 var board = Descendants<Border>(view).Single(border => border.Name == "GameBoardFrame");
-                var quickActions = Descendants<StackPanel>(view).Single(panel => panel.Name == "TableQuickActions");
                 var drawPiles = Descendants<Border>(view).Single(border => border.Name == "DrawPilesPanel");
                 var faceUp = Descendants<Border>(view).Single(border => border.Name == "FaceUpMarketPanel");
                 var cityMarkers = Descendants<ItemsControl>(view).Single(control => control.Name == "DestinationCityMarkers");
                 if (!IsShown(overlay, view) || !VisibleText(view).Contains("Your Cards", StringComparison.Ordinal) ||
                     Canvas.GetTop(board) != 120 || board.ActualHeight + Canvas.GetTop(board) > 690 ||
                     !IsShown(cityMarkers, view) || cityMarkers.Items.Count == 0 ||
-                    IsShown(quickActions, view) || IsShown(drawPiles, view) || IsShown(faceUp, view) ||
+                    IsShown(drawPiles, view) || IsShown(faceUp, view) ||
                     !VisibleText(view).Contains("Solo test player: choose whether to keep all destinations or drop one.", StringComparison.Ordinal))
                     throw new InvalidOperationException("Solo setup must keep the board and cards visible together without the usual table controls or draw piles.");
             }, [(1280, 800), (1000, 620), (1920, 1080)]);

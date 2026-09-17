@@ -1,47 +1,13 @@
 <UserControl x:Class="GoldenTicket.Desktop.Views.GameTableView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:GoldenTicket.Desktop"
-             xmlns:views="clr-namespace:GoldenTicket.Desktop.Views">
+             xmlns:local="clr-namespace:GoldenTicket.Desktop">
     <UserControl.Resources>
         <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
         <local:NullToVisibilityConverter x:Key="NullToVisibility" />
         <local:EmptyStringToVisibilityConverter x:Key="MessageVisibility" />
         <local:PlayerColorBrushConverter x:Key="PlayerColorBrush" />
         <local:CardKindBrushConverter x:Key="CardKindBrush" />
-        <Style x:Key="TableAction" TargetType="Button">
-            <Setter Property="Background" Value="#ED1A2531" />
-            <Setter Property="Foreground" Value="#FFFFE7B0" />
-            <Setter Property="BorderBrush" Value="#FFBF9453" />
-            <Setter Property="BorderThickness" Value="1.5" />
-            <Setter Property="FontSize" Value="17" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Padding" Value="10,6" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Frame" Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="7"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Frame" Property="Opacity" Value="0.48" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#FF53372D" />
-                    <Setter Property="BorderBrush" Value="#FFFFD576" />
-                </Trigger>
-            </Style.Triggers>
-        </Style>
     </UserControl.Resources>
 
     <Grid Background="#FF101821">
@@ -76,8 +42,8 @@
                                         <Grid Width="{Binding Diameter}" Height="{Binding Diameter}"
                                               Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibility}}"
                                               AutomationProperties.Name="{Binding CityName}">
-                                            <Ellipse Stroke="#F01A2531" StrokeThickness="10" />
-                                            <Ellipse Stroke="#FFFFD576" StrokeThickness="6" />
+                                            <Ellipse Stroke="#F01A2531" StrokeThickness="8" />
+                                            <Ellipse Stroke="#FFFFD576" StrokeThickness="5" />
                                         </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
@@ -125,7 +91,7 @@
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="68" />
                                         <RowDefinition Height="18" />
-                                        <RowDefinition Height="16" />
+                                        <RowDefinition Height="21" />
                                         <RowDefinition Height="*" />
                                     </Grid.RowDefinitions>
                                     <Grid.ColumnDefinitions>
@@ -190,16 +156,6 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <StackPanel x:Name="TableQuickActions" Canvas.Left="14" Canvas.Top="18" Width="236"
-                            Visibility="{Binding ShowSoloOpeningTicketsOnBoard, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
-                    <Button Content="YOUR CARDS" Style="{StaticResource TableAction}" Height="47"
-                            Command="{Binding RevealPrivateSeatCommand}" IsEnabled="{Binding CanRevealPrivateSeat}" />
-                    <Button x:Name="OpenControlsButton" Content="GAME CONTROLS" Style="{StaticResource TableAction}"
-                            Height="47" Margin="0,8,0,0" Click="OpenControls_Click" />
-                    <TextBlock Text="Shift+Esc opens the utility screens" Foreground="#FFE6D9C3"
-                               FontSize="12" TextAlignment="Center" Margin="0,9,0,0" />
-                </StackPanel>
-
                 <Border x:Name="DrawPilesPanel" Canvas.Left="14" Canvas.Top="768" Width="236" Height="116" CornerRadius="9"
                         Visibility="{Binding ShowSoloOpeningTicketsOnBoard, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}"
                         Background="#EF1A2531" BorderBrush="#FFB18C52" BorderThickness="1.5" Padding="9,5">
@@ -256,11 +212,5 @@
             </Canvas>
         </Viewbox>
 
-        <Grid x:Name="ControlsOverlay" Visibility="Collapsed" Background="#F4101822">
-            <views:TableView Margin="12,62,12,12" />
-            <Button Content="←  BACK TO BOARD" Style="{StaticResource TableAction}"
-                    HorizontalAlignment="Left" VerticalAlignment="Top" Height="43" Width="210"
-                    Margin="25,12,0,0" Click="CloseControls_Click" />
-        </Grid>
     </Grid>
 </UserControl>
