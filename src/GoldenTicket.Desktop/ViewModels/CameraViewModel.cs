@@ -72,6 +72,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private BitmapSource? _preview;
     [ObservableProperty] private BitmapSource? _boardPreview;
     [ObservableProperty] private BitmapSource? _gameTablePreview;
+    // Placement coordinates apply only to the upright crop accepted by game setup.
+    [ObservableProperty] private bool _isGameTablePreviewUpright;
     [ObservableProperty] private string _gameTablePreviewStatus = "Waiting for the live board view.";
     [ObservableProperty] private bool _isRunning;
     [ObservableProperty] private bool _isBusy;
@@ -478,6 +480,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         var orientation = _gameBoardOrientationIndex ?? 0;
         var corners = GameBoardOrientations.Enumerate(GameBoardCorners)[orientation];
         _gameTableRegistration = BoardRegistration.Create(frame, corners);
+        IsGameTablePreviewUpright = _gameBoardOrientationIndex is not null;
         _gameTableCropRevision++;
         _lastGameTableCropAt = DateTimeOffset.MinValue;
         GameTablePreviewStatus = "Preparing the live board crop…";
@@ -503,6 +506,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     private void InvalidateGameTablePreview()
     {
         _gameTableRegistration = null;
+        IsGameTablePreviewUpright = false;
         _gameTableCropRevision++;
         GameTablePreview = null;
         GameTablePreviewStatus = _gameTablePreviewRequested
@@ -514,6 +518,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     {
         if (!_gameTablePreviewRequested || _gameTableRegistration is not null) return;
         _gameTableRegistration = registration;
+        IsGameTablePreviewUpright = false;
         _gameTableCropRevision++;
         _lastGameTableCropAt = DateTimeOffset.MinValue;
         GameTablePreviewStatus = "Preparing the live board crop…";

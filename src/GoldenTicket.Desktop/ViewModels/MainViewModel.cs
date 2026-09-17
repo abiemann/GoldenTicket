@@ -62,8 +62,8 @@ public sealed partial class MainViewModel : ObservableObject
 
         Setup = new SetupViewModel(manifest);
         Table = new TableViewModel(manifest);
-        Game = new GameScreenViewModel(this);
         InitializeTools();
+        Game = new GameScreenViewModel(this);
         Camera.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(CameraViewModel.GameTablePreview))
@@ -77,6 +77,8 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     public SetupViewModel Setup { get; }
+
+    internal BoardManifest Manifest => _manifest;
 
     public TableViewModel Table { get; }
 

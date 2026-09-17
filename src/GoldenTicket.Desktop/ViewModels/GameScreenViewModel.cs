@@ -157,16 +157,52 @@ public sealed partial class GameScreenViewModel : ObservableObject
         SeatChoices = Enumerable.Range(1, 5).Select(number => new GameSeatChoice(number)).ToArray();
         _main.Setup.SavedSessions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasPreviousGame));
         _main.Table.Seats.CollectionChanged += TableSeatsChanged;
+        _main.Table.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(TableViewModel.Placement)) RefreshPlacementTarget();
+        };
+        _main.Camera.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is nameof(CameraViewModel.GameTablePreview) or
+                nameof(CameraViewModel.IsGameTablePreviewUpright)) RefreshPlacementTarget();
+        };
         _main.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(MainViewModel.ShowSoloOpeningTicketsOnBoard))
                 TableSeatsChanged(null, null);
         };
         UpdateSelection();
+        RefreshPlacementTarget();
     }
 
     public IReadOnlyList<GameSeatChoice> SeatChoices { get; }
     public IReadOnlyList<GameTableSeat> TableSeats { get; private set; } = [];
+
+    [ObservableProperty] private bool _showPlacementTarget;
+    [ObservableProperty] private double _placementTargetX;
+    [ObservableProperty] private double _placementTargetY;
+
+    public double PlacementTargetLeft => PlacementTargetX - 23;
+    public double PlacementTargetTop => PlacementTargetY - 23;
+
+    partial void OnPlacementTargetXChanged(double value) => OnPropertyChanged(nameof(PlacementTargetLeft));
+    partial void OnPlacementTargetYChanged(double value) => OnPropertyChanged(nameof(PlacementTargetTop));
+
+    private void RefreshPlacementTarget()
+    {
+        if (_main.Table.Placement is not { } placement ||
+            _main.Camera.GameTablePreview is null ||
+            !_main.Camera.IsGameTablePreviewUpright ||
+            !PlacementBoardOverlay.TryGetTarget(_main.Manifest, placement.RouteId, out var x, out var y))
+        {
+            ShowPlacementTarget = false;
+            return;
+        }
+
+        PlacementTargetX = x;
+        PlacementTargetY = y;
+        ShowPlacementTarget = true;
+    }
 
     private void TableSeatsChanged(object? sender, NotifyCollectionChangedEventArgs? e)
     {

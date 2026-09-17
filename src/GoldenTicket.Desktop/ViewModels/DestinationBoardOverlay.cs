@@ -185,6 +185,9 @@ public static class DestinationBoardOverlay
             ["winnipeg"] = (905, 179),
         };
 
+    internal static bool TryGetReferenceCityCenter(CityId cityId, out (int X, int Y) center) =>
+        CityCenters.TryGetValue(cityId.Value, out center);
+
     public static IReadOnlyList<DestinationMarkerRow> Build(BoardManifest manifest,
         IEnumerable<TicketChoiceRow> offer)
     {

@@ -69,6 +69,42 @@
                                 </ItemsControl>
                             </Grid>
                         </Viewbox>
+                        <!-- Route coordinates share the same upright 960 x 600 crop as the live board. -->
+                        <Viewbox Stretch="Fill" IsHitTestVisible="False"
+                                 Visibility="{Binding Game.ShowPlacementTarget, Converter={StaticResource BoolToVisibility}}">
+                            <Canvas Width="960" Height="600">
+                                <Grid x:Name="PlacementTargetMarker" Width="46" Height="46"
+                                      Canvas.Left="{Binding Game.PlacementTargetLeft}"
+                                      Canvas.Top="{Binding Game.PlacementTargetTop}"
+                                      AutomationProperties.Name="{Binding Table.Placement.Headline}">
+                                    <Grid.Triggers>
+                                        <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                                            <BeginStoryboard>
+                                                <Storyboard RepeatBehavior="Forever">
+                                                    <DoubleAnimation Storyboard.TargetName="PlacementPulseRing"
+                                                                     Storyboard.TargetProperty="Opacity"
+                                                                     From="0.9" To="0.25" Duration="0:0:1.15" AutoReverse="True" />
+                                                    <DoubleAnimation Storyboard.TargetName="PlacementPulseRing"
+                                                                     Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                                     From="0.72" To="1.3" Duration="0:0:1.15" AutoReverse="True" />
+                                                    <DoubleAnimation Storyboard.TargetName="PlacementPulseRing"
+                                                                     Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                                     From="0.72" To="1.3" Duration="0:0:1.15" AutoReverse="True" />
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </EventTrigger>
+                                    </Grid.Triggers>
+                                    <Ellipse x:Name="PlacementPulseRing" Width="40" Height="40"
+                                             Fill="#55FFD65C" Stroke="#FFFFD65C" StrokeThickness="4">
+                                        <Ellipse.RenderTransform>
+                                            <ScaleTransform CenterX="20" CenterY="20" />
+                                        </Ellipse.RenderTransform>
+                                    </Ellipse>
+                                    <Ellipse Width="10" Height="10" Fill="#FFFFD65C"
+                                             Stroke="#FF17212B" StrokeThickness="2" />
+                                </Grid>
+                            </Canvas>
+                        </Viewbox>
                         <TextBlock x:Name="LiveBoardStatus" Text="{Binding Camera.GameTablePreviewStatus}"
                                    Foreground="#FFFFE7B0" FontSize="22" TextAlignment="Center"
                                    TextWrapping="Wrap" Width="680" HorizontalAlignment="Center"

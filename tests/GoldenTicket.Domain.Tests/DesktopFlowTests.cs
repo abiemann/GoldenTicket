@@ -2,6 +2,8 @@ using System.Collections.Immutable;
 using GoldenTicket.Application;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain.Model;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace GoldenTicket.Domain.Tests;
 
@@ -23,6 +25,16 @@ public class DesktopFlowTests
         model.Setup.Seats[2].DisplayName = "Brakeman";
 
         return model;
+    }
+
+    private static void ShowUprightBoardPreview(MainViewModel model)
+    {
+        var pixels = new byte[960 * 600 * 4];
+        var preview = BitmapSource.Create(960, 600, 96, 96, PixelFormats.Bgra32,
+            null, pixels, 960 * 4);
+        preview.Freeze();
+        model.Camera.GameTablePreview = preview;
+        model.Camera.IsGameTablePreviewUpright = true;
     }
 
     [Fact]
@@ -135,10 +147,42 @@ public class DesktopFlowTests
     }
 
     [Fact]
+    public async Task PendingComputerPlacementTargetsThePublicBoardOnlyWhileAClaimIsWaiting()
+    {
+        var model = NewMatch(computerOnly: true);
+        await model.StartMatchCommand.ExecuteAsync(null);
+
+        var placement = Assert.IsType<PlacementInstruction>(model.Table.Placement);
+        Assert.Equal(placement.SeatName, model.Table.ActiveSeatName);
+        Assert.False(model.Game.ShowPlacementTarget); // no registered live crop yet
+        ShowUprightBoardPreview(model);
+        Assert.True(PlacementBoardOverlay.TryGetTarget(TestManifest.Manifest, placement.RouteId,
+            out var expectedX, out var expectedY));
+        Assert.True(model.Game.ShowPlacementTarget);
+        Assert.Equal(expectedX, model.Game.PlacementTargetX);
+        Assert.Equal(expectedY, model.Game.PlacementTargetY);
+        Assert.InRange(expectedX, 0, DestinationBoardOverlay.Width);
+        Assert.InRange(expectedY, 0, DestinationBoardOverlay.Height);
+
+        model.Camera.IsGameTablePreviewUpright = false;
+        Assert.False(model.Game.ShowPlacementTarget);
+        model.Camera.IsGameTablePreviewUpright = true;
+        Assert.True(model.Game.ShowPlacementTarget);
+
+        // Updating the public projection after confirmation must remove the cue. Restore the
+        // original instruction here so the same fixture can also exercise a fresh pending claim.
+        model.Table.Placement = null;
+        Assert.False(model.Game.ShowPlacementTarget);
+        model.Table.Placement = placement;
+        Assert.True(model.Game.ShowPlacementTarget);
+    }
+
+    [Fact]
     public async Task ConfirmingAPlacementCommitsTheClaimAndClearsTheInstruction()
     {
         var model = NewMatch(computerOnly: true);
         await model.StartMatchCommand.ExecuteAsync(null);
+        ShowUprightBoardPreview(model);
 
         // Play forward until a claim is waiting for its trains.
         var guard = 0;
@@ -154,6 +198,7 @@ public class DesktopFlowTests
         Assert.Contains("Place", placement!.Headline, StringComparison.Ordinal);
         Assert.Contains(placement.SeatName, placement.Headline, StringComparison.Ordinal);
         Assert.True(placement.TrainCount >= 1);
+        Assert.True(model.Game.ShowPlacementTarget);
 
         await model.ConfirmPlacementCommand.ExecuteAsync(null);
         Assert.Equal(routesBefore, model.Table.Seats.Single(seat => seat.SeatId == placement.SeatId).RoutesClaimed);
@@ -165,6 +210,8 @@ public class DesktopFlowTests
         Assert.True(after.TrainsRemaining < 45);
         Assert.StartsWith("Claimed ", after.LastAction);
         Assert.False(model.Table.WholeBoardAcknowledged);
+        Assert.NotEqual(placement.OperationId, model.Table.Placement?.OperationId);
+        Assert.Equal(model.Table.Placement is not null, model.Game.ShowPlacementTarget);
     }
 
     [Fact]
