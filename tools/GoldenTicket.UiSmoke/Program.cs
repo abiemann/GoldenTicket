@@ -857,8 +857,8 @@ internal static partial class Program
             void AddSeat(int index) => model.Table.Seats.Add(new SeatRow(new SeatId(index + 1),
                 index is 1 or 3 ? $"Computer {index / 2 + 1}" : $"Player {index / 2 + 1}",
                 colors[index], "★", index is 1 or 3 ? "computer" : "human",
-                0, 45, 4, 3, 0, index == 0,
-                index == 0 ? "Kept 3 destinations and returned 0." : "Waiting for first action."));
+                0, 45, 4, index == 0 ? 2 : 3, 0, index == 0,
+                index == 0 ? "Kept 2 destinations and returned 1." : "Waiting for first action."));
             AddSeat(0);
             AddSeat(1);
             for (var index = 0; index < 5; index++)
@@ -918,7 +918,7 @@ internal static partial class Program
                 var trainsRemaining = tileText.Single(text => text.Name == "TrainsRemainingText");
                 var destinationLabel = tileText.Single(text => text.Text == "Destinations");
                 var trainCount = tileText.Single(text => text.Text == "4");
-                var destinationCount = tileText.Single(text => text.Text == "3");
+                var destinationCount = tileText.Single(text => text.Text == "2");
                 if (Grid.GetRow(name) != Grid.GetRow(trainLabel) ||
                     Grid.GetRow(name) != Grid.GetRow(destinationLabel) ||
                     Grid.GetRow(trainCount) != 2 || Grid.GetRow(destinationCount) != 2 ||
@@ -928,6 +928,18 @@ internal static partial class Program
                     Math.Abs(trainsRemaining.TranslatePoint(new Point(), tileGrid).X -
                              trainLabel.TranslatePoint(new Point(), tileGrid).X) > 0.5)
                     throw new InvalidOperationException("Remaining trains must sit above the T card and align with Train cards.");
+                var trainStack = Descendants<ItemsControl>(tileGrid)
+                    .Single(control => Grid.GetColumn(control) == 1);
+                var destinationStack = Descendants<ItemsControl>(tileGrid)
+                    .Single(control => Grid.GetColumn(control) == 2);
+                if (trainStack.Items.Count != 4 || destinationStack.Items.Count != 2 ||
+                    Descendants<Border>(trainStack).Count(border => border.Width == 36 && border.Height == 35) != 4 ||
+                    Descendants<Border>(destinationStack).Count(border => border.Width == 36 && border.Height == 35) != 2 ||
+                    trainStack.Items[0] is not CardStackLayer { Left: 12, Top: 0 } ||
+                    trainStack.Items[3] is not CardStackLayer { Left: 0, Top: 6, Letter: "T" } ||
+                    destinationStack.Items[0] is not CardStackLayer { Left: 12, Top: 0 } ||
+                    destinationStack.Items[1] is not CardStackLayer { Left: 0, Top: 6, Letter: "D" })
+                    throw new InvalidOperationException("Seat stacks must render four train cards and two destinations with equal fan height.");
                 if (model.Game.TableSeats[0].Left != 10 || model.Game.TableSeats[1].Left != 1180 ||
                     (model.Table.Seats.Count == 3 &&
                      (model.Game.TableSeats[2].Left != 10 || model.Game.TableSeats[2].Top != 530)) ||
@@ -937,7 +949,7 @@ internal static partial class Program
                     throw new InvalidOperationException("Players one and two must face each other, with the fifth centered below the board.");
                 var status = Descendants<TextBlock>(gameTable)
                     .Single(text => text.DataContext is GameTableSeat tableSeat && tableSeat.Seat.SeatId.Value == 1 &&
-                                    text.Text == "Kept 3 destinations and returned 0.");
+                                    text.Text == "Kept 2 destinations and returned 1.");
                 if (!IsElementShown(status) || status.TextAlignment != TextAlignment.Center ||
                     Grid.GetRow(status) != 3 || Grid.GetColumnSpan(status) != 3)
                     throw new InvalidOperationException("The latest public action must appear along the bottom of the player tile.");
@@ -1149,8 +1161,9 @@ internal static partial class Program
             card.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             Descendants<Button>(confirmation).Single(button => button.Content as string == "YES, DROP IT")
                 .RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-            if (card.Visibility != Visibility.Collapsed ||
-                solo.PrivateSeat.DestinationLines.Single(line => ReferenceEquals(line.Choice, dropped)).IsVisible)
+            // Reduced-motion Windows can finish the commit during the click, clearing PrivateSeat.
+            if (openingSeat.DestinationLines.Single(line => ReferenceEquals(line.Choice, dropped)).IsVisible ||
+                (ReferenceEquals(solo.PrivateSeat, openingSeat) && card.Visibility != Visibility.Collapsed))
                 throw new InvalidOperationException("The rejected card and its board connection must disappear together.");
             await Task.Delay(330);
             var cardsTile = (Border)openingView.FindName("SoloCardsTile");

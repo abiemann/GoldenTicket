@@ -8,6 +8,13 @@
         <local:EmptyStringToVisibilityConverter x:Key="MessageVisibility" />
         <local:PlayerColorBrushConverter x:Key="PlayerColorBrush" />
         <local:CardKindBrushConverter x:Key="CardKindBrush" />
+        <DataTemplate x:Key="SeatCardLayerTemplate">
+            <Border Width="36" Height="35" Background="{Binding Fill}"
+                    BorderBrush="#FFF0D7A0" BorderThickness="1">
+                <TextBlock Text="{Binding Letter}" Foreground="#FFFFE7B0" FontWeight="Bold"
+                           FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+        </DataTemplate>
     </UserControl.Resources>
 
     <Grid Background="#FF101821">
@@ -207,30 +214,34 @@
                                                HorizontalAlignment="Left" Foreground="#FFF8EEDC" FontSize="11">
                                         <Run Text="{Binding Seat.TrainsRemaining}" /><Run Text=" trains" />
                                     </TextBlock>
-                                    <Canvas Grid.Column="1" Width="50" Height="42" HorizontalAlignment="Center"
-                                            VerticalAlignment="Bottom" Margin="0,0,0,1">
-                                        <Border Canvas.Left="12" Canvas.Top="0" Width="36" Height="35"
-                                                Background="#FF69412F" BorderBrush="#FFF0D7A0" BorderThickness="1" />
-                                        <Border Canvas.Left="6" Canvas.Top="3" Width="36" Height="35"
-                                                Background="#FF865337" BorderBrush="#FFF0D7A0" BorderThickness="1" />
-                                        <Border Canvas.Left="0" Canvas.Top="6" Width="36" Height="35"
-                                                Background="#FF9B613C" BorderBrush="#FFF0D7A0" BorderThickness="1">
-                                            <TextBlock Text="T" Foreground="#FFFFE7B0" FontWeight="Bold"
-                                                       FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                        </Border>
-                                    </Canvas>
-                                    <Canvas Grid.Column="2" Width="50" Height="42" HorizontalAlignment="Center"
-                                            VerticalAlignment="Bottom" Margin="0,0,0,1">
-                                        <Border Canvas.Left="12" Canvas.Top="0" Width="36" Height="35"
-                                                Background="#FF426481" BorderBrush="#FFF0D7A0" BorderThickness="1" />
-                                        <Border Canvas.Left="6" Canvas.Top="3" Width="36" Height="35"
-                                                Background="#FF527797" BorderBrush="#FFF0D7A0" BorderThickness="1" />
-                                        <Border Canvas.Left="0" Canvas.Top="6" Width="36" Height="35"
-                                                Background="#FF648AA7" BorderBrush="#FFF0D7A0" BorderThickness="1">
-                                            <TextBlock Text="D" Foreground="#FFFFE7B0" FontWeight="Bold"
-                                                       FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                        </Border>
-                                    </Canvas>
+                                    <ItemsControl Grid.Column="1" Width="50" Height="42" HorizontalAlignment="Center"
+                                                  VerticalAlignment="Bottom" Margin="0,0,0,1"
+                                                  ItemsSource="{Binding TrainCardLayers}"
+                                                  ItemTemplate="{StaticResource SeatCardLayerTemplate}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemContainerStyle>
+                                            <Style TargetType="ContentPresenter">
+                                                <Setter Property="Canvas.Left" Value="{Binding Left}" />
+                                                <Setter Property="Canvas.Top" Value="{Binding Top}" />
+                                            </Style>
+                                        </ItemsControl.ItemContainerStyle>
+                                    </ItemsControl>
+                                    <ItemsControl Grid.Column="2" Width="50" Height="42" HorizontalAlignment="Center"
+                                                  VerticalAlignment="Bottom" Margin="0,0,0,1"
+                                                  ItemsSource="{Binding DestinationLayers}"
+                                                  ItemTemplate="{StaticResource SeatCardLayerTemplate}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemContainerStyle>
+                                            <Style TargetType="ContentPresenter">
+                                                <Setter Property="Canvas.Left" Value="{Binding Left}" />
+                                                <Setter Property="Canvas.Top" Value="{Binding Top}" />
+                                            </Style>
+                                        </ItemsControl.ItemContainerStyle>
+                                    </ItemsControl>
                                     <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding Seat.DisplayName}"
                                                Foreground="#FFFFE7B0" FontSize="12" FontWeight="Bold"
                                                TextAlignment="Center" TextTrimming="CharacterEllipsis" />

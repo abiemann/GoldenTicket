@@ -144,8 +144,32 @@ public sealed partial class GameSeatChoice(int number) : ObservableObject
     }
 }
 
+/// <summary>One visible layer of a public card stack. Both kinds fill the same 12 × 6 fan.</summary>
+public sealed record CardStackLayer(double Left, double Top, string Fill, string Letter);
+
 /// <summary>Public seat information placed around the live board, with no private card contents.</summary>
-public sealed record GameTableSeat(SeatRow Seat, ImageSource Portrait, double Left, double Top);
+public sealed record GameTableSeat(SeatRow Seat, ImageSource Portrait, double Left, double Top)
+{
+    public IReadOnlyList<CardStackLayer> TrainCardLayers => BuildStack(Seat.CardCount, true);
+    public IReadOnlyList<CardStackLayer> DestinationLayers => BuildStack(Seat.TicketCount, false);
+
+    private static IReadOnlyList<CardStackLayer> BuildStack(int count, bool train)
+    {
+        if (count <= 0) return [];
+        var layers = new CardStackLayer[count];
+        for (var index = 0; index < count; index++)
+        {
+            var fraction = count == 1 ? .5 : (double)index / (count - 1);
+            var fill = index == count - 1
+                ? train ? "#FF9B613C" : "#FF648AA7"
+                : index == 0 ? train ? "#FF69412F" : "#FF426481"
+                : train ? "#FF865337" : "#FF527797";
+            layers[index] = new CardStackLayer(12 * (1 - fraction), 6 * fraction,
+                fill, index == count - 1 ? train ? "T" : "D" : "");
+        }
+        return layers;
+    }
+}
 
 /// <summary>One pulsing cue centered on one requested physical train space.</summary>
 public sealed record PlacementTargetRow(double X, double Y, int Number)
