@@ -91,6 +91,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     [ObservableProperty] private Screen _screen = Screen.Setup;
     [ObservableProperty] private DisplayMode _displayMode = DisplayMode.Resizable;
+    [ObservableProperty] private bool _showMultiHumanPhoneSetup;
 
     /// <summary>
     /// The revealed private view, or null for the privacy curtain. DESIGN 4.7: hiding discards this
@@ -235,6 +236,7 @@ public sealed partial class MainViewModel : ObservableObject
             Status = null;
             await PumpAsync();
             Game.ShowPlaying();
+            PresentMultiHumanPhoneSetup();
         }
         catch (Exception)
         {
@@ -246,7 +248,7 @@ public sealed partial class MainViewModel : ObservableObject
             Busy = null;
             SetOperationInProgress(false);
         }
-        await ShowSingleHumanCardsAsync(generation);
+        await ShowSoloOpeningDestinationsAsync(generation);
     }
 
     [RelayCommand(CanExecute = nameof(CanResumeMatch))]
@@ -303,6 +305,7 @@ public sealed partial class MainViewModel : ObservableObject
 
             await RefreshAsync();
             Game.ShowPlaying();
+            PresentMultiHumanPhoneSetup();
         }
         catch (Exception exception)
         {
@@ -368,14 +371,16 @@ public sealed partial class MainViewModel : ObservableObject
         var legal = _rules.GetLegalActions(view);
         var summary = view.Public.SeatOf(seat.SeatId);
 
+        CloseSoloCardPanel();
         PrivateSeat = new PrivateSeatViewModel(view, legal, _manifest, summary.DisplayName, summary.Symbol);
     }
 
-    private async Task ShowSingleHumanCardsAsync(long generation)
+    private async Task ShowSoloOpeningDestinationsAsync(long generation)
     {
-        // Automatic presentation follows a completed game action except the opening destination
-        // choice, which returns to the public board. Hide or deactivation cancels delayed reveals.
-        if (!IsSingleHumanGame || generation != _revealGeneration || !CanRevealPrivateSeat) return;
+        // The opening destination choice is the only automatic private presentation. Later turns
+        // stay on the game table until a player deliberately opens their cards.
+        if (!IsSingleHumanGame || generation != _revealGeneration || !CanRevealPrivateSeat ||
+            _coordinator?.Public.Lifecycle != SessionLifecycle.Setup) return;
         try { await RevealPrivateSeatAsync(); }
         catch (Exception) { RequireReload(); }
     }
@@ -390,6 +395,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         _revealGeneration++;
         PrivateSeat = null;
+        CloseSoloCardPanel();
         Connection.InvalidatePrivateGrants();
     }
 
@@ -439,9 +445,6 @@ public sealed partial class MainViewModel : ObservableObject
 
         if (build(envelope, seat) is not { } command) return;
 
-        var turnNumber = coordinator.Public.TurnNumber;
-        var lifecycle = coordinator.Public.Lifecycle;
-        var completedSoloOpeningChoice = IsSingleHumanGame && seat is { IsSetupOffer: true, MustChooseTickets: true };
         SetOperationInProgress(true);
         HidePrivateSeat();
         var generation = _revealGeneration;
@@ -479,16 +482,7 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
-        // A delayed save/AI result cannot undo Hide, window deactivation, or a seat handoff.
-        // After the solo opening choice, leave the board visible and let its player tile reopen cards.
-        if (accepted && !completedSoloOpeningChoice && generation == _revealGeneration &&
-            ReferenceEquals(coordinator, _coordinator) &&
-            (IsSingleHumanGame || (coordinator.Public.TurnNumber == turnNumber && coordinator.Public.Lifecycle == lifecycle)) &&
-            _revealable is { } next && next.SeatId == seat.SeatId)
-        {
-            if (IsSingleHumanGame) await ShowSingleHumanCardsAsync(generation);
-            else await RevealPrivateSeatAsync();
-        }
+        // Keep the public board visible after every action; private cards reopen only by request.
     }
 
     // ---- Operator actions ------------------------------------------------------------------
@@ -541,7 +535,6 @@ public sealed partial class MainViewModel : ObservableObject
         if (!CanSubmitOperator()) return;
         SetOperationInProgress(true);
         HidePrivateSeat();
-        var generation = _revealGeneration;
         Table.WholeBoardAcknowledged = false;
         try
         {
@@ -562,7 +555,6 @@ public sealed partial class MainViewModel : ObservableObject
         {
             SetOperationInProgress(false);
         }
-        await ShowSingleHumanCardsAsync(generation);
     }
 
     private bool CanSubmitOperator() => !_operationInProgress && _scoreMarkerStep is null && !_exitRequested && !_mustReload &&
@@ -725,7 +717,6 @@ public sealed partial class MainViewModel : ObservableObject
         {
             SetOperationInProgress(false);
         }
-        await ShowSingleHumanCardsAsync(generation);
     }
 
     [RelayCommand]
@@ -736,7 +727,6 @@ public sealed partial class MainViewModel : ObservableObject
 
         SetOperationInProgress(true);
         HidePrivateSeat();
-        var generation = _revealGeneration;
         NeedsBoardReconciliation = false;
         BoardReconciliationAcknowledged = false;
         Status = "Board reconciliation confirmed by the operator. Manual verification remains active.";
@@ -754,7 +744,6 @@ public sealed partial class MainViewModel : ObservableObject
         {
             SetOperationInProgress(false);
         }
-        await ShowSingleHumanCardsAsync(generation);
     }
 
     private void SetOperationInProgress(bool value)
@@ -799,6 +788,7 @@ public sealed partial class MainViewModel : ObservableObject
     private async Task RefreshAsync()
     {
         if (_coordinator is null) return;
+        CloseSoloCardPanel();
 
         var view = _coordinator.Public;
         Table.Update(view, _coordinator.PublicHistory);

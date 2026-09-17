@@ -36,9 +36,10 @@ See the
   2–5 player portraits and their public train/card/destination counts around it, with face-down
   stacks and a latest-public-action line per seat. Put up to two seats on each side and a fifth
   below the board. Center the draw piles and five-card market along the bottom for fewer than five
-  seats, keeping them at the outer edges for five. Keep private card contents off the public table;
-  the solo human opens turn cards from their tile. Preserve the panel above the board as the human
-  guidance area for the current phase, acting seat and next instruction throughout the game.
+  seats, keeping them at the outer edges for five. In solo play, T and D stacks reveal compact
+  private card previews only when clicked; ordinary turns stay on the game table. Preserve the
+  panel above the board as the human guidance area for the current phase, acting seat and next
+  instruction throughout the game.
 - [ ] Re-register the live board crop automatically after a saved game is reloaded or the camera
   restarts; for now, use the technical Camera screen to register it again.
 - [x] Measure all 309 printed train spaces on the 100 classic-US routes and show one pulsing
@@ -129,9 +130,17 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   below are still open.
 - [x] **Single-human laptop play.** One human's card and ticket choices open directly on the laptop,
   with no **Back to table** action or plain-Escape dismissal during the unresolved opening choice.
-  Later private views use **Your cards** / **Back to table** controls, with no **Connect phone** step. The active or
-  resumed roster determines this behavior; multiple humans retain explicit pass-and-hide and an
-  optional shared companion. Board verification, AI secrecy and later explicit Hide remain in force.
+  Later turns keep the public table visible; clicking T or D shows mini cards in place, while
+  **Shift+Escape** exposes the technical private controls for taking a turn. There is no
+  **Connect phone** step. The active or resumed roster determines this behavior. With multiple
+  humans, keep the laptop on the public table and present setup for one shared companion phone;
+  hosting starts only after an explicit choice of Private LAN connection. Board verification and
+  AI secrecy remain in force.
+- [x] **Multi-human phone setup on the table.** Show setup over the public board for games with
+  more than one human. After an explicit local-host start, display its actual connection QR and
+  a separate pairing code; keep the setup available from the game table.
+- [ ] **Multi-human phone handoff acceptance.** Complete and verify installation, pairing,
+  private cards, and pass-and-hide on a real shared phone before claiming the PWA workflow is finished.
 - [x] **Camera and photo foundation.** Windows video-only capture, selectable formats, manual
   four-corner crop and conservative scene-reference checks; optional plaintext, checksummed,
   operator-attested checkpoint photos with integrity/readback and stale-capture protection. No automated train

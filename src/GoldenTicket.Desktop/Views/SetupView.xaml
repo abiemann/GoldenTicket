@@ -95,7 +95,7 @@
                                Text="One human: your cards and destinations appear on this laptop. No phone connection is needed."
                                Visibility="{Binding IsSingleHumanGame, Converter={StaticResource BoolToVisibility}}" />
                     <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
-                               Text="Multiple humans can pass and hide cards on this laptop, or use Connect phone for a shared phone or tablet on your local network."
+                               Text="Multiple humans: when the match starts, set up one shared phone from the QR over the table. Phone card handoff is planned for a later update; until then, use Shift+Esc for private laptop controls."
                                Visibility="{Binding CanConnectPhone, Converter={StaticResource BoolToVisibility}}" />
                     <CheckBox Margin="0,10,0,0" IsChecked="{Binding Setup.ManualVerificationAccepted}"
                               Content="Use manual verification: I will check all claimed routes and empty lanes at each confirmation." />

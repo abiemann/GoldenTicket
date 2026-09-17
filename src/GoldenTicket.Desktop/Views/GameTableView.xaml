@@ -15,6 +15,36 @@
                            FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Border>
         </DataTemplate>
+        <Style x:Key="SoloDeckButtonStyle" TargetType="Button">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="HitArea" Background="Transparent" BorderBrush="Transparent"
+                                BorderThickness="2" CornerRadius="5" />
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="HitArea" Property="BorderBrush" Value="#99E1BD79" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="HitArea" Property="BorderBrush" Value="#FFE1BD79" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding Seat.Operator}" Value="human" />
+                        <Condition Binding="{Binding DataContext.IsSingleHumanGame, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" Value="True" />
+                        <Condition Binding="{Binding DataContext.ShowSoloOpeningTicketsOnBoard, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" Value="False" />
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Visibility" Value="Visible" />
+                </MultiDataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
 
     <Grid Background="#FF101821">
@@ -260,48 +290,86 @@
                                     <TextBlock Grid.Row="3" Grid.ColumnSpan="3" Text="{Binding Seat.LastAction}"
                                                ToolTip="{Binding Seat.LastAction}" Foreground="#FFDCC18A"
                                                FontSize="10" TextAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                    <Button Grid.RowSpan="4" Grid.ColumnSpan="3" Cursor="Hand"
-                                            ToolTip="Open your cards"
-                                            AutomationProperties.Name="{Binding Seat.DisplayName, StringFormat=Open {0} cards}"
-                                            Command="{Binding DataContext.RevealPrivateSeatCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}">
-                                        <Button.Style>
-                                            <Style TargetType="Button">
-                                                <Setter Property="Visibility" Value="Collapsed" />
-                                                <Setter Property="Template">
-                                                    <Setter.Value>
-                                                        <ControlTemplate TargetType="Button">
-                                                            <Border x:Name="HitArea" Background="Transparent" BorderBrush="Transparent"
-                                                                    BorderThickness="2" CornerRadius="8" />
-                                                            <ControlTemplate.Triggers>
-                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                    <Setter TargetName="HitArea" Property="BorderBrush" Value="#99E1BD79" />
-                                                                </Trigger>
-                                                                <Trigger Property="IsKeyboardFocused" Value="True">
-                                                                    <Setter TargetName="HitArea" Property="BorderBrush" Value="#FFE1BD79" />
-                                                                </Trigger>
-                                                            </ControlTemplate.Triggers>
-                                                        </ControlTemplate>
-                                                    </Setter.Value>
-                                                </Setter>
-                                                <Style.Triggers>
-                                                    <MultiDataTrigger>
-                                                        <MultiDataTrigger.Conditions>
-                                                            <Condition Binding="{Binding Seat.Operator}" Value="human" />
-                                                            <Condition Binding="{Binding DataContext.IsSingleHumanGame, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" Value="True" />
-                                                            <Condition Binding="{Binding DataContext.CanRevealPrivateSeat, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" Value="True" />
-                                                            <Condition Binding="{Binding DataContext.ShowSoloOpeningTicketsOnBoard, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" Value="False" />
-                                                        </MultiDataTrigger.Conditions>
-                                                        <Setter Property="Visibility" Value="Visible" />
-                                                    </MultiDataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Button.Style>
-                                    </Button>
+                                    <Button Grid.Row="0" Grid.Column="1" Width="54" Height="44"
+                                            HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,1"
+                                            Style="{StaticResource SoloDeckButtonStyle}"
+                                            ToolTip="Show your train cards" AutomationProperties.Name="Show your train cards"
+                                            Command="{Binding DataContext.ToggleSoloTrainCardsCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                            CommandParameter="{Binding}" />
+                                    <Button Grid.Row="0" Grid.Column="2" Width="54" Height="44"
+                                            HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,1"
+                                            Style="{StaticResource SoloDeckButtonStyle}"
+                                            ToolTip="Show your destinations" AutomationProperties.Name="Show your destinations"
+                                            Command="{Binding DataContext.ToggleSoloDestinationsCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                            CommandParameter="{Binding}" />
                                 </Grid>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                <!-- A compact solo hand stays at the table. Its position follows the human station. -->
+                <Border x:Name="SoloCardPanel" Canvas.Left="10" Canvas.Top="478" Width="250"
+                        MaxHeight="214" CornerRadius="9" Background="#F51A2531"
+                        BorderBrush="#FFD4AC6B" BorderThickness="2" Padding="8"
+                        Visibility="{Binding ShowSoloCardPanel, Converter={StaticResource BoolToVisibility}}"
+                        IsVisibleChanged="OnSoloCardPanelVisibilityChanged">
+                    <Border.RenderTransform><TranslateTransform /></Border.RenderTransform>
+                    <StackPanel>
+                        <TextBlock Text="Your train cards" Foreground="#FFFFE7B0" FontSize="14"
+                                   FontWeight="SemiBold" HorizontalAlignment="Center"
+                                   Visibility="{Binding ShowSoloTrainCards, Converter={StaticResource BoolToVisibility}}" />
+                        <TextBlock Text="Your destinations" Foreground="#FFFFE7B0" FontSize="14"
+                                   FontWeight="SemiBold" HorizontalAlignment="Center"
+                                   Visibility="{Binding ShowSoloDestinations, Converter={StaticResource BoolToVisibility}}" />
+                        <ScrollViewer MaxHeight="172" VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled" Margin="0,5,0,0"
+                                      Visibility="{Binding ShowSoloTrainCards, Converter={StaticResource BoolToVisibility}}">
+                            <ItemsControl x:Name="SoloTrainCards" Width="222" ItemsSource="{Binding SoloTrainCards}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Width="101" Height="67" Margin="3" CornerRadius="4"
+                                                Background="{Binding Kind, Converter={StaticResource CardKindBrush}}"
+                                                BorderBrush="#FFF0D7A0" BorderThickness="2">
+                                            <TextBlock Text="{Binding Label}" Foreground="#FF1A2531" FontSize="11"
+                                                       FontWeight="Bold" TextAlignment="Center" TextWrapping="NoWrap"
+                                                       VerticalAlignment="Bottom" Background="#EEF5EAD5" Padding="2" />
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <ScrollViewer MaxHeight="172" VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled" Margin="0,5,0,0"
+                                      Visibility="{Binding ShowSoloDestinations, Converter={StaticResource BoolToVisibility}}">
+                            <ItemsControl x:Name="SoloDestinationCards" Width="222" ItemsSource="{Binding SoloDestinationCards}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Width="214" MinHeight="51" Margin="2,1,2,4" Padding="5,3"
+                                                CornerRadius="4" Background="#FFFBEED5"
+                                                BorderBrush="#FFD4AC6B" BorderThickness="1.5">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Description}" Foreground="#FF31241D"
+                                                           FontSize="11" FontWeight="SemiBold" TextAlignment="Center"
+                                                           TextWrapping="Wrap" />
+                                                <TextBlock Foreground="#FF77512F" FontSize="10"
+                                                           HorizontalAlignment="Center">
+                                                    <Run Text="{Binding Points}" /><Run Text=" points" />
+                                                </TextBlock>
+                                                <TextBlock Text="Completed" Foreground="#FF2B724A" FontSize="10"
+                                                           FontWeight="SemiBold" HorizontalAlignment="Center"
+                                                           Visibility="{Binding Completed, Converter={StaticResource BoolToVisibility}}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
 
                 <Border x:Name="DrawPilesPanel" Canvas.Left="14" Canvas.Top="768" Width="236" Height="116" CornerRadius="9"
                         Visibility="{Binding ShowSoloOpeningTicketsOnBoard, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}"

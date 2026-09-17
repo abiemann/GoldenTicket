@@ -9,7 +9,7 @@ namespace GoldenTicket.Domain.Tests;
 public sealed class DesktopSingleHumanTests
 {
     [Fact]
-    public async Task OneHumanGetsOpeningTicketsAndBothDrawsOnTheLaptop()
+    public async Task OneHumanGetsOpeningDestinationsButReturnsToTheTableAfterEachDraw()
     {
         var model = NewSingleHumanMatch();
         try
@@ -39,16 +39,64 @@ public sealed class DesktopSingleHumanTests
             Assert.True(model.PrivateSeat.CanDrawBlind);
 
             await model.DrawBlindCardAsync();
+            Assert.Equal(Screen.Table, model.Screen);
+            Assert.Null(model.PrivateSeat);
+            await model.RevealPrivateSeatAsync();
             Assert.NotNull(model.PrivateSeat);
             Assert.True(model.PrivateSeat.IsSecondDraw);
             Assert.Equal(5, model.PrivateSeat.Hand.Sum(group => group.Count));
 
             await model.DrawBlindCardAsync();
             await ConfirmComputerPlacementsAsync(model);
+            Assert.Equal(Screen.Table, model.Screen);
+            Assert.Null(model.PrivateSeat);
+            await model.RevealPrivateSeatAsync();
             Assert.NotNull(model.PrivateSeat);
             Assert.Equal(model.Table.Seats[0].SeatId, model.PrivateSeat.SeatId);
             Assert.False(model.PrivateSeat.IsSecondDraw);
             Assert.Equal(6, model.PrivateSeat.Hand.Sum(group => group.Count));
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Fact]
+    public async Task SoloTrainAndDestinationStacksToggleSmallCardsWithoutLeavingTheTable()
+    {
+        var model = NewSingleHumanMatch();
+        try
+        {
+            await model.StartMatchAsync();
+            var human = model.Game.TableSeats.Single(tile => tile.Seat.Operator == "human");
+            var computer = model.Game.TableSeats.First(tile => tile.Seat.Operator == "computer");
+
+            // The opening offer is the one automatic private presentation. Stack clicks during it
+            // must leave that required choice in place.
+            await model.ToggleSoloTrainCardsCommand.ExecuteAsync(human);
+            Assert.True(model.ShowSoloOpeningTicketsOnBoard);
+            Assert.False(model.ShowSoloCardPanel);
+
+            await model.CommitTicketsAsync();
+            Assert.Null(model.PrivateSeat);
+            Assert.Equal(Screen.Table, model.Screen);
+
+            await model.ToggleSoloTrainCardsCommand.ExecuteAsync(computer);
+            Assert.False(model.ShowSoloCardPanel);
+            await model.ToggleSoloTrainCardsCommand.ExecuteAsync(human);
+            Assert.True(model.ShowSoloTrainCards);
+            Assert.Equal(4, model.SoloTrainCards.Count);
+            Assert.Null(model.PrivateSeat);
+            Assert.Equal(Screen.Table, model.Screen);
+
+            await model.ToggleSoloDestinationsCommand.ExecuteAsync(human);
+            Assert.True(model.ShowSoloDestinations);
+            Assert.False(model.ShowSoloTrainCards);
+            Assert.Equal(3, model.SoloDestinationCards.Count);
+            Assert.All(model.SoloDestinationCards, card => Assert.True(card.Points > 0));
+            Assert.Null(model.PrivateSeat);
+
+            await model.ToggleSoloDestinationsCommand.ExecuteAsync(human);
+            Assert.False(model.ShowSoloCardPanel);
+            Assert.Empty(model.SoloDestinationCards);
         }
         finally { await model.DisposeToolsAsync(); }
     }
@@ -102,6 +150,9 @@ public sealed class DesktopSingleHumanTests
             Assert.Equal(model.Table.Seats[2].SeatId, model.PrivateSeat.SeatId);
             await model.CommitTicketsAsync();
             await ConfirmComputerPlacementsAsync(model);
+            Assert.Equal(Screen.Table, model.Screen);
+            Assert.Null(model.PrivateSeat);
+            await model.RevealPrivateSeatAsync();
             Assert.NotNull(model.PrivateSeat);
             Assert.Equal(model.Table.Seats[2].SeatId, model.PrivateSeat.SeatId);
             Assert.Equal(4, model.PrivateSeat.Hand.Sum(group => group.Count));
@@ -294,6 +345,9 @@ public sealed class DesktopSingleHumanTests
             model.BoardReconciliationAcknowledged = true;
             await model.ConfirmBoardReconciledAsync();
             Assert.False(model.NeedsBoardReconciliation);
+            Assert.Equal(Screen.Table, model.Screen);
+            Assert.Null(model.PrivateSeat);
+            await model.RevealPrivateSeatAsync();
             Assert.NotNull(model.PrivateSeat);
             Assert.Equal(model.Table.Seats[0].SeatId, model.PrivateSeat.SeatId);
         }
@@ -323,6 +377,8 @@ public sealed class DesktopSingleHumanTests
             Assert.Null(model.PrivateSeat);
             await model.ResumePackedGameAsync();
             Assert.Equal(Screen.Table, model.Screen);
+            Assert.Null(model.PrivateSeat);
+            await model.RevealPrivateSeatAsync();
             Assert.NotNull(model.PrivateSeat);
             Assert.Equal(model.Table.Seats[0].SeatId, model.PrivateSeat.SeatId);
         }

@@ -7,6 +7,7 @@
              Focusable="True" PreviewKeyDown="OnPreviewKeyDown">
     <UserControl.Resources>
         <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+        <local:NullToVisibilityConverter x:Key="NullToVisibility" />
         <local:EmptyStringToVisibilityConverter x:Key="MessageVisibility" />
         <local:ScreenVisibilityConverter x:Key="ScreenVisibility" />
 
@@ -113,6 +114,19 @@
                     <Setter Property="Background" Value="#EC522D26" />
                     <Setter Property="BorderBrush" Value="#FFFFD576" />
                 </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="PhoneShortcutButton" TargetType="Button" BasedOn="{StaticResource GameChoiceButton}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding CanConnectPhone}" Value="True" />
+                        <Condition Binding="{Binding GameplayScreen}" Value="{x:Static vm:Screen.Table}" />
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Visibility" Value="Visible" />
+                </MultiDataTrigger>
             </Style.Triggers>
         </Style>
 
@@ -371,6 +385,118 @@
             <views:GameTableView Visibility="{Binding GameplayScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=Table}" />
             <views:RebuildView Visibility="{Binding GameplayScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=Rebuild}" />
             <views:FinalScoreView Visibility="{Binding GameplayScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=FinalScore}" />
+
+            <Button Content="Phone QR" Command="{Binding OpenMultiHumanPhoneSetupCommand}"
+                    Style="{StaticResource PhoneShortcutButton}" Padding="14,8" FontSize="13"
+                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,12,12,0"
+                    AutomationProperties.Name="Show shared phone setup" />
+
+            <Grid Background="#B9000912" Visibility="{Binding ShowMultiHumanPhoneSetup, Converter={StaticResource BoolToVisibility}}">
+                <Viewbox Stretch="Uniform" Margin="16">
+                    <Border x:Name="MultiHumanPhoneSetupPanel" Width="740" Padding="22" CornerRadius="12"
+                            Background="#F51A2531" BorderBrush="#FFD4AC6B" BorderThickness="2">
+                        <StackPanel>
+                            <TextBlock Text="Set up the shared phone" Foreground="#FFFFE7B0"
+                                       FontSize="29" FontWeight="Bold" TextAlignment="Center" />
+                            <TextBlock Text="For games with more than one human, install the app on one phone and pass it to the active player. Keep the phone and laptop on the same trusted network."
+                                       Foreground="#FFF8EEDC" FontSize="15" TextWrapping="Wrap"
+                                       TextAlignment="Center" Margin="10,8,10,17" />
+
+                            <TextBlock Text="Choose a Private network, then start phone hosting to display its QR code."
+                                       Foreground="#FFFFE7B0" FontSize="14" Margin="0,0,0,7" />
+                            <DockPanel LastChildFill="False" Margin="0,0,0,10">
+                                <ComboBox Width="330" Height="38" ItemsSource="{Binding Connection.Interfaces}"
+                                          SelectedItem="{Binding Connection.SelectedInterface}"
+                                          AutomationProperties.Name="Private network connection">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" TextWrapping="NoWrap"
+                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <Button Content="Refresh networks" Command="{Binding Connection.RefreshCommand}"
+                                        Style="{StaticResource GameChoiceButton}" Padding="10,6" Margin="9,0,0,0" />
+                                <Button Content="Start hosting" Command="{Binding Connection.StartCommand}"
+                                        Style="{StaticResource GameChoiceButton}" Padding="10,6" Margin="9,0,0,0" />
+                                <Button Content="Stop" Command="{Binding Connection.StopCommand}"
+                                        Style="{StaticResource GameChoiceButton}" Padding="10,6" Margin="9,0,0,0" />
+                            </DockPanel>
+                            <TextBlock Text="{Binding Connection.Problem}" Foreground="#FFFFD576"
+                                       FontSize="13" TextWrapping="Wrap" Margin="0,0,0,6"
+                                       Visibility="{Binding Connection.Problem, Converter={StaticResource MessageVisibility}}" />
+
+                            <Grid Height="265">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="260" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="250" Height="250" Background="#FFFAFAF6" CornerRadius="5"
+                                        HorizontalAlignment="Left" VerticalAlignment="Top" Padding="7">
+                                    <Grid>
+                                        <Image Source="{Binding Connection.ConnectionQr}" Stretch="Uniform"
+                                               RenderOptions.BitmapScalingMode="NearestNeighbor"
+                                               Visibility="{Binding Connection.ConnectionQr, Converter={StaticResource NullToVisibility}}"
+                                               AutomationProperties.Name="Shared phone installation QR code" />
+                                        <TextBlock Text="The QR code appears here after hosting starts."
+                                                   Foreground="#FF25313C" FontSize="16" TextWrapping="Wrap"
+                                                   TextAlignment="Center" VerticalAlignment="Center" Margin="18">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Connection.ConnectionQr}" Value="{x:Null}">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Connection.IsRunning}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Grid>
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="12,0,0,0">
+                                    <TextBlock Text="{Binding Connection.Status}" Foreground="#FFF8EEDC"
+                                               FontSize="14" TextWrapping="Wrap" />
+                                    <TextBlock Text="The QR contains only the laptop's local address. Scan it, then choose Add to Home Screen on the phone."
+                                               Foreground="#FFE6D9C3" FontSize="13" TextWrapping="Wrap" Margin="0,12,0,8" />
+                                    <TextBox Text="{Binding Connection.Address, Mode=OneWay}" IsReadOnly="True"
+                                             FontSize="12" TextWrapping="Wrap" AutomationProperties.Name="Secure phone address"
+                                             Visibility="{Binding Connection.IsRunning, Converter={StaticResource BoolToVisibility}}" />
+                                    <TextBlock Text="Pairing code (enter it on the phone)" Foreground="#FFFFE7B0"
+                                               FontSize="13" Margin="0,12,0,3"
+                                               Visibility="{Binding Connection.IsRunning, Converter={StaticResource BoolToVisibility}}" />
+                                    <TextBlock Text="{Binding Connection.PairingCode}" Foreground="#FFFFD576"
+                                               FontSize="23" FontWeight="Bold"
+                                               Visibility="{Binding Connection.IsRunning, Converter={StaticResource BoolToVisibility}}" />
+                                    <TextBlock Text="The phone card and handoff flow will be completed in a later update."
+                                               Foreground="#FFE6D9C3" FontSize="12" TextWrapping="Wrap" Margin="0,9,0,0" />
+                                </StackPanel>
+                            </Grid>
+
+                            <TextBlock Text="Check the certificate fingerprint on the phone against this laptop before trusting it:"
+                                       Foreground="#FFE6D9C3" FontSize="11" Margin="0,4,0,2"
+                                       Visibility="{Binding Connection.IsRunning, Converter={StaticResource BoolToVisibility}}" />
+                            <TextBlock Text="{Binding Connection.Fingerprint}" Foreground="#FFFFE7B0"
+                                       FontSize="11" TextWrapping="Wrap"
+                                       Visibility="{Binding Connection.IsRunning, Converter={StaticResource BoolToVisibility}}" />
+                            <DockPanel LastChildFill="True" Margin="0,8,0,0">
+                                <Button Content="Approve matching phone" Command="{Binding Connection.ApproveCommand}"
+                                        Style="{StaticResource GameChoiceButton}" Padding="9,6" DockPanel.Dock="Right" />
+                                <TextBlock Text="{Binding Connection.PendingIdentity}" Foreground="#FFF8EEDC"
+                                           FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,10,0" />
+                            </DockPanel>
+
+                            <Button Content="CONTINUE TO GAME TABLE" Command="{Binding DismissMultiHumanPhoneSetupCommand}"
+                                    Style="{StaticResource GameChoiceButton}" Padding="22,10" FontSize="16"
+                                    HorizontalAlignment="Right" Margin="0,14,0,0"
+                                    AutomationProperties.Name="Continue to game table" />
+                        </StackPanel>
+                    </Border>
+                </Viewbox>
+            </Grid>
         </Grid>
     </Grid>
 </UserControl>

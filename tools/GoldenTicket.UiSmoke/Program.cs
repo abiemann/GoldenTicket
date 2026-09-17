@@ -891,7 +891,9 @@ internal static partial class Program
                     locomotive.TextWrapping != TextWrapping.NoWrap || locomotiveCard.Width < 80 ||
                     phase.Text != "Setup" || seat.Text != "Player 1" ||
                     instruction.Text != "Each seat keeps at least 2 of its 3 opening destinations." ||
-                    Descendants<Button>(gameTable).Any(IsElementShown) ||
+                    Descendants<Button>(gameTable).Any(button => IsElementShown(button) &&
+                        AutomationProperties.GetName(button) is not
+                            ("Show your train cards" or "Show your destinations")) ||
                     VisibleText(gameTable).Contains("Shift+Esc opens the utility screens", StringComparison.Ordinal))
                     throw new InvalidOperationException("The game table must retain its phase, acting-seat and human-instruction guidance above the shared board crop.");
                 var sceneBounds = scene.TransformToAncestor(view).TransformBounds(new Rect(scene.RenderSize));
@@ -1084,6 +1086,15 @@ internal static partial class Program
             checks.Add("Single-human setup shows laptop-only guidance and disables Connect phone.");
 
             await solo.StartMatchCommand.ExecuteAsync(null);
+            if (solo.ShowMultiHumanPhoneSetup)
+                throw new InvalidOperationException("A single-human match must not show the shared-phone setup.");
+            await RenderSizes("solo-no-phone-setup-synthetic", () => new GameScreenView { DataContext = solo }, view =>
+            {
+                var panel = (Border)view.FindName("MultiHumanPhoneSetupPanel");
+                if (IsElementShown(panel) || Descendants<Button>(view).Any(button =>
+                        IsElementShown(button) && AutomationProperties.GetName(button) == "Show shared phone setup"))
+                    throw new InvalidOperationException("A single-human game must not display shared-phone setup or its QR shortcut.");
+            });
             RequireHumanPrivateView(solo, "Solo test player", mustChooseTickets: true);
             var soloBoardPixels = new byte[960 * 600 * 4];
             for (var pixel = 0; pixel < soloBoardPixels.Length; pixel += 4)
@@ -1193,19 +1204,49 @@ internal static partial class Program
             if (Math.Abs(Canvas.GetLeft(animatedPiles) - 368) > 0.5 ||
                 Math.Abs(Canvas.GetLeft(animatedMarket) - 622) > 0.5)
                 throw new InvalidOperationException("The bottom panels must finish centered for a two-player game.");
-            var humanTile = Descendants<Button>(animatedTable).Single(button =>
-                button.DataContext is GameTableSeat tile && tile.Seat.DisplayName == "Solo test player" &&
-                IsElementShown(button));
-            if (humanTile.Command is null || !humanTile.Command.CanExecute(null))
-                throw new InvalidOperationException("The solo human tile must open its bound private-card command.");
-            humanTile.Command.Execute(null);
-            for (var attempt = 0; attempt < 20 && solo.PrivateSeat is null; attempt++) await Task.Delay(50);
-            RequireHumanPrivateView(solo, "Solo test player", mustChooseTickets: false);
-            if (solo.PrivateSeat!.Tickets.Any(ticket => ticket.TicketId == dropped.TicketId))
-                throw new InvalidOperationException("The dropped destination must be absent when the player opens their cards.");
-            await RenderSizes("solo-turn-cards-synthetic", () => new PrivateSeatView { DataContext = solo },
-                view => VerifyPrivateLabels(view, solo, "Solo test player", singleHuman: true));
-            checks.Add("Confirmed drop clears its card and track, slides Your Cards away, centers the draw panels, and leaves the board visible.");
+            var humanTrainStack = Descendants<Button>(animatedTable).Single(button =>
+                AutomationProperties.GetName(button) == "Show your train cards" &&
+                button.DataContext is GameTableSeat tile && tile.Seat.DisplayName == "Solo test player");
+            var humanDestinationsStack = Descendants<Button>(animatedTable).Single(button =>
+                AutomationProperties.GetName(button) == "Show your destinations" &&
+                button.DataContext is GameTableSeat tile && tile.Seat.DisplayName == "Solo test player");
+            var computerStack = Descendants<Button>(animatedTable).First(button =>
+                AutomationProperties.GetName(button) == "Show your train cards" &&
+                button.DataContext is GameTableSeat tile && tile.Seat.Operator == "computer");
+            var miniPanel = (Border)animatedTable.FindName("SoloCardPanel");
+            var miniTrainCards = (ItemsControl)animatedTable.FindName("SoloTrainCards");
+            var miniDestinations = (ItemsControl)animatedTable.FindName("SoloDestinationCards");
+            if (!IsElementShown(humanTrainStack) || !IsElementShown(humanDestinationsStack) ||
+                IsElementShown(computerStack) || IsElementShown(miniPanel) || solo.PrivateSeat is not null)
+                throw new InvalidOperationException("Only the solo human's T and D stacks should be clickable after opening setup.");
+            if (humanTrainStack.Command is null ||
+                !humanTrainStack.Command.CanExecute(humanTrainStack.CommandParameter))
+                throw new InvalidOperationException($"The T stack must bind its toggle command and human seat; " +
+                    $"command={humanTrainStack.Command is not null}, parameter={humanTrainStack.CommandParameter is GameTableSeat}.");
+
+            ((IInvokeProvider)new ButtonAutomationPeer(humanTrainStack).GetPattern(PatternInterface.Invoke)!).Invoke();
+            for (var attempt = 0; attempt < 20 && !solo.ShowSoloTrainCards; attempt++) await Task.Delay(50);
+            animatedTable.UpdateLayout();
+            if (!solo.ShowSoloTrainCards || !IsElementShown(miniPanel) || miniTrainCards.Items.Count != 4 ||
+                solo.PrivateSeat is not null || solo.Screen != Screen.Table)
+                throw new InvalidOperationException($"The T stack must expand four mini train cards while the board remains visible. " +
+                    $"Selected={solo.ShowSoloTrainCards}, panel={IsElementShown(miniPanel)}, " +
+                    $"cards={miniTrainCards.Items.Count}, private={solo.PrivateSeat is not null}, screen={solo.Screen}, " +
+                    $"enabled={humanTrainStack.IsEnabled}, opening={solo.ShowSoloOpeningTicketsOnBoard}, " +
+                    $"reveal={solo.CanRevealPrivateSeat}.");
+
+            ((IInvokeProvider)new ButtonAutomationPeer(humanDestinationsStack).GetPattern(PatternInterface.Invoke)!).Invoke();
+            for (var attempt = 0; attempt < 20 && !solo.ShowSoloDestinations; attempt++) await Task.Delay(50);
+            animatedTable.UpdateLayout();
+            if (!solo.ShowSoloDestinations || miniDestinations.Items.Count != 2 ||
+                solo.SoloDestinationCards.Any(destination => destination.Description == dropped.Description) ||
+                solo.PrivateSeat is not null || solo.Screen != Screen.Table)
+                throw new InvalidOperationException("The D stack must show two retained mini destinations without reopening the private screen.");
+            ((IInvokeProvider)new ButtonAutomationPeer(humanDestinationsStack).GetPattern(PatternInterface.Invoke)!).Invoke();
+            for (var attempt = 0; attempt < 20 && solo.ShowSoloCardPanel; attempt++) await Task.Delay(50);
+            if (solo.ShowSoloCardPanel || IsElementShown(miniPanel))
+                throw new InvalidOperationException("Clicking an open solo stack must collapse its mini-card panel.");
+            checks.Add("Confirmed drop clears its card and track, centers the draw panels, and T/D stacks toggle mini cards over the visible table.");
 
             keepAll.Setup.ManualVerificationAccepted = true;
             await keepAll.StartMatchCommand.ExecuteAsync(null);
@@ -1220,9 +1261,8 @@ internal static partial class Program
                 throw new InvalidOperationException("Keep all three must commit every opening destination and return to the board.");
             checks.Add("Keep all three commits the full opening offer and returns to the board.");
 
-            solo.HidePrivateSeatCommand.Execute(null);
             if (solo.IsPrivateVisible || solo.PrivateSeat is not null)
-                throw new InvalidOperationException("Back to table must discard the solo private view.");
+                throw new InvalidOperationException("The solo table must remain visible after card-stack inspection.");
             await RenderSizes("solo-table-synthetic", () => new TableView { DataContext = solo }, view =>
             {
                 var labels = VisibleButtons(view);
@@ -1230,26 +1270,50 @@ internal static partial class Program
                     VisibleText(view).Contains("Pass the laptop", StringComparison.Ordinal))
                     throw new InvalidOperationException("The solo table must offer Your cards without a laptop handoff prompt.");
             });
-            checks.Add("Back to table discards the private view and offers Your cards without handoff wording.");
+            checks.Add("The solo table remains public while card stacks expand in place.");
 
             shared.Setup.ManualVerificationAccepted = true;
             shared.Setup.Seats[0].DisplayName = "First human test player";
             shared.Setup.Seats[1].DisplayName = "Second human test player";
             shared.Setup.Seats[1].IsComputer = false;
             if (shared.IsSingleHumanGame || !shared.CanConnectPhone || !shared.ShowConnectionCommand.CanExecute(null))
-                throw new InvalidOperationException("Multiple humans must retain the optional Connect phone command.");
+                throw new InvalidOperationException("Multiple humans must retain the technical Connect phone command.");
             await RenderSizes("shared-setup-synthetic", () => new SetupView { DataContext = shared }, view =>
             {
                 var text = VisibleText(view);
-                if (!text.Contains("Multiple humans can pass", StringComparison.Ordinal) ||
+                if (!text.Contains("set up one shared phone from the QR over the table", StringComparison.Ordinal) ||
+                    !text.Contains("Phone card handoff is planned for a later update", StringComparison.Ordinal) ||
                     text.Contains("No phone connection is needed.", StringComparison.Ordinal))
-                    throw new InvalidOperationException("Multiple-human setup must show the choice of laptop handoff or shared companion.");
+                    throw new InvalidOperationException("Multiple-human setup must explain shared-phone QR setup and the unfinished phone handoff.");
             });
-            checks.Add("Multiple-human setup offers laptop pass-and-hide or an optional companion.");
+            checks.Add("Multiple-human setup explains shared-phone QR setup and the forthcoming phone handoff.");
 
             await shared.StartMatchCommand.ExecuteAsync(null);
+            if (!shared.ShowMultiHumanPhoneSetup || shared.Screen != Screen.Table)
+                throw new InvalidOperationException("A multiple-human match must show shared-phone setup over the game table.");
             if (shared.IsPrivateVisible || shared.PrivateSeat is not null)
                 throw new InvalidOperationException("A multiple-human match must start covered until explicit reveal.");
+            await RenderSizes("shared-phone-setup-synthetic", () => new GameScreenView { DataContext = shared }, view =>
+            {
+                var panel = (Border)view.FindName("MultiHumanPhoneSetupPanel");
+                var table = Descendants<GameTableView>(view).Single();
+                var qr = Descendants<Image>(panel).Single(image =>
+                    AutomationProperties.GetName(image) == "Shared phone installation QR code");
+                var start = Descendants<Button>(panel).Single(button => button.Content as string == "Start hosting");
+                if (!IsElementShown(panel) || !IsElementShown(table) ||
+                    !VisibleText(panel).Contains("pass it to the active player", StringComparison.Ordinal) ||
+                    qr.Source is not null || start.Command is null ||
+                    !ReferenceEquals(start.Command, shared.Connection.StartCommand))
+                    throw new InvalidOperationException("Multiple-human setup must cover the table, guide one shared phone, and bind the real local-host QR flow.");
+            });
+            shared.DismissMultiHumanPhoneSetupCommand.Execute(null);
+            if (shared.ShowMultiHumanPhoneSetup)
+                throw new InvalidOperationException("Continuing from phone setup must reveal the table.");
+            shared.OpenMultiHumanPhoneSetupCommand.Execute(null);
+            if (!shared.ShowMultiHumanPhoneSetup)
+                throw new InvalidOperationException("The phone setup must be reopenable from the table.");
+            shared.DismissMultiHumanPhoneSetupCommand.Execute(null);
+            checks.Add("Multiple-human table presents a shared-phone QR setup, without starting a listener during UI smoke.");
             await RenderSizes("shared-table-covered-synthetic", () => new TableView { DataContext = shared }, view =>
             {
                 var labels = VisibleButtons(view);

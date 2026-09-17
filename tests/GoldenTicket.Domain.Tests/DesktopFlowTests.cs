@@ -93,9 +93,14 @@ public class DesktopFlowTests
 
         await model.DrawBlindCardAsync();
         Assert.Equal("Drew 1 blind train card.", model.Table.Seats.Single(seat => seat.DisplayName == "Alex").LastAction);
+        Assert.Equal(Screen.Table, model.Screen);
+        Assert.Null(model.PrivateSeat);
 
+        await model.RevealPrivateSeatAsync();
         await model.DrawBlindCardAsync();
         Assert.Equal("Drew 2 blind train cards.", model.Table.Seats.Single(seat => seat.DisplayName == "Alex").LastAction);
+        Assert.Equal(Screen.Table, model.Screen);
+        Assert.Null(model.PrivateSeat);
     }
 
     [Fact]

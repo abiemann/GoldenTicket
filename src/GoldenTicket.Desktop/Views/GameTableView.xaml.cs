@@ -30,6 +30,7 @@ public partial class GameTableView : UserControl
     {
         AttachModel(DataContext as MainViewModel);
         PositionDrawPanels(animate: false);
+        PositionSoloCardPanel();
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e) => AttachModel(null);
@@ -38,6 +39,7 @@ public partial class GameTableView : UserControl
     {
         AttachModel(e.NewValue as MainViewModel);
         PositionDrawPanels(animate: false);
+        PositionSoloCardPanel();
     }
 
     private void AttachModel(MainViewModel? model)
@@ -60,6 +62,8 @@ public partial class GameTableView : UserControl
     {
         if (e.PropertyName == nameof(MainViewModel.ShowSoloOpeningTicketsOnBoard))
             QueueDrawPanelPosition();
+        if (e.PropertyName == nameof(MainViewModel.ShowSoloCardPanel))
+            PositionSoloCardPanel();
     }
 
     private void OnSeatsChanged(object? sender, NotifyCollectionChangedEventArgs e) => QueueDrawPanelPosition();
@@ -71,7 +75,11 @@ public partial class GameTableView : UserControl
         Dispatcher.BeginInvoke(() =>
         {
             _updateQueued = false;
-            if (_model is not null) PositionDrawPanels(animate: true);
+            if (_model is not null)
+            {
+                PositionDrawPanels(animate: true);
+                PositionSoloCardPanel();
+            }
         }, DispatcherPriority.Loaded);
     }
 
@@ -83,6 +91,47 @@ public partial class GameTableView : UserControl
                      _model.Table.Seats.Count is > 0 and < 5;
         MovePanel(DrawPilesPanel, center ? CenteredDrawPilesLeft : OuterDrawPilesLeft, animate);
         MovePanel(FaceUpMarketPanel, center ? CenteredFaceUpMarketLeft : OuterFaceUpMarketLeft, animate);
+    }
+
+    private void PositionSoloCardPanel()
+    {
+        var station = _model?.Game.TableSeats.FirstOrDefault(tile => tile.Seat.Operator == "human");
+        if (station is null) return;
+
+        Canvas.SetLeft(SoloCardPanel, Math.Clamp(station.Left, 8, TableScene.Width - SoloCardPanel.Width - 8));
+        const double estimatedPanelHeight = 214;
+        var below = station.Top + 148;
+        Canvas.SetTop(SoloCardPanel, below + estimatedPanelHeight <= TableScene.Height - 8
+            ? below
+            : Math.Max(8, station.Top - estimatedPanelHeight - 8));
+    }
+
+    private void OnSoloCardPanelVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.NewValue is not true) return;
+        PositionSoloCardPanel();
+
+        if (SoloCardPanel.RenderTransform is not System.Windows.Media.TranslateTransform transform) return;
+        transform.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty, null);
+        SoloCardPanel.BeginAnimation(OpacityProperty, null);
+        if (!SystemParameters.ClientAreaAnimation)
+        {
+            transform.Y = 0;
+            SoloCardPanel.Opacity = 1;
+            return;
+        }
+
+        transform.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty,
+            new DoubleAnimation(-32, 0, new Duration(TimeSpan.FromMilliseconds(280)))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                FillBehavior = FillBehavior.Stop,
+            });
+        SoloCardPanel.BeginAnimation(OpacityProperty,
+            new DoubleAnimation(0, 1, new Duration(TimeSpan.FromMilliseconds(220)))
+            {
+                FillBehavior = FillBehavior.Stop,
+            });
     }
 
     private static void MovePanel(Border panel, double destination, bool animate)

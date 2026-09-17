@@ -109,14 +109,16 @@ This build implements the core game plus initial phone, camera and photo workflo
 - With one human, the three opening destinations appear over the game board. Keep all three or
   click one to drop it. A confirmed drop removes that card and its board highlight together, then
   slides the remaining **Your Cards** panel down before saving the two kept destinations. The
-  public table stays visible after either opening choice; select the human's tile to open their
-  turn cards. The unresolved opening choice has no **Back to table** action, and plain Escape does
-  not dismiss it. Later private views use
-  **Your cards** and **Back to table** instead of handoff prompts, and **Connect phone** is hidden.
-  Matches with multiple humans keep pass-and-hide and can optionally use the phone companion.
-- A laptop-hosted HTTPS phone PWA with private human cards/tickets, digital draws and route/payment
-  choices. One shared controller is paired and explicitly approved on the laptop. Private views
-  expire and hide on handoff, backgrounding, or connection loss; the laptop verifies physical moves.
+  public table stays visible after either opening choice; click the human's T or D stack to see
+  compact card previews. The unresolved opening choice has no **Back to table** action, and plain
+  Escape does not dismiss it. Later laptop private controls are available through
+  **Shift+Escape**, and **Connect phone** is hidden.
+  With multiple humans, the game table presents phone setup so one shared phone can be passed
+  between players. Hosting still requires an explicit start on a selected Private LAN connection;
+  the table shows the real connection QR only after the local host supplies an address.
+- A laptop-hosted HTTPS phone PWA foundation with pairing and private card controls. One shared
+  controller is paired and explicitly approved on the laptop. The complete pass-around card flow
+  still needs implementation and real-device validation; the laptop verifies physical moves.
 - A camera screen with Windows video-only capture, resolution selection, preview, ML-assisted four-corner
   board crop with manual selection and draggable corners, and conservative scene-reference
   change/recovery indication. Focus the preview and press **1–4**, then arrow keys, to adjust a
@@ -317,9 +319,9 @@ turn, status and players; **Packed away** is a status, not the save's name.
    off-screen before the choice is saved. The draw piles and face-up train cards stay hidden until
    the opening choice is complete. Select **KEEP ALL THREE** or click one card and confirm its drop;
    at least two must be kept. There is no **Back to table** action for this choice, and plain Escape
-   leaves it open. After either choice, the public board stays visible; click the solo human's tile
-   when it is their turn to open their private cards. The computer chooses its own destinations by
-   value and estimated route cost and may keep all three.
+   leaves it open. After either choice, the public board stays visible. In solo play, click the T or D
+   stack in the human's tile to slide down small train cards or destinations without leaving the table.
+   The computer chooses its own destinations by value and estimated route cost and may keep all three.
    The chosen players sit around it with their matching portraits, train colors, remaining trains,
    and face-down card and destination stacks showing public counts. The first two face each other;
    with five players, two tiles flank each side of the board and the fifth sits centered below it
@@ -336,26 +338,30 @@ turn, status and players; **Packed away** is a status, not the save's name.
    private-card reveal and public turn, placement, and save controls. A camera restart or format change requires
    checking and restoring the board crop through the technical Camera screen.
 4. With one human, opening destination choices appear directly on the laptop. With multiple
-   humans, each player reveals their private view in turn; the screen is covered between seats.
-5. On a solo human's turn, select their tile to open the laptop's private view for draws,
-   destinations, or route and payment choices. **Back to table** returns to the public screen;
-   the technical **Game table** screen can reopen the hand. With multiple humans, the active
-   player explicitly reveals their private view.
+   humans, the visible game table guides setup of one shared phone for private cards. Start hosting
+   on a selected Private LAN connection before scanning its QR. The phone's card display and
+   handoff still need real-device PWA validation.
+5. The laptop stays on **THE GAME TABLE** after turns and scoring-marker detection. In solo play,
+   the T and D stacks show read-only mini cards on the table when clicked. To take a turn on the
+   laptop, press **Shift+Escape** and use the technical **Game table** screen's private controls;
+   return to the game layer afterward. With multiple humans, the shared phone is the intended
+   private controller; actions do not automatically reveal a private screen on the laptop.
 
 6. When any seat claims a route, the public screen names the seat, its colour and symbol, both
    endpoint cities, the exact lane, and how many trains to place. Place them in any order. For
    The board shows one pulsing yellow cue in each requested train space. The camera checks all of
    those spaces automatically, shows “Thank you” for three seconds, then asks you to move that
    player's scoring marker. It waits until the marker appears at the new printed score before
-   continuing. Nothing is spent or scored until placement is verified.
+   continuing on **THE GAME TABLE**. Nothing is spent or scored until placement is verified.
 7. After someone finishes a turn with two trains or fewer, every seat takes one more turn, and then
    the results screen shows each seat's route points, destination tickets, longest continuous route
    and the trail that achieved it.
 
-For multiple humans, optionally use **Connect phone** to start the local host, install/trust its
-public certificate, open the PWA, and approve the matching pairing identity. Return to **Game
-table** to enable phone play, then select **Return to game** to cover the technical screens.
-Pass-and-hide on the laptop also works. A single human needs no
+For multiple humans, follow the phone setup shown on **THE GAME TABLE**. Select a Private LAN
+connection and explicitly start the local host; only then can the table display a connection QR.
+Install/trust the laptop's public certificate, open the PWA, and approve the matching pairing
+identity. The phone is intended to pass between human players for private cards; its card and
+handoff flow remains unfinished and unverified on real devices. A single human needs no
 phone connection or local HTTPS setup. Use **Camera** for preview, board crop and a stable scene
 reference. **Save and pack away** saves the digital game; it does not automatically take a picture.
 **Export board photo** writes a PNG of the current crop and works without a scene reference, even

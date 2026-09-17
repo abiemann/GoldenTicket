@@ -52,6 +52,50 @@ public sealed class AutomaticPhysicalFlowTests
         finally { await model.DisposeToolsAsync(); }
     }
 
+    [Fact]
+    public async Task DetectingAComputerScoreMarkerKeepsASoloHumanOnTheGameTable()
+    {
+        var model = new MainViewModel(TestManifest.Manifest, new InMemorySessionStore());
+        model.Setup.ManualVerificationAccepted = true;
+        model.Setup.Seats[0].IsComputer = true;
+        model.Setup.Seats[1].IsComputer = true;
+        model.Setup.Seats[2].IsComputer = false;
+        try
+        {
+            await model.StartMatchAsync();
+            Assert.True(model.ShowSoloOpeningTicketsOnBoard);
+            await model.CommitTicketsAsync();
+            Assert.Null(model.PrivateSeat);
+            Assert.Equal(Screen.Table, model.Screen);
+
+            var placement = Assert.IsType<PlacementInstruction>(model.Table.Placement);
+            var accept = typeof(MainViewModel).GetMethod("AcceptPhysicalPlacementAsync",
+                BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var claim = Assert.IsAssignableFrom<Task>(accept.Invoke(model,
+                [placement, EvidenceKind.CameraAutomatic, "synthetic-test-model", "Two stable route observations."]));
+            await WaitUntilAsync(() => model.Game.GuidanceInstruction == "Thank you");
+            Assert.Null(model.PrivateSeat);
+            Assert.Equal(Screen.Table, model.Screen);
+
+            await claim;
+            Assert.Null(model.PrivateSeat);
+            Assert.Equal(Screen.Table, model.Screen);
+            var target = model.Table.Seats.Single(seat => seat.SeatId == placement.SeatId).Score % 100 + 1;
+            model.Camera.IsGameTablePreviewUpright = true;
+            var color = Enum.Parse<MarkerColor>(placement.Color.ToString());
+            var firstAt = DateTimeOffset.UtcNow;
+            PublishScore(model.Camera, 1, firstAt, color, target);
+            PublishScore(model.Camera, 2, firstAt.AddSeconds(1.1), color, target);
+            await WaitUntilAsync(() => model.Game.GuidanceTurn != "Scoring");
+
+            Assert.Equal(Screen.Table, model.Screen);
+            Assert.Null(model.PrivateSeat);
+            Assert.False(model.IsPrivateVisible);
+            Assert.False(model.ShowSoloCardPanel);
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
     private static void PublishScore(CameraViewModel camera, long sequence,
         DateTimeOffset capturedAt, MarkerColor color, int score)
     {

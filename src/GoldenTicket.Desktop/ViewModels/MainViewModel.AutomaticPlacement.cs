@@ -153,7 +153,6 @@ public sealed partial class MainViewModel
             _coordinator?.SessionId != step.SessionId) return;
         _scoreCompletionInProgress = true;
         SetOperationInProgress(true);
-        var generation = _revealGeneration;
         try
         {
             _scoreMarkerStep = null;
@@ -170,7 +169,6 @@ public sealed partial class MainViewModel
             _scoreCompletionInProgress = false;
             SetOperationInProgress(false);
         }
-        await ShowSingleHumanCardsAsync(generation);
     }
 
     private static int PrintedScore(int routeScore) => routeScore % 100 + 1;
