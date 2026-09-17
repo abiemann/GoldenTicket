@@ -533,6 +533,10 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     public void BeginGameTablePreview()
     {
         if (!CanStartGameWithBoard || Capture.LatestFrame is not { } frame) return;
+        BoardInteractionLog.Write("camera.board.preview-started", new
+        {
+            frame.Sequence, frame.Epoch, frame.Width, frame.Height
+        });
         ClearGameTableAnalysis();
         _gameTablePreviewRequested = true;
         var orientation = _gameBoardOrientationIndex ?? 0;

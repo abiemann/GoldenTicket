@@ -11,7 +11,7 @@ public partial class App : System.Windows.Application
 
     /// <summary>
     /// DESIGN 19.1 / 21.2: a bounded, user-clearable diagnostics location outside the installation
-    /// directory. It records timings and errors, never game objects or card text.
+    /// directory. The board log records public camera and placement decisions, never private cards.
     /// </summary>
     public static string DiagnosticsDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -29,9 +29,17 @@ public partial class App : System.Windows.Application
             _ = CheckPackageAndExitAsync(e.Args[1]);
             return;
         }
+        BoardInteractionLog.Start(DiagnosticsDirectory);
         StartupUri = new Uri("MainWindow.xaml", UriKind.Relative);
         base.OnStartup(e);
         DispatcherUnhandledException += OnUnhandledException;
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        BoardInteractionLog.Write("app.exit", new { exitCode = e.ApplicationExitCode });
+        BoardInteractionLog.Stop();
+        base.OnExit(e);
     }
 
     private async Task CheckPackageAndExitAsync(string reportPath)
@@ -53,6 +61,10 @@ public partial class App : System.Windows.Application
         _reported = true;
 
         DiagnosticLog.Write(e.Exception, DiagnosticsDirectory, DateTimeOffset.UtcNow);
+        BoardInteractionLog.Write("app.unhandled-error", new
+        {
+            errorType = e.Exception.GetType().Name, errorCode = e.Exception.HResult
+        });
 
         if (alreadyReported) return;
 

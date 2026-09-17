@@ -84,6 +84,12 @@ This build implements the core game plus initial phone, camera and photo workflo
   must identify a separate train of the player's color in every requested space before one atomic
   commit spends the cards, records ownership, scores and ends the turn. Adjacent parallel lanes are
   checked separately. This geometry and automated tests still need live-camera accuracy validation.
+  Each normal app launch starts a fresh local board-decision log at
+  `%LOCALAPPDATA%\GoldenTicket\diagnostics\board-interactions.jsonl`. It records camera and model
+  availability, detected candidate positions and confidence near the requested route, color and
+  slot checks, and claim/score-marker outcomes. It contains no camera images or private cards.
+  When it reaches 64 MB, the older segment moves to `board-interactions.previous.jsonl`; both
+  segments are cleared on the next app launch.
 - Exact final scoring, including the longest continuous route as a true maximum edge-simple trail
   with the witness trail shown.
 - Heuristic computer opponents at three difficulty levels, which see only their own seat's view.

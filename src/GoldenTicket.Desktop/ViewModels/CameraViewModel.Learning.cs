@@ -71,7 +71,11 @@ public sealed partial class CameraViewModel
                         (loaded.FallbackReason is { Length: > 0 } reason ? " · " + reason : "");
                 }
             }, _lifetime.Token);
-            if (!_disposed) ModelStatus = status;
+            if (!_disposed)
+            {
+                ModelStatus = status;
+                BoardInteractionLog.Write("camera.model.ready", new { status });
+            }
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         catch (Exception error)
@@ -81,6 +85,10 @@ public sealed partial class CameraViewModel
                 ClearDetectionPreview();
                 ModelStatus = "ML unavailable: " + error.Message;
                 DetectionText = "The local ML model could not be loaded. Manual play and the camera preview remain available.";
+                BoardInteractionLog.Write("camera.model.error", new
+                {
+                    errorType = error.GetType().Name, errorCode = error.HResult
+                });
             }
         }
         finally { IsModelBusy = false; }

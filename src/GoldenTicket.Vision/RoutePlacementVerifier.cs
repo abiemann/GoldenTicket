@@ -228,6 +228,10 @@ public sealed class RoutePlacementVerifier
         return (MarkerColor)(best - 1);
     }
 
+    /// <summary>Expose the verifier's own color reading for board-audit diagnostics.</summary>
+    public static MarkerColor? ReadCandidateColor(CameraFrame frame, PieceCandidate candidate) =>
+        ReadColor(frame, candidate);
+
     // Mirrors the five physical-piece hue bands used for score markers, without counting the
     // printed route color as evidence: only pixels inside an ML-detected train are sampled.
     private static int ClassifyColor(int r, int g, int b)

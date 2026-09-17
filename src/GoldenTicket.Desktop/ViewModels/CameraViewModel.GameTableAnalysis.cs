@@ -12,6 +12,7 @@ public sealed partial class CameraViewModel
     private Task _gameTableAnalysisWork = Task.CompletedTask;
     private bool _gameTableAnalysisBusy;
     private DateTimeOffset _lastGameTableAnalysisAt = DateTimeOffset.MinValue;
+    private string? _lastGameTableAnalysisBlock;
 
     /// <summary>
     /// The most recent camera/model result for the board accepted during setup. Consumers must still
@@ -23,6 +24,21 @@ public sealed partial class CameraViewModel
         private set
         {
             if (ReferenceEquals(_gameTableAnalysis, value)) return;
+            if (value is null && _gameTableAnalysis is { } previous)
+                BoardInteractionLog.Write("camera.analysis.cleared", new
+                {
+                    previous.Board.Sequence, previous.Board.Epoch,
+                    ageMs = previous.Board.Age.TotalMilliseconds
+                });
+            else if (value is { } current)
+                BoardInteractionLog.Write("camera.analysis.published", new
+                {
+                    current.Board.Sequence, current.Board.Epoch,
+                    ageMs = current.Board.Age.TotalMilliseconds,
+                    current.CropRevision, current.ModelRevision, current.ModelId,
+                    trains = current.Candidates.Count(candidate => candidate.Kind == PieceCandidateKind.Train),
+                    markers = current.Candidates.Count(candidate => candidate.Kind == PieceCandidateKind.PlayerMarker)
+                });
             _gameTableAnalysis = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(CanCaptureGameTablePhoto));
@@ -39,23 +55,40 @@ public sealed partial class CameraViewModel
 
     private void QueueGameTableAnalysis(CameraFrame frame)
     {
-        if (_disposed || _gameTableAnalysisBusy || !Capture.IsRunning || !IsGameTablePreviewUpright ||
-            _gameTableRegistration is not { } registration || _pieceModel is null || IsModelBusy)
+        if (_gameTableAnalysisBusy) return;
+        var block = _disposed ? "disposed" : !Capture.IsRunning ? "camera-stopped" :
+            !IsGameTablePreviewUpright ? "board-orientation-unverified" :
+            _gameTableRegistration is null ? "board-crop-unavailable" :
+            IsModelBusy ? "model-loading" : _pieceModel is null ? "piece-model-unavailable" : null;
+        if (block is not null)
         {
+            NoteGameTableAnalysisBlock(block);
             if (!IsGameTablePreviewUpright || _pieceModel is null || IsModelBusy)
                 ClearGameTableAnalysis();
             return;
         }
+        var registration = _gameTableRegistration!;
         if (!registration.Matches(frame) || frame.Age > TimeSpan.FromSeconds(2))
         {
+            NoteGameTableAnalysisBlock(registration.Matches(frame) ? "source-frame-stale" : "camera-format-changed");
             ClearGameTableAnalysis();
             return;
         }
+        if (_lastGameTableAnalysisBlock is { } recovered)
+            BoardInteractionLog.Write("camera.analysis.resumed", new { previousBlock = recovered });
+        _lastGameTableAnalysisBlock = null;
         var now = DateTimeOffset.UtcNow;
         if (now - _lastGameTableAnalysisAt < TimeSpan.FromMilliseconds(700)) return;
         _lastGameTableAnalysisAt = now;
         _gameTableAnalysisBusy = true;
         _gameTableAnalysisWork = AnalyzeGameTableAsync(frame, registration, _gameTableCropRevision, _modelRevision);
+    }
+
+    private void NoteGameTableAnalysisBlock(string reason)
+    {
+        if (_lastGameTableAnalysisBlock == reason) return;
+        _lastGameTableAnalysisBlock = reason;
+        BoardInteractionLog.Write("camera.analysis.blocked", new { reason });
     }
 
     private async Task AnalyzeGameTableAsync(CameraFrame frame, BoardRegistration registration,
@@ -74,6 +107,15 @@ public sealed partial class CameraViewModel
                     if (modelRevision != _modelRevision || _pieceModel is null) return null;
                     detection = _pieceModel.Detect(board, _lifetime.Token);
                 }
+                BoardInteractionLog.Write("camera.model.result", new
+                {
+                    board.Sequence, board.Epoch,
+                    detection.ModelId, detection.Backend,
+                    inferenceMs = detection.Elapsed.TotalMilliseconds,
+                    boardAgeMs = board.Age.TotalMilliseconds,
+                    trains = detection.Candidates.Count(candidate => candidate.Kind == PieceCandidateKind.Train),
+                    markers = detection.Candidates.Count(candidate => candidate.Kind == PieceCandidateKind.PlayerMarker)
+                });
                 var scores = ScoreMarkerReader.Read(board, detection.Candidates);
                 return new GameTableAnalysis(board, detection.Candidates, scores, cropRevision,
                     modelRevision, detection.ModelId);
@@ -86,6 +128,19 @@ public sealed partial class CameraViewModel
                 Capture.LatestFrame is not { } latest || latest.Epoch != frame.Epoch ||
                 latest.Age > TimeSpan.FromSeconds(2) || !registration.Matches(latest))
             {
+                BoardInteractionLog.Write("camera.analysis.discarded", new
+                {
+                    frame.Sequence, frame.Epoch, cropRevision, modelRevision,
+                    resultAgeMs = result?.Board.Age.TotalMilliseconds,
+                    reason = _disposed ? "disposed" : result is null ? "no-result" :
+                        !Capture.IsRunning ? "camera-stopped" : !IsGameTablePreviewUpright ? "orientation-unverified" :
+                        !ReferenceEquals(registration, _gameTableRegistration) ? "registration-changed" :
+                        cropRevision != _gameTableCropRevision ? "crop-changed" :
+                        modelRevision != _modelRevision ? "model-changed" :
+                        IsModelBusy ? "model-loading" :
+                        result.Board.Age > TimeSpan.FromSeconds(2) ? "inference-result-stale" :
+                        "source-frame-unavailable-or-changed"
+                });
                 ClearGameTableAnalysis();
                 return;
             }
@@ -95,8 +150,13 @@ public sealed partial class CameraViewModel
         {
             ClearGameTableAnalysis();
         }
-        catch (Exception)
+        catch (Exception error)
         {
+            BoardInteractionLog.Write("camera.analysis.error", new
+            {
+                frame.Sequence, frame.Epoch,
+                errorType = error.GetType().Name, errorCode = error.HResult
+            });
             // A failed camera/model observation must never become game evidence. The next frame retries.
             ClearGameTableAnalysis();
         }

@@ -80,6 +80,8 @@ public sealed partial class CameraViewModel
 
     private void HoldLiveBoardAlignment(string status)
     {
+        if (IsGameTablePreviewUpright || GameTablePreviewStatus != status)
+            BoardInteractionLog.Write("camera.board.alignment-held", new { status });
         if (IsGameTablePreviewUpright) IsGameTablePreviewUpright = false;
         ClearGameTableAnalysis();
         GameTablePreview = null;
@@ -125,6 +127,13 @@ public sealed partial class CameraViewModel
             if (!detected.Accepted)
             {
                 if (!IsGameTablePreviewUpright)
+                    BoardInteractionLog.Write("camera.board.corners-rejected", new
+                    {
+                        source.Sequence, source.Epoch,
+                        detected.Confidences,
+                        detected.RejectionReason
+                    });
+                if (!IsGameTablePreviewUpright)
                     GameTablePreviewStatus = "Waiting for all four outer board corners to be visible.";
                 return;
             }
@@ -157,6 +166,16 @@ public sealed partial class CameraViewModel
             ClearGameTableAnalysis();
             _gameTableRegistration = selected;
             _gameTableCropRevision++;
+            BoardInteractionLog.Write("camera.board.aligned", new
+            {
+                source.Sequence, source.Epoch,
+                cropRevision = _gameTableCropRevision,
+                orientation = orientation.Value,
+                corners = selected.Corners.Select(point => new
+                {
+                    x = Math.Round(point.X, 5), y = Math.Round(point.Y, 5)
+                }).ToArray()
+            });
             _lastGameTableCropAt = DateTimeOffset.MinValue;
             GameTablePreview = null;
             IsGameTablePreviewUpright = true;
