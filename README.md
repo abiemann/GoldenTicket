@@ -332,7 +332,10 @@ turn, status and players; **Packed away** is a status, not the save's name.
    the opening choice is complete. Select **KEEP ALL THREE** or click one card and confirm its drop;
    at least two must be kept. There is no **Back to table** action for this choice, and plain Escape
    leaves it open. After either choice, the public board stays visible. In solo play, click the T or D
-   stack in the human's tile to slide down small train cards or destinations without leaving the table.
+   stack in the human's tile on that human's turn to slide down small train cards or destinations
+   without leaving the table. The stacks cannot be opened during the computer's turn.
+   Opening the destination stack also circles the endpoint cities of the held destinations on the
+   live board; closing it removes those circles. This board overlay is for one-human games only.
    The computer chooses its own destinations by value and estimated route cost and may keep all three.
    The chosen players sit around it with their matching portraits, train colors, remaining trains,
    and face-down card and destination stacks showing public counts. The first two face each other;

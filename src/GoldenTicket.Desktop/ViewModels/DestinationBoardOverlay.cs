@@ -40,7 +40,8 @@ public sealed class DestinationMarkerRow : ObservableObject
     public double Diameter => 40;
     public double CenterX => Left + Diameter / 2;
     public double CenterY => Top + Diameter / 2;
-    public bool IsVisible => _choices.Any(choice => choice.Keep);
+    // Kept destinations have no pending choice; opening offers retain their per-card visibility.
+    public bool IsVisible => _choices.Count == 0 || _choices.Any(choice => choice.Keep);
 
     internal double ReferenceX => _referenceX;
     internal double ReferenceY => _referenceY;
@@ -218,6 +219,31 @@ public static class DestinationBoardOverlay
                 choicesByCity.Add(city, choices = []);
             choices.Add(choice);
         }
+    }
+
+    /// <summary>City rings for destinations already held by the one human seat.</summary>
+    public static IReadOnlyList<DestinationMarkerRow> BuildKept(BoardManifest manifest,
+        IEnumerable<TicketId> tickets)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentNullException.ThrowIfNull(tickets);
+        if (manifest.ProfileId != "ttr-us-classic-en-v1") return [];
+
+        var cities = new HashSet<CityId>();
+        foreach (var ticketId in tickets)
+        {
+            var ticket = manifest.Ticket(ticketId);
+            cities.Add(ticket.CityA);
+            cities.Add(ticket.CityB);
+        }
+
+        return cities.Where(city => CityCenters.ContainsKey(city.Value))
+            .Select(city =>
+            {
+                var point = CityCenters[city.Value];
+                return new DestinationMarkerRow(city, manifest.City(city).DisplayName,
+                    point.X / 1996d, point.Y / 1248d, []);
+            }).ToArray();
     }
 
     public static IReadOnlyList<DestinationLineRow> BuildLines(BoardManifest manifest,

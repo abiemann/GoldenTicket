@@ -39,6 +39,7 @@
                     <MultiDataTrigger.Conditions>
                         <Condition Binding="{Binding Seat.Operator}" Value="human" />
                         <Condition Binding="{Binding DataContext.IsSingleHumanGame, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" Value="True" />
+                        <Condition Binding="{Binding DataContext.IsSoloHumanTurn, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" Value="True" />
                         <Condition Binding="{Binding DataContext.ShowSoloOpeningTicketsOnBoard, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" Value="False" />
                     </MultiDataTrigger.Conditions>
                     <Setter Property="Visibility" Value="Visible" />
@@ -61,11 +62,12 @@
                         <Image x:Name="LiveBoardImage" Source="{Binding Camera.GameTablePreview}"
                                Stretch="Fill" AutomationProperties.Name="Live cropped board" />
                         <Viewbox Stretch="Fill" IsHitTestVisible="False"
-                                 Visibility="{Binding ShowSoloOpeningTicketsOnBoard, Converter={StaticResource BoolToVisibility}}">
+                                 Visibility="{Binding ShowDestinationMarkersOnBoard, Converter={StaticResource BoolToVisibility}}">
                             <Grid Width="960" Height="600"
                                   Visibility="{Binding Camera.GameTablePreview, Converter={StaticResource NullToVisibility}}">
                                 <ItemsControl x:Name="DestinationLines" Width="960" Height="600"
-                                              ItemsSource="{Binding PrivateSeat.DestinationLines}">
+                                              ItemsSource="{Binding PrivateSeat.DestinationLines}"
+                                              Visibility="{Binding ShowSoloOpeningTicketsOnBoard, Converter={StaticResource BoolToVisibility}}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
@@ -83,7 +85,7 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                                 <ItemsControl x:Name="DestinationCityMarkers" Width="960" Height="600"
-                                              ItemsSource="{Binding PrivateSeat.DestinationMarkers}">
+                                              ItemsSource="{Binding BoardDestinationMarkers}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>

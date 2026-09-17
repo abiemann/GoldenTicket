@@ -113,10 +113,17 @@ public sealed partial class MainViewModel : ObservableObject
     public bool IsPrivateVisible => PrivateSeat is not null;
     public bool ShowSoloOpeningTicketsOnBoard => IsSingleHumanGame &&
         PrivateSeat is { IsSetupOffer: true, MustChooseTickets: true };
+    public bool ShowDestinationMarkersOnBoard => ShowSoloOpeningTicketsOnBoard ||
+        IsSingleHumanGame && ShowSoloDestinations && SoloDestinationMarkers.Count > 0;
+    public IReadOnlyList<DestinationMarkerRow> BoardDestinationMarkers =>
+        ShowSoloOpeningTicketsOnBoard ? PrivateSeat?.DestinationMarkers ?? [] :
+        IsSingleHumanGame && ShowSoloDestinations ? SoloDestinationMarkers : [];
     public double GameTableBoardTop => ShowSoloOpeningTicketsOnBoard ? 120 : 190;
 
     private int HumanSeatCount => _coordinator?.Public.Seats.Count(seat => seat.Kind == SeatKind.Human) ?? Setup.HumanSeatCount;
     public bool IsSingleHumanGame => HumanSeatCount == 1;
+    public bool IsSoloHumanTurn => _coordinator?.Public is { Lifecycle: SessionLifecycle.Active } view &&
+        IsSingleHumanGame && view.SeatOf(view.ActiveSeatId).Kind == SeatKind.Human;
     public bool CanConnectPhone => HumanSeatCount > 1;
     public Screen GameplayScreen => _gameScreen;
     private bool IsGameplayScreenActive(Screen screen) =>
@@ -144,7 +151,10 @@ public sealed partial class MainViewModel : ObservableObject
     private void NotifyHumanPresentation()
     {
         OnPropertyChanged(nameof(IsSingleHumanGame));
+        OnPropertyChanged(nameof(IsSoloHumanTurn));
         OnPropertyChanged(nameof(ShowSoloOpeningTicketsOnBoard));
+        OnPropertyChanged(nameof(ShowDestinationMarkersOnBoard));
+        OnPropertyChanged(nameof(BoardDestinationMarkers));
         OnPropertyChanged(nameof(GameTableBoardTop));
         OnPropertyChanged(nameof(CanConnectPhone));
         OnPropertyChanged(nameof(RevealPrompt));
@@ -173,6 +183,8 @@ public sealed partial class MainViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsPrivateVisible));
         OnPropertyChanged(nameof(ShowSoloOpeningTicketsOnBoard));
+        OnPropertyChanged(nameof(ShowDestinationMarkersOnBoard));
+        OnPropertyChanged(nameof(BoardDestinationMarkers));
         OnPropertyChanged(nameof(GameTableBoardTop));
         _lastDestinationAlignmentUtc = DateTime.MinValue;
         AlignDestinationMarkers();
@@ -180,13 +192,13 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void AlignDestinationMarkers()
     {
-        if (!ShowSoloOpeningTicketsOnBoard ||
-            PrivateSeat is not { DestinationMarkers.Count: > 0 } seat ||
-            Camera.GameTablePreview is not { } preview) return;
+        if (!ShowDestinationMarkersOnBoard || Camera.GameTablePreview is not { } preview) return;
+        var markers = BoardDestinationMarkers;
+        if (markers.Count == 0) return;
         var now = DateTime.UtcNow;
         if (now - _lastDestinationAlignmentUtc < TimeSpan.FromMilliseconds(500)) return;
         _lastDestinationAlignmentUtc = now;
-        DestinationBoardOverlay.AlignToPreview(preview, seat.DestinationMarkers);
+        DestinationBoardOverlay.AlignToPreview(preview, markers);
     }
 
     partial void OnScreenChanged(Screen value)
@@ -792,6 +804,7 @@ public sealed partial class MainViewModel : ObservableObject
         CloseSoloCardPanel();
 
         var view = _coordinator.Public;
+        OnPropertyChanged(nameof(IsSoloHumanTurn));
         ReconcileBoardFirstClaimFlow(view);
         Table.Update(view, _coordinator.PublicHistory);
         await RefreshCheckpointPhotoAsync();

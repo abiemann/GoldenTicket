@@ -86,6 +86,8 @@ public sealed class DesktopSingleHumanTests
             await model.ToggleSoloTrainCardsCommand.ExecuteAsync(human);
             Assert.True(model.ShowSoloTrainCards);
             Assert.Equal(4, model.SoloTrainCards.Count);
+            Assert.False(model.ShowDestinationMarkersOnBoard);
+            Assert.Empty(model.BoardDestinationMarkers);
             Assert.Null(model.PrivateSeat);
             Assert.Equal(Screen.Table, model.Screen);
 
@@ -94,11 +96,46 @@ public sealed class DesktopSingleHumanTests
             Assert.False(model.ShowSoloTrainCards);
             Assert.Equal(3, model.SoloDestinationCards.Count);
             Assert.All(model.SoloDestinationCards, card => Assert.True(card.Points > 0));
+            Assert.True(model.ShowDestinationMarkersOnBoard);
+            Assert.NotEmpty(model.SoloDestinationMarkers);
+            Assert.Equal(model.SoloDestinationMarkers, model.BoardDestinationMarkers);
+            Assert.All(model.BoardDestinationMarkers, marker => Assert.True(marker.IsVisible));
             Assert.Null(model.PrivateSeat);
 
             await model.ToggleSoloDestinationsCommand.ExecuteAsync(human);
             Assert.False(model.ShowSoloCardPanel);
             Assert.Empty(model.SoloDestinationCards);
+            Assert.Empty(model.SoloDestinationMarkers);
+            Assert.Empty(model.BoardDestinationMarkers);
+            Assert.False(model.ShowDestinationMarkersOnBoard);
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Fact]
+    public async Task SoloCardStacksStayClosedWhileComputerTakesItsTurn()
+    {
+        var model = NewSingleHumanMatch();
+        try
+        {
+            await model.StartMatchAsync();
+            await model.CommitTicketsAsync();
+            await model.RevealPrivateSeatAsync();
+            await model.DrawBlindCardAsync();
+            await model.RevealPrivateSeatAsync();
+            await model.DrawBlindCardAsync();
+            var human = model.Game.TableSeats.Single(tile => tile.Seat.Operator == "human");
+
+            Assert.False(model.IsSoloHumanTurn,
+                $"Active={model.Table.ActiveSeatName}; phase={model.Table.PhaseText}; placement={model.Table.Placement is not null}; status={model.Status}");
+            Assert.Contains(model.Table.Seats, seat =>
+                seat.Operator == "computer" && seat.DisplayName == model.Table.ActiveSeatName);
+            await model.ToggleSoloTrainCardsCommand.ExecuteAsync(human);
+            await model.ToggleSoloDestinationsCommand.ExecuteAsync(human);
+            Assert.False(model.ShowSoloCardPanel);
+            Assert.Empty(model.SoloTrainCards);
+            Assert.Empty(model.SoloDestinationCards);
+            Assert.False(model.ShowDestinationMarkersOnBoard);
         }
         finally { await model.DisposeToolsAsync(); }
     }

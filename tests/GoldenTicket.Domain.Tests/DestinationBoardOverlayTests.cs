@@ -8,6 +8,18 @@ namespace GoldenTicket.Domain.Tests;
 public sealed class DestinationBoardOverlayTests
 {
     [Fact]
+    public void KeptSoloDestinationsMarkEachDistinctEndpoint()
+    {
+        var markers = DestinationBoardOverlay.BuildKept(TestManifest.Manifest,
+            [new TicketId("t-seattle--los-angeles"), new TicketId("t-helena--los-angeles")]);
+
+        Assert.Equal(3, markers.Count);
+        Assert.Equal(new[] { "Helena", "Los Angeles", "Seattle" },
+            markers.Select(marker => marker.CityName).OrderBy(name => name));
+        Assert.All(markers, marker => Assert.True(marker.IsVisible));
+    }
+
+    [Fact]
     public void EveryClassicDestinationEndpointHasAnOnBoardMarker()
     {
         var manifest = TestManifest.Manifest;

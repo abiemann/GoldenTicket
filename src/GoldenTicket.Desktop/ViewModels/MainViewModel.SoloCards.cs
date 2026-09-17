@@ -24,6 +24,10 @@ public sealed partial class MainViewModel
             OnPropertyChanged(nameof(ShowSoloCardPanel));
             OnPropertyChanged(nameof(ShowSoloTrainCards));
             OnPropertyChanged(nameof(ShowSoloDestinations));
+            OnPropertyChanged(nameof(ShowDestinationMarkersOnBoard));
+            OnPropertyChanged(nameof(BoardDestinationMarkers));
+            _lastDestinationAlignmentUtc = DateTime.MinValue;
+            AlignDestinationMarkers();
         }
     }
 
@@ -32,6 +36,7 @@ public sealed partial class MainViewModel
     public bool ShowSoloDestinations => SoloCardPanelKind == SoloCardPanelSelection.Destinations;
     public IReadOnlyList<SoloTrainCardRow> SoloTrainCards { get; private set; } = [];
     public IReadOnlyList<SoloDestinationCardRow> SoloDestinationCards { get; private set; } = [];
+    public IReadOnlyList<DestinationMarkerRow> SoloDestinationMarkers { get; private set; } = [];
 
     [RelayCommand]
     private Task ToggleSoloTrainCardsAsync(GameTableSeat? tile) =>
@@ -43,18 +48,18 @@ public sealed partial class MainViewModel
 
     private async Task ToggleSoloCardsAsync(GameTableSeat? tile, SoloCardPanelSelection kind)
     {
+        if (_coordinator is not { StorageFaulted: false } coordinator || tile is null ||
+            !IsSoloHumanTurn || !IsGameplayScreenActive(Screen.Table) ||
+            ShowSoloOpeningTicketsOnBoard || _operationInProgress || _exitRequested ||
+            _mustReload || NeedsBoardReconciliation || !_windowActive || !_systemAvailable ||
+            coordinator.Public.ActiveSeatId != tile.Seat.SeatId ||
+            !Table.Seats.Any(seat => seat.SeatId == tile.Seat.SeatId && seat.Operator == "human")) return;
+
         if (SoloCardPanelKind == kind)
         {
             CloseSoloCardPanel();
             return;
         }
-
-        if (_coordinator is not { StorageFaulted: false } coordinator || tile is null ||
-            !IsSingleHumanGame || !IsGameplayScreenActive(Screen.Table) ||
-            coordinator.Public.Lifecycle != SessionLifecycle.Active ||
-            ShowSoloOpeningTicketsOnBoard || _operationInProgress || _exitRequested ||
-            _mustReload || NeedsBoardReconciliation || !_windowActive || !_systemAvailable ||
-            !Table.Seats.Any(seat => seat.SeatId == tile.Seat.SeatId && seat.Operator == "human")) return;
 
         CloseSoloCardPanel();
         var generation = _soloCardsGeneration;
@@ -63,7 +68,9 @@ public sealed partial class MainViewModel
         {
             var view = await coordinator.GetSeatViewAsync(tile.Seat.SeatId);
             if (generation != _soloCardsGeneration || !ReferenceEquals(coordinator, _coordinator) ||
-                coordinator.Public.StateVersion != version || !IsGameplayScreenActive(Screen.Table)) return;
+                coordinator.Public.StateVersion != version || !IsSoloHumanTurn ||
+                coordinator.Public.ActiveSeatId != tile.Seat.SeatId ||
+                !IsGameplayScreenActive(Screen.Table)) return;
 
             if (kind == SoloCardPanelSelection.TrainCards)
             {
@@ -83,7 +90,9 @@ public sealed partial class MainViewModel
                         _manifest.City(ticket.CityB).DisplayName,
                         ticket.Points, connectivity.Completes(ticket));
                 }).ToArray();
+                SoloDestinationMarkers = DestinationBoardOverlay.BuildKept(_manifest, view.Tickets);
                 OnPropertyChanged(nameof(SoloDestinationCards));
+                OnPropertyChanged(nameof(SoloDestinationMarkers));
             }
             SoloCardPanelKind = kind;
         }
@@ -100,7 +109,9 @@ public sealed partial class MainViewModel
         SoloCardPanelKind = SoloCardPanelSelection.None;
         SoloTrainCards = [];
         SoloDestinationCards = [];
+        SoloDestinationMarkers = [];
         OnPropertyChanged(nameof(SoloTrainCards));
         OnPropertyChanged(nameof(SoloDestinationCards));
+        OnPropertyChanged(nameof(SoloDestinationMarkers));
     }
 }

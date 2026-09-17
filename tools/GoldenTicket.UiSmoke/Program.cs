@@ -1267,6 +1267,7 @@ internal static partial class Program
             var miniPanel = (Border)animatedTable.FindName("SoloCardPanel");
             var miniTrainCards = (ItemsControl)animatedTable.FindName("SoloTrainCards");
             var miniDestinations = (ItemsControl)animatedTable.FindName("SoloDestinationCards");
+            var heldCityMarkers = (ItemsControl)animatedTable.FindName("DestinationCityMarkers");
             if (!IsElementShown(humanTrainStack) || !IsElementShown(humanDestinationsStack) ||
                 IsElementShown(computerStack) || IsElementShown(miniPanel) || solo.PrivateSeat is not null)
                 throw new InvalidOperationException("Only the solo human's T and D stacks should be clickable after opening setup.");
@@ -1279,7 +1280,7 @@ internal static partial class Program
             for (var attempt = 0; attempt < 20 && !solo.ShowSoloTrainCards; attempt++) await Task.Delay(50);
             animatedTable.UpdateLayout();
             if (!solo.ShowSoloTrainCards || !IsElementShown(miniPanel) || miniTrainCards.Items.Count != 4 ||
-                solo.PrivateSeat is not null || solo.Screen != Screen.Table)
+                IsElementShown(heldCityMarkers) || solo.PrivateSeat is not null || solo.Screen != Screen.Table)
                 throw new InvalidOperationException($"The T stack must expand four mini train cards while the board remains visible. " +
                     $"Selected={solo.ShowSoloTrainCards}, panel={IsElementShown(miniPanel)}, " +
                     $"cards={miniTrainCards.Items.Count}, private={solo.PrivateSeat is not null}, screen={solo.Screen}, " +
@@ -1290,12 +1291,21 @@ internal static partial class Program
             for (var attempt = 0; attempt < 20 && !solo.ShowSoloDestinations; attempt++) await Task.Delay(50);
             animatedTable.UpdateLayout();
             if (!solo.ShowSoloDestinations || miniDestinations.Items.Count != 2 ||
+                !IsElementShown(heldCityMarkers) || heldCityMarkers.Items.Count != solo.SoloDestinationMarkers.Count ||
+                heldCityMarkers.Items.Count == 0 ||
                 solo.SoloDestinationCards.Any(destination => destination.Description == dropped.Description) ||
                 solo.PrivateSeat is not null || solo.Screen != Screen.Table)
                 throw new InvalidOperationException("The D stack must show two retained mini destinations without reopening the private screen.");
+            await RenderSizes("solo-destinations-highlight-synthetic",
+                () => new GameTableView { DataContext = solo }, view =>
+                {
+                    var markers = (ItemsControl)view.FindName("DestinationCityMarkers");
+                    if (!IsShown(markers, view) || markers.Items.Count != solo.SoloDestinationMarkers.Count)
+                        throw new InvalidOperationException("Opening the solo D stack must show its held city rings on the board.");
+                });
             ((IInvokeProvider)new ButtonAutomationPeer(humanDestinationsStack).GetPattern(PatternInterface.Invoke)!).Invoke();
             for (var attempt = 0; attempt < 20 && solo.ShowSoloCardPanel; attempt++) await Task.Delay(50);
-            if (solo.ShowSoloCardPanel || IsElementShown(miniPanel))
+            if (solo.ShowSoloCardPanel || IsElementShown(miniPanel) || IsElementShown(heldCityMarkers))
                 throw new InvalidOperationException("Clicking an open solo stack must collapse its mini-card panel.");
             checks.Add("Confirmed drop clears its card and track, centers the draw panels, and T/D stacks toggle mini cards over the visible table.");
 
@@ -1322,6 +1332,26 @@ internal static partial class Program
                     throw new InvalidOperationException("The solo table must offer Your cards without a laptop handoff prompt.");
             });
             checks.Add("The solo table remains public while card stacks expand in place.");
+
+            await solo.RevealPrivateSeatAsync();
+            await solo.DrawBlindCardAsync();
+            await solo.RevealPrivateSeatAsync();
+            await solo.DrawBlindCardAsync();
+            animatedTable.UpdateLayout();
+            var computerTurnTrainStack = Descendants<Button>(animatedTable).Single(button =>
+                AutomationProperties.GetName(button) == "Show your train cards" &&
+                button.DataContext is GameTableSeat tile && tile.Seat.Operator == "human");
+            var computerTurnDestinationStack = Descendants<Button>(animatedTable).Single(button =>
+                AutomationProperties.GetName(button) == "Show your destinations" &&
+                button.DataContext is GameTableSeat tile && tile.Seat.Operator == "human");
+            if (solo.IsSoloHumanTurn || IsElementShown(computerTurnTrainStack) ||
+                IsElementShown(computerTurnDestinationStack) || IsElementShown(miniPanel) ||
+                IsElementShown(heldCityMarkers))
+                throw new InvalidOperationException("The human's card stacks and preview must be unavailable during the computer's turn.");
+            await solo.ToggleSoloDestinationsCommand.ExecuteAsync((GameTableSeat)computerTurnDestinationStack.DataContext);
+            if (solo.ShowSoloCardPanel || solo.ShowDestinationMarkersOnBoard)
+                throw new InvalidOperationException("Direct card commands must not reveal the human's hand during the computer's turn.");
+            checks.Add("Solo card stacks and destination rings stay closed during computer turns.");
 
             shared.Setup.ManualVerificationAccepted = true;
             shared.Setup.Seats[0].DisplayName = "First human test player";
@@ -1376,6 +1406,8 @@ internal static partial class Program
 
             await shared.RevealPrivateSeatCommand.ExecuteAsync(null);
             RequireHumanPrivateView(shared, "First human test player", mustChooseTickets: true);
+            if (shared.ShowDestinationMarkersOnBoard || shared.BoardDestinationMarkers.Count != 0)
+                throw new InvalidOperationException("Multiple-human private destinations must not mark the public board.");
             await RenderSizes("shared-first-private-synthetic", () => new PrivateSeatView { DataContext = shared },
                 view => VerifyPrivateLabels(view, shared, "First human test player", singleHuman: false));
             await shared.CommitTicketsCommand.ExecuteAsync(null);
