@@ -158,14 +158,23 @@ public class DesktopFlowTests
         ShowUprightBoardPreview(model);
         Assert.True(PlacementBoardOverlay.TryGetTarget(TestManifest.Manifest, placement.RouteId,
             out var expectedX, out var expectedY));
+        Assert.True(PlacementBoardOverlay.TryGetTargets(TestManifest.Manifest, placement.RouteId,
+            placement.TrainCount, out var trainSlots));
         Assert.True(model.Game.ShowPlacementTarget);
         Assert.Equal(expectedX, model.Game.PlacementTargetX);
         Assert.Equal(expectedY, model.Game.PlacementTargetY);
+        Assert.Equal(placement.TrainCount, model.Game.PlacementTargets.Count);
+        for (var index = 0; index < trainSlots.Count; index++)
+        {
+            Assert.Equal(trainSlots[index].X, model.Game.PlacementTargets[index].X);
+            Assert.Equal(trainSlots[index].Y, model.Game.PlacementTargets[index].Y);
+        }
         Assert.InRange(expectedX, 0, DestinationBoardOverlay.Width);
         Assert.InRange(expectedY, 0, DestinationBoardOverlay.Height);
 
         model.Camera.IsGameTablePreviewUpright = false;
         Assert.False(model.Game.ShowPlacementTarget);
+        Assert.Empty(model.Game.PlacementTargets);
         model.Camera.IsGameTablePreviewUpright = true;
         Assert.True(model.Game.ShowPlacementTarget);
 
@@ -173,6 +182,7 @@ public class DesktopFlowTests
         // original instruction here so the same fixture can also exercise a fresh pending claim.
         model.Table.Placement = null;
         Assert.False(model.Game.ShowPlacementTarget);
+        Assert.Empty(model.Game.PlacementTargets);
         model.Table.Placement = placement;
         Assert.True(model.Game.ShowPlacementTarget);
     }

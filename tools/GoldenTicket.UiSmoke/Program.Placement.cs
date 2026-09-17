@@ -21,8 +21,9 @@ internal static partial class Program
             await model.StartMatchCommand.ExecuteAsync(null);
             var placement = model.Table.Placement ?? throw new InvalidOperationException(
                 "The computer fixture must stop at a physical route placement.");
-            if (!PlacementBoardOverlay.TryGetTarget(manifest, placement.RouteId, out var targetX, out var targetY))
-                throw new InvalidOperationException("A pending classic-US route must have a board target.");
+            if (!PlacementBoardOverlay.TryGetTargets(manifest, placement.RouteId,
+                    placement.TrainCount, out var targets))
+                throw new InvalidOperationException("A pending classic-US route must have a target for every train.");
 
             var pixels = new byte[960 * 600 * 4];
             for (var index = 0; index < pixels.Length; index += 4)
@@ -38,28 +39,61 @@ internal static partial class Program
             model.Camera.GameTablePreview = preview;
             model.Camera.IsGameTablePreviewUpright = true;
             model.Camera.GameTablePreviewStatus = "";
-            if (!model.Game.ShowPlacementTarget ||
-                Math.Abs(model.Game.PlacementTargetX - targetX) > 0.01 ||
-                Math.Abs(model.Game.PlacementTargetY - targetY) > 0.01)
-                throw new InvalidOperationException("The public target must follow the pending route's canonical lane center.");
+            if (!model.Game.ShowPlacementTarget || model.Game.PlacementTargets.Count != placement.TrainCount ||
+                model.Game.PlacementTargets.Where((marker, index) =>
+                    Math.Abs(marker.X - targets[index].X) > 0.01 ||
+                    Math.Abs(marker.Y - targets[index].Y) > 0.01).Any())
+                throw new InvalidOperationException("The public board must mark every requested train space.");
 
             void VerifyVisible(UserControl view)
             {
-                var marker = (FrameworkElement)view.FindName("PlacementTargetMarker");
-                var pulseRing = (Ellipse)view.FindName("PlacementPulseRing");
+                var activePlacement = model.Table.Placement ?? throw new InvalidOperationException(
+                    "A placement render needs a pending route.");
+                if (!PlacementBoardOverlay.TryGetTargets(manifest, activePlacement.RouteId,
+                        activePlacement.TrainCount, out var visibleTargets))
+                    throw new InvalidOperationException("The rendered route has no measured train spaces.");
+                var markers = (ItemsControl)view.FindName("PlacementTargetMarkers");
                 var board = (Image)view.FindName("LiveBoardImage");
-                if (!IsElementShown(marker) || marker.ActualWidth != 46 || marker.ActualHeight != 46 ||
-                    !IsElementShown(pulseRing))
-                    throw new InvalidOperationException("The live board must show a visible placement dot and pulse ring.");
-                var center = marker.TranslatePoint(new Point(marker.ActualWidth / 2, marker.ActualHeight / 2), board);
-                var expected = new Point(targetX / 960 * board.ActualWidth,
-                    targetY / 600 * board.ActualHeight);
-                if (Math.Abs(center.X - expected.X) > 3 || Math.Abs(center.Y - expected.Y) > 3)
-                    throw new InvalidOperationException($"The placement dot missed the route center: {center} versus {expected}.");
+                if (!IsElementShown(markers) || markers.Items.Count != activePlacement.TrainCount)
+                    throw new InvalidOperationException("The live board must show one cue per requested train.");
+                for (var index = 0; index < visibleTargets.Count; index++)
+                {
+                    var marker = (ContentPresenter)markers.ItemContainerGenerator.ContainerFromIndex(index);
+                    var pulseRing = FindNamedDescendant<Ellipse>(marker, "PlacementPulseRing");
+                    if (!IsElementShown(marker) || marker.ActualWidth != 32 || marker.ActualHeight != 32 ||
+                        pulseRing is null || !IsElementShown(pulseRing))
+                        throw new InvalidOperationException($"Train space {index + 1} must show a pulsing yellow sphere.");
+                    var center = marker.TranslatePoint(new Point(marker.ActualWidth / 2, marker.ActualHeight / 2), board);
+                    var expected = new Point(visibleTargets[index].X / 960 * board.ActualWidth,
+                        visibleTargets[index].Y / 600 * board.ActualHeight);
+                    if (Math.Abs(center.X - expected.X) > 3 || Math.Abs(center.Y - expected.Y) > 3)
+                        throw new InvalidOperationException($"Train space {index + 1} missed its route slot: {center} versus {expected}.");
+                }
             }
 
             await RenderSizes("game-placement-computer", () => new GameTableView { DataContext = model },
                 VerifyVisible, [(1000, 620), (1280, 800)]);
+
+            // Render sparse and long routes too: one, two, and six individual spheres must
+            // remain aligned with the same board crop at different window sizes.
+            foreach (var (routeId, sceneName) in new[]
+                     {
+                         ("kansas-city--omaha--a", "game-placement-one-train"),
+                         ("atlanta--raleigh--a", "game-placement-two-trains"),
+                         ("helena--seattle", "game-placement-six-trains")
+                     })
+            {
+                var route = manifest.Routes.Single(row => row.RouteId.Value == routeId);
+                model.Table.Placement = placement with
+                {
+                    RouteId = route.RouteId,
+                    TrainCount = route.Length,
+                    RouteText = routeId
+                };
+                await RenderSizes(sceneName, () => new GameTableView { DataContext = model },
+                    VerifyVisible, [(1000, 620), (1280, 800)]);
+            }
+            model.Table.Placement = placement;
 
             model.Camera.IsGameTablePreviewUpright = false;
             if (model.Game.ShowPlacementTarget)
@@ -70,9 +104,9 @@ internal static partial class Program
                 throw new InvalidOperationException("The route cue must clear when no placement awaits confirmation.");
             await RenderSizes("game-placement-cleared", () => new GameTableView { DataContext = model }, view =>
             {
-                var marker = (FrameworkElement)view.FindName("PlacementTargetMarker");
-                if (IsElementShown(marker))
-                    throw new InvalidOperationException("The board must not retain a stale target after placement clears.");
+                var markers = (ItemsControl)view.FindName("PlacementTargetMarkers");
+                if (markers.Items.Count != 0 || IsElementShown(markers))
+                    throw new InvalidOperationException("The board must not retain stale targets after placement clears.");
             }, [(1280, 800)]);
 
             model.Table.Placement = placement;
@@ -81,8 +115,20 @@ internal static partial class Program
             if (model.Table.Placement?.OperationId == placement.OperationId ||
                 model.Game.ShowPlacementTarget != (model.Table.Placement is not null))
                 throw new InvalidOperationException("Confirming placement must retire the old target, even if the computer immediately plans another claim.");
-            Console.WriteLine("Computer placement: canonical board target, scaled marker, orientation guard, and confirmation lifecycle passed.");
+            Console.WriteLine("Computer placement: per-train board targets, scaled spheres, orientation guard, and confirmation lifecycle passed.");
         }
         finally { await model.DisposeToolsAsync(); }
+    }
+
+    private static T? FindNamedDescendant<T>(DependencyObject root, string name) where T : FrameworkElement
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            var child = VisualTreeHelper.GetChild(root, index);
+            if (child is T element && element.Name == name) return element;
+            var nested = FindNamedDescendant<T>(child, name);
+            if (nested is not null) return nested;
+        }
+        return null;
     }
 }

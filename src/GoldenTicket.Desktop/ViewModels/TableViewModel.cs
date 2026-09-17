@@ -5,6 +5,7 @@ using GoldenTicket.Domain.Events;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Domain.Model;
 using GoldenTicket.Domain.Projections;
+using GoldenTicket.Vision;
 
 namespace GoldenTicket.Desktop.ViewModels;
 
@@ -111,9 +112,7 @@ public sealed partial class TableViewModel : ObservableObject
         SupplyText = $"Draw pile {view.TrainDeckCount}  ·  discards {view.TrainDiscardCount}  ·  " +
                      $"destinations {view.TicketDeckCount}";
 
-        VerificationText = view.VerificationMode == VerificationMode.Manual
-            ? "Physical verification: operator confirms each placement. Camera verification is not available in this build."
-            : "Physical verification: camera";
+        VerificationText = "The camera checks calibrated routes automatically. Manual whole-board confirmation remains available for other routes.";
 
         FinalRoundText = view.FinalRound is { } round
             ? "Final round: " + string.Join(", ", round.RemainingTurnsBySeat
@@ -363,7 +362,10 @@ public sealed partial class TableViewModel : ObservableObject
 
         TurnPhase.AwaitingPhysicalPlacement when view.PendingClaim is { } pending =>
             $"Place {active.DisplayName}'s {pending.TrainCount} {active.Color} trains on " +
-            $"{_manifest.Describe(pending.RouteId)}, then confirm.",
+            $"{_manifest.Describe(pending.RouteId)}. " +
+            (RoutePlacementVerifier.Supports(pending.RouteId.Value, pending.TrainCount)
+                ? "The camera will check their positions and continue automatically."
+                : "Check the whole board, then confirm beside it."),
 
         TurnPhase.RestoreBeforeState when view.PendingClaim is { } pending =>
             $"Take {active.DisplayName}'s trains back off {_manifest.Describe(pending.RouteId)}, then confirm.",

@@ -30,7 +30,8 @@ See the
   checks all four board rotations, blocks PLAY when it sees a train, and verifies one scoring marker
   for every selected color near printed 1. Missing colors and trains appear as actionable notices;
   the notice disappears when the camera, train, and marker checks are ready.
-  Manual placement verification remains.
+  Camera confirmation uses measured train-space centers for all 100 classic-US routes; each
+  requested space receives its own pulsing yellow cue. Live overhead-camera acceptance remains open.
 - [x] After PLAY, show the accepted live board crop in a uniformly scaled game table. Position
   2–5 player portraits and their public train/card/destination counts around it, with face-down
   stacks and a latest-public-action line per seat. Put up to two seats on each side and a fifth
@@ -40,6 +41,15 @@ See the
   guidance area for the current phase, acting seat and next instruction throughout the game.
 - [ ] Re-register the live board crop automatically after a saved game is reloaded or the camera
   restarts; for now, use the technical Camera screen to register it again.
+- [x] Measure all 309 printed train spaces on the 100 classic-US routes and show one pulsing
+  yellow placement cue per requested train. Verify separate trains of the correct player color
+  in two fresh upright camera observations; after commit show “Thank you” for three seconds,
+  then request and verify the new printed scoring-marker position before continuing the AI turn.
+- [ ] Test each route, especially adjacent parallel lanes and curved six-space routes, under
+  live overhead-camera conditions. Record false acceptances, abstentions and detection latency;
+  synthetic fixtures and a handful of photos do not establish physical-camera accuracy.
+- [ ] Persist the physical scoring-marker move gate across app restart; resume currently requires
+  board reconciliation, but it does not restore the in-memory post-claim marker instruction.
 - [ ] Validate score-piece color and printed-1 acceptance with the real overhead camera for all
   five colors and rotated board orientations; synthetic tests do not establish live accuracy.
 - [ ] Recognize the board's printed score-track orientation independently of marker placement;

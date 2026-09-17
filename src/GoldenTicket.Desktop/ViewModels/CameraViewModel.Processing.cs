@@ -60,6 +60,7 @@ public sealed partial class CameraViewModel
     {
         // Invalidate work already in flight even if the user quickly turns outlines back on.
         _modelRevision++;
+        ClearGameTableAnalysis();
         ClearDetectionPreview();
         DetectionText = value ? "Waiting for a fresh image for ML piece outlines." : "Piece outlines are off.";
         _previewSequence = -1;

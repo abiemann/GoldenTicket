@@ -3,6 +3,7 @@ using System.Windows.Media.Imaging;
 using System.Collections.Specialized;
 using CommunityToolkit.Mvvm.ComponentModel;
 using GoldenTicket.Domain;
+using GoldenTicket.Vision;
 
 namespace GoldenTicket.Desktop.ViewModels;
 
@@ -146,6 +147,15 @@ public sealed partial class GameSeatChoice(int number) : ObservableObject
 /// <summary>Public seat information placed around the live board, with no private card contents.</summary>
 public sealed record GameTableSeat(SeatRow Seat, ImageSource Portrait, double Left, double Top);
 
+/// <summary>One pulsing cue centered on one requested physical train space.</summary>
+public sealed record PlacementTargetRow(double X, double Y, int Number)
+{
+    private const double Diameter = 32;
+    public double Left => X - Diameter / 2;
+    public double Top => Y - Diameter / 2;
+    public string Description => $"Train space {Number}";
+}
+
 /// <summary>Five character choices become the shared setup seats only when a new match starts.</summary>
 public sealed partial class GameScreenViewModel : ObservableObject
 {
@@ -159,7 +169,14 @@ public sealed partial class GameScreenViewModel : ObservableObject
         _main.Table.Seats.CollectionChanged += TableSeatsChanged;
         _main.Table.PropertyChanged += (_, args) =>
         {
-            if (args.PropertyName == nameof(TableViewModel.Placement)) RefreshPlacementTarget();
+            if (args.PropertyName == nameof(TableViewModel.Placement))
+            {
+                RefreshPlacementTarget();
+                OnPropertyChanged(nameof(ShowManualPlacementControls));
+            }
+            if (args.PropertyName is nameof(TableViewModel.TurnText) or
+                nameof(TableViewModel.ActiveSeatName) or nameof(TableViewModel.Instruction))
+                NotifyGuidanceChanged();
         };
         _main.Camera.PropertyChanged += (_, args) =>
         {
@@ -178,9 +195,36 @@ public sealed partial class GameScreenViewModel : ObservableObject
     public IReadOnlyList<GameSeatChoice> SeatChoices { get; }
     public IReadOnlyList<GameTableSeat> TableSeats { get; private set; } = [];
 
+    private (string Turn, string Seat, string Instruction)? _guidanceOverride;
+    public string GuidanceTurn => _guidanceOverride?.Turn ?? _main.Table.TurnText;
+    public string GuidanceSeat => _guidanceOverride?.Seat ?? _main.Table.ActiveSeatName;
+    public string GuidanceInstruction => _guidanceOverride?.Instruction ?? _main.Table.Instruction;
+    public bool ShowManualPlacementControls => _main.Table.Placement is { AwaitingRestore: false } placement &&
+        !RoutePlacementVerifier.Supports(placement.RouteId.Value, placement.TrainCount);
+
+    internal void ShowGuidance(string turn, string seat, string instruction)
+    {
+        _guidanceOverride = (turn, seat, instruction);
+        NotifyGuidanceChanged();
+    }
+
+    internal void ClearGuidance()
+    {
+        _guidanceOverride = null;
+        NotifyGuidanceChanged();
+    }
+
+    private void NotifyGuidanceChanged()
+    {
+        OnPropertyChanged(nameof(GuidanceTurn));
+        OnPropertyChanged(nameof(GuidanceSeat));
+        OnPropertyChanged(nameof(GuidanceInstruction));
+    }
+
     [ObservableProperty] private bool _showPlacementTarget;
     [ObservableProperty] private double _placementTargetX;
     [ObservableProperty] private double _placementTargetY;
+    public IReadOnlyList<PlacementTargetRow> PlacementTargets { get; private set; } = [];
 
     public double PlacementTargetLeft => PlacementTargetX - 23;
     public double PlacementTargetTop => PlacementTargetY - 23;
@@ -193,14 +237,20 @@ public sealed partial class GameScreenViewModel : ObservableObject
         if (_main.Table.Placement is not { } placement ||
             _main.Camera.GameTablePreview is null ||
             !_main.Camera.IsGameTablePreviewUpright ||
-            !PlacementBoardOverlay.TryGetTarget(_main.Manifest, placement.RouteId, out var x, out var y))
+            !PlacementBoardOverlay.TryGetTargets(_main.Manifest, placement.RouteId, placement.TrainCount,
+                out var targets))
         {
+            PlacementTargets = [];
+            OnPropertyChanged(nameof(PlacementTargets));
             ShowPlacementTarget = false;
             return;
         }
 
-        PlacementTargetX = x;
-        PlacementTargetY = y;
+        PlacementTargets = targets.Select((point, index) =>
+            new PlacementTargetRow(point.X, point.Y, index + 1)).ToArray();
+        OnPropertyChanged(nameof(PlacementTargets));
+        PlacementTargetX = PlacementTargets.Average(point => point.X);
+        PlacementTargetY = PlacementTargets.Average(point => point.Y);
         ShowPlacementTarget = true;
     }
 

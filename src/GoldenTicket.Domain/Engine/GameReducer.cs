@@ -84,6 +84,7 @@ public static class GameReducer
             case TicketOfferCreated e: ApplyTicketOffer(state, e); break;
             case ClaimPlanned e: ApplyClaimPlanned(state, e); break;
             case ManualVerificationRecorded: break; // Evidence only; the commit changes state.
+            case CameraVerificationRecorded: break; // Evidence only; the commit changes state.
             case ClaimCommitted e: ApplyClaimCommitted(state, e); break;
             case ClaimCancellationRequested e: ApplyCancellationRequested(state, e); break;
             case ClaimCancelled e: ApplyClaimCancelled(state, e); break;

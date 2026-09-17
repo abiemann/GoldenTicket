@@ -3,6 +3,7 @@ using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Events;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Domain.Model;
+using GoldenTicket.Persistence;
 
 namespace GoldenTicket.Domain.Tests;
 
@@ -86,23 +87,90 @@ public class ClaimTests
     }
 
     [Fact]
-    public void CameraEvidenceIsRefusedBecauseThisBuildDoesNotHaveIt()
+    public void CameraEvidenceCommitsAnExistingManualModeClaimWithDistinctProvenance()
+    {
+        var harness = Ready();
+        var seat = harness.State.ActiveSeatId;
+        var route = Route("denver--santa-fe");
+
+        harness.GrantCards(seat, TrainCardKind.Blue, 2);
+        var planned = harness.SubmitAccepted(new PlanClaim(
+            harness.Envelope(seat), route.RouteId, harness.CardsOf(seat, TrainCardKind.Blue, 2)));
+
+        var operationId = planned.Transition!.Events.OfType<ClaimPlanned>().Single().OperationId;
+
+        var result = harness.SubmitAccepted(new SubmitClaimEvidence(
+            harness.Envelope(seat), operationId, EvidenceKind.CameraAutomatic,
+            "local-piece-model", "two blue trains on Denver–Santa Fe in a fresh board crop"));
+
+        var verification = Assert.Single(result.Transition!.Events.OfType<CameraVerificationRecorded>());
+        Assert.Equal(operationId, verification.OperationId);
+        Assert.Equal(seat, verification.SeatId);
+        Assert.Equal(route.RouteId, verification.RouteId);
+        Assert.Equal("local-piece-model", verification.Detector);
+        Assert.Contains("two blue trains", verification.EvidenceSummary);
+        Assert.IsType<CameraVerificationRecorded>(EventSerializer.Deserialize(EventSerializer.Serialize(verification)));
+        Assert.DoesNotContain(result.Transition.Events, e => e is ManualVerificationRecorded);
+        Assert.Equal(EvidenceKind.CameraAutomatic,
+            Assert.Single(result.Transition.Events.OfType<ClaimCommitted>()).Evidence);
+        Assert.Equal(seat, harness.State.RouteOwners[route.RouteId]);
+        Assert.Equal(2, harness.State.RouteScore[seat]);
+        Assert.Equal(43, harness.State.TrainStock[seat]);
+        Assert.Null(harness.State.PendingClaim);
+
+        var repeat = harness.Submit(new SubmitClaimEvidence(
+            harness.Envelope(seat), operationId, EvidenceKind.CameraAutomatic,
+            "local-piece-model", "same frame"));
+        Assert.Equal("NoPendingClaim", repeat.Rejection?.Code);
+        harness.AssertInvariants();
+        harness.AssertReplayMatches();
+    }
+
+    [Theory]
+    [InlineData("", "two matching trains")]
+    [InlineData("local-piece-model", " ")]
+    public void CameraEvidenceRequiresSourceAndSummary(string detector, string summary)
     {
         var harness = Ready();
         var seat = harness.State.ActiveSeatId;
         var route = Route("atlanta--nashville");
-
         harness.GrantCards(seat, TrainCardKind.Blue, 1);
         var planned = harness.SubmitAccepted(new PlanClaim(
             harness.Envelope(seat), route.RouteId, harness.CardsOf(seat, TrainCardKind.Blue, 1)));
-
         var operationId = planned.Transition!.Events.OfType<ClaimPlanned>().Single().OperationId;
+        var before = StateHash.Compute(harness.State);
 
         var result = harness.Submit(new SubmitClaimEvidence(
-            harness.Envelope(seat), operationId, EvidenceKind.CameraAutomatic, "camera", "auto"));
+            harness.Envelope(seat), operationId, EvidenceKind.CameraAutomatic, detector, summary));
 
-        Assert.False(result.IsAccepted);
-        Assert.Equal("CameraVerificationNotAvailable", result.Rejection!.Code);
+        Assert.Equal("CameraEvidenceDetailsMissing", result.Rejection?.Code);
+        Assert.Equal(before, StateHash.Compute(harness.State));
+        Assert.NotNull(harness.State.PendingClaim);
+    }
+
+    [Fact]
+    public void CameraEvidenceCannotConfirmAnotherOperationOrAnOldStateVersion()
+    {
+        var harness = Ready();
+        var seat = harness.State.ActiveSeatId;
+        var route = Route("atlanta--nashville");
+        harness.GrantCards(seat, TrainCardKind.Blue, 1);
+        var planned = harness.SubmitAccepted(new PlanClaim(
+            harness.Envelope(seat), route.RouteId, harness.CardsOf(seat, TrainCardKind.Blue, 1)));
+        var operationId = planned.Transition!.Events.OfType<ClaimPlanned>().Single().OperationId;
+        var before = StateHash.Compute(harness.State);
+
+        var wrongOperation = harness.Submit(new SubmitClaimEvidence(
+            harness.Envelope(seat), OperationId.New(), EvidenceKind.CameraAutomatic,
+            "local-piece-model", "fresh matching train"));
+        Assert.Equal("OperationMismatch", wrongOperation.Rejection?.Code);
+
+        var stale = harness.Submit(new SubmitClaimEvidence(
+            harness.Envelope(seat) with { ExpectedStateVersion = harness.State.StateVersion - 1 },
+            operationId, EvidenceKind.CameraAutomatic,
+            "local-piece-model", "fresh matching train"));
+        Assert.Equal("StaleStateVersion", stale.Rejection?.Code);
+        Assert.Equal(before, StateHash.Compute(harness.State));
         Assert.NotNull(harness.State.PendingClaim);
     }
 

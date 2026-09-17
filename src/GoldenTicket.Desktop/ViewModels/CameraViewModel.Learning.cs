@@ -37,6 +37,7 @@ public sealed partial class CameraViewModel
     {
         if (!CanReloadPieceModel) return;
         _modelRevision++;
+        ClearGameTableAnalysis();
         ClearDetectionPreview();
         _modelInitialization = LoadPieceModelCoreAsync();
         await _modelInitialization;

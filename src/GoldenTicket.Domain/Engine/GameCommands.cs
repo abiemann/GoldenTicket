@@ -41,9 +41,8 @@ public sealed record PlanClaim(
     ImmutableArray<CardId> Payment) : GameCommand(Envelope);
 
 /// <summary>
-/// Submits physical evidence for the pending claim. This build ships the manual-attestation path
-/// (DESIGN 23.1); camera evidence replaces only this source later, leaving the command pipeline,
-/// transaction semantics and replay result unchanged.
+/// Submits physical evidence for the pending claim. Manual attestation and automatic camera
+/// recognition have distinct durable provenance; both use the same claim transaction and replay.
 /// </summary>
 public sealed record SubmitClaimEvidence(
     CommandEnvelope Envelope,

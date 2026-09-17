@@ -32,6 +32,7 @@ public sealed record PublicEventEntry(string Kind, SeatId? Seat, string Text);
 [JsonDerivedType(typeof(TicketOfferCreated), nameof(TicketOfferCreated))]
 [JsonDerivedType(typeof(ClaimPlanned), nameof(ClaimPlanned))]
 [JsonDerivedType(typeof(ManualVerificationRecorded), nameof(ManualVerificationRecorded))]
+[JsonDerivedType(typeof(CameraVerificationRecorded), nameof(CameraVerificationRecorded))]
 [JsonDerivedType(typeof(ClaimCommitted), nameof(ClaimCommitted))]
 [JsonDerivedType(typeof(ClaimCancellationRequested), nameof(ClaimCancellationRequested))]
 [JsonDerivedType(typeof(ClaimCancelled), nameof(ClaimCancelled))]
@@ -262,6 +263,25 @@ public sealed record ManualVerificationRecorded(
     public override PublicEventEntry ToPublicEntry(BoardManifest manifest) =>
         new("ManualVerificationRecorded", SeatId,
             $"Placement on {RouteText(manifest, RouteId)} confirmed by the operator.");
+}
+
+/// <summary>
+/// A camera matched the placed trains to the pending route. This is distinct from an operator's
+/// whole-board attestation, and its source and evidence summary remain in the durable journal.
+/// </summary>
+public sealed record CameraVerificationRecorded(
+    OperationId OperationId,
+    SeatId SeatId,
+    RouteId RouteId,
+    string Detector,
+    string EvidenceSummary,
+    DateTimeOffset RecordedAt) : GameEvent
+{
+    public override EventVisibility Visibility => EventVisibility.Public;
+
+    public override PublicEventEntry ToPublicEntry(BoardManifest manifest) =>
+        new("CameraVerificationRecorded", SeatId,
+            $"Placement on {RouteText(manifest, RouteId)} confirmed by the camera.");
 }
 
 /// <summary>

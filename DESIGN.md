@@ -1981,9 +1981,15 @@ snapshot polling instead of the specified TypeScript/WSS event cursor. Controlle
 process-local and each page reload requires fresh laptop-approved pairing. The device uses a
 30-second reveal timeout and Hide, without hold-to-peek. Photos are operator-attested plaintext
 sidecars with SHA-256 checksums for `LogicalStateOnly` checkpoints, not `VerifiedBoardPhoto` evidence.
-Automatic train/landmark/gesture recognition, learned models, model-provider inference selection and measured full
-camera recovery remain absent. Experimental piece candidates and a return-to-reference image
-comparison do not satisfy those requirements. The rebuild target remains a route list rather than a geometry-based diagram.
+The local learned piece model supplies train candidates to a measured automatic claim check for
+all 100 classic-US routes and 309 printed train spaces. One pulsing cue marks each requested space.
+Two fresh upright observations must identify a separate train of the requested player color in
+every space of the correct lane. A durable camera-evidence event precedes the claim commit. The
+table then shows “Thank you” for three seconds and asks for the scoring marker to move; two fresh
+readings of its new printed position release the next turn. The slot map has visual and synthetic
+test coverage, but live-camera accuracy across routes and rotations remains unmeasured. Full-board
+comparison, automatic camera recovery, gesture recognition, and a durable post-claim score-marker
+gate remain unfinished. The rebuild target remains a route list rather than a geometry-based diagram.
 Snapshot rows hold validation metadata and state hashes rather than complete state snapshots.
 Physical board-data review, narrated story/audio and installer acceptance remain outstanding.
 The normal developer build is framework-dependent; the offline packaging workflow produces a

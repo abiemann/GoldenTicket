@@ -1,5 +1,6 @@
 using GoldenTicket.Domain;
 using GoldenTicket.Domain.Manifest;
+using GoldenTicket.Vision;
 
 namespace GoldenTicket.Desktop.ViewModels;
 
@@ -10,6 +11,27 @@ namespace GoldenTicket.Desktop.ViewModels;
 /// </summary>
 public static class PlacementBoardOverlay
 {
+    /// <summary>
+    /// Locate every requested train space in the displayed upright crop. These are the exact
+    /// measured slots used by camera verification, so a long route gets one cue per train.
+    /// </summary>
+    public static bool TryGetTargets(BoardManifest manifest, RouteId routeId, int trainCount,
+        out IReadOnlyList<(double X, double Y)> targets)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        targets = [];
+        if (manifest.ProfileId != ManifestLoader.ClassicUsProfileId ||
+            !manifest.TryGetRoute(routeId, out var route) || route.Length != trainCount ||
+            !ClassicUsRouteGeometry.TryGetSlots(routeId.Value, out var slots) ||
+            slots.Count != trainCount)
+            return false;
+
+        targets = slots.Select(point =>
+            (point.X * DestinationBoardOverlay.Width,
+                point.Y * DestinationBoardOverlay.Height)).ToArray();
+        return true;
+    }
+
     // Route centers digitized from the empty upright board. Each parallel lane needs its own
     // point: the midpoint between endpoint cities often lies between both physical tracks.
     // For uncolored parallel tracks, lane A is the upper/left track in this upright view.
@@ -87,6 +109,13 @@ public static class PlacementBoardOverlay
         x = y = 0;
         if (manifest.ProfileId != ManifestLoader.ClassicUsProfileId ||
             !manifest.TryGetRoute(routeId, out var route)) return false;
+
+        if (TryGetTargets(manifest, routeId, route.Length, out var slots))
+        {
+            x = slots.Average(point => point.X);
+            y = slots.Average(point => point.Y);
+            return true;
+        }
 
         (double X, double Y) point;
         if (RouteCenters.TryGetValue(routeId.Value, out var measured))

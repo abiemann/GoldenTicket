@@ -159,14 +159,14 @@ public enum EvidenceKind
     /// <summary>An operator attested to the whole board explicitly. Not counted as a vision success.</summary>
     ManualAttestation = 0,
 
-    /// <summary>Camera evidence accepted automatically. Reserved for the vision milestones.</summary>
+    /// <summary>Camera evidence accepted automatically after matching the pending route.</summary>
     CameraAutomatic = 1,
 }
 
 /// <summary>DESIGN 9.2: whether physical truth comes from the camera or an operator attestation.</summary>
 public enum VerificationMode
 {
-    /// <summary>Operator confirms each placement explicitly. Camera verification is unavailable.</summary>
+    /// <summary>Operator confirmation remains available; an established camera match may also commit.</summary>
     Manual = 0,
 
     /// <summary>Camera evidence gates the commit. Reserved for the vision milestones.</summary>

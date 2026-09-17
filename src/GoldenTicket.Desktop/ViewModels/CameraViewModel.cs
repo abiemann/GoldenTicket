@@ -82,7 +82,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private bool _hasBoardCrop;
     [ObservableProperty] private string _status = "Camera stopped. Connect a USB camera, or enable USB webcam mode on your Pixel, then refresh the list.";
     [ObservableProperty] private string _formatText = "No camera format negotiated";
-    [ObservableProperty] private string _comparisonText = "No scene reference. Route placement uses manual whole-board confirmation.";
+    [ObservableProperty] private string _comparisonText = "No scene reference. Calibrated route checks use fresh game-table piece detections.";
     [ObservableProperty] private string _cropText = StartCropInstruction;
     [ObservableProperty] private string? _problem;
     [ObservableProperty] private string? _lastExportPath;
@@ -192,6 +192,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     private void PreviewTick(object? sender, EventArgs args)
     {
         if (_disposed) return;
+        if (GameTableAnalysis is { } analysis && analysis.Board.Age > TimeSpan.FromSeconds(2))
+            ClearGameTableAnalysis();
         if (_outlinedFrame is { } outlined && outlined.Age > TimeSpan.FromSeconds(2))
         {
             ClearDetectionPreview();
@@ -200,6 +202,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         var frame = Capture.LatestFrame;
         if (!Capture.IsRunning || frame is null || frame.Age > TimeSpan.FromSeconds(2))
         {
+            ClearGameTableAnalysis();
             if (_gameTableRegistration is not null)
             {
                 GameTablePreview = null;
@@ -224,7 +227,10 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         _previewSequence = frame.Sequence;
         try
         {
-            if (Preview is null || !_processorReady) Preview = ToBitmap(frame);
+            // During play, spend inference time on the accepted board rather than a second
+            // utility-screen enhancement/model pass. Keep its camera preview current and raw.
+            if (Preview is null || !_processorReady || _gameTablePreviewRequested && IsGameTablePreviewUpright)
+                Preview = ToBitmap(frame);
             if (!CornersMatch(frame)) ClearRegistration();
             if (_registration is { } registration)
             {
@@ -232,13 +238,14 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
                 else BoardPreview = ToBitmap(registration.Rectify(frame, 480, 300));
             }
             QueueGameTablePreview(frame);
+            QueueGameTableAnalysis(frame);
             var comparison = _monitor.Observe(frame);
             SafetyHeld = comparison.SafetyHeld;
             ComparisonText = comparison.State switch
             {
                 SceneReferenceState.NoReference => "No scene reference. Set one after checking the whole board and clearing your hands.",
                 SceneReferenceState.Stabilizing => "Waiting for a stable camera view…",
-                SceneReferenceState.SimilarToReference => "Scene resembles the reference. Trains still require manual whole-board confirmation.",
+                SceneReferenceState.SimilarToReference => "Scene resembles the reference. That alone does not verify trains; the game table checks fresh pieces.",
                 SceneReferenceState.SceneChanged => "The scene changed. Put the camera back, clear obstructions, or check the board before setting a new reference.",
                 SceneReferenceState.CameraRestarted => "Camera or format changed. Select the board corners again and set a new reference.",
                 SceneReferenceState.InsufficientDetail => "Too little visible detail. Check focus, lighting, camera cover and board framing.",
@@ -246,7 +253,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             };
             if (_gameBoardFramingActive) QueueGameBoardFraming(frame);
             else QueueAutomaticCornerDetection(frame);
-            QueueFrameProcessing(frame);
+            if (!(_gameTablePreviewRequested && IsGameTablePreviewUpright))
+                QueueFrameProcessing(frame);
         }
         catch (Exception ex)
         {
@@ -476,6 +484,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     public void BeginGameTablePreview()
     {
         if (!CanStartGameWithBoard || Capture.LatestFrame is not { } frame) return;
+        ClearGameTableAnalysis();
         _gameTablePreviewRequested = true;
         var orientation = _gameBoardOrientationIndex ?? 0;
         var corners = GameBoardOrientations.Enumerate(GameBoardCorners)[orientation];
@@ -485,6 +494,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         _lastGameTableCropAt = DateTimeOffset.MinValue;
         GameTablePreviewStatus = "Preparing the live board crop…";
         QueueGameTablePreview(frame);
+        QueueGameTableAnalysis(frame);
     }
 
     /// <summary>Used for restored games: an accepted technical crop can rejoin this table later.</summary>
@@ -505,6 +515,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
 
     private void InvalidateGameTablePreview()
     {
+        ClearGameTableAnalysis();
         _gameTableRegistration = null;
         IsGameTablePreviewUpright = false;
         _gameTableCropRevision++;
@@ -517,6 +528,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     private void AdoptTechnicalBoardCrop(CameraFrame frame, BoardRegistration registration)
     {
         if (!_gameTablePreviewRequested || _gameTableRegistration is not null) return;
+        ClearGameTableAnalysis();
         _gameTableRegistration = registration;
         IsGameTablePreviewUpright = false;
         _gameTableCropRevision++;
@@ -599,6 +611,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         {
             try
             {
+                await _gameTableAnalysisWork;
                 await DisposeCornerDetectionAsync();
                 await DisposeProcessingAsync();
             }

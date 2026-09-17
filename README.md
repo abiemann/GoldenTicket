@@ -15,16 +15,22 @@ the corrected bugs and security issues, and separates automated evidence from re
 The subsequent [September 12 implementation update](docs/IMPLEMENTATION-2026-09-12.md) adds the
 game phone companion, camera tools, and board reference photos. Use its morning
 acceptance checklist and [local phone setup](docs/phone-setup.md). Real-device acceptance remains
-in progress; automatic train recognition is not enabled.
+in progress; automatic claim confirmation now has measured slots for all 100 classic-US routes.
 
 The latest [camera processing update](docs/camera-processing.md) adds native 4K preference with
 source-resolution reporting, actual CPU/GPU image enhancement, and the original comparison baseline.
-Those outlines are visual candidates; route verification remains
-manual. Locked restore/build, **546 automated tests** and **50 synthetic WPF render cases** passed;
+Those outlines are visual candidates; the camera-processing report predates the route-slot
+verification described below. Locked restore/build, **546 automated tests** and **50 synthetic WPF render cases** passed;
 the render pass reported no binding warnings/errors. A supplied board-photo pair produced 15 train
 and 5 marker candidates, including the enhanced paths; the unchanged empty-board comparison
 produced none. These bounded checks do not complete physical-camera acceptance. See the
 [validation record](docs/evidence/camera-processing-2026-09-12/validation.md).
+
+For the all-route placement update, 26 focused verifier tests passed, including every route and
+both directions of each parallel pair. The WPF smoke pass rendered 97 cases without binding
+warnings. On the supplied played-board photo, all 43 model-detected trains fell within measured
+train spaces and their sampled colors classified; the supplied empty board yielded no train
+detections. These still-image and synthetic checks do not measure live-camera accuracy.
 
 The September 13 [ML preview experiment](docs/piece-recognition-ml.md) replaces live Piece outlines
 with a locally trained two-class detector. It finds trains and score markers without an empty-board
@@ -73,8 +79,11 @@ This build implements the core game plus initial phone, camera and photo workflo
 - Full turn structure: the two-card draw with its subphases, the face-up market with the
   three-locomotive reset and discard reshuffles, destination-ticket offers, and route claims.
 - Route claims use the reserve-then-verify protocol: planning a claim reserves the payment but
-  spends nothing, the operator places the physical trains, and one atomic commit spends the cards,
-  records ownership, scores and ends the turn.
+  spends nothing. The classic-US board has measured centers for all 309 printed train spaces across
+  100 routes. One pulsing yellow cue appears on each requested space. Two fresh camera observations
+  must identify a separate train of the player's color in every requested space before one atomic
+  commit spends the cards, records ownership, scores and ends the turn. Adjacent parallel lanes are
+  checked separately. This geometry and automated tests still need live-camera accuracy validation.
 - Exact final scoring, including the longest continuous route as a true maximum edge-simple trail
   with the witness trail shown.
 - Heuristic computer opponents at three difficulty levels, which see only their own seat's view.
@@ -112,7 +121,8 @@ This build implements the core game plus initial phone, camera and photo workflo
   board crop with manual selection and draggable corners, and conservative scene-reference
   change/recovery indication. Focus the preview and press **1–4**, then arrow keys, to adjust a
   corner; **Shift** makes larger steps. Invalid crops retain their handles for correction. It identifies camera
-  changes and stale frames, but does not authorize route claims.
+  changes and stale frames. Only fresh upright game-table detections of a calibrated route can
+  authorize a claim; the technical camera preview itself cannot.
 - Camera preview **zoom up to 800%** with + / − or Ctrl + mouse wheel. Drag the zoomed image
   to move around, or use **Fit** to see the whole image. ML tries to select the outer corners
   when capture starts; **Detect board corners** retries. For manual placement, choose
@@ -145,7 +155,7 @@ This build implements the core game plus initial phone, camera and photo workflo
   sidecars use plaintext format v2 with a SHA-256 checksum. Photos are cropped from fresh camera
   frames and checked on readback. They assist manual
   rebuilding; checkpoints retain their explicit state-only provenance.
-- Explicit manual-verification opt-in, per-placement whole-board attestation, and a board-check
+- Explicit manual-verification opt-in, whole-board attestation for uncalibrated routes, and a board-check
   gate before restored games can resume AI or human actions. Hiding a private view invalidates late
   asynchronous results. Fault logs contain bounded error metadata rather than exception payloads.
 - A headless simulator for reproducible matches and a data-audit command.
@@ -154,10 +164,11 @@ This build implements the core game plus initial phone, camera and photo workflo
 
 These are later milestones in `DESIGN.md`, and nothing here pretends they exist:
 
-- **No automatic camera verification.** Physical placement is confirmed by the operator
-  (`VerificationMode.Manual`). Scene similarity does not prove route ownership. Automatic landmarks,
-  production-quality recognition and gesture wakeup remain unfinished. Experimental local model
-  inference is implemented for visual evaluation; it does not authorize game moves.
+- **Automatic verification needs live-camera validation.** The model's train candidates and image
+  color checks can authorize any measured classic-US route after two stable, fresh observations.
+  The table says “Thank you” for three seconds, then asks for the scoring marker to move and waits
+  for two fresh readings of its new printed position before play continues. Full-board
+  reconciliation, gesture handling, and measured false-acceptance/abstention rates remain unfinished.
 - **Phone acceptance is incomplete.** The embedded companion is functional and tested with
   automated HTTPS/browser cases, but Android certificate/install/offline acceptance and all Apple
   device acceptance remain outstanding. This slice uses two-second snapshot polling and fresh
@@ -168,8 +179,10 @@ These are later milestones in `DESIGN.md`, and nothing here pretends they exist:
   `LogicalStateOnly`; partial placement masks and automatic whole-board reconciliation are still M4.
 - **No story mode, narration or sound.** That is M6.
 - **No installer.** M7.
-- **No board geometry.** DESIGN §6.3 forbids shipping placeholder coordinates, so the data package
-  carries none. The interface identifies routes by their endpoint cities and lane, not by position.
+- **No complete semantic board geometry.** The separate classic-US slot map measures all 309 train
+  spaces for placement cues and route-specific checking, but the broader board registration,
+  whole-board comparison and reconstruction geometry in DESIGN §6.3 remain unfinished. The rules
+  data package itself carries no placeholder coordinates.
 
 ## Board data is not audited yet
 
@@ -291,8 +304,7 @@ turn, status and players; **Packed away** is a status, not the save's name.
    disappears when setup is ready. **CANCEL** returns to
    character selection. The camera starts automatically when available; use **Retry camera** if
    it does not start. This screen requires both the deployed corner and piece models; without either,
-   **PLAY!** stays disabled. Every train placement still requires a manual whole-board check. Human-only
-   and computer-only games are allowed; a person must still place and verify computer trains. The
+   **PLAY!** stays disabled. Human-only and computer-only games are allowed; a person places computer trains. The
    technical setup screen offers seat names, colours and AI difficulty.
 3. **PLAY!** opens the game table with a live, cropped board from the accepted four camera corners.
    A persistent panel above the board identifies the current phase, the acting player, and the
@@ -331,9 +343,11 @@ turn, status and players; **Packed away** is a status, not the save's name.
    player explicitly reveals their private view.
 
 6. When any seat claims a route, the public screen names the seat, its colour and symbol, both
-   endpoint cities, the exact lane, and how many trains to place. Place them in any order, then
-   check the entire board, including previously claimed routes, tick the attestation checkbox, and
-   confirm. Nothing is spent or scored until you do.
+   endpoint cities, the exact lane, and how many trains to place. Place them in any order. For
+   The board shows one pulsing yellow cue in each requested train space. The camera checks all of
+   those spaces automatically, shows “Thank you” for three seconds, then asks you to move that
+   player's scoring marker. It waits until the marker appears at the new printed score before
+   continuing. Nothing is spent or scored until placement is verified.
 7. After someone finishes a turn with two trains or fewer, every seat takes one more turn, and then
    the results screen shows each seat's route points, destination tickets, longest continuous route
    and the trail that achieved it.

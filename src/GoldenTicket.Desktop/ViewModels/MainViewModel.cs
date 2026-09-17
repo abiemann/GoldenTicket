@@ -10,6 +10,7 @@ using GoldenTicket.Domain.Model;
 using GoldenTicket.Domain.Projections;
 using GoldenTicket.Domain.Randomness;
 using GoldenTicket.Persistence;
+using GoldenTicket.Vision;
 
 namespace GoldenTicket.Desktop.ViewModels;
 
@@ -68,6 +69,8 @@ public sealed partial class MainViewModel : ObservableObject
         {
             if (args.PropertyName == nameof(CameraViewModel.GameTablePreview))
                 AlignDestinationMarkers();
+            if (args.PropertyName == nameof(CameraViewModel.GameTableAnalysis))
+                ObserveGameTableAnalysis();
         };
         Setup.PropertyChanged += (_, args) =>
         {
@@ -149,6 +152,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     public bool CanRevealPrivateSeat => _revealable is not null && !_operationInProgress && !_exitRequested
         && _windowActive && _systemAvailable && !_toolsDisposed && IsGameplayScreenActive(Screen.Table) && !NeedsBoardReconciliation && !_mustReload
+        && _scoreMarkerStep is null
         && _coordinator is { StorageFaulted: false }
         && _coordinator.Public.Lifecycle is SessionLifecycle.Setup or SessionLifecycle.Active
         && _coordinator.Public.TurnPhase != TurnPhase.RulesDecisionRequired;
@@ -211,6 +215,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (_operationInProgress || _exitRequested || !IsGameplayScreenActive(Screen.Setup) || Setup.TryBuildSetup() is not { } setup) return;
 
+        ResetAutomaticPhysicalFlow();
         SetOperationInProgress(true);
         HidePrivateSeat();
         Busy = "Shuffling and dealing...";
@@ -254,6 +259,7 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        ResetAutomaticPhysicalFlow();
         SetOperationInProgress(true);
         HidePrivateSeat();
         Setup.SavedMatchMessage = null;
@@ -559,7 +565,7 @@ public sealed partial class MainViewModel : ObservableObject
         await ShowSingleHumanCardsAsync(generation);
     }
 
-    private bool CanSubmitOperator() => !_operationInProgress && !_exitRequested && !_mustReload &&
+    private bool CanSubmitOperator() => !_operationInProgress && _scoreMarkerStep is null && !_exitRequested && !_mustReload &&
         !NeedsBoardReconciliation && IsGameplayScreenActive(Screen.Table);
 
     /// <summary>
@@ -774,7 +780,8 @@ public sealed partial class MainViewModel : ObservableObject
     /// </summary>
     private async Task PumpAsync()
     {
-        if (_coordinator is null || _driver is null || NeedsBoardReconciliation || _mustReload) return;
+        if (_coordinator is null || _driver is null || _scoreMarkerStep is not null ||
+            NeedsBoardReconciliation || _mustReload) return;
 
         Busy = "Computer seats are playing...";
         try

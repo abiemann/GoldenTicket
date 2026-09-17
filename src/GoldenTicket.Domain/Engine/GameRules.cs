@@ -806,19 +806,28 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
                 "This claim is being cancelled; restore the board instead of confirming it.");
         }
 
-        if (command.Evidence != EvidenceKind.ManualAttestation)
+        switch (command.Evidence)
         {
-            return CommandResult.Reject("CameraVerificationNotAvailable",
-                "This build verifies placement by operator attestation. Camera evidence arrives with the vision milestones.");
+            case EvidenceKind.ManualAttestation:
+                if (state.VerificationMode != VerificationMode.Manual)
+                    return CommandResult.Reject("ManualVerificationNotSelected",
+                        "Manual attestation requires an explicitly selected manual verification mode.");
+                if (string.IsNullOrWhiteSpace(command.Operator) || string.IsNullOrWhiteSpace(command.Reason))
+                    return CommandResult.Reject("AttestationDetailsMissing",
+                        "Manual verification must record the operator and the whole-board confirmation.");
+                break;
+
+            case EvidenceKind.CameraAutomatic:
+                // Existing matches were created in Manual mode. A camera observation may establish
+                // the physical placement in those matches without rewriting their saved setup.
+                if (string.IsNullOrWhiteSpace(command.Operator) || string.IsNullOrWhiteSpace(command.Reason))
+                    return CommandResult.Reject("CameraEvidenceDetailsMissing",
+                        "Camera verification must record the detector and its evidence summary.");
+                break;
+
+            default:
+                return CommandResult.Reject("UnsupportedEvidenceKind", "The placement evidence type is unknown.");
         }
-
-        if (state.VerificationMode != VerificationMode.Manual)
-            return CommandResult.Reject("ManualVerificationNotSelected",
-                "Manual attestation requires an explicitly selected manual verification mode.");
-
-        if (string.IsNullOrWhiteSpace(command.Operator) || string.IsNullOrWhiteSpace(command.Reason))
-            return CommandResult.Reject("AttestationDetailsMissing",
-                "Manual verification must record the operator and the whole-board confirmation.");
 
         if (claim.BaseBoardRevision != state.BoardRevision)
             return CommandResult.Reject("StaleBoardRevision", "The board changed after this claim was planned.");
@@ -841,9 +850,14 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
 
         var points = Constants.ScoreForLength(route.Length);
 
-        context.Emit(new ManualVerificationRecorded(
-            claim.OperationId, claim.SeatId, claim.RouteId,
-            command.Operator, command.Reason, _time.GetUtcNow()));
+        if (command.Evidence == EvidenceKind.CameraAutomatic)
+            context.Emit(new CameraVerificationRecorded(
+                claim.OperationId, claim.SeatId, claim.RouteId,
+                command.Operator, command.Reason, _time.GetUtcNow()));
+        else
+            context.Emit(new ManualVerificationRecorded(
+                claim.OperationId, claim.SeatId, claim.RouteId,
+                command.Operator, command.Reason, _time.GetUtcNow()));
 
         context.Emit(new ClaimCommitted(
             claim.OperationId,
