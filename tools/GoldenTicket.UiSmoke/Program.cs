@@ -664,10 +664,12 @@ internal static partial class Program
                     {
                         var overlay = (Canvas)view.FindName("CameraSetupCornerOverlay");
                         var notice = (Border)view.FindName("CameraSetupNotice");
+                        var markerInstruction = (TextBlock)view.FindName("CameraSetupMarkerInstruction");
                         var play = (Button)view.FindName("ConfirmationPlayButton");
                         var whiteLines = overlay.Children.OfType<Line>()
                             .Where(line => ReferenceEquals(line.Stroke, Brushes.White)).ToArray();
                         if (!camera.HasFreshGameBoardCorners || camera.CanStartGameWithBoard || play.IsEnabled ||
+                            markerInstruction.Visibility != Visibility.Visible ||
                             notice.Visibility != Visibility.Visible ||
                             overlay.Children.Count != 16 || whiteLines.Length != 8 ||
                             whiteLines.Any(line => line.X1 < 0 || line.X2 > overlay.ActualWidth ||
@@ -697,7 +699,9 @@ internal static partial class Program
                     {
                         var play = (Button)view.FindName("ConfirmationPlayButton");
                         var notice = (Border)view.FindName("CameraSetupNotice");
-                        if (!camera.CanStartGameWithBoard || !play.IsEnabled || notice.Visibility != Visibility.Collapsed)
+                        var markerInstruction = (TextBlock)view.FindName("CameraSetupMarkerInstruction");
+                        if (!camera.CanStartGameWithBoard || !play.IsEnabled || notice.Visibility != Visibility.Collapsed ||
+                            markerInstruction.Visibility != Visibility.Collapsed)
                             throw new InvalidOperationException("Fresh corners and score pieces must enable PLAY and hide the board notice.");
                     }, [(875, 680), (1280, 800)]);
                 var freshBoardFrame = CameraFrame.CopyFromBgra32(320, 180, pixels, 2, 1);
@@ -912,7 +916,7 @@ internal static partial class Program
                     Descendants<Button>(gameTable).Any(button => IsElementShown(button) &&
                         AutomationProperties.GetName(button) is not
                             ("Show your train cards" or "Show your destinations")) ||
-                    VisibleText(gameTable).Contains("Shift+Esc opens the utility screens", StringComparison.Ordinal))
+                    VisibleText(gameTable).Contains("Shift+Esc", StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("The game table must retain its phase, acting-seat and human-instruction guidance above the shared board crop.");
                 var sceneBounds = scene.TransformToAncestor(view).TransformBounds(new Rect(scene.RenderSize));
                 if (sceneBounds.Left < -1 || sceneBounds.Top < -1 ||
@@ -1328,7 +1332,8 @@ internal static partial class Program
             {
                 var labels = VisibleButtons(view);
                 if (!labels.Contains("Your cards") || labels.Contains("Reveal my private view") ||
-                    VisibleText(view).Contains("Pass the laptop", StringComparison.Ordinal))
+                    VisibleText(view).Contains("Pass the laptop", StringComparison.Ordinal) ||
+                    VisibleText(view).Contains("Shift+Esc", StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("The solo table must offer Your cards without a laptop handoff prompt.");
             });
             checks.Add("The solo table remains public while card stacks expand in place.");

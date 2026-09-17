@@ -90,12 +90,12 @@
                     <TextBlock Style="{StaticResource Caption}"
                                Text="Leave the physical train cards and destinations in the box: this application deals and holds every card, for every seat. Put the board and the plastic trains on the table as usual." />
                     <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
-                               Text="You confirm each physical placement on the laptop. The Camera tab offers preview and reference photos; automatic train verification is not enabled." />
+                               Text="Keep the whole board in camera view. The game checks calibrated train placements and scoring markers automatically." />
                     <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
                                Text="One human: your cards and destinations appear on this laptop. No phone connection is needed."
                                Visibility="{Binding IsSingleHumanGame, Converter={StaticResource BoolToVisibility}}" />
                     <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
-                               Text="Multiple humans: when the match starts, set up one shared phone from the QR over the table. Phone card handoff is planned for a later update; until then, use Shift+Esc for private laptop controls."
+                               Text="Multiple humans: when the match starts, set up one shared phone from the QR over the table. Phone card handoff is planned for a later update."
                                Visibility="{Binding CanConnectPhone, Converter={StaticResource BoolToVisibility}}" />
                     <CheckBox Margin="0,10,0,0" IsChecked="{Binding Setup.ManualVerificationAccepted}"
                               Content="Use manual verification: I will check all claimed routes and empty lanes at each confirmation." />

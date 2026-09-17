@@ -85,14 +85,6 @@ public sealed class BoardInventoryVerifier
                 candidate.Kind == PieceCandidateKind.Train &&
                 candidate.Confidence >= MinimumConfidence && candidate.Outline.Count >= 4)
             .ToArray();
-        if (plausible.Length > _slots.Length)
-            return Fail(BoardInventoryState.UnexpectedTrain);
-        if (plausible.Length < _slots.Length)
-            return Fail(BoardInventoryState.MissingTrains);
-        var assignment = CheckAssignments(plausible);
-        if (assignment is { } badAssignment)
-            return Fail(badAssignment);
-
         foreach (var route in _routes)
         {
             // RoutePlacementVerifier latches after its own confirmation. A new instance on
@@ -113,6 +105,14 @@ public sealed class BoardInventoryVerifier
                 _ => BoardInventoryState.MissingTrains
             }, route.RouteId);
         }
+
+        if (plausible.Length > _slots.Length)
+            return Fail(BoardInventoryState.UnexpectedTrain);
+        if (plausible.Length < _slots.Length)
+            return Fail(BoardInventoryState.MissingTrains);
+        var assignment = CheckAssignments(plausible);
+        if (assignment is { } badAssignment)
+            return Fail(badAssignment);
 
         if (_firstMatchingAt is null || board.CapturedAt < _firstMatchingAt)
         {

@@ -13,6 +13,45 @@ public sealed class BoardInventoryVerifierTests
     ];
 
     [Fact]
+    public void Moving_trains_from_an_earlier_claim_to_a_new_route_blocks_the_new_claim()
+    {
+        const string earlierRoute = "houston--new-orleans";
+        const string pendingRoute = "kansas-city--saint-louis--a";
+        var verifier = new BoardInventoryVerifier([
+            new(earlierRoute, MarkerColor.Blue, 2),
+            new(pendingRoute, MarkerColor.Blue, 2)
+        ]);
+        var now = DateTimeOffset.UtcNow;
+        var moved = Scene(1, 1, now,
+            [new(1154, 640, MarkerColor.Blue), new(1220, 638, MarkerColor.Blue)]);
+        var stillMoved = Scene(2, 1, now.AddSeconds(1.1),
+            [new(1154, 640, MarkerColor.Blue), new(1220, 638, MarkerColor.Blue)]);
+
+        // The requested route alone is complete, but Houston–New Orleans is empty.
+        var requested = new RoutePlacementVerifier();
+        requested.Observe(moved.Frame, moved.Candidates, pendingRoute, MarkerColor.Blue,
+            2, "claim", 1, 1);
+        Assert.True(requested.Observe(stillMoved.Frame, stillMoved.Candidates,
+            pendingRoute, MarkerColor.Blue, 2, "claim", 1, 1).Confirmed);
+        foreach (var scene in new[] { moved, stillMoved })
+        {
+            var observation = verifier.Observe(scene.Frame, scene.Candidates, 1, 1);
+            Assert.Equal(BoardInventoryState.MissingTrains, observation.State);
+            Assert.Equal(earlierRoute, observation.RouteId);
+        }
+
+        var restored = Scene(3, 1, now.AddSeconds(2.2),
+            [new(1240, 1034, MarkerColor.Blue), new(1308, 1030, MarkerColor.Blue),
+                new(1154, 640, MarkerColor.Blue), new(1220, 638, MarkerColor.Blue)]);
+        var stable = Scene(4, 1, now.AddSeconds(3.3),
+            [new(1240, 1034, MarkerColor.Blue), new(1308, 1030, MarkerColor.Blue),
+                new(1154, 640, MarkerColor.Blue), new(1220, 638, MarkerColor.Blue)]);
+        Assert.Equal(BoardInventoryState.Stabilizing,
+            verifier.Observe(restored.Frame, restored.Candidates, 1, 1).State);
+        Assert.True(verifier.Observe(stable.Frame, stable.Candidates, 1, 1).Confirmed);
+    }
+
+    [Fact]
     public void Confirms_all_claimed_routes_and_reports_color_inventory_after_two_stable_frames()
     {
         var verifier = Inventory();

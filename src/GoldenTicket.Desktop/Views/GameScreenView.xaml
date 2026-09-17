@@ -330,9 +330,11 @@
                                Text="Position the board game and camera so the entire board is visible"
                                Foreground="#FFF8EEDC" FontSize="19" TextAlignment="Center"
                                Margin="0,12,0,6" />
-                    <TextBlock Text="Place scoring markers on or near the 1"
+                    <TextBlock x:Name="CameraSetupMarkerInstruction"
+                               Text="Place scoring markers on or near the 1"
                                Foreground="#FFF8EEDC" FontSize="16" TextAlignment="Center"
-                               Margin="0,0,0,16" />
+                               Margin="0,0,0,16"
+                               Visibility="{Binding Camera.CanStartGameWithBoard, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}" />
                     <Border x:Name="CameraSetupPreviewFrame" Width="800" Height="440" CornerRadius="8"
                             Background="#0E141B" BorderBrush="#99DFB75C" BorderThickness="2"
                             ClipToBounds="True">

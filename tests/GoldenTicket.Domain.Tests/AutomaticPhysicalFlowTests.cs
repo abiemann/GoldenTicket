@@ -95,7 +95,7 @@ public sealed class AutomaticPhysicalFlowTests
     }
 
     [Fact]
-    public async Task Marker_can_be_confirmed_on_the_public_table_when_the_camera_cannot_read_it()
+    public async Task Marker_step_waits_for_two_camera_readings_at_the_target_score()
     {
         var model = new MainViewModel(TestManifest.Manifest, new InMemorySessionStore());
         model.Setup.ManualVerificationAccepted = true;
@@ -108,16 +108,25 @@ public sealed class AutomaticPhysicalFlowTests
 
             var confirmation = model.ConfirmPlacementAsync();
             await WaitUntilAsync(() => model.Game.GuidanceInstruction == "Thank you");
-            Assert.False(model.ShowScoreMarkerConfirmation);
-            await model.ConfirmScoreMarkerMovedCommand.ExecuteAsync(null);
+            Assert.False(model.ShowScoreMarkerDetectionPrompt);
             Assert.Equal("Scoring", model.Game.GuidanceTurn);
 
             await confirmation;
-            Assert.True(model.ShowScoreMarkerConfirmation);
+            Assert.True(model.ShowScoreMarkerDetectionPrompt);
             Assert.Equal(Screen.Table, model.Screen);
-            await model.ConfirmScoreMarkerMovedCommand.ExecuteAsync(null);
+            var target = model.Table.Seats.Single(seat => seat.SeatId == placement.SeatId).Score % 100 + 1;
+            var color = Enum.Parse<MarkerColor>(placement.Color.ToString());
+            var firstAt = DateTimeOffset.UtcNow;
+            model.Camera.IsGameTablePreviewUpright = true;
+            PublishScore(model.Camera, 1, firstAt, color, target % 100 + 1);
+            Assert.True(model.ShowScoreMarkerDetectionPrompt);
+            Assert.Equal("Scoring", model.Game.GuidanceTurn);
+            PublishScore(model.Camera, 2, firstAt.AddSeconds(1.1), color, target);
+            Assert.Equal("Scoring", model.Game.GuidanceTurn);
+            PublishScore(model.Camera, 3, firstAt.AddSeconds(2.2), color, target);
+            await WaitUntilAsync(() => model.Game.GuidanceTurn != "Scoring");
 
-            Assert.False(model.ShowScoreMarkerConfirmation);
+            Assert.False(model.ShowScoreMarkerDetectionPrompt);
             Assert.NotEqual("Scoring", model.Game.GuidanceTurn);
             Assert.NotEqual(placement.OperationId, model.Table.Placement?.OperationId);
             Assert.Equal(Screen.Table, model.Screen);

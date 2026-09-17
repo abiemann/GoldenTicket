@@ -221,21 +221,17 @@
                     </StackPanel>
                 </Border>
 
-                <Border x:Name="ScoreMarkerConfirmationPanel" Canvas.Left="510" Canvas.Top="478"
+                <Border x:Name="ScoreMarkerDetectionPanel" Canvas.Left="510" Canvas.Top="478"
                         Width="420" CornerRadius="10" Padding="13"
-                        Visibility="{Binding ShowScoreMarkerConfirmation, Converter={StaticResource BoolToVisibility}}"
+                        Visibility="{Binding ShowScoreMarkerDetectionPrompt, Converter={StaticResource BoolToVisibility}}"
                         Background="#F51A2531" BorderBrush="#FFE1BD79" BorderThickness="2"
                         AutomationProperties.LiveSetting="Polite">
                     <StackPanel>
                         <TextBlock Text="Move the scoring marker" Foreground="#FFFFE7B0"
                                    FontSize="17" FontWeight="Bold" TextAlignment="Center" />
-                        <TextBlock Text="The camera will continue when it sees the marker. If it cannot read it, check the number above and confirm the move here."
+                        <TextBlock Text="The camera will continue automatically when it sees the marker at the required score."
                                    Foreground="#FFF8EEDC" FontSize="11" TextAlignment="Center"
-                                   TextWrapping="Wrap" Margin="0,5,0,9" />
-                        <Button Content="I MOVED THE SCORING MARKER" Height="34"
-                                Background="#FF69412F" Foreground="#FFFFE7B0"
-                                BorderBrush="#FFF0D7A0" BorderThickness="1.5"
-                                Command="{Binding ConfirmScoreMarkerMovedCommand}" />
+                                   TextWrapping="Wrap" Margin="0,5,0,0" />
                     </StackPanel>
                 </Border>
 

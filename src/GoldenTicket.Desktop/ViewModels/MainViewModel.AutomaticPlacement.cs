@@ -14,6 +14,9 @@ public sealed partial class MainViewModel
     }
 
     private readonly RoutePlacementVerifier _routePlacementVerifier = new();
+    private BoardInventoryVerifier? _placementInventoryVerifier;
+    private string? _placementInventoryKey;
+    private bool _showingPlacementInventoryCorrection;
     private readonly ScoreMarkerMoveVerifier _scoreMarkerMoveVerifier = new();
     private ScoreMarkerStep? _scoreMarkerStep;
     private bool _claimCompletionInProgress;
@@ -21,11 +24,11 @@ public sealed partial class MainViewModel
     private long _automaticFlowGeneration;
     private string? _placementVerificationBlock;
 
-    public bool ShowScoreMarkerConfirmation => _scoreMarkerStep is { ThankYouFinished: true } &&
+    public bool ShowScoreMarkerDetectionPrompt => _scoreMarkerStep is { ThankYouFinished: true } &&
         !_mustReload && !NeedsBoardReconciliation && IsGameplayScreenActive(Screen.Table);
 
-    private void NotifyScoreMarkerConfirmationChanged() =>
-        OnPropertyChanged(nameof(ShowScoreMarkerConfirmation));
+    private void NotifyScoreMarkerDetectionPromptChanged() =>
+        OnPropertyChanged(nameof(ShowScoreMarkerDetectionPrompt));
 
     private void ResetAutomaticPhysicalFlow()
     {
@@ -36,10 +39,11 @@ public sealed partial class MainViewModel
         _scoreCompletionInProgress = false;
         _placementVerificationBlock = null;
         _routePlacementVerifier.Reset();
+        ResetPlacementInventory();
         _scoreMarkerMoveVerifier.Reset();
         ResetBoardFirstClaimFlow();
         Game.ClearGuidance();
-        NotifyScoreMarkerConfirmationChanged();
+        NotifyScoreMarkerDetectionPromptChanged();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
     }
 
@@ -51,6 +55,7 @@ public sealed partial class MainViewModel
             NotePlacementVerificationBlock(Camera.GameTableAnalysis is null ? "camera-analysis-unavailable" :
                 !Camera.IsGameTablePreviewUpright ? "board-orientation-unverified" : "camera-analysis-stale");
             _routePlacementVerifier.Reset();
+            ResetPlacementInventory();
             _scoreMarkerMoveVerifier.Reset();
             return;
         }
@@ -109,6 +114,7 @@ public sealed partial class MainViewModel
                 visiblePending.SeatId != visiblePlacement.SeatId ? "placement-and-claim-mismatch" :
                 "unsupported-route");
             _routePlacementVerifier.Reset();
+            ResetPlacementInventory();
             if (_scoreMarkerStep is null && !_claimCompletionInProgress && !_operationInProgress &&
                 Table.Placement is null)
                 ObserveBoardFirstClaim(analysis);
@@ -116,10 +122,27 @@ public sealed partial class MainViewModel
         }
 
         NotePlacementVerificationBlock(null);
+        var inventoryKey = $"{coordinator.SessionId.Value}/{placement.StateVersion}/{placement.OperationId.Value}";
+        if (_placementInventoryKey != inventoryKey)
+        {
+            var expected = coordinator.Public.RouteOwners
+                .Select(route => new BoardInventoryRoute(route.Key.Value,
+                    ToMarkerColor(coordinator.Public.SeatOf(route.Value).Color),
+                    _manifest.Route(route.Key).Length))
+                .Append(new BoardInventoryRoute(placement.RouteId.Value,
+                    ToMarkerColor(placement.Color), placement.TrainCount))
+                .ToArray();
+            _placementInventoryVerifier = new BoardInventoryVerifier(expected);
+            _placementInventoryKey = inventoryKey;
+            _showingPlacementInventoryCorrection = false;
+        }
         var placementObservation = _routePlacementVerifier.Observe(
             analysis.Board, analysis.Candidates, placement.RouteId.Value,
             ToMarkerColor(placement.Color), placement.TrainCount,
             placement.OperationId.Value, analysis.CropRevision, analysis.ModelRevision);
+        var inventory = _placementInventoryVerifier!.Observe(analysis.Board, analysis.Candidates,
+            analysis.CropRevision, analysis.ModelRevision);
+        UpdatePlacementInventoryGuidance(placement, inventory);
         BoardInteractionLog.Write("placement.frame", new
         {
             analysis.Board.Sequence, analysis.Board.Epoch,
@@ -129,10 +152,51 @@ public sealed partial class MainViewModel
             expected = placement.TrainCount,
             state = placementObservation.State.ToString(),
             matched = placementObservation.MatchedCount,
+            inventoryState = inventory.State.ToString(),
+            inventoryRoute = inventory.RouteId,
             nearbyCandidates = DescribeNearbyPlacementCandidates(analysis, placement.RouteId.Value)
         });
-        if (placementObservation.Confirmed)
+        // A requested route alone is insufficient: pieces from any earlier claim may have
+        // been moved into its spaces. The entire committed board plus this route must agree
+        // in fresh, stable frames before submitting claim evidence.
+        if (inventory.Confirmed)
             _ = AcceptCameraPlacementAsync(placement, analysis);
+    }
+
+    private void ResetPlacementInventory()
+    {
+        if (_showingPlacementInventoryCorrection) Game.ClearGuidance();
+        _placementInventoryVerifier = null;
+        _placementInventoryKey = null;
+        _showingPlacementInventoryCorrection = false;
+    }
+
+    private void UpdatePlacementInventoryGuidance(PlacementInstruction placement,
+        BoardInventoryObservation inventory)
+    {
+        string? correction = inventory.RouteId is { } routeId &&
+            routeId != placement.RouteId.Value &&
+            inventory.State is BoardInventoryState.MissingTrains or BoardInventoryState.WrongColor or
+                BoardInventoryState.Ambiguous
+            ? $"Put the trains back on {_manifest.Describe(new RouteId(routeId))}. " +
+              "Previously claimed routes must stay occupied before this claim can continue."
+            : inventory.State == BoardInventoryState.UnexpectedTrain
+                ? "Check for train pieces outside the claimed routes and the new route. " +
+                  "The whole board must match before this claim can continue."
+                : inventory.State == BoardInventoryState.Unsupported
+                    ? "The camera cannot verify every claimed route. Check the board before continuing."
+                    : null;
+        if (correction is not null)
+        {
+            if (_showingPlacementInventoryCorrection && Game.GuidanceInstruction == correction) return;
+            Game.ShowGuidance(Table.TurnText, placement.SeatName, correction);
+            _showingPlacementInventoryCorrection = true;
+        }
+        else if (_showingPlacementInventoryCorrection)
+        {
+            Game.ClearGuidance();
+            _showingPlacementInventoryCorrection = false;
+        }
     }
 
     private void NotePlacementVerificationBlock(string? reason)
@@ -203,7 +267,8 @@ public sealed partial class MainViewModel
     private Task AcceptCameraPlacementAsync(PlacementInstruction placement, GameTableAnalysis analysis) =>
         AcceptPhysicalPlacementAsync(placement, EvidenceKind.CameraAutomatic, analysis.ModelId,
             $"{placement.TrainCount} {placement.Color} train pieces matched every measured slot of " +
-            $"{placement.RouteId.Value} in distinct upright frames at least one second apart; " +
+            $"{placement.RouteId.Value}, and every earlier claimed route retained its trains and color " +
+            "in distinct upright frames at least one second apart; " +
             $"camera epoch {analysis.Board.Epoch}, frame {analysis.Board.Sequence}, " +
             $"crop {analysis.CropRevision}, model revision {analysis.ModelRevision}.");
 
@@ -286,7 +351,7 @@ public sealed partial class MainViewModel
                 PrintedScore(beforeScore), PrintedScore(beforeScore + points), points);
             _scoreMarkerStep = step;
             _scoreMarkerMoveVerifier.Reset();
-            NotifyScoreMarkerConfirmationChanged();
+            NotifyScoreMarkerDetectionPromptChanged();
             OnPropertyChanged(nameof(CanRevealPrivateSeat));
             Game.ShowGuidance("Scoring", placement.SeatName, "Thank you");
             await Task.Delay(TimeSpan.FromSeconds(3));
@@ -297,7 +362,7 @@ public sealed partial class MainViewModel
                 $"Move {step.SeatName}'s {step.Color} scoring marker {step.Points} spaces " +
                 $"from {step.FromPrintedScore} to {step.ToPrintedScore}. " +
                 $"The camera will continue when it sees the marker on {step.ToPrintedScore}.");
-            NotifyScoreMarkerConfirmationChanged();
+            NotifyScoreMarkerDetectionPromptChanged();
         }
         catch (Exception error)
         {
@@ -325,7 +390,7 @@ public sealed partial class MainViewModel
         {
             _scoreMarkerStep = null;
             _scoreMarkerMoveVerifier.Reset();
-            NotifyScoreMarkerConfirmationChanged();
+            NotifyScoreMarkerDetectionPromptChanged();
             Game.ClearGuidance();
             await PumpAsync();
         }
@@ -338,23 +403,6 @@ public sealed partial class MainViewModel
             _scoreCompletionInProgress = false;
             SetOperationInProgress(false);
         }
-    }
-
-    [CommunityToolkit.Mvvm.Input.RelayCommand]
-    private Task ConfirmScoreMarkerMovedAsync()
-    {
-        if (_scoreMarkerStep is not { ThankYouFinished: true } step ||
-            _scoreCompletionInProgress || _operationInProgress || _exitRequested || _mustReload ||
-            NeedsBoardReconciliation || !_windowActive || !_systemAvailable ||
-            !IsGameplayScreenActive(Screen.Table) ||
-            _coordinator is not { StorageFaulted: false } coordinator ||
-            coordinator.SessionId != step.SessionId ||
-            PrintedScore(coordinator.Public.SeatOf(step.SeatId).RouteScore) != step.ToPrintedScore)
-            return Task.CompletedTask;
-
-        // This is an explicit operator fallback for a marker the camera cannot read. The
-        // scoring step is already committed; this acknowledgement only releases the next turn.
-        return FinishScoreMarkerStepAsync(step);
     }
 
     private static int PrintedScore(int routeScore) => routeScore % 100 + 1;

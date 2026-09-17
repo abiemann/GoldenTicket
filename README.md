@@ -116,15 +116,16 @@ This build implements the core game plus initial phone, camera and photo workflo
 - A player-facing launch layer using the supplied snowy-twilight artwork. Choose 2–5 players from
   five portraits whose faces and scenery begin grayscale while their jackets keep their train
   colors. The portraits cycle through human, computer and unselected. You can also reopen the
-  most recently updated save. Shift+Escape reveals the existing technical screens; **Return to
-  game** slides the game layer back. Both presentations use the same match and camera objects.
+  most recently updated save. Shift+Escape reveals engineering-only screens for diagnostics and
+  recovery; **Return to game** slides the game layer back. Both presentations use the same match
+  and camera objects.
 - With one human, the three opening destinations appear over the game board. Keep all three or
   click one to drop it. A confirmed drop removes that card and its board highlight together, then
   slides the remaining **Your Cards** panel down before saving the two kept destinations. The
   public table stays visible after either opening choice; click the human's T or D stack to see
   compact card previews. The unresolved opening choice has no **Back to table** action, and plain
-  Escape does not dismiss it; the exit menu covers it until **Return to Game**. Later laptop private controls are available through
-  **Shift+Escape**, and **Connect phone** is hidden.
+  Escape does not dismiss it; the exit menu covers it until **Return to Game**. Later laptop private
+  controls are not yet available on the main game layer, and **Connect phone** is hidden.
   With multiple humans, the game table presents phone setup so one shared phone can be passed
   between players. Hosting still requires an explicit start on a selected Private LAN connection;
   the table shows the real connection QR only after the local host supplies an address.
@@ -296,10 +297,10 @@ and preview options. **OK** applies a changed processor choice and returns to th
 Display mode defaults to a resizable window; **Full screen** hides the title bar,
 and switching back restores the window's size and position. Camera controls use the same configuration
 as the utility screens.
-To choose a different save, press **Shift+Escape**, find **Saved matches** on the technical setup
-screen, check the match, then choose **Resume selected match**. A single saved match is checked
-automatically. Check the physical board before play resumes. Named saves show their name, date,
-turn, status and players; **Packed away** is a status, not the save's name.
+The main screen currently reloads the most recent save. Selecting a different save is available
+only on the engineering-only **Saved matches** screen. A single saved match is checked
+automatically there. Check the physical board before play resumes. Named saves show their name,
+date, turn, status and players; **Packed away** is a status, not the save's name.
 
 1. Put the board and the plastic trains on the table. **Leave the physical cards and destination
    tickets in the box** — the application deals and holds every card, for every seat.
@@ -355,9 +356,9 @@ turn, status and players; **Packed away** is a status, not the save's name.
    slide into centered positions along the bottom after opening setup. With five players, they
    remain at the outer bottom edges to leave room for the fifth player tile.
    The complete scene scales together when the window is resized or maximized.
-   Press **Shift+Escape** to open the technical screens. Their **Game table** screen contains the
-   private-card reveal and public turn, placement, and save controls. A camera restart or format change requires
-   checking and restoring the board crop through the technical Camera screen.
+   Shift+Escape opens engineering-only screens for diagnostics and recovery. Their **Game table**
+   screen still contains development controls. A camera restart or format change requires checking
+   and restoring the board crop through the technical Camera screen.
 4. With one human, opening destination choices appear directly on the laptop. With multiple
    humans, the visible game table guides setup of one shared phone for private cards. Start hosting
    on a selected Private LAN connection before scanning its QR. The phone's card display and
@@ -365,20 +366,21 @@ turn, status and players; **Packed away** is a status, not the save's name.
 5. The laptop stays on **THE GAME TABLE** after turns and scoring-marker detection. In solo play,
    the T and D stacks show read-only mini cards on the table when clicked. A human can place trains
    on a legal, camera-measured route before choosing it digitally: after stable detection, the table
-   asks which of the legal train-card payments to spend. The game then checks the placed trains in
-   fresh frames before committing the claim. Train-card and destination draws still use the technical
-   **Game table** controls under **Shift+Escape**; return to the game layer afterward. With multiple
-   humans, the shared phone is the intended private controller; actions do not automatically reveal
-   a private screen on the laptop.
+   asks which of the legal train-card payments to spend. The game then checks the placed trains and
+   every previously claimed route in fresh frames before committing the claim. If trains have been
+   moved off an older route, return them to that route; the new claim waits until the board matches.
+   Player-facing train-card and destination draw controls are not yet on the main game layer;
+   their current implementation is in the engineering-only
+   screen. With multiple humans, the shared phone is the intended private controller; actions do
+   not automatically reveal a private screen on the laptop.
 
 6. When any seat claims a route, the public screen names the seat, its colour and symbol, both
    endpoint cities, the exact lane, and how many trains to place. Place them in any order.
-   The board shows one pulsing yellow cue in each requested train space. The camera checks all of
-   those spaces automatically, shows “Thank you” for three seconds, then asks you to move that
-   player's scoring marker. It waits until the marker appears at the new printed score before
-   continuing on **THE GAME TABLE**. If the camera cannot read the marker, use the public-table
-   **I MOVED THE SCORING MARKER** confirmation after moving it. Nothing is spent or scored until
-   placement is verified.
+   The board shows one pulsing yellow cue in each requested train space. The camera checks those
+   spaces and all earlier claimed trains automatically, shows “Thank you” for three seconds,
+   then asks you to move that player's scoring marker. It waits until the marker appears at the new printed score before
+   continuing automatically on **THE GAME TABLE**. If the camera cannot read the marker, the
+   game waits for a clear view of it. Nothing is spent or scored until placement is verified.
 7. After someone finishes a turn with two trains or fewer, every seat takes one more turn, and then
    the results screen shows each seat's route points, destination tickets, longest continuous route
    and the trail that achieved it.
@@ -412,8 +414,8 @@ finish before you retry closing. If the latest save is uncertain, the app warns 
 
 Press **Escape** on the game table to open the save/quit dialog. An unresolved solo opening
 destination choice remains underneath the dialog and returns unchanged if you dismiss it; choose
-whether to keep all three or drop one to continue. **Shift+Escape** still opens the technical
-screens for recovery. Other private views hide on deactivation and after 60 seconds without input.
+whether to keep all three or drop one to continue. Engineering-only screens remain available
+through **Shift+Escape** for diagnostics and recovery. Other private views hide on deactivation and after 60 seconds without input.
 Lock/suspend handlers request covering; real Windows lifecycle behavior remains an interactive
 acceptance test.
 When reopening a save, check the list of committed routes and attest to the physical board before
