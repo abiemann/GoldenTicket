@@ -59,7 +59,7 @@ public partial class MainWindow : Window
         }
 
         // DESIGN 4.7: preserve the solo opening destination choice on focus loss; cover other
-        // private views on deactivation. Escape still covers either one.
+        // private views on deactivation. Plain Escape covers only later private views.
         Deactivated += (_, _) => _model.SetWindowActive(false);
         Activated += (_, _) => _model.SetWindowActive(true);
         PreviewKeyDown += OnPreviewKeyDown;
@@ -208,6 +208,12 @@ public partial class MainWindow : Window
         if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0)
         {
             if (!e.IsRepeat) RevealTechnicalLayer();
+            e.Handled = true;
+            return;
+        }
+
+        if (_model.ShowSoloOpeningTicketsOnBoard)
+        {
             e.Handled = true;
             return;
         }

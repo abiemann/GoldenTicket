@@ -911,6 +911,7 @@ internal static partial class Program
                 var tileText = Descendants<TextBlock>(tileGrid).ToArray();
                 var name = tileText.Single(text => text.Text == "Player 1");
                 var trainLabel = tileText.Single(text => text.Text == "Train cards");
+                var trainsRemaining = tileText.Single(text => text.Name == "TrainsRemainingText");
                 var destinationLabel = tileText.Single(text => text.Text == "Destinations");
                 var trainCount = tileText.Single(text => text.Text == "4");
                 var destinationCount = tileText.Single(text => text.Text == "3");
@@ -919,6 +920,10 @@ internal static partial class Program
                     Grid.GetRow(trainCount) != 2 || Grid.GetRow(destinationCount) != 2 ||
                     Descendants<Border>(firstTile).Any(border => border.Width == 20 && border.Height == 8))
                     throw new InvalidOperationException("Player, train-card and destination labels and counts must align without a train bar graph.");
+                if (Grid.GetRow(trainsRemaining) != 0 || Grid.GetColumn(trainsRemaining) != 1 ||
+                    Math.Abs(trainsRemaining.TranslatePoint(new Point(), tileGrid).X -
+                             trainLabel.TranslatePoint(new Point(), tileGrid).X) > 0.5)
+                    throw new InvalidOperationException("Remaining trains must sit above the T card and align with Train cards.");
                 if (model.Game.TableSeats[0].Left != 10 || model.Game.TableSeats[1].Left != 1180 ||
                     (model.Table.Seats.Count == 5 &&
                      (model.Game.TableSeats[2].Left != 10 || model.Game.TableSeats[3].Left != 1180 ||
@@ -1002,6 +1007,14 @@ internal static partial class Program
                 throw new InvalidOperationException("The game layer must be the only enabled layer at launch.");
             if (!model.IsPrivateVisible)
                 throw new InvalidOperationException("The privacy fixture must reveal the opening hand before switching layers.");
+            var source = new FixturePresentationSource { RootVisual = window };
+            var escape = new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Escape)
+            {
+                RoutedEvent = Keyboard.PreviewKeyDownEvent
+            };
+            window.RaiseEvent(escape);
+            if (!escape.Handled || !model.ShowSoloOpeningTicketsOnBoard || !model.IsPrivateVisible)
+                throw new InvalidOperationException("Plain Escape must not dismiss an unresolved solo opening choice.");
             reveal.Invoke(window, null);
             reveal.Invoke(window, null);
             await Task.Delay(400);
@@ -1059,7 +1072,8 @@ internal static partial class Program
             solo.Camera.GameTablePreview = BitmapSource.Create(960, 600, 96, 96,
                 PixelFormats.Bgra32, null, soloBoardPixels, 960 * 4);
             solo.Camera.GameTablePreviewStatus = "";
-            if (solo.Table.Instruction != "Solo test player: choose whether to keep all destinations or drop one.")
+            if (solo.Table.ActiveSeatName != "Solo test player" ||
+                solo.Table.Instruction != "Choose whether to keep all destinations or drop one.")
                 throw new InvalidOperationException("Solo setup guidance must explain the keep-or-drop choice.");
             await RenderSizes("solo-opening-tickets-synthetic", () => new PrivateSeatView { DataContext = solo },
                 view => VerifyPrivateLabels(view, solo, "Solo test player", singleHuman: true));
@@ -1075,14 +1089,17 @@ internal static partial class Program
                 var board = Descendants<Border>(view).Single(border => border.Name == "GameBoardFrame");
                 var drawPiles = Descendants<Border>(view).Single(border => border.Name == "DrawPilesPanel");
                 var faceUp = Descendants<Border>(view).Single(border => border.Name == "FaceUpMarketPanel");
+                var guidanceSeat = Descendants<TextBlock>(view).Single(text => text.Name == "GuidanceSeatText");
+                var guidanceInstruction = Descendants<TextBlock>(view).Single(text => text.Name == "GuidanceInstructionText");
                 var cityMarkers = Descendants<ItemsControl>(view).Single(control => control.Name == "DestinationCityMarkers");
                 var destinationLines = Descendants<ItemsControl>(view).Single(control => control.Name == "DestinationLines");
                 if (!IsShown(overlay, view) || !VisibleText(view).Contains("Your Cards", StringComparison.Ordinal) ||
                     Canvas.GetTop(board) != 120 || board.ActualHeight + Canvas.GetTop(board) > 690 ||
+                    guidanceSeat.Text != "Solo test player" ||
+                    guidanceInstruction.Text != "Choose whether to keep all destinations or drop one." ||
                     !IsShown(cityMarkers, view) || cityMarkers.Items.Count == 0 ||
                     !IsShown(destinationLines, view) || destinationLines.Items.Count != 3 ||
-                    IsShown(drawPiles, view) || IsShown(faceUp, view) ||
-                    !VisibleText(view).Contains("Solo test player: choose whether to keep all destinations or drop one.", StringComparison.Ordinal))
+                    IsShown(drawPiles, view) || IsShown(faceUp, view))
                     throw new InvalidOperationException("Solo setup must keep the board and cards visible together without the usual table controls or draw piles.");
             }, [(1280, 800), (1000, 620), (1920, 1080)]);
             await RenderSizes("solo-drop-confirmation-synthetic", () => new PrivateSeatView { DataContext = solo }, view =>
@@ -1319,7 +1336,7 @@ internal static partial class Program
         {
             var overlay = (Grid)view.FindName("SoloOpeningOverlay");
             if (!IsShown(overlay, view) || !labels.Contains("KEEP ALL THREE") ||
-                !labels.Contains("Back to table") || !text.Contains("Your Cards", StringComparison.Ordinal) ||
+                labels.Contains("Back to table") || !text.Contains("Your Cards", StringComparison.Ordinal) ||
                 Descendants<Button>(view).Count(button => IsShown(button, view) && button.DataContext is TicketChoiceRow) != 3 ||
                 Descendants<ItemsControl>(view).Any(control => IsShown(control, view) &&
                     (ReferenceEquals(control.ItemsSource, privateSeat.Hand) ||

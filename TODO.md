@@ -13,7 +13,8 @@ See the
 - [x] Add a player-facing game layer that covers the entire application content area, including
   the current technical navigation. Keep the existing technical interface available underneath.
 - [x] Slide the game layer out of view to reveal the technical interface with Shift+Escape.
-  Preserve plain Escape-to-hide/cancel behavior and ignore held-key repeats.
+  Preserve plain Escape-to-hide/cancel behavior for later private views and child controls, while
+  leaving the unresolved solo opening choice visible. Ignore held-key repeats.
 - [x] Add a **Return to game** button at the top of the technical interface. Slide the game
   layer back over 100% of the content area, preserving the active game and technical tool state.
 - [x] Add snowy-twilight launch art, Start/Reload choices, and five portraits with grayscale faces
@@ -115,9 +116,10 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   integrated into the Windows shell. Actual device gates and the remaining protocol requirements
   below are still open.
 - [x] **Single-human laptop play.** One human's card and ticket choices open directly on the laptop,
-  with **Your cards** / **Back to table** controls and no **Connect phone** step. The active or
+  with no **Back to table** action or plain-Escape dismissal during the unresolved opening choice.
+  Later private views use **Your cards** / **Back to table** controls, with no **Connect phone** step. The active or
   resumed roster determines this behavior; multiple humans retain explicit pass-and-hide and an
-  optional shared companion. Board verification, AI secrecy and explicit Hide remain in force.
+  optional shared companion. Board verification, AI secrecy and later explicit Hide remain in force.
 - [x] **Camera and photo foundation.** Windows video-only capture, selectable formats, manual
   four-corner crop and conservative scene-reference checks; optional encrypted operator-attested
   checkpoint photos with integrity/readback and stale-capture protection. No automated train

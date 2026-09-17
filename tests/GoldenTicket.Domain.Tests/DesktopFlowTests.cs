@@ -45,7 +45,8 @@ public class DesktopFlowTests
         Assert.Equal("Waiting for first action.", model.Table.Seats.Single(seat => seat.DisplayName == "Alex").LastAction);
         Assert.All(model.Table.Seats.Where(seat => seat.Operator == "computer"),
             seat => Assert.StartsWith("Kept ", seat.LastAction));
-        Assert.Contains("Alex: choose whether to keep all destinations or drop one.", model.Table.Instruction);
+        Assert.Equal("Alex", model.Table.ActiveSeatName);
+        Assert.Equal("Choose whether to keep all destinations or drop one.", model.Table.Instruction);
         Assert.DoesNotContain("laptop", model.Table.Instruction, StringComparison.OrdinalIgnoreCase);
     }
 

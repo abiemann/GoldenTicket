@@ -93,9 +93,13 @@ public sealed partial class TableViewModel : ObservableObject
         WholeBoardAcknowledged = false;
         UpdatePackAway(view);
         var active = view.SeatOf(view.ActiveSeatId);
-        ActiveSeatName = active.DisplayName;
-        ActiveSeatColor = active.Color;
-        ActiveSeatSymbol = active.Symbol;
+        var guidanceSeat = view.TurnPhase == TurnPhase.SetupTicketSelection &&
+            view.Seats.Count(seat => seat.Kind == SeatKind.Human) == 1
+                ? view.Seats.Single(seat => seat.Kind == SeatKind.Human)
+                : active;
+        ActiveSeatName = guidanceSeat.DisplayName;
+        ActiveSeatColor = guidanceSeat.Color;
+        ActiveSeatSymbol = guidanceSeat.Symbol;
 
         TurnText = view.Lifecycle == SessionLifecycle.Setup
             ? "Setup"
@@ -350,8 +354,7 @@ public sealed partial class TableViewModel : ObservableObject
         TurnPhase.RulesDecisionRequired =>
             "Review the supply policy below before continuing the match.",
         TurnPhase.SetupTicketSelection when view.Seats.Count(seat => seat.Kind == SeatKind.Human) == 1 =>
-            $"{view.Seats.Single(seat => seat.Kind == SeatKind.Human).DisplayName}: " +
-            "choose whether to keep all destinations or drop one.",
+            "Choose whether to keep all destinations or drop one.",
         TurnPhase.SetupTicketSelection =>
             "Each seat keeps at least " +
             $"{_manifest.RulesConstants.SetupTicketMinimumKeep} of its {_manifest.RulesConstants.SetupTicketOffer} " +

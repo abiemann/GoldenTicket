@@ -124,8 +124,8 @@
                                             BorderThickness="3" HorizontalAlignment="Center">
                                         <Image Source="{Binding Portrait}" Stretch="UniformToFill" />
                                     </Border>
-                                    <TextBlock Grid.Column="1" Grid.ColumnSpan="2" HorizontalAlignment="Right"
-                                               Foreground="#FFF8EEDC" FontSize="11">
+                                    <TextBlock x:Name="TrainsRemainingText" Grid.Column="1" Margin="10,0,0,0"
+                                               HorizontalAlignment="Left" Foreground="#FFF8EEDC" FontSize="11">
                                         <Run Text="{Binding Seat.TrainsRemaining}" /><Run Text=" trains" />
                                     </TextBlock>
                                     <Canvas Grid.Column="1" Width="50" Height="42" HorizontalAlignment="Center"
@@ -155,8 +155,8 @@
                                     <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding Seat.DisplayName}"
                                                Foreground="#FFFFE7B0" FontSize="12" FontWeight="Bold"
                                                TextAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="Train cards"
-                                               Foreground="#FFF8EEDC" FontSize="11" TextAlignment="Center" />
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="Train cards" Margin="10,0,0,0"
+                                               HorizontalAlignment="Left" Foreground="#FFF8EEDC" FontSize="11" />
                                     <TextBlock Grid.Row="1" Grid.Column="2" Text="Destinations"
                                                Foreground="#FFF8EEDC" FontSize="11" TextAlignment="Center" />
                                     <TextBlock Grid.Row="2" Grid.Column="0" Foreground="#FFE6D9C3"

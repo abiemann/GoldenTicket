@@ -342,9 +342,6 @@
                   <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button x:Name="SoloKeepAllButton" Content="KEEP ALL THREE" Width="170" Height="35"
                             Style="{StaticResource SoloOverlayAction}" Click="SoloKeepAll_Click" />
-                    <Button Content="Back to table" Width="145" Height="35" Margin="10,0,0,0"
-                            Style="{StaticResource SoloOverlayAction}"
-                            Command="{Binding HidePrivateSeatCommand}" />
                   </StackPanel>
                 </Grid>
                 <Grid x:Name="SoloDropConfirmation" Grid.RowSpan="4"

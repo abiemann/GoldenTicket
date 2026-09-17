@@ -101,8 +101,9 @@ This build implements the core game plus initial phone, camera and photo workflo
   game** slides the game layer back. Both presentations use the same match and camera objects.
 - With one human, the three opening destinations appear over the game board. Keep all three or
   click one to drop it, confirm, and watch it leave before the two kept tickets are saved. Later
-  private cards open on the laptop when that player needs to act. **Your cards** and **Back to table**
-  replace handoff prompts, and **Connect phone** is hidden.
+  private cards open on the laptop when that player needs to act. The unresolved opening choice
+  has no **Back to table** action and plain Escape does not dismiss it. Later private views use
+  **Your cards** and **Back to table** instead of handoff prompts, and **Connect phone** is hidden.
   Matches with multiple humans keep pass-and-hide and can optionally use the phone companion.
 - A laptop-hosted HTTPS phone PWA with private human cards/tickets, digital draws and route/payment
   choices. One shared controller is paired and explicitly approved on the laptop. Private views
@@ -302,8 +303,9 @@ turn, status and players; **Packed away** is a status, not the save's name.
    Confirming a drop removes that destination's line and rings, while an endpoint shared with
    another kept destination stays marked. The draw piles and face-up train cards stay hidden until
    the opening choice is complete. Select **KEEP ALL THREE** or click one card and confirm its drop;
-   at least two must be kept. The dropped card leaves the
-   screen before the saved ticket count updates. The computer chooses its own tickets by value
+   at least two must be kept. There is no **Back to table** action for this choice, and plain Escape
+   leaves it open. The dropped card leaves the screen before the saved ticket count updates.
+   The computer chooses its own tickets by value
    and estimated route cost and may keep all three.
    The chosen players sit around it with their matching portraits, train colors, remaining trains,
    and face-down card and destination stacks showing public counts. The first two face each other;
@@ -358,10 +360,12 @@ away** before clearing the physical board. A verified packed checkpoint (includi
 rebuild) needs no exit warning, even without a photo. An action or photo save still running must
 finish before you retry closing. If the latest save is uncertain, the app warns you.
 
-Press **Escape** at any time to cover a private view. The solo opening destination choice stays
-visible when the game loses focus or sits idle; **Back to table** still covers it. Other private
-views hide on deactivation and after 60 seconds without input. Lock/suspend handlers request
-covering; real Windows lifecycle behavior remains an interactive acceptance test.
+Press **Escape** to cover later private views. An unresolved solo opening destination choice has
+no **Back to table** action and stays visible after plain Escape, focus loss, or idle time; choose
+whether to keep all three or drop one to continue. **Shift+Escape** still opens the technical
+screens for recovery. Other private views hide on deactivation and after 60 seconds without input.
+Lock/suspend handlers request covering; real Windows lifecycle behavior remains an interactive
+acceptance test.
 When reopening a save, check the list of committed routes and attest to the physical board before
 continuing. Any pending placement or cancellation still needs its own normal completion checks.
 
