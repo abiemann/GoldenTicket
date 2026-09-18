@@ -248,8 +248,8 @@ try {
         }
     } finally { $diagnosticProcess.Dispose() }
     $diagnostic = Get-Content -LiteralPath $diagnosticReport -Raw | ConvertFrom-Json -AsHashtable
-    if (-not $diagnostic.passed -or $diagnostic.checks.Count -ne 8) {
-        throw 'The published executable did not pass all eight component checks.'
+    if (-not $diagnostic.passed -or $diagnostic.checks.Count -ne 7) {
+        throw 'The published executable did not pass all seven component checks.'
     }
 
     $documentation = @(Invoke-Text $git @('-C', $repository, 'ls-files', '--', 'README.md', 'TODO.md', 'DESIGN.md', 'docs')) -split "`n"

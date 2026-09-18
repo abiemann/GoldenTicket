@@ -2028,7 +2028,7 @@ not changes to the full requirements above.
 
 The packaging builder selects a separate reviewed `packages.win-x64.lock.json` graph for each
 application project. Before archiving, the published executable's explicit `--check-package` mode
-tests its loaded bundled runtime and synthetic WPF/SQLite/DPAPI/PNG/ASP.NET/asset operations without
+tests its loaded bundled runtime and synthetic WPF/SQLite/PNG/ASP.NET/asset operations without
 a visible window, camera, listener or player save. This does not satisfy clean-machine or physical
 device acceptance.
 

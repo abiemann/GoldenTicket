@@ -50,7 +50,8 @@ public sealed class OfflineRuntimeContractTests
         var directory = Path.Combine(parent, Guid.NewGuid().ToString("N"));
         try
         {
-            var authority = new LocalCertificateAuthority(directory);
+            using var keys = new TestKeyVault();
+            var authority = new LocalCertificateAuthority(directory, keys.Protect, keys.Unprotect);
             var first = authority.EnsureMaterial(IPAddress.Parse("192.168.50.2"));
             using var leaf = first.ServerCertificate;
             using var root = X509CertificateLoader.LoadCertificate(first.AuthorityCertificateDer);

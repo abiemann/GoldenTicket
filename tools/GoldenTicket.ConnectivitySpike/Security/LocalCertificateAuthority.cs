@@ -39,10 +39,22 @@ public sealed class LocalCertificateAuthority
     private static readonly byte[] DpapiEntropy = Encoding.UTF8.GetBytes("GoldenTicket.CompanionHost.v1");
 
     private readonly string _directory;
+    private readonly Func<byte[], byte[]> _protectKey;
+    private readonly Func<byte[], byte[]> _unprotectKey;
+    private readonly X509KeyStorageFlags _keyStorageFlags;
 
     public LocalCertificateAuthority(string directory)
+        : this(directory, ProtectWithDpapi, UnprotectWithDpapi, X509KeyStorageFlags.Exportable) { }
+
+    // Certificate tests use an in-memory key vault so they can run without a Windows user profile.
+    internal LocalCertificateAuthority(string directory, Func<byte[], byte[]> protectKey,
+        Func<byte[], byte[]> unprotectKey,
+        X509KeyStorageFlags keyStorageFlags = X509KeyStorageFlags.EphemeralKeySet | X509KeyStorageFlags.Exportable)
     {
         _directory = directory;
+        _protectKey = protectKey;
+        _unprotectKey = unprotectKey;
+        _keyStorageFlags = keyStorageFlags;
         Directory.CreateDirectory(_directory);
     }
 
@@ -237,7 +249,7 @@ public sealed class LocalCertificateAuthority
                 try
                 {
                     Protect(ServerPath, Combine(password, pfx));
-                    return X509CertificateLoader.LoadPkcs12(pfx, password, X509KeyStorageFlags.Exportable);
+                    return X509CertificateLoader.LoadPkcs12(pfx, password, _keyStorageFlags);
                 }
                 finally { CryptographicOperations.ZeroMemory(pfx); }
             }
@@ -289,7 +301,7 @@ public sealed class LocalCertificateAuthority
             try
             {
                 var (password, pfx) = Split(plaintext);
-                try { return X509CertificateLoader.LoadPkcs12(pfx, password, X509KeyStorageFlags.Exportable); }
+                try { return X509CertificateLoader.LoadPkcs12(pfx, password, _keyStorageFlags); }
                 finally { CryptographicOperations.ZeroMemory(pfx); }
             }
             finally { CryptographicOperations.ZeroMemory(plaintext); }
@@ -302,10 +314,10 @@ public sealed class LocalCertificateAuthority
 
     // ---- DPAPI storage ------------------------------------------------------------------------
 
-    private static void Protect(string path, byte[] plaintext)
+    private void Protect(string path, byte[] plaintext)
     {
         byte[] protectedBytes;
-        try { protectedBytes = ProtectedData.Protect(plaintext, DpapiEntropy, DataProtectionScope.CurrentUser); }
+        try { protectedBytes = _protectKey(plaintext); }
         finally { CryptographicOperations.ZeroMemory(plaintext); }
 
         var temporary = path + ".tmp";
@@ -313,8 +325,13 @@ public sealed class LocalCertificateAuthority
         File.Move(temporary, path, overwrite: true);
     }
 
-    private static byte[] Unprotect(string path) =>
-        ProtectedData.Unprotect(File.ReadAllBytes(path), DpapiEntropy, DataProtectionScope.CurrentUser);
+    private byte[] Unprotect(string path) => _unprotectKey(File.ReadAllBytes(path));
+
+    private static byte[] ProtectWithDpapi(byte[] plaintext) =>
+        ProtectedData.Protect(plaintext, DpapiEntropy, DataProtectionScope.CurrentUser);
+
+    private static byte[] UnprotectWithDpapi(byte[] protectedBytes) =>
+        ProtectedData.Unprotect(protectedBytes, DpapiEntropy, DataProtectionScope.CurrentUser);
 
     private static byte[] Combine(string password, byte[] pfx)
     {

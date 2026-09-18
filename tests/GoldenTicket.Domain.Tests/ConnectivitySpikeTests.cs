@@ -19,9 +19,14 @@ public class ConnectivitySpikeTests : IDisposable
 {
     private readonly string _directory = Path.Combine(
         Path.GetTempPath(), "GoldenTicket.Spike", Guid.NewGuid().ToString("n"));
+    private readonly TestKeyVault _keys = new();
+
+    private LocalCertificateAuthority CreateAuthority(string? directory = null) =>
+        new(directory ?? _directory, _keys.Protect, _keys.Unprotect);
 
     public void Dispose()
     {
+        _keys.Dispose();
         try
         {
             if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
@@ -37,7 +42,7 @@ public class ConnectivitySpikeTests : IDisposable
     [Fact]
     public void TheServerCertificateCoversTheNameAndTheAddressActuallyUsed()
     {
-        var authority = new LocalCertificateAuthority(_directory);
+        var authority = CreateAuthority();
         var address = IPAddress.Parse("192.168.1.50");
 
         var material = authority.EnsureMaterial(address);
@@ -56,7 +61,7 @@ public class ConnectivitySpikeTests : IDisposable
     [Fact]
     public void TheServerCertificateStaysInsideApplesTrustWindowAndSaysItIsForServerAuthentication()
     {
-        var authority = new LocalCertificateAuthority(_directory);
+        var authority = CreateAuthority();
         var material = authority.EnsureMaterial(IPAddress.Parse("10.0.0.5"));
         using var server = material.ServerCertificate;
 
@@ -78,10 +83,10 @@ public class ConnectivitySpikeTests : IDisposable
     {
         var address = IPAddress.Parse("192.168.1.50");
 
-        var first = new LocalCertificateAuthority(_directory).EnsureMaterial(address);
+        var first = CreateAuthority().EnsureMaterial(address);
         using (first.ServerCertificate)
         {
-            var second = new LocalCertificateAuthority(_directory).EnsureMaterial(address);
+            var second = CreateAuthority().EnsureMaterial(address);
             using (second.ServerCertificate)
             {
                 Assert.Equal(first.AuthorityFingerprint, second.AuthorityFingerprint);
@@ -93,7 +98,7 @@ public class ConnectivitySpikeTests : IDisposable
     [Fact]
     public void MovingToADifferentNetworkReissuesTheLeafButKeepsTheAuthority()
     {
-        var authority = new LocalCertificateAuthority(_directory);
+        var authority = CreateAuthority();
 
         var home = authority.EnsureMaterial(IPAddress.Parse("192.168.1.50"));
         var homeFingerprint = home.AuthorityFingerprint;
@@ -110,15 +115,15 @@ public class ConnectivitySpikeTests : IDisposable
     public void ReplacingTheAuthorityCannotLeaveALeafSignedByTheOldAuthority()
     {
         var address = IPAddress.Parse("192.168.1.50");
-        var original = new LocalCertificateAuthority(_directory).EnsureMaterial(address);
+        var original = CreateAuthority().EnsureMaterial(address);
         using var originalServer = original.ServerCertificate;
         var replacementDirectory = Path.Combine(_directory, "replacement");
-        var replacement = new LocalCertificateAuthority(replacementDirectory).EnsureMaterial(address);
+        var replacement = CreateAuthority(replacementDirectory).EnsureMaterial(address);
         using var replacementServer = replacement.ServerCertificate;
         foreach (var name in new[] { "authority.crt", "authority.key.dpapi" })
             File.Copy(Path.Combine(replacementDirectory, name), Path.Combine(_directory, name), overwrite: true);
 
-        var renewed = new LocalCertificateAuthority(_directory).EnsureMaterial(address);
+        var renewed = CreateAuthority().EnsureMaterial(address);
         using var renewedServer = renewed.ServerCertificate;
         using var root = X509CertificateLoader.LoadCertificate(renewed.AuthorityCertificateDer);
         using var chain = new X509Chain();
@@ -135,7 +140,7 @@ public class ConnectivitySpikeTests : IDisposable
     [Fact]
     public void MissingAuthorityKeyFailsWithoutSilentlyReplacingDeviceTrust()
     {
-        var authority = new LocalCertificateAuthority(_directory);
+        var authority = CreateAuthority();
         using var server = authority.EnsureMaterial(IPAddress.Parse("10.0.0.5")).ServerCertificate;
         var originalCa = File.ReadAllBytes(Path.Combine(_directory, "authority.crt"));
         File.Delete(Path.Combine(_directory, "authority.key.dpapi"));
@@ -148,12 +153,10 @@ public class ConnectivitySpikeTests : IDisposable
     public void MalformedProtectedLeafIsReissuedWithoutChangingTheAuthority()
     {
         var address = IPAddress.Parse("10.0.0.5");
-        var authority = new LocalCertificateAuthority(_directory);
+        var authority = CreateAuthority();
         var original = authority.EnsureMaterial(address);
         using var originalServer = original.ServerCertificate;
-        var malformed = ProtectedData.Protect([1],
-            System.Text.Encoding.UTF8.GetBytes("GoldenTicket.CompanionHost.v1"), DataProtectionScope.CurrentUser);
-        File.WriteAllBytes(Path.Combine(_directory, "server.pfx.dpapi"), malformed);
+        File.WriteAllBytes(Path.Combine(_directory, "server.pfx.dpapi"), [1]);
 
         var renewed = authority.EnsureMaterial(address);
         using var renewedServer = renewed.ServerCertificate;
@@ -165,14 +168,14 @@ public class ConnectivitySpikeTests : IDisposable
     [Fact]
     public void ThePrivateKeysAreNotWrittenInTheClear()
     {
-        var authority = new LocalCertificateAuthority(_directory);
+        var authority = CreateAuthority();
         using var server = authority.EnsureMaterial(IPAddress.Parse("192.168.1.50")).ServerCertificate;
 
         foreach (var file in Directory.GetFiles(_directory))
         {
             var text = System.Text.Encoding.ASCII.GetString(File.ReadAllBytes(file));
 
-            // DPAPI-protected blobs and DER certificates: no PEM private key may appear anywhere.
+            // Opaque test tokens and DER certificates: no PEM private key may appear anywhere.
             Assert.DoesNotContain("PRIVATE KEY", text, StringComparison.Ordinal);
         }
 
@@ -183,7 +186,7 @@ public class ConnectivitySpikeTests : IDisposable
     [Fact]
     public void TheFingerprintIsGroupedSoItCanBeComparedAloud()
     {
-        var authority = new LocalCertificateAuthority(_directory);
+        var authority = CreateAuthority();
         var material = authority.EnsureMaterial(IPAddress.Parse("192.168.1.50"));
         material.ServerCertificate.Dispose();
 

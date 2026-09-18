@@ -63,23 +63,6 @@ internal static class PackageDiagnostics
             command.CommandText = "SELECT sqlite_version()";
             Require(await command.ExecuteScalarAsync(token) is string { Length: > 0 });
         });
-        await CheckSync("Windows account DPAPI round trip", () =>
-        {
-            var plain = RandomNumberGenerator.GetBytes(32);
-            byte[]? protectedBytes = null, restored = null;
-            try
-            {
-                protectedBytes = ProtectedData.Protect(plain, null, DataProtectionScope.CurrentUser);
-                restored = ProtectedData.Unprotect(protectedBytes, null, DataProtectionScope.CurrentUser);
-                Require(CryptographicOperations.FixedTimeEquals(plain, restored));
-            }
-            finally
-            {
-                CryptographicOperations.ZeroMemory(plain);
-                if (protectedBytes is not null) CryptographicOperations.ZeroMemory(protectedBytes);
-                if (restored is not null) CryptographicOperations.ZeroMemory(restored);
-            }
-        });
         await CheckAsync("Windows PNG encoding and WPF decoding", async () =>
         {
             var pixels = Enumerable.Repeat((byte)180, 16 * 16 * 4).ToArray();

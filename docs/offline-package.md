@@ -81,7 +81,7 @@ An interrupted run remains there for diagnosis. A complete run has:
 - `GoldenTicket/`: the extracted application and all required runtime/content files.
 - `GoldenTicket-win-x64-….zip` and its adjacent `.sha256` file.
 - `restore.log`, `publish.log`, and `package-result.json` outside the player payload.
-- `runtime-diagnostic.json`, recording eight checks run by the published executable, outside the
+- `runtime-diagnostic.json`, recording seven checks run by the published executable, outside the
   player payload. It identifies the actual loaded runtime directory and reports component failures.
 - `GoldenTicket/package-provenance.json`, identifying the source commit, SDK, included runtime
   versions, publish settings, and outstanding manual acceptance.
@@ -99,8 +99,8 @@ rules, network profiles, trust stores, Git tags, GitHub releases, or repository 
 Before archiving, the builder runs `GoldenTicket.exe --check-package <new-report-path>` with a
 45-second process limit. This explicit command-line mode opens no window, camera, network listener
 or saved game. It checks that CoreCLR is loaded from the package, validates the shipped board data,
-renders the WPF theme, executes native SQLite in memory, verifies a synthetic DPAPI round trip,
-encodes/decodes a synthetic PNG through Windows and WPF, constructs the ASP.NET host without
+renders the WPF theme, executes native SQLite in memory, encodes/decodes a synthetic PNG through
+Windows and WPF, constructs the ASP.NET host without
 listening, and checks PWA assets. Existing report files are never overwritten. A failed component
 or framework-dependent runtime blocks packaging. These developer-machine checks supplement the
 clean-machine/device acceptance table below.

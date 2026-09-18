@@ -277,8 +277,9 @@ projects also have `packages.win-x64.lock.json` for the self-contained package's
 Only an explicit `-p:GoldenTicketOfflinePackage=true` selects those locks; the
 [packaging workflow](docs/offline-package.md) sets it for both restore and publish and documents
 how to regenerate and verify both lock sets without changing normal development locks.
-Game-save and photo persistence tests do not need DPAPI. Companion TLS private keys still use
-DPAPI, so tests of that separate certificate path can fail in a restricted or impersonated context.
+Game-save, photo, and certificate-generation tests do not call DPAPI or need a loaded Windows user
+profile. The separate live HTTPS transport test needs Windows credentials for Schannel. The companion
+still protects its real TLS private keys with DPAPI when running normally.
 
 ### Headless matches
 

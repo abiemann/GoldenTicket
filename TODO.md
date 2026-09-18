@@ -441,5 +441,7 @@ dotnet list GoldenTicket.sln package --vulnerable --include-transitive --no-rest
 ```
 
 Game-save and photo persistence tests exercise plaintext payloads and integrity checks without
-DPAPI. Former encrypted saved matches are unsupported and may be deleted. The companion's local TLS
-private keys still use DPAPI and require the user profile.
+DPAPI. Certificate-generation tests use an in-memory test key vault, so they also run without a
+Windows user profile. The separate live HTTPS transport test still needs Windows credentials.
+Former encrypted saved matches are unsupported and may be deleted. The running companion's local
+TLS private keys still use DPAPI and require the user profile.
