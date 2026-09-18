@@ -126,13 +126,40 @@ public sealed class AutomaticPhysicalFlowTests
             foreach (var card in proposal.Cards.Where(card => card.Kind == TrainCardKind.Locomotive)
                          .Take(payment.Locomotives)) card.IsSelected = true;
             Assert.True(proposal.CanConfirmPayment);
+
+            // A fresh board alignment changes the crop revision without changing the
+            // physical route. Keep the chosen cards visible, but pause payment until
+            // the route has been confirmed in the new crop.
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 4, at.AddSeconds(3.3),
+                cropRevision: 2);
+            Assert.Same(proposal, model.BoardFirstProposal);
+            Assert.False(proposal.CameraEvidenceCurrent);
+            Assert.False(proposal.CanConfirmPayment);
+            await model.ConfirmBoardFirstClaimCommand.ExecuteAsync(null);
+            Assert.Null(coordinator.Public.PendingClaim);
+
+            PublishTrains(model.Camera, route.RouteId.Value, 5, at.AddSeconds(4.4),
+                MarkerColor.Blue, count: 0, cropRevision: 2);
+            Assert.Same(proposal, model.BoardFirstProposal);
+            Assert.False(proposal.CanConfirmPayment);
+
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 6, at.AddSeconds(5.5),
+                cropRevision: 2);
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 7, at.AddSeconds(6.6),
+                cropRevision: 2);
+            Assert.Same(proposal, model.BoardFirstProposal);
+            Assert.True(proposal.CameraEvidenceCurrent);
+            Assert.True(proposal.CanConfirmPayment);
+            Assert.Equal(payment.Total, proposal.SelectedCount);
             await model.ConfirmBoardFirstClaimCommand.ExecuteAsync(null);
             Assert.Null(model.BoardFirstProposal);
             Assert.NotNull(coordinator.Public.PendingClaim);
             Assert.Contains("Keep your", model.Game.GuidanceInstruction);
 
-            PublishBlueTrains(model.Camera, route.RouteId.Value, 4, at.AddSeconds(3.3));
-            PublishBlueTrains(model.Camera, route.RouteId.Value, 5, at.AddSeconds(4.4));
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 8, at.AddSeconds(7.7),
+                cropRevision: 2);
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 9, at.AddSeconds(8.8),
+                cropRevision: 2);
             await WaitUntilAsync(() => model.Game.GuidanceInstruction == "Thank you");
             Assert.Null(coordinator.Public.PendingClaim);
             Assert.Equal(Screen.Table, model.Screen);
@@ -329,11 +356,13 @@ public sealed class AutomaticPhysicalFlowTests
             .GetValue(model));
 
     private static void PublishBlueTrains(CameraViewModel camera, string routeId,
-        long sequence, DateTimeOffset capturedAt) =>
-        PublishTrains(camera, routeId, sequence, capturedAt, MarkerColor.Blue);
+        long sequence, DateTimeOffset capturedAt, long cropRevision = 1) =>
+        PublishTrains(camera, routeId, sequence, capturedAt, MarkerColor.Blue,
+            cropRevision: cropRevision);
 
     private static void PublishTrains(CameraViewModel camera, string routeId,
-        long sequence, DateTimeOffset capturedAt, MarkerColor color, int count = int.MaxValue)
+        long sequence, DateTimeOffset capturedAt, MarkerColor color, int count = int.MaxValue,
+        long cropRevision = 1)
     {
         const int width = 960;
         const int height = 600;
@@ -373,7 +402,8 @@ public sealed class AutomaticPhysicalFlowTests
 
         var frame = CameraFrame.CopyFromBgra32(width, height, pixels, sequence,
             epoch: 1, capturedAt: capturedAt);
-        var analysis = new GameTableAnalysis(frame, candidates, [], 1, 1, "synthetic-test-model");
+        var analysis = new GameTableAnalysis(frame, candidates, [], cropRevision, 1,
+            "synthetic-test-model");
         typeof(CameraViewModel).GetProperty(nameof(CameraViewModel.GameTableAnalysis))!
             .GetSetMethod(nonPublic: true)!.Invoke(camera, [analysis]);
     }

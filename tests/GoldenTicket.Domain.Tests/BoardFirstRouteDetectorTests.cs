@@ -28,7 +28,7 @@ public sealed class BoardFirstRouteDetectorTests
     }
 
     [Fact]
-    public void Two_stably_empty_fresh_frames_clear_a_proposal_and_allow_a_new_one()
+    public void Three_sustained_empty_fresh_frames_clear_a_proposal_and_allow_a_new_one()
     {
         var detector = new BoardFirstRouteDetector();
         var legal = Routes(AtlantaRaleigh, CalgaryVancouver);
@@ -39,8 +39,9 @@ public sealed class BoardFirstRouteDetectorTests
         var fullMuchLater = Scene(4, at.AddSeconds(2.4), AtlantaRaleigh);
         var empty = Scene(5, at.AddSeconds(2.5));
         var stillEmpty = Scene(6, at.AddSeconds(3.6));
-        var newFirst = Scene(7, at.AddSeconds(3.7), CalgaryVancouver);
-        var newSecond = Scene(8, at.AddSeconds(4.9), CalgaryVancouver);
+        var finalEmpty = Scene(7, at.AddSeconds(5.1));
+        var newFirst = Scene(8, at.AddSeconds(5.2), CalgaryVancouver);
+        var newSecond = Scene(9, at.AddSeconds(6.4), CalgaryVancouver);
 
         detector.Observe(first.Frame, first.Candidates, legal, MarkerColor.Blue, "turn-1", 1, 1);
         Assert.Equal(AtlantaRaleigh,
@@ -54,6 +55,8 @@ public sealed class BoardFirstRouteDetectorTests
         Assert.Null(detector.Observe(empty.Frame, empty.Candidates, legal, MarkerColor.Blue, "turn-1", 1, 1));
         Assert.Equal(AtlantaRaleigh, detector.ProposedRouteId);
         Assert.Null(detector.Observe(stillEmpty.Frame, stillEmpty.Candidates, legal, MarkerColor.Blue, "turn-1", 1, 1));
+        Assert.Equal(AtlantaRaleigh, detector.ProposedRouteId);
+        Assert.Null(detector.Observe(finalEmpty.Frame, finalEmpty.Candidates, legal, MarkerColor.Blue, "turn-1", 1, 1));
         Assert.Null(detector.ProposedRouteId);
         Assert.Null(detector.Observe(newFirst.Frame, newFirst.Candidates, legal, MarkerColor.Blue, "turn-1", 1, 1));
         Assert.Equal(CalgaryVancouver,
@@ -72,6 +75,7 @@ public sealed class BoardFirstRouteDetectorTests
         var restored = Scene(4, at.AddSeconds(2.4), AtlantaRaleigh);
         var missingAgain = Scene(5, at.AddSeconds(2.5));
         var stillMissing = Scene(6, at.AddSeconds(3.6));
+        var finalMissing = Scene(7, at.AddSeconds(5.1));
 
         detector.Observe(first.Frame, first.Candidates, legal, MarkerColor.Blue, "turn-1", 1, 1);
         Assert.Equal(AtlantaRaleigh,
@@ -82,6 +86,8 @@ public sealed class BoardFirstRouteDetectorTests
         detector.Observe(missingAgain.Frame, missingAgain.Candidates, legal, MarkerColor.Blue, "turn-1", 1, 1);
         Assert.Equal(AtlantaRaleigh, detector.ProposedRouteId);
         detector.Observe(stillMissing.Frame, stillMissing.Candidates, legal, MarkerColor.Blue, "turn-1", 1, 1);
+        Assert.Equal(AtlantaRaleigh, detector.ProposedRouteId);
+        detector.Observe(finalMissing.Frame, finalMissing.Candidates, legal, MarkerColor.Blue, "turn-1", 1, 1);
         Assert.Null(detector.ProposedRouteId);
     }
 
@@ -96,6 +102,7 @@ public sealed class BoardFirstRouteDetectorTests
         var ambiguous = Scene(3, at.AddSeconds(1.2), AtlantaRaleigh);
         var empty = Scene(4, at.AddSeconds(2.3));
         var stillEmpty = Scene(5, at.AddSeconds(3.5));
+        var finalEmpty = Scene(6, at.AddSeconds(4.9));
 
         detector.Observe(first.Frame, first.Candidates, legal, MarkerColor.Blue, "turn-1", 1, 1);
         Assert.Equal(AtlantaRaleigh,
@@ -106,6 +113,8 @@ public sealed class BoardFirstRouteDetectorTests
         detector.Observe(empty.Frame, empty.Candidates, legal, MarkerColor.Blue, "turn-1", 1, 1);
         Assert.Equal(AtlantaRaleigh, detector.ProposedRouteId);
         detector.Observe(stillEmpty.Frame, stillEmpty.Candidates, legal, MarkerColor.Blue, "turn-1", 1, 1);
+        Assert.Equal(AtlantaRaleigh, detector.ProposedRouteId);
+        detector.Observe(finalEmpty.Frame, finalEmpty.Candidates, legal, MarkerColor.Blue, "turn-1", 1, 1);
         Assert.Null(detector.ProposedRouteId);
     }
 

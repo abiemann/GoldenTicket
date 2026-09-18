@@ -40,16 +40,19 @@ public sealed class BoardFirstClaimProposal(
     public string RouteText { get; } = routeText;
     internal SeatView? SeatView { get; init; }
     public long StateVersion { get; } = stateVersion;
-    public long CropRevision { get; } = cropRevision;
-    public long ModelRevision { get; } = modelRevision;
-    public long CameraEpoch { get; } = cameraEpoch;
+    public long CropRevision { get; private set; } = cropRevision;
+    public long ModelRevision { get; private set; } = modelRevision;
+    public long CameraEpoch { get; private set; } = cameraEpoch;
+    public bool CameraEvidenceCurrent { get; private set; } = true;
     public IReadOnlyList<BoardFirstPaymentRow> Payments { get; } = payments;
     public IReadOnlyList<BoardFirstPaymentCardRow> Cards { get; } = BuildCards(availableCards, payments);
     public int RequiredCards => Payments.Count == 0 ? 0 : Payments[0].Option.Total;
     public int SelectedCount => Cards.Count(card => card.IsSelected);
-    public bool CanConfirmPayment => SelectedPayment is not null;
+    public bool CanConfirmPayment => CameraEvidenceCurrent && SelectedPayment is not null;
 
-    public string SelectionFeedback => SelectedCount switch
+    public string SelectionFeedback => !CameraEvidenceCurrent
+        ? "Rechecking your trains on the board…"
+        : SelectedCount switch
     {
         0 => $"Select {RequiredCards} card{(RequiredCards == 1 ? "" : "s")}.",
         var count when count < RequiredCards =>
@@ -78,6 +81,26 @@ public sealed class BoardFirstClaimProposal(
 
     public ImmutableArray<CardId> SelectedCardIds => Cards.Where(card => card.IsSelected)
         .Select(card => card.Id).ToImmutableArray();
+
+    internal void RequireFreshCameraEvidence()
+    {
+        if (!CameraEvidenceCurrent) return;
+        CameraEvidenceCurrent = false;
+        OnPropertyChanged(nameof(CameraEvidenceCurrent));
+        OnPropertyChanged(nameof(CanConfirmPayment));
+        OnPropertyChanged(nameof(SelectionFeedback));
+    }
+
+    internal void RefreshCameraEvidence(long cropRevision, long modelRevision, long cameraEpoch)
+    {
+        CropRevision = cropRevision;
+        ModelRevision = modelRevision;
+        CameraEpoch = cameraEpoch;
+        CameraEvidenceCurrent = true;
+        OnPropertyChanged(nameof(CameraEvidenceCurrent));
+        OnPropertyChanged(nameof(CanConfirmPayment));
+        OnPropertyChanged(nameof(SelectionFeedback));
+    }
 
     private static IReadOnlyList<BoardFirstPaymentCardRow> BuildCards(
         IReadOnlyList<HeldCard>? availableCards, IReadOnlyList<BoardFirstPaymentRow> payments)
@@ -116,6 +139,7 @@ public sealed partial class MainViewModel
     private bool _boardFirstLoading;
     private bool _boardFirstSubmitting;
     private BoardFirstClaimProposal? _boardFirstProposal;
+    private DateTimeOffset? _boardFirstRecheckSince;
     private string? _boardFirstInvalidMoveMessage;
     private DateTimeOffset? _boardFirstInvalidMoveAbsentSince;
 
@@ -141,6 +165,7 @@ public sealed partial class MainViewModel
         _boardFirstSeatView = null;
         _boardFirstLegalActions = null;
         BoardFirstProposal = null;
+        _boardFirstRecheckSince = null;
         _boardFirstInvalidMoveMessage = null;
         _boardFirstInvalidMoveAbsentSince = null;
     }
@@ -165,20 +190,35 @@ public sealed partial class MainViewModel
             coordinator.Public.SeatOf(coordinator.Public.ActiveSeatId).Kind != SeatKind.Human ||
             _operationInProgress || IsGameExitMenuOpen || _boardFirstSubmitting || PrivateSeat is not null)
         {
-            if (BoardFirstProposal is not null) ClearBoardFirstProposal();
+            if (BoardFirstProposal is not null) ClearBoardFirstProposal("flow-inactive");
             ClearBoardFirstInvalidMove();
             return;
         }
 
         var active = coordinator.Public.SeatOf(coordinator.Public.ActiveSeatId);
-        if (BoardFirstProposal is { } proposal &&
-            (proposal.SessionId != coordinator.SessionId ||
-             proposal.SeatId != active.SeatId ||
-             proposal.StateVersion != coordinator.Public.StateVersion ||
-             proposal.CropRevision != analysis.CropRevision ||
-             proposal.ModelRevision != analysis.ModelRevision ||
-             proposal.CameraEpoch != analysis.Board.Epoch))
-            ClearBoardFirstProposal();
+        if (BoardFirstProposal is { } proposal)
+        {
+            if (proposal.SessionId != coordinator.SessionId ||
+                proposal.SeatId != active.SeatId ||
+                proposal.StateVersion != coordinator.Public.StateVersion)
+                ClearBoardFirstProposal("turn-changed");
+            else if (proposal.CropRevision != analysis.CropRevision ||
+                     proposal.ModelRevision != analysis.ModelRevision ||
+                     proposal.CameraEpoch != analysis.Board.Epoch)
+            {
+                if (proposal.CameraEvidenceCurrent)
+                {
+                    proposal.RequireFreshCameraEvidence();
+                    _boardFirstRecheckSince = analysis.Board.CapturedAt;
+                    BoardInteractionLog.Write("board-first.proposal-rechecking", new
+                    {
+                        route = proposal.RouteId.Value,
+                        analysis.Board.Sequence, analysis.Board.Epoch,
+                        analysis.CropRevision, analysis.ModelRevision
+                    });
+                }
+            }
+        }
 
         if (_boardFirstSeatView is null || _boardFirstLegalActions is null ||
             _boardFirstSeatView.Public.StateVersion != coordinator.Public.StateVersion ||
@@ -200,10 +240,31 @@ public sealed partial class MainViewModel
         if (BoardFirstProposal is { } existing)
         {
             ClearBoardFirstInvalidMove();
-            // Removing the pieces withdraws the camera proposal; no cards were reserved or spent.
-            if (_boardFirstRouteDetector.ProposedRouteId != existing.RouteId.Value)
-                ClearBoardFirstProposal();
-            return;
+            if (_boardFirstRouteDetector.ProposedRouteId == existing.RouteId.Value)
+            {
+                if (!existing.CameraEvidenceCurrent)
+                {
+                    existing.RefreshCameraEvidence(analysis.CropRevision,
+                        analysis.ModelRevision, analysis.Board.Epoch);
+                    _boardFirstRecheckSince = null;
+                    BoardInteractionLog.Write("board-first.proposal-revalidated", new
+                    {
+                        route = existing.RouteId.Value,
+                        analysis.Board.Sequence, analysis.Board.Epoch,
+                        analysis.CropRevision, analysis.ModelRevision
+                    });
+                }
+                return;
+            }
+            if (!existing.CameraEvidenceCurrent && observed is null &&
+                _boardFirstRecheckSince is { } since &&
+                analysis.Board.CapturedAt - since < TimeSpan.FromSeconds(5))
+                return;
+
+            // The board was rechecked or the pieces were persistently removed. No cards
+            // have been reserved or spent, so a different route may be proposed below.
+            ClearBoardFirstProposal(observed is not null ? "different-route" :
+                existing.CameraEvidenceCurrent ? "route-removed" : "recheck-timeout");
         }
         if (observed is null)
         {
@@ -229,6 +290,12 @@ public sealed partial class MainViewModel
             _boardFirstSeatView.Available.ToArray())
         { SeatView = _boardFirstSeatView };
         BoardFirstProposal = newProposal;
+        BoardInteractionLog.Write("board-first.proposal-shown", new
+        {
+            route = claim.RouteId.Value,
+            analysis.Board.Sequence, analysis.Board.Epoch,
+            analysis.CropRevision, analysis.ModelRevision
+        });
         Game.ShowGuidance(Table.TurnText, active.DisplayName,
             $"Detected your train{(claim.Length == 1 ? "" : "s")} on {routeText}. " +
             "Choose which train cards to spend. " +
@@ -328,10 +395,16 @@ public sealed partial class MainViewModel
         finally { _boardFirstLoading = false; }
     }
 
-    private void ClearBoardFirstProposal()
+    private void ClearBoardFirstProposal(string reason = "flow-reset")
     {
-        if (BoardFirstProposal is null) return;
+        if (BoardFirstProposal is not { } proposal) return;
+        BoardInteractionLog.Write("board-first.proposal-cleared", new
+        {
+            route = proposal.RouteId.Value,
+            reason
+        });
         BoardFirstProposal = null;
+        _boardFirstRecheckSince = null;
         Game.ClearGuidance();
     }
 

@@ -7,7 +7,8 @@ namespace GoldenTicket.Vision;
 /// </summary>
 public sealed class BoardFirstRouteDetector
 {
-    private static readonly TimeSpan MinimumRemovalInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan MinimumRemovalInterval = TimeSpan.FromSeconds(2.5);
+    private const int MinimumRemovalFrames = 3;
     private readonly record struct LegalRoute(string RouteId, int TrainCount);
     private readonly record struct Identity(string TurnKey, MarkerColor Color,
         long CropRevision, long ModelRevision, long CameraEpoch, string LegalRouteKey);
@@ -17,6 +18,7 @@ public sealed class BoardFirstRouteDetector
     private Identity? _identity;
     private long _proposalLastSequence;
     private DateTimeOffset? _proposalAbsentSince;
+    private int _proposalAbsentFrames;
 
     /// <summary>The one route proposed for this turn, until <see cref="Reset"/> is called.</summary>
     public string? ProposedRouteId { get; private set; }
@@ -67,6 +69,7 @@ public sealed class BoardFirstRouteDetector
                 check.State is RoutePlacementState.Stabilizing or RoutePlacementState.Confirmed)
             {
                 _proposalAbsentSince = null;
+                _proposalAbsentFrames = 0;
                 return null;
             }
 
@@ -75,14 +78,18 @@ public sealed class BoardFirstRouteDetector
             if (check.State is not (RoutePlacementState.Incomplete or RoutePlacementState.WrongColor))
             {
                 _proposalAbsentSince = null;
+                _proposalAbsentFrames = 0;
                 return null;
             }
             if (_proposalAbsentSince is not { } absentSince || board.CapturedAt < absentSince)
             {
                 _proposalAbsentSince = board.CapturedAt;
+                _proposalAbsentFrames = 1;
                 return null;
             }
-            if (board.CapturedAt - absentSince < MinimumRemovalInterval)
+            _proposalAbsentFrames++;
+            if (_proposalAbsentFrames < MinimumRemovalFrames ||
+                board.CapturedAt - absentSince < MinimumRemovalInterval)
                 return null;
 
             Reset();
@@ -116,6 +123,7 @@ public sealed class BoardFirstRouteDetector
         ProposedRouteId = complete[0].Route.RouteId;
         _proposalLastSequence = board.Sequence;
         _proposalAbsentSince = null;
+        _proposalAbsentFrames = 0;
         _verifiers.Clear();
         return ProposedRouteId;
     }
@@ -127,5 +135,6 @@ public sealed class BoardFirstRouteDetector
         ProposedRouteId = null;
         _proposalLastSequence = 0;
         _proposalAbsentSince = null;
+        _proposalAbsentFrames = 0;
     }
 }
