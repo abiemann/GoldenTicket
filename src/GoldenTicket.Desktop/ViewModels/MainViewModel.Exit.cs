@@ -38,8 +38,8 @@ public sealed partial class MainViewModel
                 "Keep the board in place. Reopen the saved match and verify the save before clearing the board.", true);
 
         return new("This game has not been saved for packing away. Are you sure you want to exit?\n\n" +
-            "Completed game actions are saved automatically. Keep the board in place, or choose No " +
-            "and use Save and pack away before clearing it.", true);
+            "Completed game actions are saved automatically. To save the board for later, " +
+            "choose No, press Esc, and select Save Game before putting the board away.", true);
     }
 
     public void CancelExitRequest()
