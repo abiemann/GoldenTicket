@@ -369,6 +369,9 @@ date, turn, status and players; **Packed away** is a status, not the save's name
    asks which of the legal train-card payments to spend. The game then checks the placed trains and
    every previously claimed route in fresh frames before committing the claim. If trains have been
    moved off an older route, return them to that route; the new claim waits until the board matches.
+   A stable, recognizable partial or unpayable solo placement shows **Invalid Move** with the route,
+   detected train count, and any missing card-payment requirement. Uncertain camera readings do not
+   produce an invalid-move warning or change the game state.
    Player-facing train-card and destination draw controls are not yet on the main game layer;
    their current implementation is in the engineering-only
    screen. With multiple humans, the shared phone is the intended private controller; actions do

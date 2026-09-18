@@ -88,6 +88,7 @@ public sealed class DesktopSingleHumanTests
             Assert.Equal(4, model.SoloTrainCards.Count);
             Assert.False(model.ShowDestinationMarkersOnBoard);
             Assert.Empty(model.BoardDestinationMarkers);
+            Assert.Empty(model.BoardDestinationLines);
             Assert.Null(model.PrivateSeat);
             Assert.Equal(Screen.Table, model.Screen);
 
@@ -99,7 +100,10 @@ public sealed class DesktopSingleHumanTests
             Assert.True(model.ShowDestinationMarkersOnBoard);
             Assert.NotEmpty(model.SoloDestinationMarkers);
             Assert.Equal(model.SoloDestinationMarkers, model.BoardDestinationMarkers);
+            Assert.Equal(model.SoloDestinationLines, model.BoardDestinationLines);
+            Assert.Equal(model.SoloDestinationCards.Count, model.BoardDestinationLines.Count);
             Assert.All(model.BoardDestinationMarkers, marker => Assert.True(marker.IsVisible));
+            Assert.All(model.BoardDestinationLines, line => Assert.True(line.IsVisible));
             Assert.Null(model.PrivateSeat);
 
             await model.ToggleSoloDestinationsCommand.ExecuteAsync(human);
@@ -107,6 +111,7 @@ public sealed class DesktopSingleHumanTests
             Assert.Empty(model.SoloDestinationCards);
             Assert.Empty(model.SoloDestinationMarkers);
             Assert.Empty(model.BoardDestinationMarkers);
+            Assert.Empty(model.BoardDestinationLines);
             Assert.False(model.ShowDestinationMarkersOnBoard);
         }
         finally { await model.DisposeToolsAsync(); }

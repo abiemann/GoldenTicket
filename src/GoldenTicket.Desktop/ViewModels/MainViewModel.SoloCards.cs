@@ -26,6 +26,7 @@ public sealed partial class MainViewModel
             OnPropertyChanged(nameof(ShowSoloDestinations));
             OnPropertyChanged(nameof(ShowDestinationMarkersOnBoard));
             OnPropertyChanged(nameof(BoardDestinationMarkers));
+            OnPropertyChanged(nameof(BoardDestinationLines));
             _lastDestinationAlignmentUtc = DateTime.MinValue;
             AlignDestinationMarkers();
         }
@@ -37,6 +38,7 @@ public sealed partial class MainViewModel
     public IReadOnlyList<SoloTrainCardRow> SoloTrainCards { get; private set; } = [];
     public IReadOnlyList<SoloDestinationCardRow> SoloDestinationCards { get; private set; } = [];
     public IReadOnlyList<DestinationMarkerRow> SoloDestinationMarkers { get; private set; } = [];
+    public IReadOnlyList<DestinationLineRow> SoloDestinationLines { get; private set; } = [];
 
     [RelayCommand]
     private Task ToggleSoloTrainCardsAsync(GameTableSeat? tile) =>
@@ -91,8 +93,11 @@ public sealed partial class MainViewModel
                         ticket.Points, connectivity.Completes(ticket));
                 }).ToArray();
                 SoloDestinationMarkers = DestinationBoardOverlay.BuildKept(_manifest, view.Tickets);
+                SoloDestinationLines = DestinationBoardOverlay.BuildKeptLines(
+                    _manifest, view.Tickets, SoloDestinationMarkers);
                 OnPropertyChanged(nameof(SoloDestinationCards));
                 OnPropertyChanged(nameof(SoloDestinationMarkers));
+                OnPropertyChanged(nameof(SoloDestinationLines));
             }
             SoloCardPanelKind = kind;
         }
@@ -110,8 +115,10 @@ public sealed partial class MainViewModel
         SoloTrainCards = [];
         SoloDestinationCards = [];
         SoloDestinationMarkers = [];
+        SoloDestinationLines = [];
         OnPropertyChanged(nameof(SoloTrainCards));
         OnPropertyChanged(nameof(SoloDestinationCards));
         OnPropertyChanged(nameof(SoloDestinationMarkers));
+        OnPropertyChanged(nameof(SoloDestinationLines));
     }
 }

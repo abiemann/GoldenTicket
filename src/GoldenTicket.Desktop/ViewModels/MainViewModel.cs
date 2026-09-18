@@ -118,6 +118,9 @@ public sealed partial class MainViewModel : ObservableObject
     public IReadOnlyList<DestinationMarkerRow> BoardDestinationMarkers =>
         ShowSoloOpeningTicketsOnBoard ? PrivateSeat?.DestinationMarkers ?? [] :
         IsSingleHumanGame && ShowSoloDestinations ? SoloDestinationMarkers : [];
+    public IReadOnlyList<DestinationLineRow> BoardDestinationLines =>
+        ShowSoloOpeningTicketsOnBoard ? PrivateSeat?.DestinationLines ?? [] :
+        IsSingleHumanGame && ShowSoloDestinations ? SoloDestinationLines : [];
     public double GameTableBoardTop => ShowSoloOpeningTicketsOnBoard ? 120 : 190;
 
     private int HumanSeatCount => _coordinator?.Public.Seats.Count(seat => seat.Kind == SeatKind.Human) ?? Setup.HumanSeatCount;
@@ -155,6 +158,7 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowSoloOpeningTicketsOnBoard));
         OnPropertyChanged(nameof(ShowDestinationMarkersOnBoard));
         OnPropertyChanged(nameof(BoardDestinationMarkers));
+        OnPropertyChanged(nameof(BoardDestinationLines));
         OnPropertyChanged(nameof(GameTableBoardTop));
         OnPropertyChanged(nameof(CanConnectPhone));
         OnPropertyChanged(nameof(RevealPrompt));
@@ -185,6 +189,7 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowSoloOpeningTicketsOnBoard));
         OnPropertyChanged(nameof(ShowDestinationMarkersOnBoard));
         OnPropertyChanged(nameof(BoardDestinationMarkers));
+        OnPropertyChanged(nameof(BoardDestinationLines));
         OnPropertyChanged(nameof(GameTableBoardTop));
         _lastDestinationAlignmentUtc = DateTime.MinValue;
         AlignDestinationMarkers();

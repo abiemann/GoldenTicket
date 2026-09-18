@@ -1272,6 +1272,7 @@ internal static partial class Program
             var miniTrainCards = (ItemsControl)animatedTable.FindName("SoloTrainCards");
             var miniDestinations = (ItemsControl)animatedTable.FindName("SoloDestinationCards");
             var heldCityMarkers = (ItemsControl)animatedTable.FindName("DestinationCityMarkers");
+            var heldDestinationLines = (ItemsControl)animatedTable.FindName("DestinationLines");
             if (!IsElementShown(humanTrainStack) || !IsElementShown(humanDestinationsStack) ||
                 IsElementShown(computerStack) || IsElementShown(miniPanel) || solo.PrivateSeat is not null)
                 throw new InvalidOperationException("Only the solo human's T and D stacks should be clickable after opening setup.");
@@ -1284,7 +1285,8 @@ internal static partial class Program
             for (var attempt = 0; attempt < 20 && !solo.ShowSoloTrainCards; attempt++) await Task.Delay(50);
             animatedTable.UpdateLayout();
             if (!solo.ShowSoloTrainCards || !IsElementShown(miniPanel) || miniTrainCards.Items.Count != 4 ||
-                IsElementShown(heldCityMarkers) || solo.PrivateSeat is not null || solo.Screen != Screen.Table)
+                IsElementShown(heldCityMarkers) || IsElementShown(heldDestinationLines) ||
+                solo.PrivateSeat is not null || solo.Screen != Screen.Table)
                 throw new InvalidOperationException($"The T stack must expand four mini train cards while the board remains visible. " +
                     $"Selected={solo.ShowSoloTrainCards}, panel={IsElementShown(miniPanel)}, " +
                     $"cards={miniTrainCards.Items.Count}, private={solo.PrivateSeat is not null}, screen={solo.Screen}, " +
@@ -1296,6 +1298,7 @@ internal static partial class Program
             animatedTable.UpdateLayout();
             if (!solo.ShowSoloDestinations || miniDestinations.Items.Count != 2 ||
                 !IsElementShown(heldCityMarkers) || heldCityMarkers.Items.Count != solo.SoloDestinationMarkers.Count ||
+                !IsElementShown(heldDestinationLines) || heldDestinationLines.Items.Count != miniDestinations.Items.Count ||
                 heldCityMarkers.Items.Count == 0 ||
                 solo.SoloDestinationCards.Any(destination => destination.Description == dropped.Description) ||
                 solo.PrivateSeat is not null || solo.Screen != Screen.Table)
@@ -1304,12 +1307,15 @@ internal static partial class Program
                 () => new GameTableView { DataContext = solo }, view =>
                 {
                     var markers = (ItemsControl)view.FindName("DestinationCityMarkers");
-                    if (!IsShown(markers, view) || markers.Items.Count != solo.SoloDestinationMarkers.Count)
-                        throw new InvalidOperationException("Opening the solo D stack must show its held city rings on the board.");
+                    var lines = (ItemsControl)view.FindName("DestinationLines");
+                    if (!IsShown(markers, view) || markers.Items.Count != solo.SoloDestinationMarkers.Count ||
+                        !IsShown(lines, view) || lines.Items.Count != solo.SoloDestinationCards.Count)
+                        throw new InvalidOperationException("Opening the solo D stack must show its held city rings and connections on the board.");
                 });
             ((IInvokeProvider)new ButtonAutomationPeer(humanDestinationsStack).GetPattern(PatternInterface.Invoke)!).Invoke();
             for (var attempt = 0; attempt < 20 && solo.ShowSoloCardPanel; attempt++) await Task.Delay(50);
-            if (solo.ShowSoloCardPanel || IsElementShown(miniPanel) || IsElementShown(heldCityMarkers))
+            if (solo.ShowSoloCardPanel || IsElementShown(miniPanel) || IsElementShown(heldCityMarkers) ||
+                IsElementShown(heldDestinationLines))
                 throw new InvalidOperationException("Clicking an open solo stack must collapse its mini-card panel.");
             checks.Add("Confirmed drop clears its card and track, centers the draw panels, and T/D stacks toggle mini cards over the visible table.");
 

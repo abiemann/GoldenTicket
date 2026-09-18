@@ -31,11 +31,14 @@ public sealed class BoardFirstClaimProposal(
 public sealed partial class MainViewModel
 {
     private readonly BoardFirstRouteDetector _boardFirstRouteDetector = new();
+    private readonly BoardFirstMoveFeedbackDetector _boardFirstMoveFeedbackDetector = new();
     private SeatView? _boardFirstSeatView;
     private LegalActions? _boardFirstLegalActions;
     private bool _boardFirstLoading;
     private bool _boardFirstSubmitting;
     private BoardFirstClaimProposal? _boardFirstProposal;
+    private string? _boardFirstInvalidMoveMessage;
+    private DateTimeOffset? _boardFirstInvalidMoveAbsentSince;
 
     public BoardFirstClaimProposal? BoardFirstProposal
     {
@@ -53,20 +56,24 @@ public sealed partial class MainViewModel
     private void ResetBoardFirstClaimFlow()
     {
         _boardFirstRouteDetector.Reset();
+        _boardFirstMoveFeedbackDetector.Reset();
         _boardFirstSeatView = null;
         _boardFirstLegalActions = null;
         BoardFirstProposal = null;
+        _boardFirstInvalidMoveMessage = null;
+        _boardFirstInvalidMoveAbsentSince = null;
     }
 
     private void ReconcileBoardFirstClaimFlow(PublicView view)
     {
-        if (_boardFirstSeatView is null && BoardFirstProposal is null) return;
+        if (_boardFirstSeatView is null && BoardFirstProposal is null &&
+            _boardFirstInvalidMoveMessage is null) return;
         if (view.Lifecycle == SessionLifecycle.Active && view.TurnPhase == TurnPhase.TurnStart &&
             _boardFirstSeatView?.Public.StateVersion == view.StateVersion &&
             _boardFirstSeatView.SeatId == view.ActiveSeatId) return;
-        var hadProposal = BoardFirstProposal is not null;
+        var hadGuidance = BoardFirstProposal is not null || _boardFirstInvalidMoveMessage is not null;
         ResetBoardFirstClaimFlow();
-        if (hadProposal) Game.ClearGuidance();
+        if (hadGuidance) Game.ClearGuidance();
     }
 
     private void ObserveBoardFirstClaim(GameTableAnalysis analysis)
@@ -78,6 +85,7 @@ public sealed partial class MainViewModel
             _operationInProgress || IsGameExitMenuOpen || _boardFirstSubmitting || PrivateSeat is not null)
         {
             if (BoardFirstProposal is not null) ClearBoardFirstProposal();
+            ClearBoardFirstInvalidMove();
             return;
         }
 
@@ -110,12 +118,18 @@ public sealed partial class MainViewModel
 
         if (BoardFirstProposal is { } existing)
         {
+            ClearBoardFirstInvalidMove();
             // Removing the pieces withdraws the camera proposal; no cards were reserved or spent.
             if (_boardFirstRouteDetector.ProposedRouteId != existing.RouteId.Value)
                 ClearBoardFirstProposal();
             return;
         }
-        if (observed is null) return;
+        if (observed is null)
+        {
+            ObserveBoardFirstInvalidMove(analysis, coordinator, active);
+            return;
+        }
+        ClearBoardFirstInvalidMove();
 
         var claim = _boardFirstLegalActions.Claims.SingleOrDefault(candidate => candidate.RouteId.Value == observed);
         if (claim is null) return;
@@ -137,6 +151,77 @@ public sealed partial class MainViewModel
             "Claiming this route uses your turn.");
     }
 
+    private void ObserveBoardFirstInvalidMove(GameTableAnalysis analysis, GameCoordinator coordinator,
+        PublicSeatSummary active)
+    {
+        if (_boardFirstSeatView is not { } seatView || _boardFirstLegalActions is not { } legal)
+            return;
+        var payable = legal.Claims.Select(claim => claim.RouteId.Value)
+            .ToHashSet(StringComparer.Ordinal);
+        var routes = _manifest.Routes
+            .Where(route => !coordinator.Public.RouteOwners.ContainsKey(route.RouteId))
+            .Select(route => new BoardFirstDiagnosticRoute(route.RouteId.Value, route.Length,
+                payable.Contains(route.RouteId.Value)))
+            .ToArray();
+        var feedback = _boardFirstMoveFeedbackDetector.Observe(
+            analysis.Board, analysis.Candidates, routes, ToMarkerColor(active.Color),
+            $"{coordinator.SessionId.Value}/{coordinator.Public.StateVersion}",
+            analysis.CropRevision, analysis.ModelRevision);
+        if (feedback is null)
+        {
+            if (_boardFirstInvalidMoveMessage is null) return;
+            _boardFirstInvalidMoveAbsentSince ??= analysis.Board.CapturedAt;
+            if (analysis.Board.CapturedAt - _boardFirstInvalidMoveAbsentSince >= TimeSpan.FromSeconds(1))
+                ClearBoardFirstInvalidMove();
+            return;
+        }
+
+        _boardFirstInvalidMoveAbsentSince = null;
+        var route = _manifest.Route(new RouteId(feedback.RouteId));
+        var routeText = _manifest.Describe(route.RouteId);
+        var explanation = feedback.DetectedTrains < feedback.RequiredTrains
+            ? $"{routeText}: {feedback.DetectedTrains} of {feedback.RequiredTrains} train spaces detected. " +
+              "Fill every space."
+            : $"{routeText} cannot be claimed yet.";
+        if (!feedback.CanClaim)
+        {
+            if (seatView.TrainsRemaining < route.Length)
+                explanation += $" Only {seatView.TrainsRemaining} trains remain.";
+            else if (LegalActionCalculator.PaymentsFor(seatView, route.RequiredCardKind,
+                         route.Length).IsEmpty)
+                explanation += route.RequiredCardKind is { } color
+                    ? $" Need {route.Length} {color} train cards (locomotives count)."
+                    : $" Need {route.Length} same-color train cards (locomotives count).";
+            else
+                explanation += " This parallel lane is unavailable.";
+        }
+        if (_boardFirstInvalidMoveMessage == explanation) return;
+        _boardFirstInvalidMoveMessage = explanation;
+        BoardInteractionLog.Write("board-first.invalid-move", new
+        {
+            route = feedback.RouteId,
+            feedback.DetectedTrains,
+            feedback.RequiredTrains,
+            feedback.CanClaim,
+            analysis.Board.Sequence,
+            analysis.Board.Epoch
+        });
+        Game.ShowGuidance("Invalid Move", active.DisplayName, explanation);
+    }
+
+    private void ClearBoardFirstInvalidMove()
+    {
+        _boardFirstMoveFeedbackDetector.Reset();
+        _boardFirstInvalidMoveAbsentSince = null;
+        if (_boardFirstInvalidMoveMessage is null) return;
+        BoardInteractionLog.Write("board-first.invalid-move-cleared", new
+        {
+            previous = _boardFirstInvalidMoveMessage
+        });
+        _boardFirstInvalidMoveMessage = null;
+        Game.ClearGuidance();
+    }
+
     private async Task LoadBoardFirstClaimsAsync(GameCoordinator coordinator, SeatId seatId)
     {
         _boardFirstLoading = true;
@@ -150,6 +235,7 @@ public sealed partial class MainViewModel
             _boardFirstSeatView = view;
             _boardFirstLegalActions = _rules.GetLegalActions(view);
             _boardFirstRouteDetector.Reset();
+            ClearBoardFirstInvalidMove();
         }
         catch (Exception)
         {

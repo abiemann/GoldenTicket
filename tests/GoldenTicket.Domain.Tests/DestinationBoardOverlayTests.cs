@@ -20,6 +20,27 @@ public sealed class DestinationBoardOverlayTests
     }
 
     [Fact]
+    public void KeptSoloDestinationsConnectTheirExistingCityRings()
+    {
+        var manifest = TestManifest.Manifest;
+        TicketId[] tickets = [new("t-seattle--los-angeles"), new("t-helena--los-angeles")];
+        var markers = DestinationBoardOverlay.BuildKept(manifest, tickets);
+
+        var lines = DestinationBoardOverlay.BuildKeptLines(manifest, tickets, markers);
+
+        Assert.Equal(tickets.Length, lines.Count);
+        Assert.All(lines, line =>
+        {
+            Assert.True(line.IsVisible);
+            Assert.Null(line.Choice);
+            Assert.Contains(line.Start, markers);
+            Assert.Contains(line.End, markers);
+            Assert.NotEqual(line.X1, line.X2);
+        });
+        Assert.Same(lines[0].End, lines[1].End);
+    }
+
+    [Fact]
     public void EveryClassicDestinationEndpointHasAnOnBoardMarker()
     {
         var manifest = TestManifest.Manifest;

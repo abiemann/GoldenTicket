@@ -60,28 +60,33 @@ public sealed class DestinationMarkerRow : ObservableObject
     }
 }
 
-/// <summary>A single offered destination, drawn between the outside edges of its city rings.</summary>
+/// <summary>A destination, drawn between the outside edges of its city rings.</summary>
 public sealed class DestinationLineRow : ObservableObject
 {
     private const double EndpointGap = 2;
 
     internal DestinationLineRow(TicketChoiceRow choice, DestinationMarkerRow start, DestinationMarkerRow end)
+        : this(start, end)
     {
         Choice = choice;
-        Start = start;
-        End = end;
         choice.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(TicketChoiceRow.Keep)) OnPropertyChanged(nameof(IsVisible));
         };
+    }
+
+    internal DestinationLineRow(DestinationMarkerRow start, DestinationMarkerRow end)
+    {
+        Start = start;
+        End = end;
         start.PropertyChanged += MarkerChanged;
         end.PropertyChanged += MarkerChanged;
     }
 
-    public TicketChoiceRow Choice { get; }
+    public TicketChoiceRow? Choice { get; }
     public DestinationMarkerRow Start { get; }
     public DestinationMarkerRow End { get; }
-    public bool IsVisible => Choice.Keep;
+    public bool IsVisible => Choice?.Keep ?? true;
 
     private double Length => Math.Max(1, Math.Sqrt(
         Math.Pow(End.CenterX - Start.CenterX, 2) + Math.Pow(End.CenterY - Start.CenterY, 2)));
@@ -262,6 +267,27 @@ public static class DestinationBoardOverlay
             if (byCity.TryGetValue(ticket.CityA, out var start) &&
                 byCity.TryGetValue(ticket.CityB, out var end))
                 lines.Add(new DestinationLineRow(choice, start, end));
+        }
+        return lines;
+    }
+
+    /// <summary>Connections for the solo player's retained destinations, using the same rings as the overlay.</summary>
+    public static IReadOnlyList<DestinationLineRow> BuildKeptLines(BoardManifest manifest,
+        IEnumerable<TicketId> tickets, IEnumerable<DestinationMarkerRow> markers)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentNullException.ThrowIfNull(tickets);
+        ArgumentNullException.ThrowIfNull(markers);
+        if (manifest.ProfileId != "ttr-us-classic-en-v1") return [];
+
+        var byCity = markers.ToDictionary(marker => marker.CityId);
+        var lines = new List<DestinationLineRow>();
+        foreach (var ticketId in tickets)
+        {
+            var ticket = manifest.Ticket(ticketId);
+            if (byCity.TryGetValue(ticket.CityA, out var start) &&
+                byCity.TryGetValue(ticket.CityB, out var end))
+                lines.Add(new DestinationLineRow(start, end));
         }
         return lines;
     }

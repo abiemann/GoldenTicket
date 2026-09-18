@@ -66,8 +66,7 @@
                             <Grid Width="960" Height="600"
                                   Visibility="{Binding Camera.GameTablePreview, Converter={StaticResource NullToVisibility}}">
                                 <ItemsControl x:Name="DestinationLines" Width="960" Height="600"
-                                              ItemsSource="{Binding PrivateSeat.DestinationLines}"
-                                              Visibility="{Binding ShowSoloOpeningTicketsOnBoard, Converter={StaticResource BoolToVisibility}}">
+                                              ItemsSource="{Binding BoardDestinationLines}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>

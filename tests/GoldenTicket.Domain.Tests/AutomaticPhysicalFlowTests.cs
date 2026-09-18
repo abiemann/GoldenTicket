@@ -10,6 +10,51 @@ namespace GoldenTicket.Domain.Tests;
 public sealed class AutomaticPhysicalFlowTests
 {
     [Fact]
+    public async Task Solo_partial_unpayable_route_explains_the_invalid_move_without_claiming_it()
+    {
+        var manifest = ManifestLoader.LoadClassicUs();
+        var model = new MainViewModel(manifest, new InMemorySessionStore());
+        model.Setup.ManualVerificationAccepted = true;
+        try
+        {
+            await model.StartMatchAsync();
+            await model.CommitTicketsAsync();
+            var coordinator = GetCoordinator(model);
+            var active = coordinator.Public.ActiveSeatId;
+            var legal = await coordinator.GetLegalActionsAsync(active,
+                TestContext.Current.CancellationToken);
+            var routeId = legal.Claims.Any(claim => claim.RouteId.Value == "calgary--seattle")
+                ? "calgary--winnipeg" : "calgary--seattle";
+            Assert.DoesNotContain(legal.Claims, claim => claim.RouteId.Value == routeId);
+
+            model.Camera.IsGameTablePreviewUpright = true;
+            var color = Enum.Parse<MarkerColor>(coordinator.Public.SeatOf(active).Color.ToString());
+            var at = DateTimeOffset.UtcNow;
+            PublishTrains(model.Camera, routeId, 1, at, color, 2);
+            await WaitUntilAsync(() => typeof(MainViewModel)
+                .GetField("_boardFirstLegalActions", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(model) is not null);
+            PublishTrains(model.Camera, routeId, 2, at.AddSeconds(1.1), color, 2);
+            PublishTrains(model.Camera, routeId, 3, at.AddSeconds(2.2), color, 2);
+            await WaitUntilAsync(() => model.Game.GuidanceTurn == "Invalid Move");
+
+            Assert.Contains(manifest.Describe(new RouteId(routeId)), model.Game.GuidanceInstruction);
+            Assert.Contains("2 of", model.Game.GuidanceInstruction);
+            Assert.Contains("train cards", model.Game.GuidanceInstruction);
+            Assert.Null(coordinator.Public.PendingClaim);
+            Assert.Equal(TurnPhase.TurnStart, coordinator.Public.TurnPhase);
+            Assert.Equal(Screen.Table, model.Screen);
+
+            PublishTrains(model.Camera, routeId, 4, at.AddSeconds(3.3), color, 0);
+            Assert.Equal("Invalid Move", model.Game.GuidanceTurn);
+            PublishTrains(model.Camera, routeId, 5, at.AddSeconds(4.4), color, 0);
+            await WaitUntilAsync(() => model.Game.GuidanceTurn != "Invalid Move");
+            Assert.Equal(model.Table.TurnText, model.Game.GuidanceTurn);
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Fact]
     public async Task Solo_human_can_authorize_a_route_detected_from_trains_placed_first()
     {
         var manifest = ManifestLoader.LoadClassicUs();
@@ -241,7 +286,11 @@ public sealed class AutomaticPhysicalFlowTests
             .GetValue(model));
 
     private static void PublishBlueTrains(CameraViewModel camera, string routeId,
-        long sequence, DateTimeOffset capturedAt)
+        long sequence, DateTimeOffset capturedAt) =>
+        PublishTrains(camera, routeId, sequence, capturedAt, MarkerColor.Blue);
+
+    private static void PublishTrains(CameraViewModel camera, string routeId,
+        long sequence, DateTimeOffset capturedAt, MarkerColor color, int count = int.MaxValue)
     {
         const int width = 960;
         const int height = 600;
@@ -250,7 +299,15 @@ public sealed class AutomaticPhysicalFlowTests
             pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = pixels[offset + 3] = 180;
         ClassicUsRouteGeometry.TryGetSlots(routeId, out var slots);
         var candidates = new List<PieceCandidate>();
-        foreach (var spot in slots)
+        var (red, green, blue) = color switch
+        {
+            MarkerColor.Red => (190, 35, 30),
+            MarkerColor.Green => (20, 125, 35),
+            MarkerColor.Yellow => (225, 180, 20),
+            MarkerColor.Blue => (20, 75, 195),
+            _ => (20, 20, 20)
+        };
+        foreach (var spot in slots.Take(count))
         {
             var x = (int)Math.Round(spot.X * width);
             var y = (int)Math.Round(spot.Y * height);
@@ -260,9 +317,9 @@ public sealed class AutomaticPhysicalFlowTests
             for (var px = x - halfWidth; px <= x + halfWidth; px++)
             {
                 var offset = (py * width + px) * 4;
-                pixels[offset] = 195;
-                pixels[offset + 1] = 75;
-                pixels[offset + 2] = 20;
+                pixels[offset] = (byte)blue;
+                pixels[offset + 1] = (byte)green;
+                pixels[offset + 2] = (byte)red;
             }
             candidates.Add(new(PieceCandidateKind.Train,
                 [new((double)(x - halfWidth) / width, (double)(y - halfHeight) / height),
