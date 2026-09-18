@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Windows.Media.Imaging;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Vision;
 
@@ -196,6 +197,65 @@ public sealed class CameraCornerLearningFlowTests
             .GetField("_gameTableRegistration", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(fixture.Camera)!;
         Assert.Equal(adjusted[2], restored.Corners[0], NormalizedPointComparer.Instance);
+    }
+
+    [Fact]
+    public async Task Minor_corner_recalibration_keeps_the_board_visible_until_a_1500ms_handoff_expires()
+    {
+        using var pieces = new FakePieceModel();
+        await using var fixture = new Fixture(pieceFactory: (_, _) => pieces);
+        NormalizedPoint[] corners = [new(.1, .12), new(.9, .12), new(.9, .88), new(.1, .88)];
+        fixture.Model.DetectedCorners = corners;
+        fixture.FramePainter = (pixels, width, height) =>
+        {
+            PaintAsymmetricBoard(pixels, width, height, false);
+            PaintScorePiece(pixels, width, height, corners, .017, .9266, (138, 55, 48));
+            PaintScorePiece(pixels, width, height, corners, .055, .9266, (0, 48, 100));
+        };
+        fixture.Refresh();
+        fixture.Camera.BeginGameBoardFraming([MarkerColor.Red, MarkerColor.Blue]);
+        await fixture.CheckGameBoardAsync();
+        Assert.True(fixture.Camera.CanStartGameWithBoard, fixture.Camera.GameBoardFramingStatus);
+        fixture.Camera.BeginGameTablePreview();
+        fixture.Camera.EndGameBoardFraming();
+        for (var attempt = 0; attempt < 50 && fixture.Camera.GameTablePreview is null; attempt++)
+            await Task.Delay(20);
+        BitmapSource previous = Assert.IsAssignableFrom<BitmapSource>(fixture.Camera.GameTablePreview);
+
+        var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var cropBusy = typeof(CameraViewModel).GetField("_gameTableCropBusy", flags)!;
+        var revision = typeof(CameraViewModel).GetField("_gameTableCropRevision", flags)!;
+        var oldRevision = (long)revision.GetValue(fixture.Camera)!;
+        cropBusy.SetValue(fixture.Camera, true); // Hold the replacement render until the handoff is checked.
+        fixture.Model.DetectedCorners = corners.Select(point =>
+            new NormalizedPoint(point.X + .003, point.Y + .003)).ToArray();
+        fixture.Refresh();
+        var blankTransitions = 0;
+        fixture.Camera.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(CameraViewModel.GameTablePreview) &&
+                fixture.Camera.GameTablePreview is null) blankTransitions++;
+        };
+        await (Task)typeof(CameraViewModel).GetMethod("DetectLiveBoardAsync", flags)!
+            .Invoke(fixture.Camera, [fixture.Frame])!;
+        Assert.Equal(oldRevision + 1, (long)revision.GetValue(fixture.Camera)!);
+        Assert.Same(previous, fixture.Camera.GameTablePreview);
+        Assert.Equal(0, blankTransitions);
+        var handoffTimer = (System.Windows.Threading.DispatcherTimer)typeof(CameraViewModel)
+            .GetField("_gameTableHandoffTimer", flags)!.GetValue(fixture.Camera)!;
+        Assert.Equal(TimeSpan.FromMilliseconds(1500), handoffTimer.Interval);
+
+        typeof(CameraViewModel).GetMethod("OnGameTableHandoffExpired", flags)!
+            .Invoke(fixture.Camera, [null, EventArgs.Empty]);
+        Assert.Null(fixture.Camera.GameTablePreview);
+        Assert.Equal(1, blankTransitions);
+        cropBusy.SetValue(fixture.Camera, false);
+        typeof(CameraViewModel).GetMethod("QueueGameTablePreview", flags)!
+            .Invoke(fixture.Camera, [fixture.Frame]);
+        for (var attempt = 0; attempt < 50 && fixture.Camera.GameTablePreview is null; attempt++)
+            await Task.Delay(20);
+        Assert.NotNull(fixture.Camera.GameTablePreview);
+        Assert.Equal(string.Empty, fixture.Camera.GameTablePreviewStatus);
     }
 
     private static void PaintAsymmetricBoard(byte[] pixels, int width, int height, bool halfTurn)

@@ -328,7 +328,9 @@ date, turn, status and players; **Packed away** is a status, not the save's name
    moves or turns, it reacquires the corners and compares all four orientations before resuming the
    preview, so Miami remains at the lower right. While the view cannot be verified, the board and
    automatic piece readings pause rather than showing an uncertain orientation. A resumed saved
-   game uses its saved upright board photo as the reference.
+   game uses its saved upright board photo as the reference. During an already verified upright
+   crop handoff, the last image stays visible for at most 1.5 seconds; if the replacement takes
+   longer, the board goes black until it is ready. An uncertain orientation blanks immediately.
    A persistent panel above the board identifies the current phase, the acting player, and the
    instruction humans should follow next.
    In a one-human game's opening setup, the board moves up beneath the guidance panel, while a

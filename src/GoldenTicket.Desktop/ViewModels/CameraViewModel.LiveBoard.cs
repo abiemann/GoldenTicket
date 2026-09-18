@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using GoldenTicket.Vision;
 
 namespace GoldenTicket.Desktop.ViewModels;
@@ -13,6 +14,11 @@ public sealed partial class CameraViewModel
     private bool _liveBoardCheckBusy;
     private Task _liveBoardCheckWork = Task.CompletedTask;
     private DateTimeOffset _lastLiveBoardCheckAt = DateTimeOffset.MinValue;
+    private DispatcherTimer? _gameTableHandoffTimer;
+    private DateTimeOffset _gameTableHandoffStartedAt;
+    private long _gameTableHandoffRevision = -1;
+    private bool _gameTableHandoffBlackedOut;
+    private long _lastLoggedGameTablePreviewRevision = -1;
 
     /// <summary>Use an upright checkpoint photo as the orientation anchor when resuming a game.</summary>
     public void SetGameTableReference(BitmapSource? uprightPhoto)
@@ -83,6 +89,7 @@ public sealed partial class CameraViewModel
         if (IsGameTablePreviewUpright || GameTablePreviewStatus != status)
             BoardInteractionLog.Write("camera.board.alignment-held", new { status });
         if (IsGameTablePreviewUpright) IsGameTablePreviewUpright = false;
+        CancelGameTablePreviewHandoff();
         ClearGameTableAnalysis();
         GameTablePreview = null;
         GameTablePreviewStatus = status;
@@ -171,15 +178,15 @@ public sealed partial class CameraViewModel
                 source.Sequence, source.Epoch,
                 cropRevision = _gameTableCropRevision,
                 orientation = orientation.Value,
+                previousPreviewRetained = GameTablePreview is not null,
                 corners = selected.Corners.Select(point => new
                 {
                     x = Math.Round(point.X, 5), y = Math.Round(point.Y, 5)
                 }).ToArray()
             });
             _lastGameTableCropAt = DateTimeOffset.MinValue;
-            GameTablePreview = null;
             IsGameTablePreviewUpright = true;
-            GameTablePreviewStatus = "Updating the upright live board view…";
+            BeginGameTablePreviewHandoff();
             QueueGameTablePreview(current);
             QueueGameTableAnalysis(current);
         }
@@ -200,4 +207,58 @@ public sealed partial class CameraViewModel
         left.Count == 4 && right.Count == 4 && Enumerable.Range(0, 4).All(index =>
             Math.Abs(left[index].X - right[index].X) < .002 &&
             Math.Abs(left[index].Y - right[index].Y) < .002);
+
+    private void BeginGameTablePreviewHandoff()
+    {
+        if (GameTablePreview is null)
+        {
+            CancelGameTablePreviewHandoff();
+            GameTablePreviewStatus = "Updating the upright live board view…";
+            return;
+        }
+
+        if (_gameTableHandoffTimer is null)
+        {
+            _gameTableHandoffTimer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(1500)
+            };
+            _gameTableHandoffTimer.Tick += OnGameTableHandoffExpired;
+        }
+        if (!_gameTableHandoffTimer.IsEnabled)
+        {
+            _gameTableHandoffStartedAt = DateTimeOffset.UtcNow;
+            _gameTableHandoffBlackedOut = false;
+            _gameTableHandoffTimer.Start();
+        }
+        _gameTableHandoffRevision = _gameTableCropRevision;
+        GameTablePreviewStatus = "";
+    }
+
+    private void OnGameTableHandoffExpired(object? sender, EventArgs args)
+    {
+        _gameTableHandoffTimer?.Stop();
+        if (_gameTableHandoffRevision != _gameTableCropRevision ||
+            !_gameTablePreviewRequested || !IsGameTablePreviewUpright || GameTablePreview is null)
+        {
+            CancelGameTablePreviewHandoff();
+            return;
+        }
+        _gameTableHandoffBlackedOut = true;
+        GameTablePreview = null;
+        if (string.IsNullOrEmpty(GameTablePreviewStatus))
+            GameTablePreviewStatus = "Updating the upright live board view…";
+        BoardInteractionLog.Write("camera.board.handoff-timeout", new
+        {
+            cropRevision = _gameTableCropRevision,
+            elapsedMs = Math.Round((DateTimeOffset.UtcNow - _gameTableHandoffStartedAt).TotalMilliseconds)
+        });
+    }
+
+    private void CancelGameTablePreviewHandoff()
+    {
+        _gameTableHandoffTimer?.Stop();
+        _gameTableHandoffRevision = -1;
+        _gameTableHandoffBlackedOut = false;
+    }
 }

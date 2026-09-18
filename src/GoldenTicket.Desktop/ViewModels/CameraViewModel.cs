@@ -533,6 +533,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     public void BeginGameTablePreview()
     {
         if (!CanStartGameWithBoard || Capture.LatestFrame is not { } frame) return;
+        CancelGameTablePreviewHandoff();
         BoardInteractionLog.Write("camera.board.preview-started", new
         {
             frame.Sequence, frame.Epoch, frame.Width, frame.Height
@@ -588,6 +589,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
 
     private void InvalidateGameTablePreview()
     {
+        CancelGameTablePreviewHandoff();
         ClearGameTableAnalysis();
         _gameTableRegistration = null;
         IsGameTablePreviewUpright = false;
@@ -623,9 +625,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         _gameTableRegistration = registrations[orientation.Value];
         _gameTableCropRevision++;
         _lastGameTableCropAt = DateTimeOffset.MinValue;
-        GameTablePreview = null;
         IsGameTablePreviewUpright = true;
-        GameTablePreviewStatus = "Preparing the corrected upright board crop…";
+        BeginGameTablePreviewHandoff();
         QueueGameTablePreview(frame);
         QueueGameTableAnalysis(frame);
     }
@@ -654,8 +655,23 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
                 !ReferenceEquals(registration, _gameTableRegistration) || !Capture.IsRunning ||
                 Capture.LatestFrame is not { } latest || latest.Age > TimeSpan.FromSeconds(2) ||
                 !registration.Matches(latest)) return;
+            var wasHandoff = _gameTableHandoffRevision == revision;
+            var handoffMs = wasHandoff
+                ? Math.Round((DateTimeOffset.UtcNow - _gameTableHandoffStartedAt).TotalMilliseconds)
+                : (double?)null;
+            var handoffBlackedOut = wasHandoff && _gameTableHandoffBlackedOut;
+            if (wasHandoff) CancelGameTablePreviewHandoff();
             GameTablePreview = bitmap;
             GameTablePreviewStatus = "";
+            if (_lastLoggedGameTablePreviewRevision != revision)
+            {
+                _lastLoggedGameTablePreviewRevision = revision;
+                BoardInteractionLog.Write("camera.board.preview-ready", new
+                {
+                    frame.Sequence, frame.Epoch, cropRevision = revision,
+                    handoffMs, handoffBlackedOut
+                });
+            }
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         catch (Exception ex)

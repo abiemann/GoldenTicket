@@ -79,7 +79,7 @@
                  VerticalAlignment="Center" Margin="8">
             <Canvas x:Name="TableScene" Width="1440" Height="900">
                 <Border x:Name="GameBoardFrame" Canvas.Left="270" Canvas.Top="{Binding GameTableBoardTop}" Width="900" Height="562.5"
-                        CornerRadius="8" Background="#FF0D151E" BorderBrush="#FFE1BD79"
+                        CornerRadius="8" Background="Black" BorderBrush="#FFE1BD79"
                         BorderThickness="3" ClipToBounds="True">
                     <Grid>
                         <Image x:Name="LiveBoardImage" Source="{Binding Camera.GameTablePreview}"

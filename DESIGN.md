@@ -432,7 +432,10 @@ rotated board invalidates the old registration and its piece readings. Redetect 
 apply the narrow outward crop margin once, and compare all four rotations before presenting new
 frames. Only a uniquely verified upright match can resume the live crop and automatic actions;
 the board waits when orientation is uncertain. A saved upright board photo provides the reference
-after resuming a saved game. The canonical display keeps Miami at the lower right.
+after resuming a saved game. The canonical display keeps Miami at the lower right. When a newly
+verified upright crop replaces another verified crop, retain the last upright image for no more
+than 1.5 seconds while rendering its replacement, then show black until the new image is ready.
+Uncertain orientation still blanks the board immediately and pauses piece readings.
 
 Two to five selected seats occupy positions around the board,
 with their portraits, physical train colors, remaining train counts and face-down card/destination
