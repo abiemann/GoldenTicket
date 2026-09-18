@@ -1,6 +1,8 @@
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using GoldenTicket.Domain;
 using GoldenTicket.Domain.Scoring;
+using System.IO;
 
 namespace GoldenTicket.Desktop.ViewModels;
 
@@ -17,6 +19,22 @@ public sealed partial class MainViewModel
 {
     private long _soloCardsGeneration;
     private SoloCardPanelSelection _soloCardPanelKind;
+    private string? _presentationSettingsPath;
+    [ObservableProperty] private bool _showDestinationsWhenViewingTrainCards = true;
+
+    partial void OnShowDestinationsWhenViewingTrainCardsChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowDestinationMarkersOnBoard));
+        OnPropertyChanged(nameof(BoardDestinationMarkers));
+        OnPropertyChanged(nameof(BoardDestinationLines));
+        _lastDestinationAlignmentUtc = DateTime.MinValue;
+        AlignDestinationMarkers();
+        try { Services.PresentationPreferences.Save(_presentationSettingsPath, value); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Status = "The display choice is active but could not be saved for next launch: " + ex.Message;
+        }
+    }
 
     public SoloCardPanelSelection SoloCardPanelKind
     {
@@ -77,6 +95,12 @@ public sealed partial class MainViewModel
                 coordinator.Public.ActiveSeatId != tile.Seat.SeatId ||
                 !IsGameplayScreenActive(Screen.Table)) return;
 
+            SoloDestinationMarkers = DestinationBoardOverlay.BuildKept(_manifest, view.Tickets);
+            SoloDestinationLines = DestinationBoardOverlay.BuildKeptLines(
+                _manifest, view.Tickets, SoloDestinationMarkers);
+            OnPropertyChanged(nameof(SoloDestinationMarkers));
+            OnPropertyChanged(nameof(SoloDestinationLines));
+
             if (kind == SoloCardPanelSelection.TrainCards)
             {
                 SoloTrainCards = view.Hand.Select(card => new SoloTrainCardRow(card.Kind, card.Kind.ToString()))
@@ -95,12 +119,7 @@ public sealed partial class MainViewModel
                         _manifest.City(ticket.CityB).DisplayName,
                         ticket.Points, connectivity.Completes(ticket));
                 }).ToArray();
-                SoloDestinationMarkers = DestinationBoardOverlay.BuildKept(_manifest, view.Tickets);
-                SoloDestinationLines = DestinationBoardOverlay.BuildKeptLines(
-                    _manifest, view.Tickets, SoloDestinationMarkers);
                 OnPropertyChanged(nameof(SoloDestinationCards));
-                OnPropertyChanged(nameof(SoloDestinationMarkers));
-                OnPropertyChanged(nameof(SoloDestinationLines));
             }
             SoloCardPanelKind = kind;
         }

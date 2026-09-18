@@ -225,6 +225,35 @@ public class DesktopFlowTests
     }
 
     [Fact]
+    public async Task Human_route_claim_does_not_show_computer_placement_cue()
+    {
+        var model = NewMatch();
+        await model.StartMatchCommand.ExecuteAsync(null);
+        ShowUprightBoardPreview(model);
+
+        var human = model.Table.Seats.Single(seat => seat.Operator == "human");
+        var routeId = new RouteId("dallas--houston--b");
+        var placement = new PlacementInstruction(OperationId.New(), 1,
+            human.SeatId, human.DisplayName, human.Color, human.Symbol,
+            routeId, "Dallas - Houston (lane B)", "lane B", 1, false);
+        model.Table.Placement = placement;
+
+        Assert.False(model.Game.ShowPlacementTarget);
+        Assert.Empty(model.Game.PlacementTargets);
+
+        var computer = model.Table.Seats.First(seat => seat.Operator == "computer");
+        model.Table.Placement = placement with
+        {
+            SeatId = computer.SeatId,
+            SeatName = computer.DisplayName,
+            Color = computer.Color,
+            Symbol = computer.Symbol
+        };
+        Assert.True(model.Game.ShowPlacementTarget);
+        Assert.Single(model.Game.PlacementTargets);
+    }
+
+    [Fact]
     public async Task ConfirmingAPlacementCommitsTheClaimAndClearsTheInstruction()
     {
         var model = NewMatch(computerOnly: true);

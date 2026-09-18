@@ -569,10 +569,13 @@ internal static partial class Program
                     AutomationProperties.GetName(combo) == "Camera quality preference");
                 var processor = Descendants<ComboBox>(dialog).Single(combo =>
                     AutomationProperties.GetName(combo) == "Image processor preference");
+                var destinationsWithTrainCards = Descendants<CheckBox>(dialog).Single(box =>
+                    AutomationProperties.GetName(box) == "Show Destinations when viewing Train cards");
                 var ok = Descendants<Button>(dialog).Single(button => button.Content as string == "OK");
                 if (!IsElementShown(dialog) || displayMode.SelectedValue is not DisplayMode.Resizable ||
                     !ReferenceEquals(quality.SelectedItem, model.Camera.SelectedPreference) ||
-                    !ReferenceEquals(processor.SelectedItem, model.Camera.SelectedProcessor) || ok.ActualHeight < 48 ||
+                    !ReferenceEquals(processor.SelectedItem, model.Camera.SelectedProcessor) ||
+                    destinationsWithTrainCards.IsChecked != true || ok.ActualHeight < 48 ||
                     ok.HorizontalAlignment != HorizontalAlignment.Right ||
                     Descendants<Button>(dialog).Any(button => Equals(button.Tag, "NavigationBack")))
                     throw new InvalidOperationException("Settings must use the same live camera preferences as the utility screens.");
@@ -1331,13 +1334,22 @@ internal static partial class Program
             for (var attempt = 0; attempt < 20 && !solo.ShowSoloTrainCards; attempt++) await Task.Delay(50);
             animatedTable.UpdateLayout();
             if (!solo.ShowSoloTrainCards || !IsElementShown(miniPanel) || miniTrainCards.Items.Count != 4 ||
-                IsElementShown(heldCityMarkers) || IsElementShown(heldDestinationLines) ||
+                !IsElementShown(heldCityMarkers) || !IsElementShown(heldDestinationLines) ||
+                heldDestinationLines.Items.Count != 2 ||
                 solo.PrivateSeat is not null || solo.Screen != Screen.Table)
                 throw new InvalidOperationException($"The T stack must expand four mini train cards while the board remains visible. " +
                     $"Selected={solo.ShowSoloTrainCards}, panel={IsElementShown(miniPanel)}, " +
                     $"cards={miniTrainCards.Items.Count}, private={solo.PrivateSeat is not null}, screen={solo.Screen}, " +
                     $"enabled={humanTrainStack.IsEnabled}, opening={solo.ShowSoloOpeningTicketsOnBoard}, " +
                     $"reveal={solo.CanRevealPrivateSeat}.");
+            solo.ShowDestinationsWhenViewingTrainCards = false;
+            animatedTable.UpdateLayout();
+            if (IsElementShown(heldCityMarkers) || IsElementShown(heldDestinationLines))
+                throw new InvalidOperationException("Disabling the train-card destination setting must hide the map overlay.");
+            solo.ShowDestinationsWhenViewingTrainCards = true;
+            animatedTable.UpdateLayout();
+            if (!IsElementShown(heldCityMarkers) || !IsElementShown(heldDestinationLines))
+                throw new InvalidOperationException("Re-enabling the train-card destination setting must restore the map overlay.");
             var trainScroller = Descendants<ScrollViewer>(miniPanel).Single(IsElementShown);
             if (!IsGameHorizontalScroller(trainScroller))
                 throw new InvalidOperationException("The solo train-card tray must scroll horizontally with the game-styled scrollbar.");

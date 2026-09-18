@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using GoldenTicket.AI;
@@ -60,6 +61,10 @@ public sealed partial class MainViewModel : ObservableObject
         _catalog = CardCatalog.FromManifest(manifest);
         _rules = new GameRules(manifest, _catalog);
         _store = store;
+        _presentationSettingsPath = store is SqliteSessionStore localStore
+            ? Path.Combine(localStore.RootDirectory, "presentation-settings.json") : null;
+        _showDestinationsWhenViewingTrainCards = Services.PresentationPreferences
+            .LoadShowDestinationsWithTrainCards(_presentationSettingsPath);
 
         Setup = new SetupViewModel(manifest);
         Table = new TableViewModel(manifest);
@@ -113,16 +118,18 @@ public sealed partial class MainViewModel : ObservableObject
     public bool IsPrivateVisible => PrivateSeat is not null;
     public bool ShowSoloOpeningTicketsOnBoard => IsSingleHumanGame &&
         PrivateSeat is { IsSetupOffer: true, MustChooseTickets: true };
+    private bool ShowSoloKeptDestinationsOnBoard => IsSingleHumanGame &&
+        (ShowSoloDestinations || (ShowSoloTrainCards && ShowDestinationsWhenViewingTrainCards));
     public bool ShowDestinationMarkersOnBoard => ShowSoloOpeningTicketsOnBoard || ShowSoloTicketOffer ||
-        IsSingleHumanGame && ShowSoloDestinations && SoloDestinationMarkers.Count > 0;
+        ShowSoloKeptDestinationsOnBoard && SoloDestinationMarkers.Count > 0;
     public IReadOnlyList<DestinationMarkerRow> BoardDestinationMarkers =>
         ShowSoloOpeningTicketsOnBoard ? PrivateSeat?.DestinationMarkers ?? [] :
         ShowSoloTicketOffer ? SoloTicketOfferMarkers :
-        IsSingleHumanGame && ShowSoloDestinations ? SoloDestinationMarkers : [];
+        ShowSoloKeptDestinationsOnBoard ? SoloDestinationMarkers : [];
     public IReadOnlyList<DestinationLineRow> BoardDestinationLines =>
         ShowSoloOpeningTicketsOnBoard ? PrivateSeat?.DestinationLines ?? [] :
         ShowSoloTicketOffer ? SoloTicketOfferLines :
-        IsSingleHumanGame && ShowSoloDestinations ? SoloDestinationLines : [];
+        ShowSoloKeptDestinationsOnBoard ? SoloDestinationLines : [];
     public double GameTableBoardTop => ShowSoloOpeningTicketsOnBoard || ShowSoloTicketOffer ? 120 : 190;
     public bool ShowDrawPanels => !ShowSoloOpeningTicketsOnBoard && !ShowSoloTicketOffer;
 

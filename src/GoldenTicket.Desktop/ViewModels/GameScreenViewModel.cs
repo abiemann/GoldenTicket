@@ -259,6 +259,8 @@ public sealed partial class GameScreenViewModel : ObservableObject
     private void RefreshPlacementTarget()
     {
         if (_main.Table.Placement is not { } placement ||
+            !_main.Table.Seats.Any(seat => seat.SeatId == placement.SeatId &&
+                seat.Operator == "computer") ||
             _main.Camera.GameTablePreview is null ||
             !_main.Camera.IsGameTablePreviewUpright ||
             !PlacementBoardOverlay.TryGetTargets(_main.Manifest, placement.RouteId, placement.TrainCount,

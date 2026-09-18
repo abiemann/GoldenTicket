@@ -4,6 +4,7 @@ using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Domain.Model;
+using GoldenTicket.Persistence;
 using GoldenTicket.Vision;
 
 namespace GoldenTicket.Domain.Tests;
@@ -158,6 +159,12 @@ public sealed class DesktopSingleHumanTests
             await model.ToggleSoloTrainCardsCommand.ExecuteAsync(human);
             Assert.True(model.ShowSoloTrainCards);
             Assert.Equal(4, model.SoloTrainCards.Count);
+            Assert.True(model.ShowDestinationsWhenViewingTrainCards);
+            Assert.True(model.ShowDestinationMarkersOnBoard);
+            Assert.NotEmpty(model.BoardDestinationMarkers);
+            Assert.Equal(3, model.BoardDestinationLines.Count);
+            Assert.All(model.BoardDestinationLines, line => Assert.True(line.IsVisible));
+            model.ShowDestinationsWhenViewingTrainCards = false;
             Assert.False(model.ShowDestinationMarkersOnBoard);
             Assert.Empty(model.BoardDestinationMarkers);
             Assert.Empty(model.BoardDestinationLines);
@@ -187,6 +194,31 @@ public sealed class DesktopSingleHumanTests
             Assert.False(model.ShowDestinationMarkersOnBoard);
         }
         finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Fact]
+    public async Task Train_card_destination_overlay_setting_starts_on_and_survives_app_restart()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            "GoldenTicket-presentation-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var first = new MainViewModel(ManifestLoader.LoadClassicUs(), new SqliteSessionStore(root));
+            try
+            {
+                Assert.True(first.ShowDestinationsWhenViewingTrainCards);
+                first.ShowDestinationsWhenViewingTrainCards = false;
+            }
+            finally { await first.DisposeToolsAsync(); }
+
+            var second = new MainViewModel(ManifestLoader.LoadClassicUs(), new SqliteSessionStore(root));
+            try { Assert.False(second.ShowDestinationsWhenViewingTrainCards); }
+            finally { await second.DisposeToolsAsync(); }
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]
