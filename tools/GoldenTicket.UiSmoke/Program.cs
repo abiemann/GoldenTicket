@@ -908,13 +908,24 @@ internal static partial class Program
                     .Single(text => text.DataContext is MarketSlotRow { Label: "Locomotive" });
                 var locomotiveCard = Ancestors(locomotive).OfType<Border>()
                     .First(border => border.DataContext is MarketSlotRow);
+                var marketButtons = Descendants<Button>(market)
+                    .Where(button => button.DataContext is MarketSlotRow).ToArray();
+                if (marketButtons.Length != 5)
+                    throw new InvalidOperationException("The market must render five face-up card buttons.");
+                var firstMarketBounds = marketButtons[0].TransformToAncestor(marketPanel)
+                    .TransformBounds(new Rect(marketButtons[0].RenderSize));
+                var lastMarketBounds = marketButtons[^1].TransformToAncestor(marketPanel)
+                    .TransformBounds(new Rect(marketButtons[^1].RenderSize));
                 if (!IsElementShown(gameTable) || scene.Width != 1440 || scene.Height != 900 ||
                     !ReferenceEquals(board.Source, model.Camera.GameTablePreview) ||
                     stations.Items.Count != model.Table.Seats.Count || market.Items.Count != 5 ||
                     Canvas.GetLeft(drawPilesPanel) != (model.Table.Seats.Count < 5 ? 368 : 14) ||
                     Canvas.GetLeft(marketPanel) != (model.Table.Seats.Count < 5 ? 622 : 975) ||
                     Canvas.GetTop(marketPanel) != 768 ||
-                    locomotive.TextWrapping != TextWrapping.NoWrap || locomotiveCard.Width < 80 ||
+                    locomotive.TextWrapping != TextWrapping.NoWrap || locomotiveCard.Width < 76 ||
+                    firstMarketBounds.Left < marketPanel.BorderThickness.Left + marketPanel.Padding.Left - .5 ||
+                    lastMarketBounds.Right > marketPanel.ActualWidth -
+                        marketPanel.BorderThickness.Right - marketPanel.Padding.Right + .5 ||
                     phase.Text != "Setup" || seat.Text != "Player 1" ||
                     instruction.Text != "Each seat keeps at least 2 of its 3 opening destinations." ||
                     Descendants<Button>(gameTable).Any(button => IsElementShown(button) &&
@@ -1421,10 +1432,30 @@ internal static partial class Program
                 AutomationProperties.GetName(button) == "Draw a train card from the pile");
             var destinationPileButton = Descendants<Button>(drawTable).Single(button =>
                 AutomationProperties.GetName(button) == "Draw destination tickets");
+            var drawPiles = (Border)drawTable.FindName("DrawPilesPanel");
+            var trainPileFrame = Descendants<Border>(trainPileButton).Single();
+            var destinationPileFrame = Descendants<Border>(destinationPileButton).Single();
+            var trainLabel = Descendants<TextBlock>(drawPiles).Single(label => label.Text == "TRAIN");
+            var destinationLabel = Descendants<TextBlock>(drawPiles)
+                .Single(label => label.Text == "DESTINATIONS");
+            var trainButtonBottom = trainPileButton.TransformToAncestor(drawPiles)
+                .TransformBounds(new Rect(trainPileButton.RenderSize)).Bottom;
+            var destinationButtonBottom = destinationPileButton.TransformToAncestor(drawPiles)
+                .TransformBounds(new Rect(destinationPileButton.RenderSize)).Bottom;
+            var trainLabelTop = trainLabel.TransformToAncestor(drawPiles)
+                .TransformBounds(new Rect(trainLabel.RenderSize)).Top;
+            var destinationLabelTop = destinationLabel.TransformToAncestor(drawPiles)
+                .TransformBounds(new Rect(destinationLabel.RenderSize)).Top;
             var faceUpButtons = Descendants<Button>(drawTable).Where(button =>
                 AutomationProperties.GetName(button).StartsWith("Draw face-up ", StringComparison.Ordinal)).ToArray();
             if (!IsElementShown(trainPileButton) || !trainPileButton.IsEnabled ||
                 !IsElementShown(destinationPileButton) || !destinationPileButton.IsEnabled ||
+                trainPileButton.RenderSize != new Size(50, 54) ||
+                destinationPileButton.RenderSize != new Size(50, 54) ||
+                trainPileFrame.RenderSize != trainPileButton.RenderSize ||
+                destinationPileFrame.RenderSize != destinationPileButton.RenderSize ||
+                trainButtonBottom > trainLabelTop + .5 ||
+                destinationButtonBottom > destinationLabelTop + .5 ||
                 faceUpButtons.Length != 5 || faceUpButtons.All(button => !button.IsEnabled) ||
                 faceUpButtons.Any(button => button.CommandParameter is not MarketSlotRow))
                 throw new InvalidOperationException("The solo player's train pile, destination pile, and face-up market must expose legal draw buttons on the table.");

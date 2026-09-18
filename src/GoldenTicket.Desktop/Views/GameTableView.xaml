@@ -69,6 +69,36 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="DrawPileCardButtonStyle" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Width" Value="50" />
+            <Setter Property="Height" Value="54" />
+            <Setter Property="Foreground" Value="#FFFFE7B0" />
+            <Setter Property="FontSize" Value="25" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="CardFrame" Background="{TemplateBinding Background}"
+                                BorderBrush="#FFF0D7A0" BorderThickness="2" CornerRadius="3">
+                            <TextBlock Text="{TemplateBinding Content}"
+                                       Foreground="{TemplateBinding Foreground}"
+                                       FontSize="{TemplateBinding FontSize}"
+                                       FontWeight="{TemplateBinding FontWeight}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="CardFrame" Property="BorderBrush" Value="#FFFFD576" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="CardFrame" Property="BorderBrush" Value="#FFFFD576" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="BoardPaymentCardStyle" TargetType="ToggleButton">
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Foreground" Value="#FF1A2531" />
@@ -649,36 +679,24 @@
                         <TextBlock Text="DRAW PILES" Foreground="#FFFFE7B0" FontSize="14"
                                    FontWeight="SemiBold" HorizontalAlignment="Center" />
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
-                            <Grid Margin="0,0,14,0">
-                                <StackPanel>
-                                <Border Width="50" Height="54" Background="#FF9B613C" BorderBrush="#FFF0D7A0"
-                                        BorderThickness="2" CornerRadius="3">
-                                    <TextBlock Text="T" Foreground="#FFFFE7B0" FontSize="25" FontWeight="Bold"
-                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Border>
-                                <TextBlock Text="TRAIN" Foreground="#FFF8EEDC" FontSize="10"
-                                           HorizontalAlignment="Center" />
-                                </StackPanel>
-                                <Button Style="{StaticResource DrawCardButtonStyle}"
+                            <StackPanel Margin="0,0,14,0">
+                                <Button Style="{StaticResource DrawPileCardButtonStyle}" Content="T"
+                                        Background="#FF9B613C" HorizontalAlignment="Center"
                                         ToolTip="Draw a train card from the pile"
                                         AutomationProperties.Name="Draw a train card from the pile"
                                         Command="{Binding DrawSoloBlindCommand}" />
-                            </Grid>
-                            <Grid>
-                                <StackPanel>
-                                <Border Width="50" Height="54" Background="#FF648AA7" BorderBrush="#FFF0D7A0"
-                                        BorderThickness="2" CornerRadius="3">
-                                    <TextBlock Text="D" Foreground="#FFFFE7B0" FontSize="25" FontWeight="Bold"
-                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Border>
-                                <TextBlock Text="DESTINATIONS" Foreground="#FFF8EEDC" FontSize="10"
+                                <TextBlock Text="TRAIN" Foreground="#FFF8EEDC" FontSize="10"
                                            HorizontalAlignment="Center" />
-                                </StackPanel>
-                                <Button Style="{StaticResource DrawCardButtonStyle}"
+                            </StackPanel>
+                            <StackPanel>
+                                <Button Style="{StaticResource DrawPileCardButtonStyle}" Content="D"
+                                        Background="#FF648AA7" HorizontalAlignment="Center"
                                         ToolTip="Draw destination tickets"
                                         AutomationProperties.Name="Draw destination tickets"
                                         Command="{Binding DrawSoloTicketsCommand}" />
-                            </Grid>
+                                <TextBlock Text="DESTINATIONS" Foreground="#FFF8EEDC" FontSize="10"
+                                           HorizontalAlignment="Center" />
+                            </StackPanel>
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -700,7 +718,7 @@
                                             CommandParameter="{Binding}"
                                             AutomationProperties.Name="{Binding Label, StringFormat=Draw face-up {0} train card}"
                                             ToolTip="{Binding Label, StringFormat=Draw face-up {0} train card}">
-                                        <Border Width="80" Height="71" CornerRadius="4" Margin="3,0"
+                                        <Border Width="76" Height="71" CornerRadius="4" Margin="2,0"
                                                 Background="{Binding Kind, Converter={StaticResource CardKindBrush}}"
                                                 BorderBrush="#FFF0D7A0" BorderThickness="2">
                                             <TextBlock Text="{Binding Label}" Foreground="#FF1A2531" FontSize="11"
