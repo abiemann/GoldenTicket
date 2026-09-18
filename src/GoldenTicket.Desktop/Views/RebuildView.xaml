@@ -18,6 +18,7 @@
         <local:PlayerColorBrushConverter x:Key="PlayerColorBrush" />
         <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
         <local:EmptyStringToVisibilityConverter x:Key="EmptyStringToVisibility" />
+        <local:TrainCountTextConverter x:Key="TrainCountText" />
     </UserControl.Resources>
 
     <Grid Margin="20">
@@ -103,7 +104,7 @@
                                         <TextBlock Text="{Binding RouteText}" Margin="20,4,0,0" />
                                         <WrapPanel Margin="20,4,0,0">
                                             <TextBlock Style="{StaticResource Caption}" Margin="0,0,12,0"
-                                                       Text="{Binding TrainCount, StringFormat={}{0} trains}" />
+                                                       Text="{Binding TrainCount, Converter={StaticResource TrainCountText}}" />
                                             <TextBlock Style="{StaticResource Caption}" Text="{Binding LaneLabel}" />
                                         </WrapPanel>
                                     </StackPanel>

@@ -113,15 +113,18 @@ public sealed partial class MainViewModel : ObservableObject
     public bool IsPrivateVisible => PrivateSeat is not null;
     public bool ShowSoloOpeningTicketsOnBoard => IsSingleHumanGame &&
         PrivateSeat is { IsSetupOffer: true, MustChooseTickets: true };
-    public bool ShowDestinationMarkersOnBoard => ShowSoloOpeningTicketsOnBoard ||
+    public bool ShowDestinationMarkersOnBoard => ShowSoloOpeningTicketsOnBoard || ShowSoloTicketOffer ||
         IsSingleHumanGame && ShowSoloDestinations && SoloDestinationMarkers.Count > 0;
     public IReadOnlyList<DestinationMarkerRow> BoardDestinationMarkers =>
         ShowSoloOpeningTicketsOnBoard ? PrivateSeat?.DestinationMarkers ?? [] :
+        ShowSoloTicketOffer ? SoloTicketOfferMarkers :
         IsSingleHumanGame && ShowSoloDestinations ? SoloDestinationMarkers : [];
     public IReadOnlyList<DestinationLineRow> BoardDestinationLines =>
         ShowSoloOpeningTicketsOnBoard ? PrivateSeat?.DestinationLines ?? [] :
+        ShowSoloTicketOffer ? SoloTicketOfferLines :
         IsSingleHumanGame && ShowSoloDestinations ? SoloDestinationLines : [];
-    public double GameTableBoardTop => ShowSoloOpeningTicketsOnBoard ? 120 : 190;
+    public double GameTableBoardTop => ShowSoloOpeningTicketsOnBoard || ShowSoloTicketOffer ? 120 : 190;
+    public bool ShowDrawPanels => !ShowSoloOpeningTicketsOnBoard && !ShowSoloTicketOffer;
 
     private int HumanSeatCount => _coordinator?.Public.Seats.Count(seat => seat.Kind == SeatKind.Human) ?? Setup.HumanSeatCount;
     public bool IsSingleHumanGame => HumanSeatCount == 1;
@@ -160,6 +163,7 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(BoardDestinationMarkers));
         OnPropertyChanged(nameof(BoardDestinationLines));
         OnPropertyChanged(nameof(GameTableBoardTop));
+        OnPropertyChanged(nameof(ShowDrawPanels));
         OnPropertyChanged(nameof(CanConnectPhone));
         OnPropertyChanged(nameof(RevealPrompt));
         ShowConnectionCommand.NotifyCanExecuteChanged();
@@ -191,6 +195,7 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(BoardDestinationMarkers));
         OnPropertyChanged(nameof(BoardDestinationLines));
         OnPropertyChanged(nameof(GameTableBoardTop));
+        OnPropertyChanged(nameof(ShowDrawPanels));
         _lastDestinationAlignmentUtc = DateTime.MinValue;
         AlignDestinationMarkers();
     }
@@ -426,6 +431,7 @@ public sealed partial class MainViewModel : ObservableObject
         _windowActive = active;
         if (!active && !ShowSoloOpeningTicketsOnBoard) HidePrivateSeat();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
+        NotifySoloDrawCommands();
     }
 
     // ---- Human actions ---------------------------------------------------------------------
@@ -768,6 +774,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         _operationInProgress = value;
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
+        NotifySoloDrawCommands();
         ResumeMatchCommand.NotifyCanExecuteChanged();
     }
 
@@ -812,6 +819,7 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSoloHumanTurn));
         ReconcileBoardFirstClaimFlow(view);
         Table.Update(view, _coordinator.PublicHistory);
+        await RefreshSoloDrawActionsAsync(view);
         await RefreshCheckpointPhotoAsync();
         if (NeedsBoardReconciliation)
         {

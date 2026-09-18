@@ -17,6 +17,7 @@
         <local:CardKindBrushConverter x:Key="CardKindBrush" />
         <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
         <local:EmptyStringToVisibilityConverter x:Key="EmptyStringToVisibility" />
+        <local:TrainCountTextConverter x:Key="TrainCountText" />
         <Style x:Key="SoloDestinationCard" TargetType="Button">
             <Setter Property="Background" Value="#FFF4E5C8" />
             <Setter Property="BorderBrush" Value="#FFC3934B" />
@@ -254,7 +255,7 @@
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal">
                                                     <TextBlock Text="{Binding RouteText}" Width="280" />
-                                                    <TextBlock Text="{Binding Length, StringFormat={}{0} trains}" Width="80" />
+                                                    <TextBlock Text="{Binding Length, Converter={StaticResource TrainCountText}}" Width="80" />
                                                     <TextBlock Text="{Binding Points, StringFormat={}{0} pts}" Width="60" />
                                                     <TextBlock Style="{StaticResource Caption}" Text="{Binding ColorRequirement}" />
                                                 </StackPanel>

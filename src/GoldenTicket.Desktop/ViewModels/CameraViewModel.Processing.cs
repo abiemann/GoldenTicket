@@ -243,7 +243,7 @@ public sealed partial class CameraViewModel
                     candidate.DisplayOutline.Select(point => registration.MapToSensor(point.X, point.Y)).ToArray())).ToArray();
                 ModelStatus = $"ML · {detection.Backend} · {detection.ModelId}" +
                     (_pieceModel?.FallbackReason is { Length: > 0 } reason ? " · " + reason : "");
-                DetectionText = $"{detection.Candidates.Count(candidate => candidate.Kind == PieceCandidateKind.Train)} trains · " +
+                DetectionText = $"{TrainCountText.Format(detection.Candidates.Count(candidate => candidate.Kind == PieceCandidateKind.Train))} · " +
                     $"{detection.Candidates.Count(candidate => candidate.Kind == PieceCandidateKind.PlayerMarker)} score markers · " +
                     $"{detection.Elapsed.TotalMilliseconds:0} ms detection. Experimental ML outlines; check for missed or extra pieces.";
                 _reviewDetection = new(board!, detection, frame.Width, frame.Height, cropRevision,

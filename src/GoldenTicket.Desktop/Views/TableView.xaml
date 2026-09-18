@@ -20,6 +20,7 @@
         <local:NullToVisibilityConverter x:Key="NullToVisibility" />
         <local:EmptyStringToVisibilityConverter x:Key="EmptyStringToVisibility" />
         <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+        <local:TrainCountTextConverter x:Key="TrainCountText" />
     </UserControl.Resources>
 
     <Grid Margin="16">
@@ -190,7 +191,7 @@
                                         <TextBlock Text="{Binding Symbol}" Margin="0,0,6,0" />
                                         <TextBlock Text="{Binding OwnerName}" Width="110" />
                                         <TextBlock Text="{Binding RouteText}" Width="300" />
-                                        <TextBlock Style="{StaticResource Caption}" Text="{Binding Length, StringFormat={}{0} trains}" />
+                                        <TextBlock Style="{StaticResource Caption}" Text="{Binding Length, Converter={StaticResource TrainCountText}}" />
                                     </StackPanel>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
@@ -323,7 +324,7 @@
                                             </StackPanel>
                                             <TextBlock Style="{StaticResource Caption}">
                                                 <Run Text="{Binding Score, Mode=OneWay}" /><Run Text=" route points · " /><Run
-                                                    Text="{Binding TrainsRemaining, Mode=OneWay}" /><Run Text=" trains left" />
+                                                    Text="{Binding TrainsRemaining, Mode=OneWay, Converter={StaticResource TrainCountText}, ConverterParameter=' left'}" />
                                             </TextBlock>
                                             <TextBlock Style="{StaticResource Caption}">
                                                 <Run Text="{Binding CardCount, Mode=OneWay}" /><Run Text=" cards · " /><Run

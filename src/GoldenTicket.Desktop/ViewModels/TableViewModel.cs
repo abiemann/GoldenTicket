@@ -280,7 +280,7 @@ public sealed partial class TableViewModel : ObservableObject
 
         RebuildHeadline =
             $"\"{checkpoint.Name}\" - {checkpoint.RouteCount} route{(checkpoint.RouteCount == 1 ? "" : "s")}, " +
-            $"{checkpoint.TotalTrainsOnBoard} trains on the board" +
+            $"{TrainCountText.Format(checkpoint.TotalTrainsOnBoard)} on the board" +
             (checkpoint.Provenance == TargetProvenance.LogicalStateOnly
                 ? ". The saved route list is the rebuild target; an optional reference photo can help."
                 : ".");
@@ -362,26 +362,31 @@ public sealed partial class TableViewModel : ObservableObject
 
         TurnPhase.TurnStart when active.Kind == SeatKind.Human &&
                                  view.Seats.Count(seat => seat.Kind == SeatKind.Human) == 1 =>
-            "Place trains on a route you can pay for to claim it. A route claim uses your turn.",
+            "Place trains on a route you can pay for, or draw from the train-card or destination piles below. " +
+            "A route claim uses your turn.",
         TurnPhase.TurnStart when active.Kind == SeatKind.Human =>
             "Choose a route to claim, draw train cards, or draw destinations. " +
             "A route claim uses your turn.",
         TurnPhase.AwaitingSecondTrainCard when active.Kind == SeatKind.Human =>
-            "Draw one more train card. " +
+            "Draw one more train card from the T pile or face-up cards. " +
             "A face-up locomotive cannot be the second card.",
         TurnPhase.AwaitingTicketKeep when active.Kind == SeatKind.Human =>
             $"Keep at least {_manifest.RulesConstants.InGameTicketMinimumKeep} " +
             "of the destinations you drew.",
 
         TurnPhase.AwaitingPhysicalPlacement when view.PendingClaim is { } pending =>
-            $"Place {active.DisplayName}'s {pending.TrainCount} {active.Color} trains on " +
+            $"Place {active.DisplayName}'s {pending.TrainCount} {active.Color} " +
+            $"train{(pending.TrainCount == 1 ? "" : "s")} on " +
             $"{_manifest.Describe(pending.RouteId)}. " +
             (RoutePlacementVerifier.Supports(pending.RouteId.Value, pending.TrainCount)
-                ? "The camera will check their positions and continue automatically."
+                ? pending.TrainCount == 1
+                    ? "The camera will check its position and continue automatically."
+                    : "The camera will check their positions and continue automatically."
                 : "Check the whole board, then confirm beside it."),
 
         TurnPhase.RestoreBeforeState when view.PendingClaim is { } pending =>
-            $"Take {active.DisplayName}'s trains back off {_manifest.Describe(pending.RouteId)}, then confirm.",
+            $"Take {active.DisplayName}'s {TrainCountText.Format(pending.TrainCount)} back off " +
+            $"{_manifest.Describe(pending.RouteId)}, then confirm.",
 
         TurnPhase.Finished => "Final scores are below.",
 
@@ -409,15 +414,17 @@ public sealed record PlacementInstruction(
     bool AwaitingRestore)
 {
     public string Headline => AwaitingRestore
-        ? $"Remove {SeatName}'s trains from {RouteText}"
-        : $"Place {SeatName}'s trains on {RouteText}";
+        ? $"Remove {SeatName}'s {TrainCountText.Format(TrainCount)} from {RouteText}"
+        : $"Place {SeatName}'s {TrainCountText.Format(TrainCount)} on {RouteText}";
 
     public string Detail => AwaitingRestore
         ? $"{TrainCount} {Color} train{(TrainCount == 1 ? "" : "s")} must come off before the claim is released. " +
           "No cards have been spent."
         : $"{TrainCount} {Color} train{(TrainCount == 1 ? "" : "s")}" +
           (LaneLabel is null ? "" : $", {LaneLabel}") +
-          ". Place them in any order; nothing is spent or scored until the placement is confirmed.";
+          (TrainCount == 1
+              ? ". Place it on the marked space; nothing is spent or scored until the placement is confirmed."
+              : ". Place them in any order; nothing is spent or scored until the placement is confirmed.");
 }
 
 /// <summary>One route of the saved position, in the words DESIGN 19.8 asks the instructions to use.</summary>

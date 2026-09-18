@@ -915,7 +915,13 @@ internal static partial class Program
                     instruction.Text != "Each seat keeps at least 2 of its 3 opening destinations." ||
                     Descendants<Button>(gameTable).Any(button => IsElementShown(button) &&
                         AutomationProperties.GetName(button) is not
-                            ("Show your train cards" or "Show your destinations")) ||
+                            ("Show your train cards" or "Show your destinations" or
+                             "Draw a train card from the pile" or "Draw destination tickets") &&
+                        !AutomationProperties.GetName(button).StartsWith("Draw face-up ",
+                            StringComparison.Ordinal)) ||
+                    Descendants<Button>(gameTable).Any(button => IsElementShown(button) &&
+                        AutomationProperties.GetName(button).StartsWith("Draw ",
+                            StringComparison.Ordinal) && button.IsEnabled) ||
                     VisibleText(gameTable).Contains("Shift+Esc", StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("The game table must retain its phase, acting-seat and human-instruction guidance above the shared board crop.");
                 var sceneBounds = scene.TransformToAncestor(view).TransformBounds(new Rect(scene.RenderSize));
@@ -996,19 +1002,34 @@ internal static partial class Program
             var proposal = new BoardFirstClaimProposal(SessionId.New(), new SeatId(1),
                 "Player 1", new RouteId("atlanta--raleigh--a"), "Atlanta - Raleigh (lane A)",
                 1, 1, 1, 1,
-                [new BoardFirstPaymentRow(new PaymentOption(TrainCardKind.Blue, 2, 0), "2 Blue")]);
+                [new BoardFirstPaymentRow(new PaymentOption(TrainCardKind.Blue, 2, 0), "2 Blue"),
+                 new BoardFirstPaymentRow(new PaymentOption(TrainCardKind.Yellow, 2, 0), "2 Yellow"),
+                 new BoardFirstPaymentRow(new PaymentOption(TrainCardKind.Black, 2, 0), "2 Black"),
+                 new BoardFirstPaymentRow(new PaymentOption(TrainCardKind.Green, 2, 0), "2 Green"),
+                 new BoardFirstPaymentRow(new PaymentOption(TrainCardKind.Red, 2, 0), "2 Red")]);
             typeof(MainViewModel).GetProperty(nameof(MainViewModel.BoardFirstProposal))!
                 .GetSetMethod(nonPublic: true)!.Invoke(model, [proposal]);
             await RenderSizes("game-table-board-first-payment",
                 () => new GameScreenView { DataContext = model }, view =>
                 {
                     var gameTable = Descendants<GameTableView>(view).Single();
+                    var scene = (Canvas)gameTable.FindName("TableScene");
                     var panel = (Border)gameTable.FindName("BoardFirstClaimPanel");
-                    var choice = Descendants<Button>(panel).Single();
-                    if (!IsElementShown(panel) || choice.Content as string != "2 Blue" ||
-                        !ReferenceEquals(choice.Command, model.AuthorizeBoardFirstClaimCommand) ||
-                        !ReferenceEquals(choice.CommandParameter, proposal.Payments[0]))
-                        throw new InvalidOperationException("A detected solo route must show its explicit card-payment choice on the game table.");
+                    var guidance = (Border)gameTable.FindName("HumanGuidancePanel");
+                    var board = (Border)gameTable.FindName("GameBoardFrame");
+                    var choices = Descendants<Button>(panel).ToArray();
+                    var scroller = Descendants<ScrollViewer>(panel).Single();
+                    var panelTop = panel.TranslatePoint(new Point(), scene).Y;
+                    var boardTop = board.TranslatePoint(new Point(), scene).Y;
+                    if (!IsElementShown(panel) || IsElementShown(guidance) ||
+                        panelTop + panel.ActualHeight > boardTop ||
+                        choices.Length != proposal.Payments.Count ||
+                        choices.Where((choice, index) =>
+                            choice.Content as string != proposal.Payments[index].Description ||
+                            !ReferenceEquals(choice.Command, model.AuthorizeBoardFirstClaimCommand) ||
+                            !ReferenceEquals(choice.CommandParameter, proposal.Payments[index])).Any() ||
+                        scroller.ScrollableWidth <= 0)
+                        throw new InvalidOperationException("Detected-route payment choices must replace stale table guidance above the unobscured board, with every choice reachable by scrolling.");
                 }, [(1000, 620), (1280, 800)]);
 
             Console.WriteLine("Game table: persistent human guidance, 2/5 player stations, public card stacks, shared crop, no top-left controls, and uniform resize passed.");
@@ -1331,6 +1352,49 @@ internal static partial class Program
                 keepAll.ShowSoloOpeningTicketsOnBoard || keepAll.PrivateSeat is not null)
                 throw new InvalidOperationException("Keep all three must commit every opening destination and return to the board.");
             checks.Add("Keep all three commits the full opening offer and returns to the board.");
+
+            keepAll.Camera.GameTablePreview = solo.Camera.GameTablePreview;
+            keepAll.Camera.GameTablePreviewStatus = "";
+            var drawTable = new GameTableView { DataContext = keepAll };
+            await Arrange(drawTable, 1280, 800);
+            var trainPileButton = Descendants<Button>(drawTable).Single(button =>
+                AutomationProperties.GetName(button) == "Draw a train card from the pile");
+            var destinationPileButton = Descendants<Button>(drawTable).Single(button =>
+                AutomationProperties.GetName(button) == "Draw destination tickets");
+            var faceUpButtons = Descendants<Button>(drawTable).Where(button =>
+                AutomationProperties.GetName(button).StartsWith("Draw face-up ", StringComparison.Ordinal)).ToArray();
+            if (!IsElementShown(trainPileButton) || !trainPileButton.IsEnabled ||
+                !IsElementShown(destinationPileButton) || !destinationPileButton.IsEnabled ||
+                faceUpButtons.Length != 5 || faceUpButtons.All(button => !button.IsEnabled) ||
+                faceUpButtons.Any(button => button.CommandParameter is not MarketSlotRow))
+                throw new InvalidOperationException("The solo player's train pile, destination pile, and face-up market must expose legal draw buttons on the table.");
+            ((IInvokeProvider)new ButtonAutomationPeer(destinationPileButton).GetPattern(PatternInterface.Invoke)!).Invoke();
+            for (var attempt = 0; attempt < 30 && !keepAll.ShowSoloTicketOffer; attempt++) await Task.Delay(50);
+            if (!keepAll.ShowSoloTicketOffer || keepAll.PrivateSeat is not null || keepAll.Screen != Screen.Table)
+                throw new InvalidOperationException("Drawing destinations must open the choice on the public table.");
+            await RenderSizes("solo-destination-draw-synthetic", () => new GameTableView { DataContext = keepAll }, view =>
+            {
+                var board = (Border)view.FindName("GameBoardFrame");
+                var offer = (Border)view.FindName("SoloTicketOfferPanel");
+                var piles = (Border)view.FindName("DrawPilesPanel");
+                var market = (Border)view.FindName("FaceUpMarketPanel");
+                var circles = (ItemsControl)view.FindName("DestinationCityMarkers");
+                var lines = (ItemsControl)view.FindName("DestinationLines");
+                var ticketChoices = Descendants<CheckBox>(offer).ToArray();
+                var keepButton = Descendants<Button>(offer).Single(button => button.Content as string == "KEEP SELECTED");
+                if (!IsShown(offer, view) || Canvas.GetTop(board) != 120 ||
+                    Canvas.GetTop(board) + board.Height > Canvas.GetTop(offer) ||
+                    !IsShown(circles, view) || circles.Items.Count == 0 ||
+                    !IsShown(lines, view) || lines.Items.Count != keepAll.SoloTicketOffer.Count ||
+                    ticketChoices.Length != keepAll.SoloTicketOffer.Count ||
+                    !keepButton.IsEnabled || IsShown(piles, view) || IsShown(market, view))
+                    throw new InvalidOperationException($"The in-game destination choice must fit below the board, show its routes, and hide the draw panels. " +
+                        $"offer={IsShown(offer, view)}, boardTop={Canvas.GetTop(board)}, boardHeight={board.Height}, " +
+                        $"offerTop={Canvas.GetTop(offer)}, circles={IsShown(circles, view)}/{circles.Items.Count}, " +
+                        $"lines={IsShown(lines, view)}/{lines.Items.Count}/{keepAll.SoloTicketOffer.Count}, " +
+                        $"choices={ticketChoices.Length}, keep={keepButton.IsEnabled}, piles={IsShown(piles, view)}, market={IsShown(market, view)}.");
+            }, [(1280, 800), (1000, 620)]);
+            checks.Add("Solo draw piles and market are actionable; drawing destinations opens a compact choice below the board.");
 
             if (solo.IsPrivateVisible || solo.PrivateSeat is not null)
                 throw new InvalidOperationException("The solo table must remain visible after card-stack inspection.");

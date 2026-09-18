@@ -11,6 +11,78 @@ namespace GoldenTicket.Domain.Tests;
 public sealed class DesktopSingleHumanTests
 {
     [Fact]
+    public async Task Solo_table_draw_pile_and_market_take_cards_without_opening_private_view()
+    {
+        var model = NewSingleHumanMatch();
+        try
+        {
+            await model.StartMatchAsync();
+            Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+            await model.CommitTicketsAsync();
+            Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
+            Assert.True(model.DrawSoloTicketsCommand.CanExecute(null));
+            var firstCount = model.Table.Seats.Single(seat => seat.Operator == "human").CardCount;
+
+            await model.DrawSoloBlindCommand.ExecuteAsync(null);
+            Assert.Equal("Taking a second train card", model.Table.PhaseText);
+            Assert.Equal(firstCount + 1,
+                model.Table.Seats.Single(seat => seat.Operator == "human").CardCount);
+            Assert.True(model.ShowSoloTrainCards);
+            Assert.Null(model.PrivateSeat);
+            Assert.Equal(Screen.Table, model.Screen);
+            Assert.False(model.DrawSoloTicketsCommand.CanExecute(null));
+            Assert.All(model.Table.Market.Where(slot => slot.Kind == TrainCardKind.Locomotive),
+                slot => Assert.False(model.DrawSoloFaceUpCommand.CanExecute(slot)));
+
+            var faceUp = model.Table.Market.First(slot =>
+                model.DrawSoloFaceUpCommand.CanExecute(slot));
+            await model.DrawSoloFaceUpCommand.ExecuteAsync(faceUp);
+            Assert.False(model.IsSoloHumanTurn);
+            Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+            Assert.False(model.DrawSoloTicketsCommand.CanExecute(null));
+            Assert.Null(model.PrivateSeat);
+            Assert.Equal(Screen.Table, model.Screen);
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Fact]
+    public async Task Solo_destination_pile_opens_a_table_offer_and_requires_a_kept_ticket()
+    {
+        var model = NewSingleHumanMatch();
+        try
+        {
+            await model.StartMatchAsync();
+            await model.CommitTicketsAsync();
+            var firstCount = model.Table.Seats.Single(seat => seat.Operator == "human").TicketCount;
+
+            await model.DrawSoloTicketsCommand.ExecuteAsync(null);
+            Assert.True(model.ShowSoloTicketOffer);
+            Assert.True(model.SoloTicketOffer.Count > 0);
+            Assert.Equal("Choosing which destinations to keep", model.Table.PhaseText);
+            Assert.False(model.ShowDrawPanels);
+            Assert.Equal(120, model.GameTableBoardTop);
+            Assert.Null(model.PrivateSeat);
+            Assert.Equal(Screen.Table, model.Screen);
+
+            foreach (var ticket in model.SoloTicketOffer) ticket.Keep = false;
+            Assert.False(model.KeepSoloTicketsCommand.CanExecute(null));
+            model.SoloTicketOffer[0].Keep = true;
+            Assert.True(model.KeepSoloTicketsCommand.CanExecute(null));
+            await model.KeepSoloTicketsCommand.ExecuteAsync(null);
+
+            Assert.False(model.ShowSoloTicketOffer);
+            Assert.True(model.ShowDrawPanels);
+            Assert.Equal(190, model.GameTableBoardTop);
+            Assert.Equal(firstCount + 1,
+                model.Table.Seats.Single(seat => seat.Operator == "human").TicketCount);
+            Assert.Null(model.PrivateSeat);
+            Assert.Equal(Screen.Table, model.Screen);
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Fact]
     public async Task OneHumanGetsOpeningDestinationsButReturnsToTheTableAfterEachDraw()
     {
         var model = NewSingleHumanMatch();

@@ -11,6 +11,7 @@
     <UserControl.Resources>
         <local:PlayerColorBrushConverter x:Key="PlayerColorBrush" />
         <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+        <local:TrainCountTextConverter x:Key="TrainCountText" />
     </UserControl.Resources>
 
     <ScrollViewer Padding="24" VerticalScrollBarVisibility="Auto">
@@ -51,7 +52,7 @@
 
                                 <TextBlock Margin="0,8,0,0" FontWeight="SemiBold">
                                     <Run Text="Longest continuous route: " /><Run
-                                        Text="{Binding LongestTrailLength, Mode=OneWay}" /><Run Text=" trains" />
+                                        Text="{Binding LongestTrailLength, Mode=OneWay, Converter={StaticResource TrainCountText}}" />
                                 </TextBlock>
                                 <TextBlock Style="{StaticResource Caption}" Text="{Binding WitnessTrail}" />
                             </StackPanel>

@@ -33,6 +33,23 @@ public sealed class CardKindBrushConverter : IValueConverter
         throw new NotSupportedException();
 }
 
+/// <summary>Formats a physical train count for labels and route lengths.</summary>
+public static class TrainCountText
+{
+    public static string Format(int count) => $"{count} train{(count == 1 ? "" : "s")}";
+}
+
+public sealed class TrainCountTextConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is int count
+            ? TrainCountText.Format(count) + (parameter as string ?? string.Empty)
+            : string.Empty;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
 /// <summary>Collapses an element when its bound value is null.</summary>
 public sealed class NullToVisibilityConverter : IValueConverter
 {

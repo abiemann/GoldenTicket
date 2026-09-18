@@ -191,6 +191,11 @@ The public screen contains:
   counts beneath; remaining trains are text above the stacks, and the action line is centered.
   With two to four players, the draw piles and face-up train market sit centered along the
   bottom after setup; with five, they stay at the outer edges to leave the fifth seat below the board.
+  For one human, the T pile and face-up market submit legal train-card draws directly from the
+  table; after the first draw, the hand preview can show the new card without leaving the board.
+  The D pile opens an in-game destination choice below the board, with endpoint rings and lines
+  on the board. The human must keep the rule's minimum before play continues. Draw controls are
+  available only during that human's applicable turn phase and are disabled for the computer.
 - Live board view with transforms synchronized to its displayed frame.
 - Current route instruction or a short explanation of the current card action.
 - Public card market, public scores, and remaining-train indicators. Public destination stacks include

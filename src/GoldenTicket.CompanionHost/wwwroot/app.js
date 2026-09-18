@@ -9,6 +9,7 @@
   let busy = false, polling = false, lastHeartbeat = 0, revealDeadline = 0, lastInteraction = 0;
   let connectionGeneration = 0;
   const standalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  const trainCount = count => `${count} train${count === 1 ? "" : "s"}`;
 
   function notice(message) { byId("notice").textContent = message; }
   function clearPrivate() {
@@ -84,10 +85,10 @@
     if (!snapshot.game) return;
     for (const seat of snapshot.game.seats) {
       const row = element("div", undefined, `score-row${seat.seatId === snapshot.game.activeSeatId ? " active" : ""}`);
-      row.append(element("span", `${seat.symbol} ${seat.displayName} · ${seat.color}`), element("span", `${seat.routeScore} points · ${seat.trainsRemaining} trains`, "score-detail")); scores.append(row);
+      row.append(element("span", `${seat.symbol} ${seat.displayName} · ${seat.color}`), element("span", `${seat.routeScore} points · ${trainCount(seat.trainsRemaining)}`, "score-detail")); scores.append(row);
     }
     const claim = snapshot.game.pendingClaim;
-    byId("public-instruction").textContent = claim ? `${claim.awaitingRestore ? "Restore" : "Place"} the trains as shown on the laptop. Only the laptop can verify the physical board.` : `Turn ${snapshot.game.turnNumber} · ${snapshot.game.turnPhase.replace(/([a-z])([A-Z])/g, "$1 $2")}`;
+    byId("public-instruction").textContent = claim ? `${claim.awaitingRestore ? "Restore" : "Place"} the ${claim.trainCount === 1 ? "train" : "trains"} as shown on the laptop. Only the laptop can verify the physical board.` : `Turn ${snapshot.game.turnNumber} · ${snapshot.game.turnPhase.replace(/([a-z])([A-Z])/g, "$1 $2")}`;
   }
   async function reveal() {
     if (busy || !paired || !snapshot?.canControl || document.hidden || !lastHeartbeat) return;
@@ -180,13 +181,13 @@
       const route = document.createElement("select"); route.setAttribute("aria-label", "Route to claim");
       const payment = document.createElement("select"); payment.setAttribute("aria-label", "Cards to spend");
       const review = element("p", "", "badge"); review.setAttribute("aria-live", "polite");
-      for (const claim of actions.claims) { const definition = snapshot.routes.find(r => r.id === claim.routeId); const option = element("option", `${definition?.label || claim.routeId} · ${claim.length} trains`); option.value = claim.routeId; route.append(option); }
+      for (const claim of actions.claims) { const definition = snapshot.routes.find(r => r.id === claim.routeId); const option = element("option", `${definition?.label || claim.routeId} · ${trainCount(claim.length)}`); option.value = claim.routeId; route.append(option); }
       let choices = [];
       const paymentLabel = choice => `${choice.colorCards ? `${choice.colorCards} ${choice.color}` : ""}${choice.colorCards && choice.locomotives ? " + " : ""}${choice.locomotives ? `${choice.locomotives} locomotive(s)` : ""}`;
       function reviewSelection() {
         const definition = snapshot.routes.find(r => r.id === route.value);
         const choice = choices[Number(payment.value)];
-        review.textContent = definition && choice ? `${definition.label} · ${definition.length} trains · Pay ${paymentLabel(choice)}.` : "Choose a route and payment.";
+        review.textContent = definition && choice ? `${definition.label} · ${trainCount(definition.length)} · Pay ${paymentLabel(choice)}.` : "Choose a route and payment.";
       }
       function update() {
         const claim = actions.claims.find(c => c.routeId === route.value); choices = claim?.payments || []; payment.replaceChildren();

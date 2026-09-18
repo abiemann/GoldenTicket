@@ -48,6 +48,7 @@ public sealed partial class MainViewModel
             if (!SetProperty(ref _boardFirstProposal, value)) return;
             OnPropertyChanged(nameof(ShowBoardFirstClaimProposal));
             OnPropertyChanged(nameof(CanRevealPrivateSeat));
+            NotifySoloDrawCommands();
         }
     }
 
@@ -147,7 +148,8 @@ public sealed partial class MainViewModel
             analysis.ModelRevision, analysis.Board.Epoch, payments)
         { SeatView = _boardFirstSeatView };
         Game.ShowGuidance(Table.TurnText, active.DisplayName,
-            $"Detected your trains on {routeText}. Choose which train cards to spend. " +
+            $"Detected your train{(claim.Length == 1 ? "" : "s")} on {routeText}. " +
+            "Choose which train cards to spend. " +
             "Claiming this route uses your turn.");
     }
 
@@ -186,7 +188,7 @@ public sealed partial class MainViewModel
         if (!feedback.CanClaim)
         {
             if (seatView.TrainsRemaining < route.Length)
-                explanation += $" Only {seatView.TrainsRemaining} trains remain.";
+                explanation += $" Only {TrainCountText.Format(seatView.TrainsRemaining)} remain.";
             else if (LegalActionCalculator.PaymentsFor(seatView, route.RequiredCardKind,
                          route.Length).IsEmpty)
                 explanation += route.RequiredCardKind is { } color
@@ -293,7 +295,7 @@ public sealed partial class MainViewModel
                 coordinator.Public.PendingClaim is { } pending &&
                 pending.RouteId == proposal.RouteId && pending.SeatId == proposal.SeatId)
                 Game.ShowGuidance(Table.TurnText, proposal.SeatName,
-                    $"Keep your {pending.TrainCount} trains on {proposal.RouteText}. " +
+                    $"Keep your {TrainCountText.Format(pending.TrainCount)} on {proposal.RouteText}. " +
                     "The camera is checking every space before the claim is scored.");
         }
         catch (Exception) { RequireReload(); }

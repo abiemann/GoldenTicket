@@ -34,7 +34,7 @@ public sealed class CameraLearningFlowTests
             var point = FakeModel.Candidates[0].Outline[index];
             Assert.Equal(registration.MapToSensor(point.X, point.Y), fixture.Camera.PieceOutlines[0].SensorOutline[index]);
         }
-        Assert.Contains("1 trains", fixture.Camera.DetectionText);
+        Assert.Contains("1 train ·", fixture.Camera.DetectionText);
         Assert.Contains("1 score markers", fixture.Camera.DetectionText);
         Assert.Contains("synthetic-pieces-v1", fixture.Camera.ModelStatus);
         Assert.Equal((fixture.ModelDirectory, false), Assert.Single(fixture.FactoryCalls));

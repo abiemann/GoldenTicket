@@ -343,6 +343,11 @@ date, turn, status and players; **Packed away** is a status, not the save's name
    without leaving the table. The stacks cannot be opened during the computer's turn.
    Opening the destination stack also circles the endpoint cities of the held destinations on the
    live board; closing it removes those circles. This board overlay is for one-human games only.
+   On the solo human's turn, click the T draw pile or a face-up train card to take a train card.
+   A second draw can come from the T pile or an eligible face-up card; a face-up locomotive cannot
+   be the second card. Click the D pile to draw destinations, then choose at least one from the
+   compact row below the board. Their city rings and connecting lines stay visible while choosing.
+   The draw controls are disabled during the computer's turn.
    The computer chooses its own destinations by value and estimated route cost and may keep all three.
    The chosen players sit around it with their matching portraits, train colors, remaining trains,
    and face-down card and destination stacks showing public counts. The first two face each other;

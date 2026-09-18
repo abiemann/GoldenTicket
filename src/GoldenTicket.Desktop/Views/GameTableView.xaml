@@ -8,6 +8,7 @@
         <local:EmptyStringToVisibilityConverter x:Key="MessageVisibility" />
         <local:PlayerColorBrushConverter x:Key="PlayerColorBrush" />
         <local:CardKindBrushConverter x:Key="CardKindBrush" />
+        <local:TrainCountTextConverter x:Key="TrainCountText" />
         <DataTemplate x:Key="SeatCardLayerTemplate">
             <Border Width="36" Height="35" Background="{Binding Fill}"
                     BorderBrush="#FFF0D7A0" BorderThickness="1">
@@ -45,6 +46,28 @@
                     <Setter Property="Visibility" Value="Visible" />
                 </MultiDataTrigger>
             </Style.Triggers>
+        </Style>
+        <Style x:Key="DrawCardButtonStyle" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="HitArea" Background="Transparent" BorderBrush="Transparent"
+                                BorderThickness="2" CornerRadius="5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="HitArea" Property="BorderBrush" Value="#FFE1BD79" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="HitArea" Property="BorderBrush" Value="#FFFFE7B0" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </UserControl.Resources>
 
@@ -174,7 +197,8 @@
 
                 <Border x:Name="HumanGuidancePanel" Canvas.Left="555" Canvas.Top="22" Width="330" Height="150" CornerRadius="10"
                         Background="#F21A2531" BorderBrush="#FFB18C52" BorderThickness="1.5"
-                        Padding="16,10" AutomationProperties.LiveSetting="Polite">
+                        Padding="16,10" AutomationProperties.LiveSetting="Polite"
+                        Visibility="{Binding ShowBoardFirstClaimProposal, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
                     <StackPanel>
                         <TextBlock Text="THE GAME TABLE" Foreground="#FFFFE7B0" FontSize="21"
                                    FontWeight="Bold" HorizontalAlignment="Center" />
@@ -187,25 +211,29 @@
                     </StackPanel>
                 </Border>
 
-                <Border x:Name="BoardFirstClaimPanel" Canvas.Left="510" Canvas.Top="478"
-                        Width="420" MaxHeight="255" CornerRadius="10" Padding="13"
+                <Border x:Name="BoardFirstClaimPanel" Canvas.Left="370" Canvas.Top="10"
+                        Width="700" Height="170" CornerRadius="10" Padding="14,8"
                         Visibility="{Binding ShowBoardFirstClaimProposal, Converter={StaticResource BoolToVisibility}}"
                         Background="#F51A2531" BorderBrush="#FFE1BD79" BorderThickness="2"
                         AutomationProperties.LiveSetting="Polite">
                     <StackPanel>
                         <TextBlock Text="Your route was detected" Foreground="#FFFFE7B0"
-                                   FontSize="17" FontWeight="Bold" TextAlignment="Center" />
+                                   FontSize="19" FontWeight="Bold" TextAlignment="Center" />
                         <TextBlock Text="{Binding BoardFirstProposal.RouteText}" Foreground="White"
-                                   FontSize="14" FontWeight="SemiBold" TextAlignment="Center"
-                                   TextWrapping="Wrap" Margin="0,3,0,4" />
+                                   FontSize="15" FontWeight="SemiBold" TextAlignment="Center"
+                                   TextWrapping="Wrap" Margin="0,1,0,1" />
                         <TextBlock Text="Choose which cards to spend. Claiming the route uses your turn."
                                    Foreground="#FFF8EEDC" FontSize="11" TextAlignment="Center"
-                                   TextWrapping="Wrap" Margin="0,0,0,7" />
-                        <ScrollViewer MaxHeight="118" VerticalScrollBarVisibility="Auto">
+                                   TextWrapping="Wrap" Margin="0,0,0,5" />
+                        <ScrollViewer Height="51" HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Disabled">
                             <ItemsControl ItemsSource="{Binding BoardFirstProposal.Payments}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Button Content="{Binding Description}" MinHeight="30" Margin="0,0,0,5"
+                                        <Button Content="{Binding Description}" Width="150" Height="34" Margin="0,0,7,0"
                                                 Background="#FF69412F" Foreground="#FFFFE7B0"
                                                 BorderBrush="#FFF0D7A0" BorderThickness="1.5"
                                                 Command="{Binding DataContext.AuthorizeBoardFirstClaimCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
@@ -216,7 +244,7 @@
                         </ScrollViewer>
                         <TextBlock Text="If this is the wrong route, remove the pieces to clear the suggestion."
                                    Foreground="#FFDCC18A" FontSize="10" TextWrapping="Wrap"
-                                   TextAlignment="Center" Margin="0,3,0,0" />
+                                   TextAlignment="Center" Margin="0,2,0,0" />
                     </StackPanel>
                 </Border>
 
@@ -290,7 +318,7 @@
                                     </Border>
                                     <TextBlock x:Name="TrainsRemainingText" Grid.Column="1" Margin="10,0,0,0"
                                                HorizontalAlignment="Left" Foreground="#FFF8EEDC" FontSize="11">
-                                        <Run Text="{Binding Seat.TrainsRemaining}" /><Run Text=" trains" />
+                                        <Run Text="{Binding Seat.TrainsRemaining, Converter={StaticResource TrainCountText}}" />
                                     </TextBlock>
                                     <ItemsControl Grid.Column="1" Width="50" Height="42" HorizontalAlignment="Center"
                                                   VerticalAlignment="Bottom" Margin="0,0,0,1"
@@ -406,7 +434,7 @@
                                                            TextWrapping="Wrap" />
                                                 <TextBlock Foreground="#FF77512F" FontSize="10"
                                                            HorizontalAlignment="Center">
-                                                    <Run Text="{Binding Points}" /><Run Text=" points" />
+                                                    <Run Text="{Binding Points, Mode=OneWay}" /><Run Text=" points" />
                                                 </TextBlock>
                                                 <TextBlock Text="Completed" Foreground="#FF2B724A" FontSize="10"
                                                            FontWeight="SemiBold" HorizontalAlignment="Center"
@@ -420,14 +448,71 @@
                     </StackPanel>
                 </Border>
 
+                <Border x:Name="SoloTicketOfferPanel" Canvas.Left="270" Canvas.Top="690" Width="900" Height="194"
+                        CornerRadius="9" Background="#F51A2531" BorderBrush="#FFE1BD79"
+                        BorderThickness="2" Padding="10,5"
+                        Visibility="{Binding ShowSoloTicketOffer, Converter={StaticResource BoolToVisibility}}"
+                        AutomationProperties.LiveSetting="Polite">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="Your new destinations" Foreground="#FFFFE7B0" FontSize="17"
+                                   FontWeight="Bold" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Row="1" Foreground="#FFF8EEDC" FontSize="11"
+                                   HorizontalAlignment="Center" Margin="0,1,0,3">
+                            <Run Text="Select the destinations to keep. Keep at least " />
+                            <Run Text="{Binding SoloTicketMinimumKeep, Mode=OneWay}" /><Run Text="." />
+                        </TextBlock>
+                        <ItemsControl Grid.Row="2" ItemsSource="{Binding SoloTicketOffer}"
+                                      HorizontalAlignment="Center">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox IsChecked="{Binding Keep}" Width="278" Margin="4,0"
+                                              VerticalAlignment="Center" Cursor="Hand">
+                                        <Border Width="251" Height="90" CornerRadius="5" Padding="5"
+                                                Background="#FFFBEED5" BorderBrush="#FFD4AC6B"
+                                                BorderThickness="2">
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Description}" Foreground="#FF31241D"
+                                                           FontSize="13" FontWeight="SemiBold" TextAlignment="Center"
+                                                           TextWrapping="Wrap" />
+                                                <TextBlock Foreground="#FF77512F" FontSize="11"
+                                                           TextAlignment="Center" Margin="0,3,0,0">
+                                                    <Run Text="{Binding Points, Mode=OneWay}" /><Run Text=" points" />
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </Border>
+                                    </CheckBox>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center">
+                            <TextBlock Text="{Binding SoloTicketOfferMessage}" Foreground="#FFFFD576"
+                                       FontSize="11" VerticalAlignment="Center" Margin="0,0,10,0" />
+                            <Button Content="KEEP SELECTED" Width="168" Height="29"
+                                    Command="{Binding KeepSoloTicketsCommand}"
+                                    Background="#FF69412F" Foreground="#FFFFE7B0"
+                                    BorderBrush="#FFF0D7A0" BorderThickness="1.5" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
                 <Border x:Name="DrawPilesPanel" Canvas.Left="14" Canvas.Top="768" Width="236" Height="116" CornerRadius="9"
-                        Visibility="{Binding ShowSoloOpeningTicketsOnBoard, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}"
+                        Visibility="{Binding ShowDrawPanels, Converter={StaticResource BoolToVisibility}}"
                         Background="#EF1A2531" BorderBrush="#FFB18C52" BorderThickness="1.5" Padding="9,5">
                     <StackPanel>
                         <TextBlock Text="DRAW PILES" Foreground="#FFFFE7B0" FontSize="14"
                                    FontWeight="SemiBold" HorizontalAlignment="Center" />
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
-                            <StackPanel Margin="0,0,14,0">
+                            <Grid Margin="0,0,14,0">
+                                <StackPanel>
                                 <Border Width="50" Height="54" Background="#FF9B613C" BorderBrush="#FFF0D7A0"
                                         BorderThickness="2" CornerRadius="3">
                                     <TextBlock Text="T" Foreground="#FFFFE7B0" FontSize="25" FontWeight="Bold"
@@ -435,8 +520,14 @@
                                 </Border>
                                 <TextBlock Text="TRAIN" Foreground="#FFF8EEDC" FontSize="10"
                                            HorizontalAlignment="Center" />
-                            </StackPanel>
-                            <StackPanel>
+                                </StackPanel>
+                                <Button Style="{StaticResource DrawCardButtonStyle}"
+                                        ToolTip="Draw a train card from the pile"
+                                        AutomationProperties.Name="Draw a train card from the pile"
+                                        Command="{Binding DrawSoloBlindCommand}" />
+                            </Grid>
+                            <Grid>
+                                <StackPanel>
                                 <Border Width="50" Height="54" Background="#FF648AA7" BorderBrush="#FFF0D7A0"
                                         BorderThickness="2" CornerRadius="3">
                                     <TextBlock Text="D" Foreground="#FFFFE7B0" FontSize="25" FontWeight="Bold"
@@ -444,13 +535,18 @@
                                 </Border>
                                 <TextBlock Text="DESTINATIONS" Foreground="#FFF8EEDC" FontSize="10"
                                            HorizontalAlignment="Center" />
-                            </StackPanel>
+                                </StackPanel>
+                                <Button Style="{StaticResource DrawCardButtonStyle}"
+                                        ToolTip="Draw destination tickets"
+                                        AutomationProperties.Name="Draw destination tickets"
+                                        Command="{Binding DrawSoloTicketsCommand}" />
+                            </Grid>
                         </StackPanel>
                     </StackPanel>
                 </Border>
 
                 <Border x:Name="FaceUpMarketPanel" Canvas.Left="975" Canvas.Top="768" Width="450" Height="116" CornerRadius="9"
-                        Visibility="{Binding ShowSoloOpeningTicketsOnBoard, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}"
+                        Visibility="{Binding ShowDrawPanels, Converter={StaticResource BoolToVisibility}}"
                         Background="#EF1A2531" BorderBrush="#FFB18C52" BorderThickness="1.5" Padding="9,5">
                     <StackPanel>
                         <TextBlock Text="FACE-UP TRAIN CARDS" Foreground="#FFFFE7B0" FontSize="14"
@@ -461,13 +557,19 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Width="80" Height="71" CornerRadius="4" Margin="3,0"
-                                            Background="{Binding Kind, Converter={StaticResource CardKindBrush}}"
-                                            BorderBrush="#FFF0D7A0" BorderThickness="2">
-                                        <TextBlock Text="{Binding Label}" Foreground="#FF1A2531" FontSize="11"
-                                                   FontWeight="Bold" TextAlignment="Center" TextWrapping="NoWrap"
-                                                   VerticalAlignment="Bottom" Background="#DDF5EAD5" Padding="2" />
-                                    </Border>
+                                    <Button Style="{StaticResource DrawCardButtonStyle}"
+                                            Command="{Binding DataContext.DrawSoloFaceUpCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                            CommandParameter="{Binding}"
+                                            AutomationProperties.Name="{Binding Label, StringFormat=Draw face-up {0} train card}"
+                                            ToolTip="{Binding Label, StringFormat=Draw face-up {0} train card}">
+                                        <Border Width="80" Height="71" CornerRadius="4" Margin="3,0"
+                                                Background="{Binding Kind, Converter={StaticResource CardKindBrush}}"
+                                                BorderBrush="#FFF0D7A0" BorderThickness="2">
+                                            <TextBlock Text="{Binding Label}" Foreground="#FF1A2531" FontSize="11"
+                                                       FontWeight="Bold" TextAlignment="Center" TextWrapping="NoWrap"
+                                                       VerticalAlignment="Bottom" Background="#DDF5EAD5" Padding="2" />
+                                        </Border>
+                                    </Button>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>

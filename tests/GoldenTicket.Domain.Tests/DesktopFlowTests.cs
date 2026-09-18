@@ -2,6 +2,8 @@ using System.Collections.Immutable;
 using GoldenTicket.Application;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain.Model;
+using GoldenTicket.Domain.Manifest;
+using GoldenTicket.Domain.Projections;
 using GoldenTicket.Vision;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -15,6 +17,35 @@ namespace GoldenTicket.Domain.Tests;
 /// </summary>
 public class DesktopFlowTests
 {
+    [Fact]
+    public void Placement_guidance_uses_singular_train_and_position_for_one_piece()
+    {
+        var harness = RulesHarness.Create();
+        harness.CompleteSetup();
+        var current = harness.PublicView();
+        var active = current.SeatOf(current.ActiveSeatId);
+        var table = new TableViewModel(ManifestLoader.LoadClassicUs());
+
+        void ShowPlacement(string routeId, int count)
+        {
+            var pending = new PublicPendingClaim(OperationId.New(), active.SeatId,
+                new RouteId(routeId), count, false);
+            table.Update(current with
+            {
+                TurnPhase = TurnPhase.AwaitingPhysicalPlacement,
+                PendingClaim = pending
+            }, []);
+        }
+
+        ShowPlacement("dallas--houston--a", 1);
+        Assert.Contains($"1 {active.Color} train on", table.Instruction);
+        Assert.Contains("its position", table.Instruction);
+
+        ShowPlacement("houston--new-orleans", 2);
+        Assert.Contains($"2 {active.Color} trains on", table.Instruction);
+        Assert.Contains("their positions", table.Instruction);
+    }
+
     private static MainViewModel NewMatch(bool computerOnly = false)
     {
         var model = new MainViewModel(TestManifest.Manifest, new InMemorySessionStore());

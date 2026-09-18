@@ -25,7 +25,7 @@ public sealed partial class TicketChoiceRow(TicketId ticketId, string descriptio
 
     public string Estimate { get; } = estimatedTrains == int.MaxValue
         ? "no route available"
-        : $"about {estimatedTrains} more trains";
+        : $"about {estimatedTrains} more train{(estimatedTrains == 1 ? "" : "s")}";
 
     [ObservableProperty] private bool _keep = true;
 }
