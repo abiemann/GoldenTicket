@@ -372,8 +372,10 @@ date, turn, status and players; **Packed away** is a status, not the save's name
    on a selected Private LAN connection before scanning its QR. The phone's card display and
    handoff still need real-device PWA validation.
 5. The laptop stays on **THE GAME TABLE** after turns and scoring-marker detection. In solo play,
-   the T and D stacks show read-only mini cards on the table when clicked. A human can place trains
-   on a legal, camera-measured route before choosing it digitally: after stable detection, the table
+   the T and D stacks show read-only mini cards on the table when clicked. These previews and the
+   route-payment choices scroll sideways with the game's gold scrollbar; the mouse wheel also moves
+   them horizontally. A human can place trains on a legal, camera-measured route before choosing it
+   digitally: after stable detection, the table
    asks which of the legal train-card payments to spend. The game then checks the placed trains and
    every previously claimed route in fresh frames before committing the claim. If trains have been
    moved off an older route, return them to that route; the new claim waits until the board matches.

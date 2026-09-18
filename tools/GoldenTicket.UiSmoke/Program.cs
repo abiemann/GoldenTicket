@@ -1028,7 +1028,7 @@ internal static partial class Program
                             choice.Content as string != proposal.Payments[index].Description ||
                             !ReferenceEquals(choice.Command, model.AuthorizeBoardFirstClaimCommand) ||
                             !ReferenceEquals(choice.CommandParameter, proposal.Payments[index])).Any() ||
-                        scroller.ScrollableWidth <= 0)
+                        !IsGameHorizontalScroller(scroller))
                         throw new InvalidOperationException("Detected-route payment choices must replace stale table guidance above the unobscured board, with every choice reachable by scrolling.");
                 }, [(1000, 620), (1280, 800)]);
 
@@ -1313,6 +1313,24 @@ internal static partial class Program
                     $"cards={miniTrainCards.Items.Count}, private={solo.PrivateSeat is not null}, screen={solo.Screen}, " +
                     $"enabled={humanTrainStack.IsEnabled}, opening={solo.ShowSoloOpeningTicketsOnBoard}, " +
                     $"reveal={solo.CanRevealPrivateSeat}.");
+            var trainScroller = Descendants<ScrollViewer>(miniPanel).Single(IsElementShown);
+            if (!IsGameHorizontalScroller(trainScroller))
+                throw new InvalidOperationException("The solo train-card tray must scroll horizontally with the game-styled scrollbar.");
+            var wheel = new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, -120)
+            {
+                RoutedEvent = UIElement.PreviewMouseWheelEvent,
+            };
+            trainScroller.RaiseEvent(wheel);
+            animatedTable.UpdateLayout();
+            if (!wheel.Handled || trainScroller.HorizontalOffset <= 0)
+                throw new InvalidOperationException("The mouse wheel must move the train-card tray sideways.");
+            await RenderSizes("solo-train-cards-horizontal-synthetic",
+                () => new GameTableView { DataContext = solo }, view =>
+                {
+                    var tray = (Border)view.FindName("SoloCardPanel");
+                    if (!IsGameHorizontalScroller(Descendants<ScrollViewer>(tray).Single(IsElementShown)))
+                        throw new InvalidOperationException("The solo train-card tray must remain horizontally scrollable at both window sizes.");
+                });
 
             ((IInvokeProvider)new ButtonAutomationPeer(humanDestinationsStack).GetPattern(PatternInterface.Invoke)!).Invoke();
             for (var attempt = 0; attempt < 20 && !solo.ShowSoloDestinations; attempt++) await Task.Delay(50);
@@ -1324,6 +1342,8 @@ internal static partial class Program
                 solo.SoloDestinationCards.Any(destination => destination.Description == dropped.Description) ||
                 solo.PrivateSeat is not null || solo.Screen != Screen.Table)
                 throw new InvalidOperationException("The D stack must show two retained mini destinations without reopening the private screen.");
+            if (!IsGameHorizontalScroller(Descendants<ScrollViewer>(miniPanel).Single(IsElementShown)))
+                throw new InvalidOperationException("The solo destination tray must use the horizontal game-styled scrollbar.");
             await RenderSizes("solo-destinations-highlight-synthetic",
                 () => new GameTableView { DataContext = solo }, view =>
                 {
@@ -1651,6 +1671,16 @@ internal static partial class Program
             if (ReferenceEquals(current, root)) return true;
         }
         return false;
+    }
+
+    private static bool IsGameHorizontalScroller(ScrollViewer viewer)
+    {
+        var bar = Descendants<ScrollBar>(viewer).SingleOrDefault(scrollBar =>
+            scrollBar.Orientation == Orientation.Horizontal && IsElementShown(scrollBar));
+        return viewer.ScrollableWidth > 0 && viewer.ScrollableHeight == 0 &&
+               viewer.VerticalScrollBarVisibility == ScrollBarVisibility.Disabled &&
+               bar?.Background is SolidColorBrush { Color: { R: 0x26, G: 0x34, B: 0x41 } } &&
+               bar.Template.FindName("PART_Track", bar) is Track { Thumb: not null };
     }
 
     private static async Task VerifyProcessingPresentation()

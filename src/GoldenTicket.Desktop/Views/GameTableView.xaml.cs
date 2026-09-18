@@ -2,6 +2,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using GoldenTicket.Desktop.ViewModels;
@@ -100,7 +101,7 @@ public partial class GameTableView : UserControl
         if (station is null) return;
 
         Canvas.SetLeft(SoloCardPanel, Math.Clamp(station.Left, 8, TableScene.Width - SoloCardPanel.Width - 8));
-        const double estimatedPanelHeight = 214;
+        const double estimatedPanelHeight = 132;
         var below = station.Top + PlayerStationHeight + 6;
         Canvas.SetTop(SoloCardPanel, below + estimatedPanelHeight <= TableScene.Height - 8
             ? below
@@ -133,6 +134,16 @@ public partial class GameTableView : UserControl
             {
                 FillBehavior = FillBehavior.Stop,
             });
+    }
+
+    private void OnHorizontalScrollWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (sender is not ScrollViewer viewer || viewer.ScrollableWidth <= 0) return;
+
+        viewer.ScrollToHorizontalOffset(Math.Clamp(
+            viewer.HorizontalOffset - e.Delta / Mouse.MouseWheelDeltaForOneLine * 48,
+            0, viewer.ScrollableWidth));
+        e.Handled = true;
     }
 
     private static void MovePanel(Border panel, double destination, bool animate)

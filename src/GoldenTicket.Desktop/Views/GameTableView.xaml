@@ -69,6 +69,62 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="GameScrollThumbStyle" TargetType="Thumb">
+            <Setter Property="MinWidth" Value="32" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border x:Name="ThumbBody" Background="#FFD4AC6B" BorderBrush="#FFFFE7B0"
+                                BorderThickness="1" CornerRadius="6" />
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ThumbBody" Property="Background" Value="#FFFFD576" />
+                            </Trigger>
+                            <Trigger Property="IsDragging" Value="True">
+                                <Setter TargetName="ThumbBody" Property="Background" Value="#FFFFE7B0" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="GameScrollPageStyle" TargetType="RepeatButton">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border Background="Transparent" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="ScrollBar">
+            <Setter Property="Height" Value="14" />
+            <Setter Property="Background" Value="#FF263441" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Border Height="14" Background="{TemplateBinding Background}"
+                                BorderBrush="#FFB18C52" BorderThickness="1" CornerRadius="7">
+                            <Track x:Name="PART_Track" Margin="2" IsDirectionReversed="False"
+                                   Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
+                                   Value="{TemplateBinding Value}" ViewportSize="{TemplateBinding ViewportSize}">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageLeftCommand"
+                                                  Style="{StaticResource GameScrollPageStyle}" />
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource GameScrollThumbStyle}" />
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageRightCommand"
+                                                  Style="{StaticResource GameScrollPageStyle}" />
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid Background="#FF101821">
@@ -226,7 +282,8 @@
                                    Foreground="#FFF8EEDC" FontSize="11" TextAlignment="Center"
                                    TextWrapping="Wrap" Margin="0,0,0,5" />
                         <ScrollViewer Height="51" HorizontalScrollBarVisibility="Auto"
-                                      VerticalScrollBarVisibility="Disabled">
+                                      VerticalScrollBarVisibility="Disabled" PanningMode="HorizontalOnly"
+                                      PreviewMouseWheel="OnHorizontalScrollWheel">
                             <ItemsControl ItemsSource="{Binding BoardFirstProposal.Payments}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
@@ -399,12 +456,13 @@
                         <TextBlock Text="Your destinations" Foreground="#FFFFE7B0" FontSize="14"
                                    FontWeight="SemiBold" HorizontalAlignment="Center"
                                    Visibility="{Binding ShowSoloDestinations, Converter={StaticResource BoolToVisibility}}" />
-                        <ScrollViewer MaxHeight="172" VerticalScrollBarVisibility="Auto"
-                                      HorizontalScrollBarVisibility="Disabled" Margin="0,5,0,0"
+                        <ScrollViewer Height="91" VerticalScrollBarVisibility="Disabled"
+                                      HorizontalScrollBarVisibility="Auto" PanningMode="HorizontalOnly"
+                                      PreviewMouseWheel="OnHorizontalScrollWheel" Margin="0,5,0,0"
                                       Visibility="{Binding ShowSoloTrainCards, Converter={StaticResource BoolToVisibility}}">
-                            <ItemsControl x:Name="SoloTrainCards" Width="222" ItemsSource="{Binding SoloTrainCards}">
+                            <ItemsControl x:Name="SoloTrainCards" ItemsSource="{Binding SoloTrainCards}">
                                 <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
@@ -419,10 +477,14 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </ScrollViewer>
-                        <ScrollViewer MaxHeight="172" VerticalScrollBarVisibility="Auto"
-                                      HorizontalScrollBarVisibility="Disabled" Margin="0,5,0,0"
+                        <ScrollViewer Height="91" VerticalScrollBarVisibility="Disabled"
+                                      HorizontalScrollBarVisibility="Auto" PanningMode="HorizontalOnly"
+                                      PreviewMouseWheel="OnHorizontalScrollWheel" Margin="0,5,0,0"
                                       Visibility="{Binding ShowSoloDestinations, Converter={StaticResource BoolToVisibility}}">
-                            <ItemsControl x:Name="SoloDestinationCards" Width="222" ItemsSource="{Binding SoloDestinationCards}">
+                            <ItemsControl x:Name="SoloDestinationCards" ItemsSource="{Binding SoloDestinationCards}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Border Width="214" MinHeight="51" Margin="2,1,2,4" Padding="5,3"
