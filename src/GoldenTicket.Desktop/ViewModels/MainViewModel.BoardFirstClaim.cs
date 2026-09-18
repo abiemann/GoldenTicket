@@ -1,3 +1,6 @@
+using System.Collections.Immutable;
+using System.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using GoldenTicket.Application;
 using GoldenTicket.Domain;
@@ -9,11 +12,26 @@ namespace GoldenTicket.Desktop.ViewModels;
 
 public sealed record BoardFirstPaymentRow(PaymentOption Option, string Description);
 
+public sealed class BoardFirstPaymentCardRow(HeldCard card) : ObservableObject
+{
+    private bool _isSelected;
+
+    public CardId Id { get; } = card.Id;
+    public TrainCardKind Kind { get; } = card.Kind;
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set => SetProperty(ref _isSelected, value);
+    }
+}
+
 /// <summary>A camera suggestion, not an authorized or committed claim.</summary>
 public sealed class BoardFirstClaimProposal(
     SessionId sessionId, SeatId seatId, string seatName, RouteId routeId, string routeText,
     long stateVersion, long cropRevision, long modelRevision, long cameraEpoch,
-    IReadOnlyList<BoardFirstPaymentRow> payments)
+    IReadOnlyList<BoardFirstPaymentRow> payments, IReadOnlyList<HeldCard>? availableCards = null)
+    : ObservableObject
 {
     public SessionId SessionId { get; } = sessionId;
     public SeatId SeatId { get; } = seatId;
@@ -26,6 +44,67 @@ public sealed class BoardFirstClaimProposal(
     public long ModelRevision { get; } = modelRevision;
     public long CameraEpoch { get; } = cameraEpoch;
     public IReadOnlyList<BoardFirstPaymentRow> Payments { get; } = payments;
+    public IReadOnlyList<BoardFirstPaymentCardRow> Cards { get; } = BuildCards(availableCards, payments);
+    public int RequiredCards => Payments.Count == 0 ? 0 : Payments[0].Option.Total;
+    public int SelectedCount => Cards.Count(card => card.IsSelected);
+    public bool CanConfirmPayment => SelectedPayment is not null;
+
+    public string SelectionFeedback => SelectedCount switch
+    {
+        0 => $"Select {RequiredCards} card{(RequiredCards == 1 ? "" : "s")}.",
+        var count when count < RequiredCards =>
+            $"Select {RequiredCards - count} more card{(RequiredCards - count == 1 ? "" : "s")}.",
+        var count when count > RequiredCards =>
+            $"Remove {count - RequiredCards} card{(count - RequiredCards == 1 ? "" : "s")}.",
+        _ when CanConfirmPayment => "Ready to pay.",
+        _ => "These cards cannot pay for this route. Use one color plus locomotives."
+    };
+
+    public BoardFirstPaymentRow? SelectedPayment
+    {
+        get
+        {
+            if (SelectedCount != RequiredCards || RequiredCards == 0) return null;
+            var chosen = Cards.Where(card => card.IsSelected).ToArray();
+            var locomotives = chosen.Count(card => card.Kind == TrainCardKind.Locomotive);
+            var colors = chosen.Where(card => card.Kind != TrainCardKind.Locomotive)
+                .Select(card => card.Kind).Distinct().ToArray();
+            if (colors.Length > 1) return null;
+            var option = new PaymentOption(colors.Length == 0 ? TrainCardKind.Locomotive : colors[0],
+                chosen.Length - locomotives, locomotives);
+            return Payments.FirstOrDefault(payment => payment.Option == option);
+        }
+    }
+
+    public ImmutableArray<CardId> SelectedCardIds => Cards.Where(card => card.IsSelected)
+        .Select(card => card.Id).ToImmutableArray();
+
+    private static IReadOnlyList<BoardFirstPaymentCardRow> BuildCards(
+        IReadOnlyList<HeldCard>? availableCards, IReadOnlyList<BoardFirstPaymentRow> payments)
+    {
+        if (availableCards is null) return [];
+        var usableKinds = payments.SelectMany(payment =>
+            payment.Option.Locomotives > 0
+                ? payment.Option.ColorCards > 0
+                    ? new[] { payment.Option.Color, TrainCardKind.Locomotive }
+                    : [TrainCardKind.Locomotive]
+                : [payment.Option.Color]).ToHashSet();
+        return availableCards.Where(card => usableKinds.Contains(card.Kind))
+            .Select(card => new BoardFirstPaymentCardRow(card)).ToArray();
+    }
+
+    internal void ObserveCardSelection()
+    {
+        foreach (var card in Cards) card.PropertyChanged += OnCardPropertyChanged;
+    }
+
+    private void OnCardPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(BoardFirstPaymentCardRow.IsSelected)) return;
+        OnPropertyChanged(nameof(SelectedCount));
+        OnPropertyChanged(nameof(CanConfirmPayment));
+        OnPropertyChanged(nameof(SelectionFeedback));
+    }
 }
 
 public sealed partial class MainViewModel
@@ -46,6 +125,7 @@ public sealed partial class MainViewModel
         private set
         {
             if (!SetProperty(ref _boardFirstProposal, value)) return;
+            value?.ObserveCardSelection();
             OnPropertyChanged(nameof(ShowBoardFirstClaimProposal));
             OnPropertyChanged(nameof(CanRevealPrivateSeat));
             NotifySoloDrawCommands();
@@ -142,11 +222,13 @@ public sealed partial class MainViewModel
         if (payments.Length == 0) return;
 
         var routeText = _manifest.Describe(claim.RouteId);
-        BoardFirstProposal = new BoardFirstClaimProposal(
+        var newProposal = new BoardFirstClaimProposal(
             coordinator.SessionId, active.SeatId, active.DisplayName, claim.RouteId, routeText,
             _boardFirstSeatView.Public.StateVersion, analysis.CropRevision,
-            analysis.ModelRevision, analysis.Board.Epoch, payments)
+            analysis.ModelRevision, analysis.Board.Epoch, payments,
+            _boardFirstSeatView.Available.ToArray())
         { SeatView = _boardFirstSeatView };
+        BoardFirstProposal = newProposal;
         Game.ShowGuidance(Table.TurnText, active.DisplayName,
             $"Detected your train{(claim.Length == 1 ? "" : "s")} on {routeText}. " +
             "Choose which train cards to spend. " +
@@ -254,10 +336,14 @@ public sealed partial class MainViewModel
     }
 
     [RelayCommand]
+    private Task ConfirmBoardFirstClaimAsync() =>
+        AuthorizeBoardFirstClaimAsync(BoardFirstProposal?.SelectedPayment);
+
     private async Task AuthorizeBoardFirstClaimAsync(BoardFirstPaymentRow? payment)
     {
         if (_boardFirstSubmitting || _operationInProgress || payment is null ||
             BoardFirstProposal is not { } proposal || !proposal.Payments.Contains(payment) ||
+            !proposal.CanConfirmPayment || proposal.SelectedPayment != payment ||
             _coordinator is not { } coordinator || !ReferenceEquals(coordinator, _coordinator) ||
             coordinator.SessionId != proposal.SessionId ||
             coordinator.Public.StateVersion != proposal.StateVersion ||
@@ -276,7 +362,9 @@ public sealed partial class MainViewModel
         SetOperationInProgress(true);
         try
         {
-            var cards = LegalActionCalculator.ResolveCards(seatView, payment.Option);
+            var cards = proposal.SelectedCardIds;
+            if (cards.Length != payment.Option.Total ||
+                cards.Any(cardId => !seatView.Available.Any(card => card.Id == cardId))) return;
             var command = new PlanClaim(
                 new CommandEnvelope(coordinator.SessionId, CommandId.New(),
                     proposal.StateVersion, proposal.SeatId), proposal.RouteId, cards);

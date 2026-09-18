@@ -375,16 +375,15 @@ date, turn, status and players; **Packed away** is a status, not the save's name
    the T and D stacks show read-only mini cards on the table when clicked. These previews and the
    route-payment choices scroll sideways with the game's gold scrollbar; the mouse wheel also moves
    them horizontally. A human can place trains on a legal, camera-measured route before choosing it
-   digitally: after stable detection, the table
-   asks which of the legal train-card payments to spend. The game then checks the placed trains and
+   digitally: after stable detection, the table shows each usable train card separately. Select the
+   exact cards to spend, then click **OK** when the selection is legal. The game checks the placed
+   trains and
    every previously claimed route in fresh frames before committing the claim. If trains have been
    moved off an older route, return them to that route; the new claim waits until the board matches.
    A stable, recognizable partial or unpayable solo placement shows **Invalid Move** with the route,
    detected train count, and any missing card-payment requirement. Uncertain camera readings do not
    produce an invalid-move warning or change the game state.
-   Player-facing train-card and destination draw controls are not yet on the main game layer;
-   their current implementation is in the engineering-only
-   screen. With multiple humans, the shared phone is the intended private controller; actions do
+   With multiple humans, the shared phone is the intended private controller; actions do
    not automatically reveal a private screen on the laptop.
 
 6. When any seat claims a route, the public screen names the seat, its colour and symbol, both

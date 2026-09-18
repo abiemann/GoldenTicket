@@ -101,7 +101,7 @@ public partial class GameTableView : UserControl
         if (station is null) return;
 
         Canvas.SetLeft(SoloCardPanel, Math.Clamp(station.Left, 8, TableScene.Width - SoloCardPanel.Width - 8));
-        const double estimatedPanelHeight = 132;
+        var estimatedPanelHeight = _model?.ShowSoloDestinations == true ? 188 : 132;
         var below = station.Top + PlayerStationHeight + 6;
         Canvas.SetTop(SoloCardPanel, below + estimatedPanelHeight <= TableScene.Height - 8
             ? below

@@ -3,12 +3,41 @@ using GoldenTicket.Application;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Manifest;
+using GoldenTicket.Domain.Projections;
 using GoldenTicket.Vision;
 
 namespace GoldenTicket.Domain.Tests;
 
 public sealed class AutomaticPhysicalFlowTests
 {
+    [Fact]
+    public void Board_first_payment_requires_exact_legal_cards_including_wilds()
+    {
+        var whiteAndWild = new PaymentOption(TrainCardKind.White, 1, 1);
+        var allWild = new PaymentOption(TrainCardKind.Locomotive, 0, 2);
+        var proposal = new BoardFirstClaimProposal(SessionId.New(), new SeatId(1),
+            "Player 1", new RouteId("example-route"), "Example route",
+            1, 1, 1, 1,
+            [new BoardFirstPaymentRow(whiteAndWild, whiteAndWild.Describe()),
+             new BoardFirstPaymentRow(allWild, allWild.Describe())],
+            [new HeldCard(new CardId(1), TrainCardKind.White),
+             new HeldCard(new CardId(2), TrainCardKind.Yellow),
+             new HeldCard(new CardId(3), TrainCardKind.Locomotive),
+             new HeldCard(new CardId(4), TrainCardKind.Locomotive)]);
+
+        Assert.False(proposal.CanConfirmPayment);
+        Assert.DoesNotContain(proposal.Cards, card => card.Kind == TrainCardKind.Yellow);
+        proposal.Cards[0].IsSelected = true;
+        Assert.False(proposal.CanConfirmPayment);
+        proposal.Cards[1].IsSelected = true;
+        Assert.Equal(whiteAndWild, proposal.SelectedPayment?.Option);
+        Assert.Equal([new CardId(1), new CardId(3)], proposal.SelectedCardIds);
+        proposal.Cards[2].IsSelected = true;
+        Assert.False(proposal.CanConfirmPayment);
+        proposal.Cards[0].IsSelected = false;
+        Assert.Equal(allWild, proposal.SelectedPayment?.Option);
+    }
+
     [Fact]
     public async Task Solo_partial_unpayable_route_explains_the_invalid_move_without_claiming_it()
     {
@@ -88,7 +117,16 @@ public sealed class AutomaticPhysicalFlowTests
             Assert.Contains("Choose which train cards to spend", model.Game.GuidanceInstruction);
             Assert.Null(coordinator.Public.PendingClaim);
 
-            await model.AuthorizeBoardFirstClaimCommand.ExecuteAsync(proposal.Payments[0]);
+            Assert.False(proposal.CanConfirmPayment);
+            await model.ConfirmBoardFirstClaimCommand.ExecuteAsync(null);
+            Assert.Null(coordinator.Public.PendingClaim);
+            var payment = proposal.Payments[0].Option;
+            foreach (var card in proposal.Cards.Where(card => card.Kind == payment.Color)
+                         .Take(payment.ColorCards)) card.IsSelected = true;
+            foreach (var card in proposal.Cards.Where(card => card.Kind == TrainCardKind.Locomotive)
+                         .Take(payment.Locomotives)) card.IsSelected = true;
+            Assert.True(proposal.CanConfirmPayment);
+            await model.ConfirmBoardFirstClaimCommand.ExecuteAsync(null);
             Assert.Null(model.BoardFirstProposal);
             Assert.NotNull(coordinator.Public.PendingClaim);
             Assert.Contains("Keep your", model.Game.GuidanceInstruction);

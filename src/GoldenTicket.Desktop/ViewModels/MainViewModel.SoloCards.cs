@@ -8,7 +8,10 @@ public enum SoloCardPanelSelection { None, TrainCards, Destinations }
 
 public sealed record SoloTrainCardRow(TrainCardKind Kind, string Label);
 
-public sealed record SoloDestinationCardRow(string Description, int Points, bool Completed);
+public sealed record SoloDestinationCardRow(string Origin, string Destination, int Points, bool Completed)
+{
+    public string Description => $"{Origin} - {Destination}";
+}
 
 public sealed partial class MainViewModel
 {
@@ -88,7 +91,7 @@ public sealed partial class MainViewModel
                 {
                     var ticket = _manifest.Ticket(ticketId);
                     return new SoloDestinationCardRow(
-                        $"{_manifest.City(ticket.CityA).DisplayName} - " +
+                        _manifest.City(ticket.CityA).DisplayName,
                         _manifest.City(ticket.CityB).DisplayName,
                         ticket.Points, connectivity.Completes(ticket));
                 }).ToArray();

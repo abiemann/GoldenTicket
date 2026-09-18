@@ -69,6 +69,45 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="BoardPaymentCardStyle" TargetType="ToggleButton">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="#FF1A2531" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="CardFrame" Background="{TemplateBinding Background}"
+                                BorderBrush="#FFF0D7A0" BorderThickness="2" CornerRadius="5">
+                            <Grid>
+                                <Border x:Name="SelectionBadge" Background="#FF1A2531"
+                                        CornerRadius="3" Width="20" Height="20" Margin="3"
+                                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                                        Visibility="Collapsed">
+                                    <TextBlock Text="✓" Foreground="#FFFFD576" FontSize="13"
+                                               FontWeight="Bold" HorizontalAlignment="Center" />
+                                </Border>
+                                <Border Background="#FFFBEED5" VerticalAlignment="Bottom"
+                                        CornerRadius="0,0,3,3" Padding="2">
+                                    <ContentPresenter HorizontalAlignment="Center" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="CardFrame" Property="BorderBrush" Value="#FFFFD576" />
+                                <Setter TargetName="CardFrame" Property="BorderThickness" Value="4" />
+                                <Setter TargetName="SelectionBadge" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="CardFrame" Property="Opacity" Value="0.84" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="CardFrame" Property="BorderBrush" Value="#FFFFE7B0" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="GameScrollThumbStyle" TargetType="Thumb">
             <Setter Property="MinWidth" Value="32" />
             <Setter Property="Template">
@@ -268,41 +307,61 @@
                 </Border>
 
                 <Border x:Name="BoardFirstClaimPanel" Canvas.Left="370" Canvas.Top="10"
-                        Width="700" Height="170" CornerRadius="10" Padding="14,8"
+                        Width="700" Height="218" CornerRadius="10" Padding="14,8"
                         Visibility="{Binding ShowBoardFirstClaimProposal, Converter={StaticResource BoolToVisibility}}"
                         Background="#F51A2531" BorderBrush="#FFE1BD79" BorderThickness="2"
                         AutomationProperties.LiveSetting="Polite">
-                    <StackPanel>
-                        <TextBlock Text="Your route was detected" Foreground="#FFFFE7B0"
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="80" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="35" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="Your route was detected" Foreground="#FFFFE7B0"
                                    FontSize="19" FontWeight="Bold" TextAlignment="Center" />
-                        <TextBlock Text="{Binding BoardFirstProposal.RouteText}" Foreground="White"
+                        <TextBlock Grid.Row="1" Text="{Binding BoardFirstProposal.RouteText}" Foreground="White"
                                    FontSize="15" FontWeight="SemiBold" TextAlignment="Center"
                                    TextWrapping="Wrap" Margin="0,1,0,1" />
-                        <TextBlock Text="Choose which cards to spend. Claiming the route uses your turn."
+                        <TextBlock Grid.Row="2" Text="Choose which cards to spend. Claiming the route uses your turn."
                                    Foreground="#FFF8EEDC" FontSize="11" TextAlignment="Center"
-                                   TextWrapping="Wrap" Margin="0,0,0,5" />
-                        <ScrollViewer Height="51" HorizontalScrollBarVisibility="Auto"
+                                   TextWrapping="Wrap" Margin="0,0,0,3" />
+                        <ScrollViewer Grid.Row="3" Height="76" HorizontalScrollBarVisibility="Auto"
                                       VerticalScrollBarVisibility="Disabled" PanningMode="HorizontalOnly"
                                       PreviewMouseWheel="OnHorizontalScrollWheel">
-                            <ItemsControl ItemsSource="{Binding BoardFirstProposal.Payments}">
+                            <ItemsControl ItemsSource="{Binding BoardFirstProposal.Cards}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Button Content="{Binding Description}" Width="150" Height="34" Margin="0,0,7,0"
-                                                Background="#FF69412F" Foreground="#FFFFE7B0"
-                                                BorderBrush="#FFF0D7A0" BorderThickness="1.5"
-                                                Command="{Binding DataContext.AuthorizeBoardFirstClaimCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
-                                                CommandParameter="{Binding}" />
+                                        <ToggleButton Content="{Binding Kind}" Width="86" Height="58"
+                                                      Margin="0,0,6,0" Style="{StaticResource BoardPaymentCardStyle}"
+                                                      Background="{Binding Kind, Converter={StaticResource CardKindBrush}}"
+                                                      IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                      AutomationProperties.Name="{Binding Kind}" />
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </ScrollViewer>
-                        <TextBlock Text="If this is the wrong route, remove the pieces to clear the suggestion."
-                                   Foreground="#FFDCC18A" FontSize="10" TextWrapping="Wrap"
-                                   TextAlignment="Center" Margin="0,2,0,0" />
-                    </StackPanel>
+                        <TextBlock Grid.Row="4" Text="{Binding BoardFirstProposal.SelectionFeedback}"
+                                   Foreground="#FFFFE7B0" FontSize="10" TextAlignment="Center" />
+                        <Grid Grid.Row="5" Margin="0,3,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="90" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="If this is the wrong route, remove the pieces to clear the suggestion."
+                                       Foreground="#FFDCC18A" FontSize="10" TextWrapping="Wrap"
+                                       VerticalAlignment="Center" />
+                            <Button Grid.Column="1" Content="OK" Width="76" Height="32" Margin="0"
+                                    HorizontalAlignment="Right" Style="{StaticResource PrimaryButton}"
+                                    IsEnabled="{Binding BoardFirstProposal.CanConfirmPayment}"
+                                    Command="{Binding ConfirmBoardFirstClaimCommand}" />
+                        </Grid>
+                    </Grid>
                 </Border>
 
                 <Border x:Name="ScoreMarkerDetectionPanel" Canvas.Left="510" Canvas.Top="478"
@@ -477,7 +536,7 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </ScrollViewer>
-                        <ScrollViewer Height="91" VerticalScrollBarVisibility="Disabled"
+                        <ScrollViewer Height="142" VerticalScrollBarVisibility="Disabled"
                                       HorizontalScrollBarVisibility="Auto" PanningMode="HorizontalOnly"
                                       PreviewMouseWheel="OnHorizontalScrollWheel" Margin="0,5,0,0"
                                       Visibility="{Binding ShowSoloDestinations, Converter={StaticResource BoolToVisibility}}">
@@ -487,21 +546,38 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Width="214" MinHeight="51" Margin="2,1,2,4" Padding="5,3"
+                                        <Border Width="106" Height="118" Margin="2,1,2,3" Padding="4,3"
                                                 CornerRadius="4" Background="#FFFBEED5"
-                                                BorderBrush="#FFD4AC6B" BorderThickness="1.5">
-                                            <StackPanel>
-                                                <TextBlock Text="{Binding Description}" Foreground="#FF31241D"
-                                                           FontSize="11" FontWeight="SemiBold" TextAlignment="Center"
-                                                           TextWrapping="Wrap" />
-                                                <TextBlock Foreground="#FF77512F" FontSize="10"
-                                                           HorizontalAlignment="Center">
+                                                BorderBrush="#FFD4AC6B" BorderThickness="1.5"
+                                                ToolTip="{Binding Description}"
+                                                AutomationProperties.Name="{Binding Description}">
+                                            <Grid>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="27" />
+                                                    <RowDefinition Height="14" />
+                                                    <RowDefinition Height="27" />
+                                                    <RowDefinition Height="8" />
+                                                    <RowDefinition Height="15" />
+                                                    <RowDefinition Height="13" />
+                                                </Grid.RowDefinitions>
+                                                <TextBlock Grid.Row="0" Text="{Binding Origin}" Foreground="#FF31241D"
+                                                           FontSize="10" FontWeight="SemiBold" TextAlignment="Center"
+                                                           VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                <Path Grid.Row="1" Data="M 0,0 L 5,5 L 10,0"
+                                                      Stroke="#FF77512F" StrokeThickness="1.5"
+                                                      Width="10" Height="5" Stretch="None"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Row="2" Text="{Binding Destination}" Foreground="#FF31241D"
+                                                           FontSize="10" FontWeight="SemiBold" TextAlignment="Center"
+                                                           VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                <TextBlock Grid.Row="4" Foreground="#FF77512F" FontSize="10"
+                                                           HorizontalAlignment="Center" TextWrapping="NoWrap">
                                                     <Run Text="{Binding Points, Mode=OneWay}" /><Run Text=" points" />
                                                 </TextBlock>
-                                                <TextBlock Text="Completed" Foreground="#FF2B724A" FontSize="10"
+                                                <TextBlock Grid.Row="5" Text="Completed" Foreground="#FF2B724A" FontSize="9"
                                                            FontWeight="SemiBold" HorizontalAlignment="Center"
                                                            Visibility="{Binding Completed, Converter={StaticResource BoolToVisibility}}" />
-                                            </StackPanel>
+                                            </Grid>
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>

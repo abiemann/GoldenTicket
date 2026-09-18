@@ -22,6 +22,7 @@ using GoldenTicket.Application;
 using GoldenTicket.Domain;
 using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Model;
+using GoldenTicket.Domain.Projections;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Vision;
 
@@ -999,6 +1000,12 @@ internal static partial class Program
             await RenderSizes("game-table-five", () => new GameScreenView { DataContext = model }, Verify,
                 [(1000, 620), (1280, 800)]);
 
+            var paymentHand = new[]
+            {
+                TrainCardKind.Blue, TrainCardKind.Blue, TrainCardKind.Yellow,
+                TrainCardKind.Yellow, TrainCardKind.Black, TrainCardKind.Black,
+                TrainCardKind.Green, TrainCardKind.Green, TrainCardKind.Red, TrainCardKind.Red,
+            }.Select((kind, index) => new HeldCard(new CardId(index + 1), kind)).ToArray();
             var proposal = new BoardFirstClaimProposal(SessionId.New(), new SeatId(1),
                 "Player 1", new RouteId("atlanta--raleigh--a"), "Atlanta - Raleigh (lane A)",
                 1, 1, 1, 1,
@@ -1006,7 +1013,8 @@ internal static partial class Program
                  new BoardFirstPaymentRow(new PaymentOption(TrainCardKind.Yellow, 2, 0), "2 Yellow"),
                  new BoardFirstPaymentRow(new PaymentOption(TrainCardKind.Black, 2, 0), "2 Black"),
                  new BoardFirstPaymentRow(new PaymentOption(TrainCardKind.Green, 2, 0), "2 Green"),
-                 new BoardFirstPaymentRow(new PaymentOption(TrainCardKind.Red, 2, 0), "2 Red")]);
+                 new BoardFirstPaymentRow(new PaymentOption(TrainCardKind.Red, 2, 0), "2 Red")],
+                paymentHand);
             typeof(MainViewModel).GetProperty(nameof(MainViewModel.BoardFirstProposal))!
                 .GetSetMethod(nonPublic: true)!.Invoke(model, [proposal]);
             await RenderSizes("game-table-board-first-payment",
@@ -1017,19 +1025,36 @@ internal static partial class Program
                     var panel = (Border)gameTable.FindName("BoardFirstClaimPanel");
                     var guidance = (Border)gameTable.FindName("HumanGuidancePanel");
                     var board = (Border)gameTable.FindName("GameBoardFrame");
-                    var choices = Descendants<Button>(panel).ToArray();
+                    foreach (var card in proposal.Cards) card.IsSelected = false;
+                    var choices = Descendants<ToggleButton>(panel).ToArray();
+                    var ok = Descendants<Button>(panel).Single(button => button.Content as string == "OK");
                     var scroller = Descendants<ScrollViewer>(panel).Single();
                     var panelTop = panel.TranslatePoint(new Point(), scene).Y;
                     var boardTop = board.TranslatePoint(new Point(), scene).Y;
                     if (!IsElementShown(panel) || IsElementShown(guidance) ||
-                        panelTop + panel.ActualHeight > boardTop ||
-                        choices.Length != proposal.Payments.Count ||
+                        panelTop + panel.ActualHeight > boardTop + 55 ||
+                        choices.Length != paymentHand.Length || ok.IsEnabled ||
+                        !ReferenceEquals(ok.Command, model.ConfirmBoardFirstClaimCommand) ||
                         choices.Where((choice, index) =>
-                            choice.Content as string != proposal.Payments[index].Description ||
-                            !ReferenceEquals(choice.Command, model.AuthorizeBoardFirstClaimCommand) ||
-                            !ReferenceEquals(choice.CommandParameter, proposal.Payments[index])).Any() ||
+                            !Equals(choice.Content, paymentHand[index].Kind) ||
+                            choice.IsChecked != false).Any() ||
                         !IsGameHorizontalScroller(scroller))
-                        throw new InvalidOperationException("Detected-route payment choices must replace stale table guidance above the unobscured board, with every choice reachable by scrolling.");
+                        throw new InvalidOperationException("Detected-route payment must show individual selectable cards and a disabled OK action until a legal selection is made.");
+                    ((IToggleProvider)new ToggleButtonAutomationPeer(choices[0])
+                        .GetPattern(PatternInterface.Toggle)!).Toggle();
+                    ((IToggleProvider)new ToggleButtonAutomationPeer(choices[2])
+                        .GetPattern(PatternInterface.Toggle)!).Toggle();
+                    view.UpdateLayout();
+                    if (ok.IsEnabled || choices[0].IsChecked != true || choices[2].IsChecked != true)
+                        throw new InvalidOperationException("Mixed card colors must not enable route payment.");
+                    ((IToggleProvider)new ToggleButtonAutomationPeer(choices[2])
+                        .GetPattern(PatternInterface.Toggle)!).Toggle();
+                    ((IToggleProvider)new ToggleButtonAutomationPeer(choices[1])
+                        .GetPattern(PatternInterface.Toggle)!).Toggle();
+                    view.UpdateLayout();
+                    if (!ok.IsEnabled || proposal.SelectedPayment?.Option != proposal.Payments[0].Option ||
+                        proposal.SelectedCardIds.Length != 2)
+                        throw new InvalidOperationException("Two selected Blue cards must enable OK for the matching legal payment.");
                 }, [(1000, 620), (1280, 800)]);
 
             Console.WriteLine("Game table: persistent human guidance, 2/5 player stations, public card stacks, shared crop, no top-left controls, and uniform resize passed.");
@@ -1342,8 +1367,11 @@ internal static partial class Program
                 solo.SoloDestinationCards.Any(destination => destination.Description == dropped.Description) ||
                 solo.PrivateSeat is not null || solo.Screen != Screen.Table)
                 throw new InvalidOperationException("The D stack must show two retained mini destinations without reopening the private screen.");
-            if (!IsGameHorizontalScroller(Descendants<ScrollViewer>(miniPanel).Single(IsElementShown)))
-                throw new InvalidOperationException("The solo destination tray must use the horizontal game-styled scrollbar.");
+            var destinationScroller = Descendants<ScrollViewer>(miniPanel).Single(IsElementShown);
+            if (destinationScroller.ScrollableHeight != 0 ||
+                destinationScroller.HorizontalScrollBarVisibility != ScrollBarVisibility.Auto ||
+                (destinationScroller.ScrollableWidth > 0 && !IsGameHorizontalScroller(destinationScroller)))
+                throw new InvalidOperationException("The solo destination tray must fit two narrow cards or use the horizontal game-styled scrollbar when needed.");
             await RenderSizes("solo-destinations-highlight-synthetic",
                 () => new GameTableView { DataContext = solo }, view =>
                 {
