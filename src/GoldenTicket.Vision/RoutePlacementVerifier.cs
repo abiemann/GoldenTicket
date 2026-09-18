@@ -38,7 +38,6 @@ public sealed class RoutePlacementVerifier
     private Identity? _identity;
     private long _lastSequence;
     private DateTimeOffset? _firstMatchingAt;
-    private bool _confirmed;
 
     public static bool Supports(string routeId, int trainCount) =>
         trainCount is >= 1 and <= 6 &&
@@ -49,13 +48,13 @@ public sealed class RoutePlacementVerifier
         _identity = null;
         _lastSequence = 0;
         _firstMatchingAt = null;
-        _confirmed = false;
     }
 
     /// <summary>
     /// Observe one distinct ML result from the same upright crop that is displayed to players.
-    /// A confirmed result is emitted once per operation. The caller must still validate the
-    /// operation/state version before submitting camera evidence to the game engine.
+    /// A confirmed result remains valid only while each fresh frame still matches the requested
+    /// route and color. The caller must still validate the operation/state version before
+    /// submitting camera evidence to the game engine.
     /// </summary>
     public RoutePlacementObservation Observe(CameraFrame uprightRectifiedBoard,
         IReadOnlyList<PieceCandidate> candidates, string routeId, MarkerColor color, int trainCount,
@@ -84,7 +83,6 @@ public sealed class RoutePlacementVerifier
             return new(RoutePlacementState.WaitingForFreshFrame, 0);
         }
         _lastSequence = uprightRectifiedBoard.Sequence;
-        if (_confirmed) return new(RoutePlacementState.Stabilizing, trainCount);
 
         ClassicUsRouteGeometry.TryGetSlots(routeId, out var measured);
         var spots = measured.Select(point =>
@@ -143,7 +141,6 @@ public sealed class RoutePlacementVerifier
         if (uprightRectifiedBoard.CapturedAt - _firstMatchingAt < MinimumStableInterval)
             return new(RoutePlacementState.Stabilizing, matched);
 
-        _confirmed = true;
         return new(RoutePlacementState.Confirmed, matched);
     }
 

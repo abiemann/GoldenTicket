@@ -159,7 +159,7 @@ public sealed partial class MainViewModel
         // A requested route alone is insufficient: pieces from any earlier claim may have
         // been moved into its spaces. The entire committed board plus this route must agree
         // in fresh, stable frames before submitting claim evidence.
-        if (inventory.Confirmed)
+        if (placementObservation.Confirmed && inventory.Confirmed)
             _ = AcceptCameraPlacementAsync(placement, analysis);
     }
 
@@ -350,6 +350,8 @@ public sealed partial class MainViewModel
                 placement.SeatId, placement.SeatName, placement.Color,
                 PrintedScore(beforeScore), PrintedScore(beforeScore + points), points);
             _scoreMarkerStep = step;
+            Table.ShowPendingScoreMarker(coordinator.Public.TurnNumber,
+                step.SeatName, step.Color, step.ToPrintedScore);
             _scoreMarkerMoveVerifier.Reset();
             NotifyScoreMarkerDetectionPromptChanged();
             OnPropertyChanged(nameof(CanRevealPrivateSeat));

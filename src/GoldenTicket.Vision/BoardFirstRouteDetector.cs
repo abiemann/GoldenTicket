@@ -55,8 +55,8 @@ public sealed class BoardFirstRouteDetector
 
         if (ProposedRouteId is { } proposedRouteId)
         {
-            // Recheck every later frame independently. A verifier latches after confirming
-            // two full frames, so retaining one here would eventually hide removed pieces.
+            // Recheck each later frame independently so an old proposal cannot hide pieces
+            // that were removed or changed after the route first appeared.
             if (board.Sequence <= _proposalLastSequence) return null;
             var proposed = routes.Single(route => route.RouteId == proposedRouteId);
             var check = new RoutePlacementVerifier().Observe(board, candidates, proposedRouteId, color,

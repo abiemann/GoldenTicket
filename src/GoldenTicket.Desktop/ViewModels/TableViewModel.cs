@@ -179,6 +179,20 @@ public sealed partial class TableViewModel : ObservableObject
             : null;
     }
 
+    /// <summary>
+    /// The rules engine has advanced to the next turn after committing a route, but the
+    /// operator must finish moving the previous seat's physical score marker before the
+    /// desktop starts that turn. Keep the engineering header honest about this handoff.
+    /// </summary>
+    public void ShowPendingScoreMarker(int nextTurn, string scoringSeatName,
+        PlayerColor scoringColor, int targetPrintedScore)
+    {
+        TurnText = $"Up next: Turn {nextTurn}";
+        PhaseText = "Waiting for scoring marker";
+        Instruction = $"Waiting for {scoringSeatName}'s {scoringColor} scoring marker on " +
+            $"{targetPrintedScore}. {ActiveSeatName} has not acted yet.";
+    }
+
     private static string LastActionFor(SeatId seatId, IReadOnlyList<PublicEventEntry> history)
     {
         for (var index = history.Count - 1; index >= 0; index--)

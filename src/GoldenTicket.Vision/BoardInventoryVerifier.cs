@@ -87,9 +87,8 @@ public sealed class BoardInventoryVerifier
             .ToArray();
         foreach (var route in _routes)
         {
-            // RoutePlacementVerifier latches after its own confirmation. A new instance on
-            // every frame is essential here: the *current* image must still contain all
-            // pieces, even if an earlier image already matched.
+            // Check each route independently against this frame. Prior confirmation must
+            // never substitute for the current positions and colors of its pieces.
             var verifier = new RoutePlacementVerifier();
             var observation = verifier.Observe(board, candidates, route.RouteId, route.Color,
                 route.TrainCount, _operationKey, cropRevision, modelRevision);

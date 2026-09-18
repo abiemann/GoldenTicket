@@ -237,6 +237,11 @@ public sealed class AutomaticPhysicalFlowTests
             await WaitUntilAsync(() => model.Game.GuidanceInstruction == "Thank you");
             Assert.Equal("Scoring", model.Game.GuidanceTurn);
             Assert.Equal(placement.SeatName, model.Game.GuidanceSeat);
+            Assert.StartsWith("Up next: Turn ", model.Table.TurnText);
+            Assert.Equal("Waiting for scoring marker", model.Table.PhaseText);
+            Assert.Contains($"{placement.SeatName}'s {placement.Color} scoring marker",
+                model.Table.Instruction);
+            Assert.Contains("has not acted yet", model.Table.Instruction);
             Assert.Null(model.Table.Placement);
             Assert.Equal(previousScore + TestManifest.Manifest.RulesConstants.ScoreForLength(placement.TrainCount),
                 model.Table.Seats.Single(seat => seat.SeatId == placement.SeatId).Score);

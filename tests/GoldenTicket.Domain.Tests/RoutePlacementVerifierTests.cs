@@ -25,9 +25,22 @@ public sealed class RoutePlacementVerifierTests
         var accepted = verifier.Observe(second.Frame, second.Candidates, LaneA, MarkerColor.Blue, 2, "op-1", 1, 1);
         Assert.True(accepted.Confirmed);
         Assert.Equal(2, accepted.MatchedCount);
-        Assert.False(verifier.Observe(Scene(3, 1, firstAt.AddSeconds(2.2),
+        Assert.True(verifier.Observe(Scene(3, 1, firstAt.AddSeconds(2.2),
             (A[0].X, A[0].Y, MarkerColor.Blue, .9), (A[1].X, A[1].Y, MarkerColor.Blue, .9)).Frame,
             second.Candidates, LaneA, MarkerColor.Blue, 2, "op-1", 1, 1).Confirmed);
+
+        var wrongColor = Scene(4, 1, firstAt.AddSeconds(3.3),
+            (A[0].X, A[0].Y, MarkerColor.Yellow, .9),
+            (A[1].X, A[1].Y, MarkerColor.Blue, .9));
+        Assert.Equal(RoutePlacementState.WrongColor,
+            verifier.Observe(wrongColor.Frame, wrongColor.Candidates,
+                LaneA, MarkerColor.Blue, 2, "op-1", 1, 1).State);
+        var restored = Scene(5, 1, firstAt.AddSeconds(4.4),
+            (A[0].X, A[0].Y, MarkerColor.Blue, .9),
+            (A[1].X, A[1].Y, MarkerColor.Blue, .9));
+        Assert.Equal(RoutePlacementState.Stabilizing,
+            verifier.Observe(restored.Frame, restored.Candidates,
+                LaneA, MarkerColor.Blue, 2, "op-1", 1, 1).State);
     }
 
     [Fact]
@@ -70,6 +83,37 @@ public sealed class RoutePlacementVerifierTests
             verifier.Observe(wrongLane.Frame, wrongLane.Candidates, LaneA, MarkerColor.Blue, 2, "op-1", 1, 1).State);
         Assert.Equal(RoutePlacementState.Stabilizing,
             verifier.Observe(wrongLane.Frame, wrongLane.Candidates, LaneB, MarkerColor.Blue, 2, "op-1", 1, 1).State);
+    }
+
+    [Fact]
+    public void Yellow_trains_on_kansas_city_oklahoma_city_lane_b_do_not_confirm_blue_lane_a()
+    {
+        const string requested = "kansas-city--oklahoma-city--a";
+        const string occupied = "kansas-city--oklahoma-city--b";
+        ClassicUsRouteGeometry.TryGetSlots(occupied, out var yellowSlots);
+        ClassicUsRouteGeometry.TryGetSlots(requested, out var blueSlots);
+        var yellowWithEarlierBlue = yellowSlots.Select(slot =>
+            (slot.ReferenceX, slot.ReferenceY, MarkerColor.Yellow, .9))
+            .Append((1074d, 611d, MarkerColor.Blue, .9))
+            .ToArray();
+        var at = DateTimeOffset.UtcNow;
+        var verifier = new RoutePlacementVerifier();
+        var first = Scene(1, 1, at, yellowWithEarlierBlue);
+        var second = Scene(2, 1, at.AddSeconds(1.1), yellowWithEarlierBlue);
+        Assert.False(verifier.Observe(first.Frame, first.Candidates, requested,
+            MarkerColor.Blue, 2, "computer-claim", 1, 1).Confirmed);
+        Assert.False(verifier.Observe(second.Frame, second.Candidates, requested,
+            MarkerColor.Blue, 2, "computer-claim", 1, 1).Confirmed);
+
+        var withNewBlue = yellowWithEarlierBlue.Concat(blueSlots.Select(slot =>
+            (slot.ReferenceX, slot.ReferenceY, MarkerColor.Blue, .9))).ToArray();
+        var placed = Scene(3, 1, at.AddSeconds(2.2), withNewBlue);
+        var stable = Scene(4, 1, at.AddSeconds(3.3), withNewBlue);
+        Assert.Equal(RoutePlacementState.Stabilizing,
+            verifier.Observe(placed.Frame, placed.Candidates, requested,
+                MarkerColor.Blue, 2, "computer-claim", 1, 1).State);
+        Assert.True(verifier.Observe(stable.Frame, stable.Candidates, requested,
+            MarkerColor.Blue, 2, "computer-claim", 1, 1).Confirmed);
     }
 
     [Fact]

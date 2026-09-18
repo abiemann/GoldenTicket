@@ -819,6 +819,9 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSoloHumanTurn));
         ReconcileBoardFirstClaimFlow(view);
         Table.Update(view, _coordinator.PublicHistory);
+        if (_scoreMarkerStep is { } scoreStep)
+            Table.ShowPendingScoreMarker(view.TurnNumber, scoreStep.SeatName,
+                scoreStep.Color, scoreStep.ToPrintedScore);
         await RefreshSoloDrawActionsAsync(view);
         await RefreshCheckpointPhotoAsync();
         if (NeedsBoardReconciliation)

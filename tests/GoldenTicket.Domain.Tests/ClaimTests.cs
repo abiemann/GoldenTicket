@@ -309,6 +309,28 @@ public class ClaimTests
     }
 
     [Fact]
+    public void Kansas_city_oklahoma_city_lane_a_cannot_be_claimed_after_lane_b_at_a_two_seat_table()
+    {
+        var harness = Ready(2);
+        var first = harness.State.ActiveSeatId;
+        var laneB = Route("kansas-city--oklahoma-city--b");
+        var laneA = Route("kansas-city--oklahoma-city--a");
+        harness.GrantCards(first, TrainCardKind.Yellow, 2);
+        var planned = harness.SubmitAccepted(new PlanClaim(
+            harness.Envelope(first), laneB.RouteId, harness.CardsOf(first, TrainCardKind.Yellow, 2)));
+        var operationId = planned.Transition!.Events.OfType<ClaimPlanned>().Single().OperationId;
+        harness.SubmitAccepted(new SubmitClaimEvidence(
+            harness.Envelope(first), operationId, EvidenceKind.ManualAttestation, "tester", "ok"));
+
+        var second = harness.State.ActiveSeatId;
+        harness.GrantCards(second, TrainCardKind.Blue, 2);
+        Assert.DoesNotContain(harness.Legal(second).Claims, claim => claim.RouteId == laneA.RouteId);
+        var attempt = harness.Submit(new PlanClaim(
+            harness.Envelope(second), laneA.RouteId, harness.CardsOf(second, TrainCardKind.Blue, 2)));
+        Assert.Equal("ParallelLaneClosed", attempt.Rejection?.Code);
+    }
+
+    [Fact]
     public void NoSeatMayOwnBothLanesOfAParallelRoute()
     {
         var harness = Ready(5);
