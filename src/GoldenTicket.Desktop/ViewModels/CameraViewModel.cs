@@ -578,6 +578,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         _gameTableRegistration = BoardRegistration.Create(frame, corners);
         _gameTableReference = _acceptedSetupReference;
         _gameTableReferencePhoto = null;
+        _gameTablePhotoAlignment = null;
         _lastLiveBoardCheckAt = DateTimeOffset.MinValue;
         IsGameTablePreviewUpright = _gameTableReference is not null &&
             _gameTableReference.IsAligned(_gameTableRegistration.Rectify(frame,
@@ -631,6 +632,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         _gameTableCameraRetryTimer.Stop();
         _gameTableReference = null;
         _gameTableReferencePhoto = null;
+        _gameTablePhotoAlignment = null;
         InvalidateGameTablePreview();
     }
 

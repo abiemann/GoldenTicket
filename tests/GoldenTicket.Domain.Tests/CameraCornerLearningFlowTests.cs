@@ -217,6 +217,55 @@ public sealed class CameraCornerLearningFlowTests
     }
 
     [Fact]
+    public async Task Reload_refines_detected_corners_against_the_saved_board_photo()
+    {
+        await using var fixture = new Fixture();
+        NormalizedPoint[] corners = [new(.1, .12), new(.9, .12), new(.9, .88), new(.1, .88)];
+        fixture.FramePainter = (pixels, width, height) =>
+        {
+            PaintAsymmetricBoard(pixels, width, height, false);
+            // Printed artwork has texture within each region, not only flat color blocks.
+            for (var y = 0; y < height; y++)
+            for (var x = 0; x < width; x++)
+            {
+                var detail = 28 * Math.Sin(x * .065) + 28 * Math.Cos(y * .081 + x * .021);
+                var offset = (y * width + x) * 4;
+                for (var channel = 0; channel < 3; channel++)
+                    pixels[offset + channel] = (byte)Math.Clamp(pixels[offset + channel] + detail, 0, 255);
+            }
+        };
+        fixture.Refresh(width: 1600, height: 900);
+        var expected = BoardCropPadding.Expand(fixture.Frame, corners).Corners;
+        var photo = BoardRegistration.Create(fixture.Frame, expected).Rectify(fixture.Frame, 1280, 800);
+        var bitmap = BitmapSource.Create(photo.Width, photo.Height, 96, 96,
+            System.Windows.Media.PixelFormats.Bgra32, null, photo.Bgra32.ToArray(), photo.Stride);
+        fixture.Camera.SetGameTableReference(bitmap);
+        fixture.Model.DetectedCorners = corners.Select(point =>
+            new NormalizedPoint(point.X + .003, point.Y + .002)).ToArray();
+
+        fixture.Camera.RequestGameTablePreview();
+        var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        await (Task)typeof(CameraViewModel).GetField("_liveBoardCheckWork", flags)!
+            .GetValue(fixture.Camera)!;
+
+        Assert.True(fixture.Camera.IsGameTablePreviewUpright, fixture.Camera.GameTablePreviewStatus);
+        var registration = (BoardRegistration)typeof(CameraViewModel)
+            .GetField("_gameTableRegistration", flags)!.GetValue(fixture.Camera)!;
+        var expectedRegistration = BoardRegistration.Create(fixture.Frame, expected);
+        ClassicUsRouteGeometry.TryGetSlots("duluth--omaha--a", out var slots);
+        Assert.All(slots, slot =>
+        {
+            var actual = registration.MapToSensor(slot.X, slot.Y);
+            var target = expectedRegistration.MapToSensor(slot.X, slot.Y);
+            Assert.InRange(Math.Abs(target.X - actual.X), 0, .0015);
+            Assert.InRange(Math.Abs(target.Y - actual.Y), 0, .0015);
+        });
+        fixture.Camera.EndGameTablePreview();
+        Assert.Null(typeof(CameraViewModel).GetField("_gameTablePhotoAlignment", flags)!
+            .GetValue(fixture.Camera));
+    }
+
+    [Fact]
     public async Task Minor_corner_recalibration_keeps_the_board_visible_until_a_1500ms_handoff_expires()
     {
         using var pieces = new FakePieceModel();

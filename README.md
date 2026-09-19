@@ -319,6 +319,9 @@ If an earlier completed save has a valid matching photo, the error offers
 save will be discarded. Choosing it rechecks the photo before rewinding, then starts the normal
 camera verification. Recovery never silently falls back to an older save.
 After the match loads, the live board view checks its orientation against the saved photo.
+It also refines small corner-detection errors against the photo's board artwork before checking
+the narrow parallel lanes. This adjustment uses image agreement, not the expected train positions;
+every train still needs its own detection and color check.
 The game then prompts for each scoring marker at its saved number and checks
 the saved train positions and colors. It stays on the game table and resumes automatically only
 when the whole board matches. When a saved train is missing or has the wrong color, a pulsing

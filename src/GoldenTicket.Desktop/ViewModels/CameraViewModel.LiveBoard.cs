@@ -11,6 +11,7 @@ public sealed partial class CameraViewModel
     private BoardOrientationReference? _gameTableReference;
     private BoardOrientationReference? _acceptedSetupReference;
     private BitmapSource? _gameTableReferencePhoto;
+    private BoardPhotoAlignmentReference? _gameTablePhotoAlignment;
     private bool _liveBoardCheckBusy;
     private Task _liveBoardCheckWork = Task.CompletedTask;
     private DateTimeOffset _lastLiveBoardCheckAt = DateTimeOffset.MinValue;
@@ -35,6 +36,13 @@ public sealed partial class CameraViewModel
         bgra.CopyPixels(pixels, BoardOrientationReference.Width * 4, 0);
         _gameTableReference = new BoardOrientationReference(CameraFrame.CopyFromBgra32(
             BoardOrientationReference.Width, BoardOrientationReference.Height, pixels));
+        var alignmentImage = new FormatConvertedBitmap(new TransformedBitmap(uprightPhoto,
+            new ScaleTransform(320d / uprightPhoto.PixelWidth, 200d / uprightPhoto.PixelHeight)),
+            PixelFormats.Bgra32, null, 0);
+        var alignmentPixels = new byte[320 * 200 * 4];
+        alignmentImage.CopyPixels(alignmentPixels, 320 * 4, 0);
+        _gameTablePhotoAlignment = new BoardPhotoAlignmentReference(
+            CameraFrame.CopyFromBgra32(320, 200, alignmentPixels));
         _gameTableReferencePhoto = uprightPhoto;
         _lastLiveBoardCheckAt = DateTimeOffset.MinValue;
         if (_gameTablePreviewRequested && Capture.LatestFrame is { } frame)
@@ -111,6 +119,7 @@ public sealed partial class CameraViewModel
         _liveBoardCheckBusy = true;
         OnPropertyChanged(nameof(CanDetectBoardCorners));
         var reference = _gameTableReference;
+        var photoAlignment = _gameTablePhotoAlignment;
         var epoch = source.Epoch;
         var preferGpu = SelectedProcessor.Value != FrameComputeMode.Cpu;
         try
@@ -161,6 +170,17 @@ public sealed partial class CameraViewModel
                 return;
             }
             var selected = registrations[orientation.Value];
+            if (photoAlignment is not null)
+            {
+                // Match board artwork to the saved crop before applying the narrow lane map.
+                // Train detections and claimed routes are not inputs to this adjustment.
+                selected = await Task.Run(() => photoAlignment.Refine(source, selected, token), token);
+                if (!_gameTablePreviewRequested || !ReferenceEquals(reference, _gameTableReference) ||
+                    !Capture.IsRunning || source.Age > TimeSpan.FromSeconds(2) ||
+                    Capture.LatestFrame is not { } alignedCurrent ||
+                    alignedCurrent.Age > TimeSpan.FromSeconds(2) || !selected.Matches(alignedCurrent)) return;
+                current = alignedCurrent;
+            }
             if (!reference.IsAligned(selected.Rectify(current, BoardOrientationReference.Width,
                     BoardOrientationReference.Height)))
             {

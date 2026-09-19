@@ -71,7 +71,9 @@ public sealed partial class MainViewModel
             markerScore = result.Marker?.PrintedScore,
             markerState = result.MarkerState?.ToString(),
             inventoryState = result.Inventory?.State.ToString(),
-            inventoryRoute = result.Inventory?.RouteId
+            inventoryRoute = result.Inventory?.RouteId,
+            nearbyCandidates = result.Inventory?.RouteId is { } failedRoute
+                ? DescribeNearbyPlacementCandidates(analysis, failedRoute) : []
         });
         switch (result.Stage)
         {
