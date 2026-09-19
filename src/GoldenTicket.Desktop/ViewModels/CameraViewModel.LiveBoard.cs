@@ -24,8 +24,9 @@ public sealed partial class CameraViewModel
     private long _lastLoggedGameTablePreviewRevision = -1;
 
     private static BoardRegistration AlignGameTableCrop(CameraFrame source, BoardRegistration initial,
-        BoardPhotoAlignmentReference? savedPhoto, CancellationToken token) =>
-        ClassicUsBoardAlignment.Reference.TryRefine(source, initial, token) ??
+        BoardPhotoAlignmentReference? savedPhoto, CancellationToken token,
+        BoardRegistration? previous = null) =>
+        ClassicUsBoardAlignment.Reference.TryRefine(source, initial, previous, token) ??
         savedPhoto?.Refine(source, initial, token) ?? initial;
 
     private void QueueGameTableAlignment(CameraFrame frame, BoardRegistration registration)
@@ -176,6 +177,7 @@ public sealed partial class CameraViewModel
         OnPropertyChanged(nameof(CanDetectBoardCorners));
         var reference = _gameTableReference;
         var photoAlignment = _gameTablePhotoAlignment;
+        var previousRegistration = _gameTableRegistration;
         var cropRevision = _gameTableCropRevision;
         var epoch = source.Epoch;
         var preferGpu = SelectedProcessor.Value != FrameComputeMode.Cpu;
@@ -230,7 +232,10 @@ public sealed partial class CameraViewModel
             var selected = registrations[orientation.Value];
             // Anchor to the same board artwork used to measure the route geometry. A saved
             // photo can itself have a biased crop, so it is only a fallback for weak matches.
-            selected = await Task.Run(() => AlignGameTableCrop(source, selected, photoAlignment, token), token);
+            // A brief focus change can produce worse corners for an unmoved board. Compare
+            // both crops against this fresh image before replacing the earlier registration.
+            selected = await Task.Run(() => AlignGameTableCrop(source, selected, photoAlignment, token,
+                previousRegistration), token);
             if (!_gameTablePreviewRequested || cropRevision != _gameTableCropRevision ||
                 !ReferenceEquals(reference, _gameTableReference) || !Capture.IsRunning ||
                 source.Age > TimeSpan.FromSeconds(2) || Capture.LatestFrame is not { } alignedCurrent ||

@@ -57,6 +57,8 @@ See the
   a saved photo's crop bias. Three live Los Angeles–San Francisco frames recognize all three blue
   trains on lane B and reject lane A after alignment; keep broader physical-camera validation
   open. See the [canonical alignment check](docs/evidence/canonical-alignment-2026-09-19/validation.md).
+- [x] Recover shifted corner estimates after refocusing within the existing correction bounds,
+  and retain the earlier registration when fresh artwork confirms it fits better.
 - [ ] Persist the physical scoring-marker move gate across app restart; resume currently requires
   board reconciliation, but it does not restore the in-memory post-claim marker instruction.
 - [ ] Validate score-piece color and printed-1 acceptance with the real overhead camera for all

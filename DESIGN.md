@@ -879,6 +879,9 @@ off the UI thread and publishes one registration shared by preview, placement cu
 newly adopted crops wait for alignment before producing piece evidence. Corrections remain bounded,
 and neither expected route ownership nor detected train positions steer the crop. The original
 calibration photo and training captures remain local; the embedded 64 KB reference is runtime data.
+Weak initial matches get a coarse translation search within the same one-percent correction budget.
+Periodic and refocus recovery checks compare the proposed and previous registrations against the
+fresh artwork, keeping the better match. Prior piece detections never substitute for fresh evidence.
 See [canonical alignment validation](docs/evidence/canonical-alignment-2026-09-19/validation.md)
 for measured cases and remaining limits.
 

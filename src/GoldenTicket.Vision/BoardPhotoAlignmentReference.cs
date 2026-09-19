@@ -32,6 +32,19 @@ public sealed class BoardPhotoAlignmentReference
     public BoardRegistration Refine(CameraFrame source, BoardRegistration initial,
         CancellationToken token = default) => TryRefine(source, initial, token) ?? initial;
 
+    /// <summary>Retain a previous crop only when it matches the current artwork better.</summary>
+    public BoardRegistration? TryRefine(CameraFrame source, BoardRegistration initial,
+        BoardRegistration? previous, CancellationToken token = default)
+    {
+        var proposed = TryRefine(source, initial, token);
+        if (previous is null || ReferenceEquals(previous, initial) || !previous.Matches(source))
+            return proposed;
+        var retained = TryRefine(source, previous, token);
+        if (retained is null) return proposed;
+        return proposed is null || Similarity(source, retained, token) > Similarity(source, proposed, token) + .002
+            ? retained : proposed;
+    }
+
     /// <summary>Returns null when this artwork cannot reliably anchor the crop.</summary>
     public BoardRegistration? TryRefine(CameraFrame source, BoardRegistration initial,
         CancellationToken token = default)
@@ -42,12 +55,37 @@ public sealed class BoardPhotoAlignmentReference
         if (!initial.Matches(source))
             throw new InvalidOperationException("The camera format or epoch changed before photo alignment.");
         var initialScore = Similarity(source, initial, token);
-        // An unrelated, obscured or inverted image must not steer the board crop.
-        if (initialScore < .55) return null;
-
         var offsets = new double[8];
         var best = initial;
         var bestScore = initialScore;
+        // Refocusing can briefly bias the corner detector enough that corresponding artwork
+        // no longer overlaps. Search translation inside the original correction budget before
+        // rejecting the match; neither weak artwork nor train positions authorize a crop.
+        if (bestScore < .55)
+        {
+            for (var x = -4; x <= 4; x++)
+            for (var y = -4; y <= 4; y++)
+            {
+                token.ThrowIfCancellationRequested();
+                if (x == 0 && y == 0) continue;
+                var trial = new double[8];
+                for (var corner = 0; corner < 4; corner++)
+                {
+                    trial[corner * 2] = x * MaximumCorrection / 4;
+                    trial[corner * 2 + 1] = y * MaximumCorrection / 4;
+                }
+                var registration = Adjust(source, initial, trial);
+                if (registration is null) continue;
+                var score = Similarity(source, registration, token);
+                if (score <= bestScore) continue;
+                offsets = trial;
+                best = registration;
+                bestScore = score;
+            }
+        }
+        // An unrelated, obscured or inverted image must not steer the board crop.
+        if (bestScore < .55) return null;
+
         // First recover translation; then allow each corner a small independent correction.
         // The decreasing steps correspond to 2, 1 and 0.5 reference-board pixels.
         foreach (var step in new[] { 2d, 1d, .5d })

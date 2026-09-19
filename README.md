@@ -330,6 +330,8 @@ It refines small corner-detection errors against a compact classic-US artwork ca
 same coordinates as the measured routes. This prevents a slightly miscropped saved photo from
 shifting the narrow parallel lanes. Saved-photo alignment remains a fallback when the fixed
 artwork match is weak. New and manually adopted crops wait for this check before piece analysis.
+After a brief loss of focus, a bounded artwork search can recover shifted corner estimates;
+live checks retain the earlier crop when it fits the current image better than the new estimate.
 The adjustment uses image agreement, not expected train positions; every train still needs its
 own detection and color check. See the [Los Angeles–San Francisco check](docs/evidence/canonical-alignment-2026-09-19/validation.md).
 The game then prompts for each scoring marker at its saved number and checks

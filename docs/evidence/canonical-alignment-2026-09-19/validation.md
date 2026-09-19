@@ -64,6 +64,35 @@ skips. New regressions cover calibration integrity, a crop bias shared by the sa
 weak-match rejection, cancellation, initial canonical alignment, blocking inference while manual
 crop alignment is pending, and preventing delayed periodic results from replacing a newer crop.
 
+## Refocus recovery follow-up
+
+A subsequent Boston–New York report came from the earlier 08:34 desktop build. Its log first
+reported that route missing immediately after a crop revision. Offline screenshot analysis found
+both yellow trains at 95–96% detector confidence; one center was rejected near the parallel-lane
+boundary. This distinguishes a coordinate mismatch from a missing train detection.
+
+Raw-frame replays exposed a remaining recovery gap in the initial alignment gate: logged crops
+53 and 54 scored below its 0.55 minimum, so local refinement never ran. Weak initial matches now
+get a coarse translation search before rejection. Coarse and fine adjustments share the original
+one-percent budget; the final 0.65 artwork threshold and lane-separation checks are unchanged.
+Periodic recovery also freshly refines both the previous and proposed registrations and keeps
+the previous one only when its current artwork match is better. This handles corner jumps that
+cannot be fully corrected from the new proposal within the bound.
+
+Using the production recovery path, three recorded raw frames replayed with each of the three
+logged crop proposals confirm both yellow trains on Boston–New York lane A. Lane B matches zero
+trains in all nine cases. The full inventory also confirms all 55 trains across 25 routes in each
+case, including Los Angeles–San Francisco lane B. These are offline replays with a previously accepted registration,
+not observations from a restarted live game. Detailed reports remain local and ignored under
+`artifacts/boston-blur-20260919/`.
+
+A desktop regression now covers temporary loss of board detail, removal of stale piece evidence,
+reacquisition from a biased corner proposal, fresh canonical Boston–New York coordinates, and
+confirmation after two stable observations. The adjacent lane remains rejected. Additional
+regressions cover low initial similarity, actual board movement, and obsolete camera registrations.
+All 107 related tests pass, and the normal Debug desktop build succeeds with no warnings or errors.
+An already running older process must be restarted to use the updated desktop build.
+
 ## Limits
 
 These captures share one physical board and camera setup. They do not establish accuracy across

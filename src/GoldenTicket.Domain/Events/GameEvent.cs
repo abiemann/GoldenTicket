@@ -243,7 +243,7 @@ public sealed record ClaimPlanned(
 
     public override PublicEventEntry ToPublicEntry(BoardManifest manifest) =>
         new("ClaimPlanned", SeatId,
-            $"Claiming {RouteText(manifest, RouteId)} - place {TrainCount} train{(TrainCount == 1 ? "" : "s")}.");
+            $"Claiming {RouteText(manifest, RouteId)}; place {TrainCount} train{(TrainCount == 1 ? "" : "s")}.");
 }
 
 /// <summary>

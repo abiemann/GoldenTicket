@@ -348,6 +348,101 @@ public sealed class CameraCornerLearningFlowTests
                 biased.MapToSensor(slot.X, slot.Y).X) > .002));
     }
 
+    [Theory]
+    [InlineData(.006, -.003)]
+    [InlineData(.014, -.006)]
+    public async Task Brief_loss_of_board_detail_reacquires_Boston_trains_in_canonical_coordinates(
+        double detectedDx, double detectedDy)
+    {
+        const string routeId = "boston--new-york--a";
+        ClassicUsRouteGeometry.TryGetSlots(routeId, out var slots);
+        using var pieces = new FakePieceModel
+        {
+            Trains = slots.Select(slot => new PieceCandidate(PieceCandidateKind.Train,
+                [new(slot.X - .005, slot.Y - .007), new(slot.X + .005, slot.Y - .007),
+                    new(slot.X + .005, slot.Y + .007), new(slot.X - .005, slot.Y + .007)], .95)).ToArray()
+        };
+        await using var fixture = new Fixture(pieceFactory: (_, _) => pieces);
+        var detailLost = false;
+        fixture.FramePainter = (pixels, width, height) =>
+        {
+            if (detailLost) return; // Temporary featureless frame during webcam refocusing.
+            PaintCanonicalBoard(pixels, width, height);
+            var sensor = BoardRegistration.Create(CameraFrame.CopyFromBgra32(width, height, pixels),
+                CanonicalSensorCorners());
+            foreach (var slot in slots)
+            {
+                var point = sensor.MapToSensor(slot.X, slot.Y);
+                var cx = (int)Math.Round(point.X * (width - 1));
+                var cy = (int)Math.Round(point.Y * (height - 1));
+                for (var y = cy - 8; y <= cy + 8; y++)
+                for (var x = cx - 8; x <= cx + 8; x++)
+                {
+                    var offset = (y * width + x) * 4;
+                    pixels[offset] = 25;
+                    pixels[offset + 1] = 205;
+                    pixels[offset + 2] = 245;
+                }
+            }
+        };
+        fixture.Refresh(width: 1600, height: 900);
+        fixture.Camera.SetGameTableReference(ToBitmap(
+            BoardRegistration.Create(fixture.Frame, CanonicalSensorCorners()).Rectify(fixture.Frame, 1280, 800)));
+        fixture.Model.DetectedCorners = CanonicalSensorCorners();
+        fixture.SetField("_pieceModel", pieces);
+        fixture.Camera.RequestGameTablePreview();
+        await fixture.WaitForLiveBoardCheckAsync();
+        await fixture.WaitForGameTableAnalysisAsync();
+        var before = Assert.IsType<GameTableAnalysis>(fixture.Camera.GameTableAnalysis);
+
+        detailLost = true;
+        fixture.Refresh(width: 1600, height: 900);
+        fixture.SetField("_lastLiveBoardCheckAt", DateTimeOffset.UtcNow);
+        typeof(CameraViewModel).GetMethod("CheckLiveBoardAlignment", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(fixture.Camera, [fixture.Frame]);
+        Assert.False(fixture.Camera.IsGameTablePreviewUpright);
+        Assert.Null(fixture.Camera.GameTableAnalysis);
+        await fixture.DetectLiveBoardAsync();
+        Assert.False(fixture.Camera.IsGameTablePreviewUpright);
+
+        detailLost = false;
+        fixture.Refresh(width: 1600, height: 900);
+        // Autofocus can change the corner proposal even though the board and trains did not move.
+        fixture.Model.DetectedCorners = CanonicalSensorCorners(detectedDx, detectedDy);
+        fixture.SetField("_lastGameTableAnalysisAt", DateTimeOffset.MinValue);
+        await fixture.DetectLiveBoardAsync();
+        await fixture.WaitForGameTableAnalysisAsync();
+        var recovered = Assert.IsType<GameTableAnalysis>(fixture.Camera.GameTableAnalysis);
+        Assert.True(fixture.Camera.IsGameTablePreviewUpright, fixture.Camera.GameTablePreviewStatus);
+        Assert.True(recovered.Board.Sequence > before.Board.Sequence);
+        Assert.True(recovered.CropRevision > before.CropRevision);
+        Assert.Equal(fixture.Frame.Sequence, recovered.Board.Sequence);
+        var expected = BoardRegistration.Create(fixture.Frame, CanonicalSensorCorners());
+        Assert.All(slots, slot =>
+        {
+            var actual = fixture.GameTableRegistration.MapToSensor(slot.X, slot.Y);
+            var target = expected.MapToSensor(slot.X, slot.Y);
+            Assert.InRange(Math.Abs(actual.X - target.X), 0, .0015);
+            Assert.InRange(Math.Abs(actual.Y - target.Y), 0, .0015);
+        });
+
+        var verifier = new RoutePlacementVerifier();
+        Assert.Equal(RoutePlacementState.Stabilizing, verifier.Observe(recovered.Board,
+            recovered.Candidates, routeId, MarkerColor.Yellow, 2, "recovered-claim",
+            recovered.CropRevision, recovered.ModelRevision).State);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1.1));
+        fixture.Refresh(width: 1600, height: 900);
+        fixture.SetField("_lastGameTableAnalysisAt", DateTimeOffset.MinValue);
+        fixture.QueueGameTableAnalysis();
+        await fixture.WaitForGameTableAnalysisAsync();
+        var stable = Assert.IsType<GameTableAnalysis>(fixture.Camera.GameTableAnalysis);
+        Assert.True(verifier.Observe(stable.Board, stable.Candidates, routeId, MarkerColor.Yellow,
+            2, "recovered-claim", stable.CropRevision, stable.ModelRevision).Confirmed);
+        Assert.Equal(0, new RoutePlacementVerifier().Observe(stable.Board, stable.Candidates,
+            "boston--new-york--b", MarkerColor.Yellow, 2, "wrong-lane",
+            stable.CropRevision, stable.ModelRevision).MatchedCount);
+    }
+
     [Fact]
     public async Task Manual_game_crop_cannot_publish_piece_evidence_until_alignment_finishes()
     {
@@ -1003,6 +1098,7 @@ public sealed class CameraCornerLearningFlowTests
         public string? FallbackReason => null;
         public int Calls { get; private set; }
         public bool ShowTrain { get; set; }
+        public IReadOnlyList<PieceCandidate> Trains { get; init; } = [];
 
         public LearnedPieceDetection Detect(CameraFrame board, CancellationToken token = default)
         {
@@ -1012,6 +1108,7 @@ public sealed class CameraCornerLearningFlowTests
             if (IsBlue(board, .055, .9266)) candidates.Add(Marker(.055, .9266));
             if (ShowTrain) candidates.Add(new(PieceCandidateKind.Train,
                 [new(.45, .45), new(.55, .45), new(.55, .55), new(.45, .55)], .95));
+            candidates.AddRange(Trains);
             return new(candidates, ModelId, Backend, TimeSpan.FromMilliseconds(1));
         }
 
