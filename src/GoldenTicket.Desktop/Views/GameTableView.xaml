@@ -50,19 +50,31 @@
         <Style x:Key="DrawCardButtonStyle" TargetType="Button">
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Padding" Value="0" />
+            <Setter Property="Width" Value="76" />
+            <Setter Property="Height" Value="71" />
+            <Setter Property="Margin" Value="4,2" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="HitArea" Background="Transparent" BorderBrush="Transparent"
+                        <Border x:Name="CardFrame" Background="{TemplateBinding Background}" BorderBrush="#FFF0D7A0"
                                 BorderThickness="2" CornerRadius="5">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <Border Background="#FFFBEED5" VerticalAlignment="Bottom"
+                                    CornerRadius="0,0,3,3" Padding="2">
+                                <ContentPresenter HorizontalAlignment="Center" />
+                            </Border>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="HitArea" Property="BorderBrush" Value="#FFE1BD79" />
+                                <Setter TargetName="CardFrame" Property="BorderBrush" Value="#FFFFD576" />
+                                <Setter TargetName="CardFrame" Property="BorderThickness" Value="4" />
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="HitArea" Property="BorderBrush" Value="#FFFFE7B0" />
+                                <Setter TargetName="CardFrame" Property="BorderBrush" Value="#FFFFD576" />
+                                <Setter TargetName="CardFrame" Property="BorderThickness" Value="4" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="CardFrame" Property="Opacity" Value="0.84" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -102,6 +114,7 @@
         <Style x:Key="BoardPaymentCardStyle" TargetType="ToggleButton">
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Foreground" Value="#FF1A2531" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
@@ -781,17 +794,13 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Button Style="{StaticResource DrawCardButtonStyle}"
+                                            Background="{Binding Kind, Converter={StaticResource CardKindBrush}}"
                                             Command="{Binding DataContext.DrawSoloFaceUpCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
                                             CommandParameter="{Binding}"
                                             AutomationProperties.Name="{Binding Label, StringFormat=Draw face-up {0} train card}"
                                             ToolTip="{Binding Label, StringFormat=Draw face-up {0} train card}">
-                                        <Border Width="76" Height="71" CornerRadius="4" Margin="2,0"
-                                                Background="{Binding Kind, Converter={StaticResource CardKindBrush}}"
-                                                BorderBrush="#FFF0D7A0" BorderThickness="2">
-                                            <TextBlock Text="{Binding Label}" Foreground="#FF1A2531" FontSize="11"
-                                                       FontWeight="Bold" TextAlignment="Center" TextWrapping="NoWrap"
-                                                       VerticalAlignment="Bottom" Background="#DDF5EAD5" Padding="2" />
-                                        </Border>
+                                        <TextBlock Text="{Binding Label}" Foreground="#FF1A2531" FontSize="11"
+                                                   FontWeight="Bold" TextAlignment="Center" TextWrapping="NoWrap" />
                                     </Button>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
