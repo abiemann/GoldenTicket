@@ -30,6 +30,10 @@ public sealed class BoardPhotoAlignmentReference
     }
 
     public BoardRegistration Refine(CameraFrame source, BoardRegistration initial,
+        CancellationToken token = default) => TryRefine(source, initial, token) ?? initial;
+
+    /// <summary>Returns null when this artwork cannot reliably anchor the crop.</summary>
+    public BoardRegistration? TryRefine(CameraFrame source, BoardRegistration initial,
         CancellationToken token = default)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -39,7 +43,7 @@ public sealed class BoardPhotoAlignmentReference
             throw new InvalidOperationException("The camera format or epoch changed before photo alignment.");
         var initialScore = Similarity(source, initial, token);
         // An unrelated, obscured or inverted image must not steer the board crop.
-        if (initialScore < .55) return initial;
+        if (initialScore < .55) return null;
 
         var offsets = new double[8];
         var best = initial;
@@ -85,7 +89,8 @@ public sealed class BoardPhotoAlignmentReference
         }
         token.ThrowIfCancellationRequested();
         // A weak improvement may just be noise or a moved piece. Do not alter that crop.
-        return bestScore >= .65 && bestScore - initialScore >= .002 ? best : initial;
+        if (bestScore < .65) return null;
+        return bestScore - initialScore >= .002 ? best : initial;
     }
 
     private static BoardRegistration? Adjust(CameraFrame source, BoardRegistration initial, double[] offsets)

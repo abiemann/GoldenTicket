@@ -184,6 +184,7 @@ public sealed class CameraCornerLearningFlowTests
         Assert.True(fixture.Camera.CanStartGameWithBoard, fixture.Camera.GameBoardFramingStatus);
         fixture.Camera.BeginGameTablePreview();
         fixture.Camera.EndGameBoardFraming();
+        await fixture.WaitForGameTableAlignmentAsync();
         Assert.True(fixture.Camera.IsGameTablePreviewUpright);
 
         halfTurn = true;
@@ -284,6 +285,7 @@ public sealed class CameraCornerLearningFlowTests
         Assert.True(fixture.Camera.CanStartGameWithBoard, fixture.Camera.GameBoardFramingStatus);
         fixture.Camera.BeginGameTablePreview();
         fixture.Camera.EndGameBoardFraming();
+        await fixture.WaitForGameTableAlignmentAsync();
         for (var attempt = 0; attempt < 50 && fixture.Camera.GameTablePreview is null; attempt++)
             await Task.Delay(20);
         BitmapSource previous = Assert.IsAssignableFrom<BitmapSource>(fixture.Camera.GameTablePreview);
@@ -322,6 +324,182 @@ public sealed class CameraCornerLearningFlowTests
             await Task.Delay(20);
         Assert.NotNull(fixture.Camera.GameTablePreview);
         Assert.Equal(string.Empty, fixture.Camera.GameTablePreviewStatus);
+    }
+
+    [Fact]
+    public async Task Reload_uses_canonical_route_coordinates_even_when_the_saved_photo_is_biased()
+    {
+        await using var fixture = new Fixture();
+        fixture.FramePainter = (pixels, width, height) => PaintCanonicalBoard(pixels, width, height);
+        fixture.Refresh(width: 1600, height: 900);
+        var expected = BoardRegistration.Create(fixture.Frame, CanonicalSensorCorners());
+        var biased = BoardRegistration.Create(fixture.Frame, CanonicalSensorCorners(.004, .002));
+        fixture.Camera.SetGameTableReference(ToBitmap(biased.Rectify(fixture.Frame, 1280, 800)));
+        fixture.Model.DetectedCorners = biased.Corners;
+
+        fixture.Camera.RequestGameTablePreview();
+        await fixture.WaitForLiveBoardCheckAsync();
+
+        Assert.True(fixture.Camera.IsGameTablePreviewUpright, fixture.Camera.GameTablePreviewStatus);
+        AssertCanonicalRouteMapping(expected, fixture.GameTableRegistration);
+        ClassicUsRouteGeometry.TryGetSlots("los-angeles--san-francisco--b", out var slots);
+        Assert.All(slots, slot => Assert.True(
+            Math.Abs(fixture.GameTableRegistration.MapToSensor(slot.X, slot.Y).X -
+                biased.MapToSensor(slot.X, slot.Y).X) > .002));
+    }
+
+    [Fact]
+    public async Task Manual_game_crop_cannot_publish_piece_evidence_until_alignment_finishes()
+    {
+        using var pieces = new FakePieceModel();
+        await using var fixture = new Fixture(pieceFactory: (_, _) => pieces);
+        fixture.FramePainter = (pixels, width, height) => PaintCanonicalBoard(pixels, width, height);
+        fixture.Refresh(width: 1600, height: 900);
+        var expected = BoardRegistration.Create(fixture.Frame, CanonicalSensorCorners());
+        fixture.Camera.SetGameTableReference(ToBitmap(expected.Rectify(fixture.Frame, 1280, 800)));
+        fixture.SetField("_registration", BoardRegistration.Create(fixture.Frame, CanonicalSensorCorners(.004, .002)));
+        fixture.SetField("_pieceModel", pieces);
+        var context = new HeldContinuationContext();
+        var previousContext = SynchronizationContext.Current;
+        try
+        {
+            SynchronizationContext.SetSynchronizationContext(context);
+            fixture.Camera.RequestGameTablePreview();
+        }
+        finally { SynchronizationContext.SetSynchronizationContext(previousContext); }
+
+        try
+        {
+            await context.Posted.Task.WaitAsync(TimeSpan.FromSeconds(10), Token);
+            fixture.QueueGameTableAnalysis();
+            Assert.Equal("board-alignment-pending", fixture.GetField("_lastGameTableAnalysisBlock"));
+            Assert.Null(fixture.Camera.GameTableAnalysis);
+            Assert.Equal(0, pieces.Calls);
+        }
+        finally { context.Release(); }
+
+        await fixture.WaitForGameTableAlignmentAsync();
+        await fixture.WaitForGameTableAnalysisAsync();
+        AssertCanonicalRouteMapping(expected, fixture.GameTableRegistration);
+        var analysis = Assert.IsType<GameTableAnalysis>(fixture.Camera.GameTableAnalysis);
+        Assert.Equal(fixture.GetField("_gameTableCropRevision"), analysis.CropRevision);
+        Assert.Null(fixture.GetField("_gameTableAlignmentPendingRevision"));
+        Assert.Equal(1, pieces.Calls);
+    }
+
+    [Fact]
+    public async Task Delayed_periodic_alignment_cannot_replace_a_newer_manual_game_crop()
+    {
+        await using var fixture = new Fixture();
+        var horizontalShift = 0d;
+        fixture.FramePainter = (pixels, width, height) =>
+            PaintCanonicalBoard(pixels, width, height, horizontalShift);
+        fixture.Refresh(width: 1600, height: 900);
+        var first = BoardRegistration.Create(fixture.Frame, CanonicalSensorCorners());
+        fixture.Camera.SetGameTableReference(ToBitmap(first.Rectify(fixture.Frame, 1280, 800)));
+        fixture.Model.DetectedCorners = CanonicalSensorCorners();
+        fixture.Camera.RequestGameTablePreview();
+        await fixture.WaitForLiveBoardCheckAsync();
+
+        fixture.Model.Pause(ignoreCancellation: true);
+        var oldCheck = fixture.DetectLiveBoardAsync();
+        await fixture.Model.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10), Token);
+        BoardRegistration? newer = null;
+        object? revision = null;
+        try
+        {
+            horizontalShift = .006;
+            fixture.Refresh(width: 1600, height: 900);
+            fixture.AdoptGameTableCrop(BoardRegistration.Create(fixture.Frame,
+                CanonicalSensorCorners(horizontalShift)));
+            await fixture.WaitForGameTableAlignmentAsync();
+            newer = fixture.GameTableRegistration;
+            revision = fixture.GetField("_gameTableCropRevision");
+            AssertCanonicalRouteMapping(BoardRegistration.Create(fixture.Frame,
+                CanonicalSensorCorners(horizontalShift)), newer);
+        }
+        finally
+        {
+            fixture.Model.Release();
+            await oldCheck.WaitAsync(TimeSpan.FromSeconds(10), Token);
+        }
+
+        Assert.Same(newer, fixture.GameTableRegistration);
+        Assert.Equal(revision, fixture.GetField("_gameTableCropRevision"));
+        Assert.Null(fixture.GetField("_gameTableAlignmentPendingRevision"));
+        Assert.True(fixture.Camera.IsGameTablePreviewUpright);
+    }
+
+    private static NormalizedPoint[] CanonicalSensorCorners(double dx = 0, double dy = 0) =>
+        [new(.1 + dx, .12 + dy), new(.9 + dx, .12 + dy),
+            new(.9 + dx, .88 + dy), new(.1 + dx, .88 + dy)];
+
+    private static BitmapSource ToBitmap(CameraFrame frame)
+    {
+        var bitmap = BitmapSource.Create(frame.Width, frame.Height, 96, 96,
+            System.Windows.Media.PixelFormats.Bgra32, null, frame.Bgra32.ToArray(), frame.Stride);
+        bitmap.Freeze();
+        return bitmap;
+    }
+
+    private static void AssertCanonicalRouteMapping(BoardRegistration expected, BoardRegistration actual)
+    {
+        ClassicUsRouteGeometry.TryGetSlots("los-angeles--san-francisco--b", out var slots);
+        Assert.All(slots, slot =>
+        {
+            var target = expected.MapToSensor(slot.X, slot.Y);
+            var point = actual.MapToSensor(slot.X, slot.Y);
+            Assert.InRange(Math.Abs(point.X - target.X), 0, .0015);
+            Assert.InRange(Math.Abs(point.Y - target.Y), 0, .0015);
+        });
+    }
+
+    private static void PaintCanonicalBoard(byte[] pixels, int width, int height, double dx = 0)
+    {
+        var reference = ClassicUsBoardAlignment.ReferenceFrame;
+        var artwork = reference.Bgra32.Span;
+        for (var y = 0; y < height; y++)
+        for (var x = 0; x < width; x++)
+        {
+            var u = (x / (double)(width - 1) - .1 - dx) / .8;
+            var v = (y / (double)(height - 1) - .12) / .76;
+            if (u is < 0 or > 1 || v is < 0 or > 1) continue;
+            var rx = u * (reference.Width - 1);
+            var ry = v * (reference.Height - 1);
+            var left = (int)rx;
+            var top = (int)ry;
+            var right = Math.Min(left + 1, reference.Width - 1);
+            var bottom = Math.Min(top + 1, reference.Height - 1);
+            var fx = rx - left;
+            var fy = ry - top;
+            var gray = (byte)Math.Round(
+                artwork[top * reference.Stride + left * 4] * (1 - fx) * (1 - fy) +
+                artwork[top * reference.Stride + right * 4] * fx * (1 - fy) +
+                artwork[bottom * reference.Stride + left * 4] * (1 - fx) * fy +
+                artwork[bottom * reference.Stride + right * 4] * fx * fy);
+            var offset = (y * width + x) * 4;
+            pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = gray;
+            pixels[offset + 3] = 255;
+        }
+    }
+
+    private sealed class HeldContinuationContext : SynchronizationContext
+    {
+        private readonly ConcurrentQueue<(SendOrPostCallback Callback, object? State)> _callbacks = new();
+        private volatile bool _released;
+        public TaskCompletionSource Posted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public override void Post(SendOrPostCallback callback, object? state)
+        {
+            _callbacks.Enqueue((callback, state));
+            Posted.TrySetResult();
+            if (_released) Release();
+        }
+
+        public void Release()
+        {
+            _released = true;
+            while (_callbacks.TryDequeue(out var item)) item.Callback(item.State);
+        }
     }
 
     private static void PaintAsymmetricBoard(byte[] pixels, int width, int height, bool halfTurn)
@@ -731,6 +909,25 @@ public sealed class CameraCornerLearningFlowTests
         public CameraFrame Frame => Camera.Capture.LatestFrame!;
         public Action<byte[], int, int>? FramePainter { get; set; }
         public object? Registration => Field("_registration").GetValue(Camera);
+        public BoardRegistration GameTableRegistration =>
+            (BoardRegistration)Field("_gameTableRegistration").GetValue(Camera)!;
+        public object? GetField(string name) => Field(name).GetValue(Camera);
+        public void SetField(string name, object value) => Field(name).SetValue(Camera, value);
+        public Task WaitForGameTableAlignmentAsync() => ((Task)GetField("_gameTableAlignmentWork")!)
+            .WaitAsync(TimeSpan.FromSeconds(10), Token);
+        public Task WaitForLiveBoardCheckAsync() => ((Task)GetField("_liveBoardCheckWork")!)
+            .WaitAsync(TimeSpan.FromSeconds(10), Token);
+        public Task WaitForGameTableAnalysisAsync() => ((Task)GetField("_gameTableAnalysisWork")!)
+            .WaitAsync(TimeSpan.FromSeconds(10), Token);
+        public Task DetectLiveBoardAsync() => (Task)typeof(CameraViewModel)
+            .GetMethod("DetectLiveBoardAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(Camera, [Frame])!;
+        public void AdoptGameTableCrop(BoardRegistration registration) => typeof(CameraViewModel)
+            .GetMethod("AdoptTechnicalBoardCrop", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(Camera, [Frame, registration]);
+        public void QueueGameTableAnalysis() => typeof(CameraViewModel)
+            .GetMethod("QueueGameTableAnalysis", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(Camera, [Frame]);
 
         public Fixture(Func<string, bool, IBoardCornerDetector>? factory = null,
             Func<string, bool, IPieceModelDetector>? pieceFactory = null)

@@ -12,6 +12,8 @@ public sealed partial class CameraViewModel
     private BoardOrientationReference? _acceptedSetupReference;
     private BitmapSource? _gameTableReferencePhoto;
     private BoardPhotoAlignmentReference? _gameTablePhotoAlignment;
+    private Task _gameTableAlignmentWork = Task.CompletedTask;
+    private long? _gameTableAlignmentPendingRevision;
     private bool _liveBoardCheckBusy;
     private Task _liveBoardCheckWork = Task.CompletedTask;
     private DateTimeOffset _lastLiveBoardCheckAt = DateTimeOffset.MinValue;
@@ -20,6 +22,60 @@ public sealed partial class CameraViewModel
     private long _gameTableHandoffRevision = -1;
     private bool _gameTableHandoffBlackedOut;
     private long _lastLoggedGameTablePreviewRevision = -1;
+
+    private static BoardRegistration AlignGameTableCrop(CameraFrame source, BoardRegistration initial,
+        BoardPhotoAlignmentReference? savedPhoto, CancellationToken token) =>
+        ClassicUsBoardAlignment.Reference.TryRefine(source, initial, token) ??
+        savedPhoto?.Refine(source, initial, token) ?? initial;
+
+    private void QueueGameTableAlignment(CameraFrame frame, BoardRegistration registration)
+    {
+        var revision = _gameTableCropRevision;
+        _gameTableAlignmentPendingRevision = revision;
+        _gameTableAlignmentWork = Task.WhenAll(_gameTableAlignmentWork,
+            AlignInitialGameTableCropAsync(frame, registration, revision));
+    }
+
+    private async Task AlignInitialGameTableCropAsync(CameraFrame source,
+        BoardRegistration initial, long revision)
+    {
+        var reference = _gameTableReference;
+        var savedPhoto = _gameTablePhotoAlignment;
+        try
+        {
+            var aligned = await Task.Run(() => AlignGameTableCrop(source, initial, savedPhoto,
+                _lifetime.Token), _lifetime.Token);
+            if (_disposed || !_gameTablePreviewRequested || !IsGameTablePreviewUpright ||
+                revision != _gameTableCropRevision || !ReferenceEquals(reference, _gameTableReference) ||
+                !ReferenceEquals(initial, _gameTableRegistration) || !Capture.IsRunning ||
+                source.Age > TimeSpan.FromSeconds(2) || Capture.LatestFrame is not { } current ||
+                current.Age > TimeSpan.FromSeconds(2) || !aligned.Matches(current)) return;
+            if (reference is null || !reference.IsAligned(aligned.Rectify(current,
+                BoardOrientationReference.Width, BoardOrientationReference.Height))) return;
+            _gameTableAlignmentPendingRevision = null;
+            if (!ReferenceEquals(initial, aligned))
+            {
+                ClearGameTableAnalysis();
+                _gameTableRegistration = aligned;
+                _gameTableCropRevision++;
+                _lastGameTableCropAt = DateTimeOffset.MinValue;
+                BeginGameTablePreviewHandoff();
+                QueueGameTablePreview(current);
+            }
+            QueueGameTableAnalysis(current);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            if (!_disposed && revision == _gameTableCropRevision)
+                GameTablePreviewStatus = "Board alignment check unavailable: " + ex.Message;
+        }
+        finally
+        {
+            if (!_disposed && _gameTableAlignmentPendingRevision == revision)
+                _lastLiveBoardCheckAt = DateTimeOffset.MinValue;
+        }
+    }
 
     /// <summary>Use an upright checkpoint photo as the orientation anchor when resuming a game.</summary>
     public void SetGameTableReference(BitmapSource? uprightPhoto)
@@ -120,6 +176,7 @@ public sealed partial class CameraViewModel
         OnPropertyChanged(nameof(CanDetectBoardCorners));
         var reference = _gameTableReference;
         var photoAlignment = _gameTablePhotoAlignment;
+        var cropRevision = _gameTableCropRevision;
         var epoch = source.Epoch;
         var preferGpu = SelectedProcessor.Value != FrameComputeMode.Cpu;
         try
@@ -138,7 +195,8 @@ public sealed partial class CameraViewModel
                 }
                 return _boardCornerModel.Detect(source, token);
             }, token);
-            if (!_gameTablePreviewRequested || !ReferenceEquals(reference, _gameTableReference) ||
+            if (!_gameTablePreviewRequested || cropRevision != _gameTableCropRevision ||
+                !ReferenceEquals(reference, _gameTableReference) ||
                 !Capture.IsRunning || Capture.Epoch != epoch) return;
             if (!detected.Accepted)
             {
@@ -170,17 +228,14 @@ public sealed partial class CameraViewModel
                 return;
             }
             var selected = registrations[orientation.Value];
-            if (photoAlignment is not null)
-            {
-                // Match board artwork to the saved crop before applying the narrow lane map.
-                // Train detections and claimed routes are not inputs to this adjustment.
-                selected = await Task.Run(() => photoAlignment.Refine(source, selected, token), token);
-                if (!_gameTablePreviewRequested || !ReferenceEquals(reference, _gameTableReference) ||
-                    !Capture.IsRunning || source.Age > TimeSpan.FromSeconds(2) ||
-                    Capture.LatestFrame is not { } alignedCurrent ||
-                    alignedCurrent.Age > TimeSpan.FromSeconds(2) || !selected.Matches(alignedCurrent)) return;
-                current = alignedCurrent;
-            }
+            // Anchor to the same board artwork used to measure the route geometry. A saved
+            // photo can itself have a biased crop, so it is only a fallback for weak matches.
+            selected = await Task.Run(() => AlignGameTableCrop(source, selected, photoAlignment, token), token);
+            if (!_gameTablePreviewRequested || cropRevision != _gameTableCropRevision ||
+                !ReferenceEquals(reference, _gameTableReference) || !Capture.IsRunning ||
+                source.Age > TimeSpan.FromSeconds(2) || Capture.LatestFrame is not { } alignedCurrent ||
+                alignedCurrent.Age > TimeSpan.FromSeconds(2) || !selected.Matches(alignedCurrent)) return;
+            current = alignedCurrent;
             if (!reference.IsAligned(selected.Rectify(current, BoardOrientationReference.Width,
                     BoardOrientationReference.Height)))
             {
@@ -189,8 +244,10 @@ public sealed partial class CameraViewModel
                 return;
             }
             if (_gameTableRegistration is { } previous && IsGameTablePreviewUpright &&
-                previous.Matches(current) && SameCorners(previous.Corners, selected.Corners)) return;
+                previous.Matches(current) && SameCorners(previous.Corners, selected.Corners) &&
+                _gameTableAlignmentPendingRevision is null) return;
             ClearGameTableAnalysis();
+            _gameTableAlignmentPendingRevision = null;
             _gameTableRegistration = selected;
             _gameTableCropRevision++;
             BoardInteractionLog.Write("camera.board.aligned", new

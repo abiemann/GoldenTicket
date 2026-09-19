@@ -591,7 +591,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         if (IsGameTablePreviewUpright)
         {
             QueueGameTablePreview(frame);
-            QueueGameTableAnalysis(frame);
+            QueueGameTableAlignment(frame, _gameTableRegistration);
         }
         else QueueLiveBoardCheck(frame);
     }
@@ -699,6 +699,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         CancelGameTablePreviewHandoff();
         ClearGameTableAnalysis();
         _gameTableRegistration = null;
+        _gameTableAlignmentPendingRevision = null;
         IsGameTablePreviewUpright = false;
         _gameTableCropRevision++;
         GameTablePreview = null;
@@ -735,7 +736,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         IsGameTablePreviewUpright = true;
         BeginGameTablePreviewHandoff();
         QueueGameTablePreview(frame);
-        QueueGameTableAnalysis(frame);
+        QueueGameTableAlignment(frame, _gameTableRegistration);
     }
 
     private void QueueGameTablePreview(CameraFrame frame)
@@ -831,6 +832,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             {
                 await _gameTableAnalysisWork;
                 await _liveBoardCheckWork;
+                await _gameTableAlignmentWork;
                 await DisposeCornerDetectionAsync();
                 await DisposeProcessingAsync();
             }

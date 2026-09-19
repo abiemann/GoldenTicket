@@ -14,6 +14,7 @@
     <PackageReference Include="Vortice.D3DCompiler" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" />
     <InternalsVisibleTo Include="GoldenTicket.Domain.Tests" />
+    <EmbeddedResource Include="Calibration/classic-us-board-320x200.gray" />
     <None Include="../../docs/camera-processing-dependencies.md"
           Link="licenses/camera-processing-dependencies.md"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

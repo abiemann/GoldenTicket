@@ -59,6 +59,7 @@ public sealed partial class CameraViewModel
         var block = _disposed ? "disposed" : !Capture.IsRunning ? "camera-stopped" :
             !IsGameTablePreviewUpright ? "board-orientation-unverified" :
             _gameTableRegistration is null ? "board-crop-unavailable" :
+            _gameTableAlignmentPendingRevision == _gameTableCropRevision ? "board-alignment-pending" :
             IsModelBusy ? "model-loading" : _pieceModel is null ? "piece-model-unavailable" : null;
         if (block is not null)
         {

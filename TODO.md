@@ -53,6 +53,10 @@ See the
   assigning trains to parallel lanes. Three captured frames replayed with both failing Duluth–Omaha
   crops now verify all 20 saved trains; the adjacent empty lane remains rejected. See the
   [September 19 recognition check](docs/evidence/reload-alignment-2026-09-19/validation.md).
+- [x] Anchor game-table crops to the fixed classic-US artwork coordinates, rather than inheriting
+  a saved photo's crop bias. Three live Los Angeles–San Francisco frames recognize all three blue
+  trains on lane B and reject lane A after alignment; keep broader physical-camera validation
+  open. See the [canonical alignment check](docs/evidence/canonical-alignment-2026-09-19/validation.md).
 - [ ] Persist the physical scoring-marker move gate across app restart; resume currently requires
   board reconciliation, but it does not restore the in-memory post-claim marker instruction.
 - [ ] Validate score-piece color and printed-1 acceptance with the real overhead camera for all

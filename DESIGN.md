@@ -865,6 +865,16 @@ The [ML implementation sequence](docs/piece-recognition-ml.md) now includes deve
 
 Do not select an architecture solely because it achieves a high frame-level accuracy number. Evaluate complete claimed routes, previously occupied routes, and unknown-foreground detection. A model that confidently mistakes one black train for a shadow can corrupt a whole match.
 
+The classic-US game-table implementation aligns the upright camera crop to a compact embedded
+grayscale reference from the photo used to measure route spaces. Saved photos establish orientation
+and provide an alignment fallback when the fixed reference cannot match reliably. Alignment runs
+off the UI thread and publishes one registration shared by preview, placement cues and inference;
+newly adopted crops wait for alignment before producing piece evidence. Corrections remain bounded,
+and neither expected route ownership nor detected train positions steer the crop. The original
+calibration photo and training captures remain local; the embedded 64 KB reference is runtime data.
+See [canonical alignment validation](docs/evidence/canonical-alignment-2026-09-19/validation.md)
+for measured cases and remaining limits.
+
 ### 12.4 Occlusion and stability
 
 First determine whether relevant regions are visible, then estimate occupancy. Use scene motion, foreground masks, and available hand evidence to wait until placement is finished. A motionless hand still occludes the board; low motion is not proof of visibility.

@@ -21,7 +21,8 @@ public static class ClassicUsRouteGeometry
     public const string ProfileId = "ttr-us-classic-en-v1";
     public const string GeometryVersion = "classic-us-slots-2026-09-18-v3";
     // The original 3456 × 2160 empty-board photo, before scaling to the 1996 × 1248
-    // reference used below. Kept as provenance; the photo is user-supplied, not shipped.
+    // reference used below. The original user photo is not shipped; its compact grayscale
+    // calibration is embedded by ClassicUsBoardAlignment to keep live crops in these axes.
     public const string ReferencePhotoSha256 =
         "9b7746396ff559f932c1578c3d3c662ad1f79cffb04e6b4261e790e2ab9e238d";
     public const double ReferenceWidth = 1996;

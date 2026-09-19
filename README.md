@@ -319,9 +319,12 @@ If an earlier completed save has a valid matching photo, the error offers
 save will be discarded. Choosing it rechecks the photo before rewinding, then starts the normal
 camera verification. Recovery never silently falls back to an older save.
 After the match loads, the live board view checks its orientation against the saved photo.
-It also refines small corner-detection errors against the photo's board artwork before checking
-the narrow parallel lanes. This adjustment uses image agreement, not the expected train positions;
-every train still needs its own detection and color check.
+It refines small corner-detection errors against a compact classic-US artwork calibration in the
+same coordinates as the measured routes. This prevents a slightly miscropped saved photo from
+shifting the narrow parallel lanes. Saved-photo alignment remains a fallback when the fixed
+artwork match is weak. New and manually adopted crops wait for this check before piece analysis.
+The adjustment uses image agreement, not expected train positions; every train still needs its
+own detection and color check. See the [Los Angeles–San Francisco check](docs/evidence/canonical-alignment-2026-09-19/validation.md).
 The game then prompts for each scoring marker at its saved number and checks
 the saved train positions and colors. It stays on the game table and resumes automatically only
 when the whole board matches. When a saved train is missing or has the wrong color, a pulsing
