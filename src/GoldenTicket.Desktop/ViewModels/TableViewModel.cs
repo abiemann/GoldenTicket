@@ -74,7 +74,7 @@ public sealed partial class TableViewModel : ObservableObject
     [ObservableProperty] private bool _isPackedAway;
     [ObservableProperty] private bool _isRebuilding;
 
-    /// <summary>What the save screen says. Only a validated checkpoint says it is safe to pack.</summary>
+    /// <summary>The digital checkpoint status; its required board image is verified separately.</summary>
     [ObservableProperty] private string? _saveStatus;
 
     [ObservableProperty] private string? _saveProblem;
@@ -283,8 +283,8 @@ public sealed partial class TableViewModel : ObservableObject
             SessionLifecycle.PackedAway => checkpoint.Status switch
             {
                 CheckpointStatus.Verified =>
-                    $"Saved as \"{checkpoint.Name}\" at {checkpoint.CreatedAt.ToLocalTime():HH:mm}. " +
-                    "You can pack the game away.",
+                    $"Digital save \"{checkpoint.Name}\" verified at {checkpoint.CreatedAt.ToLocalTime():HH:mm}. " +
+                    "Save and verify its required board image before clearing the board.",
                 CheckpointStatus.CommittedAwaitingReadback =>
                     "The save is written and is being checked. Do not pack the game away yet.",
                 _ => "The save could not be validated. The game stays packed until this is resolved.",
@@ -296,7 +296,7 @@ public sealed partial class TableViewModel : ObservableObject
             $"\"{checkpoint.Name}\" - {checkpoint.RouteCount} route{(checkpoint.RouteCount == 1 ? "" : "s")}, " +
             $"{TrainCountText.Format(checkpoint.TotalTrainsOnBoard)} on the board" +
             (checkpoint.Provenance == TargetProvenance.LogicalStateOnly
-                ? ". The saved route list is the rebuild target; an optional reference photo can help."
+                ? ". Use the saved route list and required board image to rebuild."
                 : ".");
 
         RebuildSuspendedAction = checkpoint.SuspendedTurnPhase switch

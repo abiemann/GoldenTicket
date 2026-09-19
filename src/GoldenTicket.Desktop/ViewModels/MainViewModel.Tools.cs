@@ -30,8 +30,7 @@ public sealed partial class MainViewModel
             () => System.Windows.Application.Current?.Dispatcher,
             BeginRemoteCommand, EndRemoteCommand, () => { if (CanCompanionControl) HideLaptopPrivateViewOnly(); }, RequireReload);
         Connection = new ConnectionViewModel(bridge);
-        var photoRoot = (_store as SqliteSessionStore)?.RootDirectory ?? SqliteSessionStore.DefaultRoot;
-        CheckpointPhoto = new CheckpointPhotoViewModel(new CheckpointPhotoStore(photoRoot), async token =>
+        CheckpointPhoto = new CheckpointPhotoViewModel(_checkpointPhotoStore, async token =>
         {
             var coordinator = _coordinator;
             var checkpointId = coordinator?.Public.Checkpoint?.CheckpointId;
@@ -125,7 +124,7 @@ public sealed partial class MainViewModel
         var checkpoint = coordinator is null ? null : await coordinator.GetCheckpointAsync();
         if (coordinator != _coordinator) return;
         var key = checkpoint is null ? null : $"{checkpoint.SessionId.Value}/{checkpoint.CheckpointId.Value}/{checkpoint.Status}";
-        if (_loadedPhotoCheckpoint == key && key is not null)
+        if (_loadedPhotoCheckpoint == key && key is not null && CheckpointPhoto.HasPhoto)
         {
             Camera.SetGameTableReference(CheckpointPhoto.PhotoImage);
             return;

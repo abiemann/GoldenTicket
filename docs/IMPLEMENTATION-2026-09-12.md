@@ -1,5 +1,11 @@
 # September 12 implementation update and acceptance walkthrough
 
+This dated record describes the original photo implementation. Current save requirements supersede
+its optional-photo guidance: a completed user Save Game now requires a verified logical checkpoint
+and a validated matching board image. Current photo sidecars are plaintext format v2, and checkpoint
+reload blocks on a missing or invalid required attachment. See [the current workflow](../README.md)
+and [save/rebuild requirements](../DESIGN.md#198-save-pack-away-and-rebuild-protocol).
+
 This is an implementation record for the follow-up to the September 12 audit. It does not mark
 the complete DESIGN finished. Physical train placement still requires the operator's whole-board
 confirmation. The source and automated UI fixtures contain no real player's saved private cards.

@@ -146,6 +146,11 @@
                                Text="{Binding Setup.SavedMatchMessage}" TextWrapping="Wrap"
                                Visibility="{Binding Setup.SavedMatchMessage, Converter={StaticResource EmptyStringToVisibility}}"
                                AutomationProperties.LiveSetting="Polite" />
+                    <Button Content="Restore earlier completed save (discard newer actions)"
+                            Command="{Binding RestoreEarlierCompletedSaveCommand}"
+                            IsEnabled="{Binding CanResumeMatch}" Style="{StaticResource SecondaryButton}"
+                            HorizontalAlignment="Left" Margin="0,8,0,0"
+                            Visibility="{Binding HasEarlierCompletedSave, Converter={StaticResource BoolToVisibility}}" />
                 </StackPanel>
             </Border>
 

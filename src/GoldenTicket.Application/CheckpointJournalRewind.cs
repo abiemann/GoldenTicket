@@ -11,20 +11,31 @@ public static class CheckpointJournalRewind
 {
     public static PackAwayCheckpoint? LatestVerified(
         IReadOnlyList<JournaledEvent> journal, CheckpointId? excludedCheckpointId = null)
+        => VerifiedNewestFirst(journal).FirstOrDefault(checkpoint => checkpoint.CheckpointId != excludedCheckpointId);
+
+    /// <summary>
+    /// Enumerates digital checkpoints after journal verification. Callers must also verify any
+    /// required save attachments before treating a checkpoint as a completed user save.
+    /// </summary>
+    public static IEnumerable<PackAwayCheckpoint> VerifiedNewestFirst(IReadOnlyList<JournaledEvent> journal)
     {
+        var seen = new HashSet<CheckpointId>();
         for (var index = journal.Count - 1; index >= 0; index--)
         {
             if (journal[index].Event is not PackAwayCheckpointVerified verified ||
-                verified.CheckpointId == excludedCheckpointId) continue;
+                !seen.Add(verified.CheckpointId)) continue;
+            PackAwayCheckpoint? checkpoint = null;
             for (var committedIndex = index - 1; committedIndex >= 0; committedIndex--)
             {
                 if (journal[committedIndex].Event is PackAwayCheckpointCommitted committed &&
                     committed.Checkpoint.CheckpointId == verified.CheckpointId)
-                    return committed.Checkpoint with { Status = CheckpointStatus.Verified };
+                {
+                    checkpoint = committed.Checkpoint with { Status = CheckpointStatus.Verified };
+                    break;
+                }
             }
-            throw new SessionIntegrityException("A verified save has no committed checkpoint.");
+            yield return checkpoint ?? throw new SessionIntegrityException("A verified save has no committed checkpoint.");
         }
-        return null;
     }
 
     public static RestoredSession AtVerifiedCheckpoint(

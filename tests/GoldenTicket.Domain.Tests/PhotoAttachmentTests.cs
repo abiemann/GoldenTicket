@@ -470,7 +470,7 @@ public sealed class PhotoAttachmentTests : IDisposable
     }
 
     [Fact]
-    public async Task DamagedReferenceLeavesRouteBasedRebuildAvailableAndDisallowsReplacingEvidence()
+    public async Task DamagedRequiredPhotoRequestsBackupRecoveryAndDisallowsReplacingEvidence()
     {
         var checkpoint = Checkpoint();
         var store = new CheckpointPhotoStore(_root);
@@ -484,7 +484,7 @@ public sealed class PhotoAttachmentTests : IDisposable
         Assert.True(vm.ReferenceUnavailable);
         Assert.False(vm.HasPhoto);
         Assert.False(vm.CaptureReferenceCommand.CanExecute(null));
-        Assert.Contains("saved route list", vm.Status);
+        Assert.Contains("Restore the matching image from a backup before resuming", vm.Status);
         Assert.True(checkpoint.IsSafeToPackAway);
     }
 

@@ -485,9 +485,14 @@
                                 Click="CameraSetupPlay_Click" />
                     </StackPanel>
                     <TextBlock Text="{Binding Game.Message}" Foreground="#FFFFD576"
-                               TextAlignment="Center" Margin="0,8,0,0"
+                               TextAlignment="Center" TextWrapping="Wrap" Margin="0,8,0,0"
                                Visibility="{Binding Game.Message, Converter={StaticResource MessageVisibility}}"
                                AutomationProperties.LiveSetting="Polite" />
+                    <Button Content="Restore earlier completed save (discard newer actions)"
+                            Command="{Binding RestoreEarlierCompletedSaveCommand}"
+                            IsEnabled="{Binding CanResumeMatch}" Style="{StaticResource GameSetupActionButton}"
+                            HorizontalAlignment="Center" Margin="0,10,0,0" FontSize="15" Padding="12,8"
+                            Visibility="{Binding HasEarlierCompletedSave, Converter={StaticResource BoolToVisibility}}" />
                 </StackPanel>
             </Border>
         </Viewbox>

@@ -25,7 +25,7 @@
                                AutomationProperties.Name="Saved operator-attested board reference" />
                     </Border>
                     <StackPanel x:Name="MissingPhotoPanel" Visibility="{Binding HasPhoto, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
-                        <TextBlock Text="Saving the game does not automatically take a photo. Attach one here before clearing the board if you want a visual reference."
+                        <TextBlock Text="This checkpoint needs a saved board image. Capture and verify it before clearing the board or resuming. Escape → Save Game captures the image as part of saving."
                                    TextWrapping="Wrap" Margin="0,0,0,8" />
                         <TextBlock Text="{Binding CaptureGuidance}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,0,0,10"
                                    AutomationProperties.LiveSetting="Polite" />
@@ -54,7 +54,7 @@
                     <TextBlock Margin="0,8,0,0" Style="{StaticResource Caption}" Text="{Binding CaptureDetails}" />
                     <Expander Header="About board reference photos" Margin="0,12,0,0">
                         <StackPanel Margin="0,8,0,0">
-                            <TextBlock TextWrapping="Wrap" Text="This optional photo is saved on this laptop with its digital checkpoint. Cards, turns, scores, and route ownership remain in the digital checkpoint." />
+                            <TextBlock TextWrapping="Wrap" Text="This required image is saved on this laptop with its digital checkpoint. Cards, turns, scores, and route ownership remain in the digital checkpoint." />
                             <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Text="Before capture, check that every train matches the saved route list. Remove uncommitted trains, hands and private cards from the image. This version does not recognize or verify trains in the photo." />
                         </StackPanel>
                     </Expander>

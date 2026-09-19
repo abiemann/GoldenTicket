@@ -11,7 +11,7 @@ public sealed partial class MainViewModel
 
     /// <summary>
     /// Freeze new game input while the modal close prompt pumps the dispatcher. Keep digital
-    /// autosave separate from permission to clear the physical board and its optional photo.
+    /// autosave separate from the complete pack-away save, including its required board photo.
     /// </summary>
     public ExitPrompt? BeginExitRequest()
     {
@@ -30,12 +30,13 @@ public sealed partial class MainViewModel
         var game = _coordinator?.Public;
         if (game is null || game.Lifecycle == SessionLifecycle.Finished ||
             (game.Lifecycle is SessionLifecycle.PackedAway or SessionLifecycle.Rebuilding &&
-             game.Checkpoint is { IsSafeToPackAway: true }))
+             game.Checkpoint is { IsSafeToPackAway: true } checkpoint &&
+             CheckpointPhoto.HasPhotoFor(game.SessionId, checkpoint.CheckpointId)))
             return null;
 
         if (game.Lifecycle is SessionLifecycle.PreparingPackAway or SessionLifecycle.PackedAway or SessionLifecycle.Rebuilding)
-            return new("The pack-away save has not been verified. Are you sure you want to exit?\n\n" +
-                "Keep the board in place. Reopen the saved match and verify the save before clearing the board.", true);
+            return new("The pack-away save has not been verified with its required board photo. Are you sure you want to exit?\n\n" +
+                "Keep the board in place. Choose No and complete Save Game before clearing the board.", true);
 
         return new("This game has not been saved for packing away. Are you sure you want to exit?\n\n" +
             "Completed game actions are saved automatically. To save the board for later, " +

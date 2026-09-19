@@ -349,15 +349,16 @@ Later, select the saved game and choose **Rebuild the board**. Display the saved
 
 The photo is a visual reference paired with the full saved game. A standalone photo cannot recover hidden cards, ticket choices, deck order, or an exact interrupted turn. All digital state stays on the laptop and survives packing the physical cards and trains into the box.
 
-If a photo cannot be verified or the user has disabled saved images, offer **Save game state without photo** with a clear status. The app can still rebuild the board from its stored route diagram. Do not present an old or obstructed image as a verified picture of the saved position. Technical handling of pending moves and capture failures is specified in section 19.8.
+The board photo is required for a completed user save. If capture or validation fails, preserve the digital state, report that saving is incomplete, and keep the board in place for recovery. Do not offer a photo-free completed save or present an old or obstructed image as a verified picture of the saved position. Automatic journal recovery preserves digital actions independently; it does not grant permission to clear the board. Technical handling of pending moves and capture failures is specified in section 19.8.
 
 **Exit confirmation.** Closing an unfinished match without a verified pack-away checkpoint asks
 whether to exit, with **No** as the default. Explain that completed digital actions are saved
 automatically and that **Save and pack away** is required before clearing the physical board;
 do not claim that confirmed digital progress will be lost. Apply this from every screen, including
 Camera and Connect phone. No confirmation is needed before a match starts, after final scoring,
-or while a verified checkpoint is packed or being rebuilt. A missing optional photo does not
-make that digital checkpoint unsaved. If storage is faulted, warn that the latest action may
+or while a completed save with a validated matching photo is packed or being rebuilt. A missing
+or invalid required photo leaves the logical checkpoint intact but prevents completed-save status.
+If storage is faulted, warn that the latest action may
 not have been saved. Refuse closing while a game action or photo operation is still in progress
 and ask the user to retry afterward. Cover private views and reject new game/companion inputs
 while the confirmation is open. Cancel keeps the application and tools available without
@@ -407,12 +408,16 @@ Every placement still requires manual whole-board verification. All-human and al
 rosters are allowed; an operator still places and verifies any computer player's physical trains.
 
 Shift+Escape slides the game screen to the right to reveal the technical interface. Plain
-Escape opens a modal dialog with **Save Game** and **Quit to Menu** while a game is in progress.
+Escape opens a modal dialog with **Save Game** and **Quit to Menu** while a game is in progress
+and no foreground action or computer work is running. Do not open the dialog during a write or
+computer turn continuation; closing it must not leave that continuation stranded.
 Save Game requires a fresh accepted board crop, checks train positions and player colors against
 the committed routes, reads back the digital checkpoint and an unprocessed board photo with
 observed color totals, then returns to the main menu. A failed check leaves the game open.
-Quit to Menu discards later auto-journaled play while retaining an earlier verified checkpoint,
-or removes a never-saved match. Dismissing the dialog preserves an unresolved solo opening
+Completion requires the matching durable photo attachment as well as logical checkpoint validation;
+an in-memory failure marker alone is insufficient across restart. Quit to Menu discards later
+auto-journaled play while retaining the latest earlier completed save with a validated photo,
+or removes a match with no completed save. Dismissing the dialog preserves an unresolved solo opening
 destination choice. Held-key repeats do not reopen the dialog or repeat the reveal.
 
 A **Return to game** button at the top of the technical interface reverses the transition and
@@ -445,7 +450,10 @@ top-left card or control buttons and no on-screen Shift+Escape hint. Shift+Escap
 technical layer, whose **Game table** screen provides the private-card reveal, turn actions,
 manual placement checks and saving. A stale or changed camera frame hides the crop rather than presenting an old image
 as live. A resumed game uses the same seat layout and verifies the live crop against its saved
-upright board photo. Rebuild and final-score views retain their existing presentation. This UI
+upright board photo. Reload validates that required photo before gameplay and reports missing,
+corrupt, or mismatched images instead of entering a board check that cannot finish. Automatic
+recovery of an active journal without a user checkpoint remains distinct from reloading a completed
+save. Rebuild and final-score views retain their existing presentation. This UI
 step does not complete the separate voice, story and audio work.
 
 ## 5. Digital cards and private information
@@ -1494,7 +1502,7 @@ sessions/<session-id>/backups/
 diagnostics/                    bounded, user-clearable
 ```
 
-Game images are board-only references, not desktop screenshots containing private cards. Explain saved board photographs in setup privacy controls. Raw video recording is off by default. Users can disable stored images and still save/resume using the route diagram. The normal Save and pack away action explicitly includes a verified photograph; the image-disabled or unavailable path is labeled Save game state without photo.
+Game images are board-only references, not desktop screenshots containing private cards. Explain saved board photographs in setup privacy controls. Raw video recording is off by default. A completed Save Game requires a stored board image matched to its digital checkpoint. Disabling or failing image capture cannot produce a completed photo-free save. The automatic journal can still preserve digital actions for recovery without a user checkpoint; do not describe that recovery data as permission to clear the board.
 
 ### 19.2 SQLite schema outline
 
@@ -1506,7 +1514,7 @@ Game images are board-only references, not desktop screenshots containing privat
 | `Operation` | operation ID, type, status, base revision, payload | Pending physical/digital operation recovery |
 | `CommandResult` | command ID, result/version | Idempotency across retries and crashes |
 | `Calibration` | camera identity, epoch/revision, fixture/profile, fit metadata | Saved starting hints and diagnostics |
-| `ImageReference` | hash, capture context, relative filename, retention owner | Board-only image; required for a checkpoint labeled as saved with photo |
+| `ImageReference` | hash, capture context, relative filename, retention owner | Board-only image; required and validated for every completed user save |
 | `PackAwayCheckpoint` | ID, source snapshot/version/sequence, state/target hashes, pending mask, photo reference, status | Immutable named reconstruction checkpoint linked to the complete game state |
 | `PresentationCheckpoint` | story version, last event, repetitions, settings | Resume without replaying stale narration |
 | `MigrationHistory` | version, timestamp, completion | Controlled save upgrades |
@@ -1532,7 +1540,7 @@ Use SQLite WAL with a single writer and a durability setting appropriate for pow
 
 At this game's scale, writing a compact authoritative snapshot on every command is acceptable and simplifies crash recovery. Keep periodic historical snapshots for replay and branches. Derived scores are checked against recomputation at restore.
 
-Write images before committing their reference using temporary-file plus atomic rename and flush the file before reporting durability. An absent image must not invalidate an otherwise intact logical match, but it prevents a successful saved-with-photo result until recovered or explicitly downgraded. The pack-away protocol additionally reads back the snapshot and photo before its success message. A database backup uses SQLite's backup API or a properly checkpointed closed database; copying a live database file while ignoring its WAL is not a valid backup plan.
+Write images before committing their reference using temporary-file plus atomic rename and flush the file before reporting durability. An absent image must not invalidate an otherwise intact logical match, but it prevents a completed user save until recovered. There is no downgrade to a photo-free completed save. The pack-away protocol additionally reads back the snapshot and photo before its success message. Completed-save discovery and rollback must validate the durable attachment again rather than trusting only a process-local success or failure flag. A database backup uses SQLite's backup API or a properly checkpointed closed database; copying a live database file while ignoring its WAL is not a valid backup plan.
 
 ### 19.4 Restore procedure
 
@@ -1553,10 +1561,18 @@ verification.
 1. Open a selected session without displaying private state.
 2. Validate schema, manifest, model compatibility, checksums, and the latest durable command.
 3. Load the snapshot and verify it against journal replay where required.
-4. Restore pending card offers, partial digital actions, reservations, and final-turn schedule exactly.
-5. Show the desired public board diagram and acquire the current camera mapping.
-6. Highlight missing, extra, displaced, or wrong-color trains.
-7. Resume the saved operation only after the physical board agrees or a recorded manual reconciliation is completed.
+4. For a user checkpoint, validate its required photo's integrity, decoding, and exact checkpoint association before entering gameplay. Report missing, corrupt, or mismatched attachments and keep gameplay blocked; do not start an orientation check without its required reference. An active auto-journaled match can use the separate digital-recovery path, including without a user checkpoint. A photo attached to an earlier checkpoint remains bound to that frozen state, not to later journaled actions.
+5. Restore pending card offers, partial digital actions, reservations, and final-turn schedule exactly.
+6. Show the desired public board diagram and acquire the current camera mapping.
+7. Highlight missing, extra, displaced, or wrong-color trains.
+8. Resume the saved operation only after the physical board agrees or a recorded manual reconciliation is completed.
+
+When the latest user save is incomplete or has a damaged required photo, offer
+**Restore earlier completed save (discard newer actions)** only if an earlier checkpoint in the
+same session has a validated matching attachment. The error must warn that restoring it discards
+all actions after that save. On the explicit recovery click, revalidate that checkpoint and photo
+before rewinding the journal, then use the normal reload and camera-verification workflow.
+Never silently replace the latest state with an older save.
 
 The checkpoint table is part of the required save structure. Restore only supported current-format
 saves after schema, journal replay, snapshot and invariant checks. An unsupported former encrypted
@@ -1578,7 +1594,8 @@ Because all cards are digital, exact card-order restoration does not depend on p
 | Final round partially played | Restore the saved remaining-turn queue. |
 | Story sound interrupted | Restore public state; skip obsolete audio rather than replaying a move request. |
 | Pack-away preparation interrupted | Remain paused; verify or retry capture against the preserved source state. No safe-to-pack success was issued. |
-| Packed checkpoint committed, success acknowledgment lost | Return the same checkpoint result after readback; remain packed even if trains have already been removed. |
+| Logical checkpoint committed, required photo absent or invalid | Preserve the digital state but report an incomplete user save, including after restart; no permission to clear the board. Quit may retain only an earlier completed save with a validated photo. |
+| Checkpoint and required photo validated, success acknowledgment lost | Return the same completed-save result after readback of both; remain packed even if trains have already been removed. |
 | Board partially rebuilt | Reopen the same target with fresh calibration; reconstruction has not spent cards or advanced turns. |
 
 ### 19.6 Undo and corrections
@@ -1599,7 +1616,7 @@ board photograph alone is not a portable game save.
 
 Offer delete-session and clear-diagnostics controls. Apply explicit size limits to recordings, retaining no raw video by default. Uninstall preserves saves unless the user explicitly selects their removal.
 
-Pin a named pack-away checkpoint's source snapshot, required journal history, and image until that checkpoint/session is explicitly deleted. Diagnostic cleanup and automatic image quotas must not evict them. Later play creates newer state without changing the old checkpoint's target or rebinding its photo to a newer turn. Restoring an older checkpoint after subsequent play follows the correction-branch and information-exposure policy in section 19.6.
+Pin a named pack-away checkpoint's source snapshot, required journal history, and image until that checkpoint/session is explicitly deleted. Diagnostic cleanup and automatic image quotas must not evict them. Later play creates newer state without changing the old checkpoint's target or rebinding its photo to a newer turn. Historical corrections follow the correction-branch and information-exposure policy in section 19.6. Explicit recovery to an earlier completed save instead discards newer actions with the warning and revalidation described in section 19.4.
 
 ### 19.8 Save, pack away, and rebuild protocol
 
@@ -1610,32 +1627,32 @@ Pin a named pack-away checkpoint's source snapshot, required journal history, an
 1. Serialize the request on the referee writer queue. Finish any transaction already executing, then durably enter `PreparingPackAway`, record the request ID and suspended phase, and advance `stateVersion`. Revoke private-view grants, cover both interfaces, stop move narration, cancel AI work, and reject gameplay callbacks from the earlier version. Keep the existing operation ID and reservations. A client retry resolves the same request instead of opening a second save operation.
 2. Freeze the resulting source state. Record its snapshot ID, state version, board revision, journal sequence, manifest hash, pending operation ID, and state hash. Save all deck permutations, hands, temporary offers, selected first draws, random state, final-round progress, and narrative checkpoint with the local persistence scheme and its integrity checks. No game command may mutate that state while capture is underway; camera readiness may still change.
 3. Acquire a fresh full-board observation and its source frame. Require valid geometry, adequate sharpness/exposure, no occlusion, and the normal temporal stability checks. Bind both observation and image to the save request, frozen source version, board revision, pending operation, camera epoch, and calibration revision. Recheck those values on the coordinator before accepting the capture. A jog, stale frame, or changed operation invalidates the attempt.
-4. Compare the entire board with the committed ownership map. An authorized pending claim may add a verified subset of its own cells in the correct lane and color. Store that subset as `pendingPlacementMask`, distinct from committed route ownership. Any missing old train, unexplained extra train, uncertain cell, or unauthorized board-first placement blocks the verified-photo path. Guide correction or offer the explicitly labeled state-only fallback below.
+4. Compare the entire board with the committed ownership map. An authorized pending claim may add a verified subset of its own cells in the correct lane and color. Store that subset as `pendingPlacementMask`, distinct from committed route ownership. Any missing old train, unexplained extra train, uncertain cell, or unauthorized board-first placement blocks saving. Guide correction and preserve the digital continuation; do not bypass the required image with a photo-free completed save.
 5. Encode the actual accepted camera frame as a board-only PNG, retaining enough detail to identify individual trains. A normalized preview is optional; retain capture metadata that maps it to the stored route diagram. Hash, flush, atomically finalize, decode, and validate the stored image before referencing it. Never substitute a renderer screenshot or a last-known preview and label it a new board photograph.
 6. In one database transaction, create the checkpoint referencing the frozen source snapshot with status `CommittedAwaitingReadback`, append `PackAwayCheckpointCommitted`, and set lifecycle to `PackedAway` with its checkpoint ID. Keep the command result pending. This transaction advances the current state version; the photo remains explicitly tied to the earlier frozen source version. Only lifecycle/checkpoint bookkeeping changes between these versions. Read back and validate the referenced snapshot, hashes, and photo. In a subsequent durable transaction, mark the checkpoint `Verified`, append `PackAwayCheckpointVerified`, and complete the command result. The checkpoint's source state, target, and image references are immutable throughout; only validation status changes. Command-result queries must never return safe-to-pack success from `CommittedAwaitingReadback`; restart/retry repeats validation before completing it.
 7. After the verification/result transaction commits, show the successful save name, timestamp, and thumbnail on the laptop and send the non-private completion receipt to the companion. Persisting `PackedAway` before this message ensures that removals during cleanup cannot become game changes, even after a crash. The camera may stop or show a passive preview; ordinary board interpretation remains disabled.
 
 If storage fails, retain the last valid state, remain paused, and show an actionable retry result. A committed checkpoint whose post-commit readback fails stays packed and faulted until resolved; do not resume play or report success. If failure occurs after the image is finalized but before the database commit, the unreferenced file may be reclaimed later. Never delete a referenced checkpoint as part of that cleanup. Cancellation of preparation returns to the suspended operation only after fresh board reconciliation, not by accepting an old image result.
 
-#### Pending placements and the state-only fallback
+#### Pending placements and logical recovery
 
 The saved physical target is the committed board plus any verified `pendingPlacementMask`. Public reconstruction instructions mark those pending trains as **uncommitted placement**, followed by either completion or cancellation guidance for the saved subphase. Their resources remain reserved and their route has no owner or score yet. Preserve remaining off-board stock separately from this placement guidance: temporarily placed reserved trains must not be counted as already spent trains.
 
-For **Save game state without photo**, persist the same exact logical continuation, but set `photoHash` to null, `targetProvenance` to `LogicalStateOnly`, and use only committed routes as the physical reconstruction target. Pending claim authorization and payment reservations survive, but uncommitted physical progress is omitted. After resume, a forward claim needs its trains placed again; a cancellation instead verifies the restored before-state and finishes its removal/reconciliation workflow. Explain the appropriate continuation in the success screen. An unresolved board-first proposal remains non-authoritative: rebuilding to the committed board clears the observed proposal through a recorded reconciliation, and the player can initiate that claim again. No secret draw, ticket choice, or completed game action is undone.
+The low-level logical checkpoint and automatic journal retain the exact digital continuation even if a board-photo operation fails. Keep `targetProvenance` as `LogicalStateOnly` for operator-attested reference attachments: a valid image checksum and checkpoint association do not automatically prove its physical contents. Missing or invalid required images prevent completed user-save status and checkpoint reload until recovery; they do not erase valid digital state.
 
-This fallback is also available when the camera is unavailable or saved photographs are disabled. An image failure cannot silently choose it for the user. A failed logical-state write cannot offer a safe-to-pack result in either mode.
+For recovery of an active journal without a user checkpoint, use committed routes as the physical target. Pending claim authorization and payment reservations survive, but unverified physical progress is omitted. A forward claim needs its trains placed again; a cancellation verifies the restored before-state and finishes its removal/reconciliation workflow. An unresolved board-first proposal remains non-authoritative and may be initiated again after reconciliation. Preserve revealed draws, ticket choices, and completed digital actions. This recovery path is not a substitute for the required photograph in Save Game and cannot produce permission to clear the board.
 
 #### Guided reconstruction
 
 Selecting **Rebuild the board** loads the immutable checkpoint and durably enters `Rebuilding`, retaining its suspended phase and pending operation. Start a fresh camera epoch, invalidate old evidence/grants, and register the same supported board in its current location. A similar usable camera pose is sufficient; the original pixel coordinates are not required. Do not use new-match setup, redeal cards, or demand an empty-board reference to restore an already partly rebuilt board.
 
-Display the saved photograph, when present, beside the canonical target diagram. List routes by seat/color, endpoint cities, lane, train count, and completion status. Show committed and pending placements with distinct labels and patterns, and provide remaining stock guidance. The camera computes missing, extra, wrong-color, and wrong-lane cells against the full immutable target. Players can reconstruct in any order; temporary discrepancies update guidance without producing move proposals, ownership changes, scoring, or repeated congratulations. Keep private hands and tickets covered throughout.
+Validate and display the required saved photograph beside the canonical target diagram. List routes by seat/color, endpoint cities, lane, train count, and completion status. Show committed and pending placements with distinct labels and patterns, and provide remaining stock guidance. The camera computes missing, extra, wrong-color, and wrong-lane cells against the full immutable target. Players can reconstruct in any order; temporary discrepancies update guidance without producing move proposals, ownership changes, scoring, or repeated congratulations. Keep private hands and tickets covered throughout.
 
 Enable **Resume game** only after fresh stable full-board agreement with that target, or a deliberate laptop manual-mode selection and whole-target attestation under the existing manual-verification policy. Clicking Resume runs the same current-evidence/version checks again. A moved train or jog after the button was enabled must block stale confirmation. Persist `PackedGameResumed` and return to the saved operation exactly once, with a new state version and private grants obtained only on a subsequent reveal.
 
-Resume does not itself commit a pending route. Restore its existing operation and exact subphase, invalidate old claim evidence, and run the appropriate ordinary protocol against a new observation. For a forward placement, a completely restored authorized route may then commit once; a partially restored placement continues with the missing trains. For an operation already being canceled or restored to its before-state, resume removal/reconciliation and release reservations only at the normal cancellation boundary; it must never become a forward claim. The state-only fallback likewise returns to the saved placement or cancellation instructions. Resume a partial card draw or ticket offer with the original outcomes and remaining choices, and restart interrupted AI computation only from its permitted current view.
+Resume does not itself commit a pending route. Restore its existing operation and exact subphase, invalidate old claim evidence, and run the appropriate ordinary protocol against a new observation. For a forward placement, a completely restored authorized route may then commit once; a partially restored placement continues with the missing trains. For an operation already being canceled or restored to its before-state, resume removal/reconciliation and release reservations only at the normal cancellation boundary; it must never become a forward claim. Active-journal recovery likewise returns to the saved placement or cancellation instructions. Resume a partial card draw or ticket offer with the original outcomes and remaining choices, and restart interrupted AI computation only from its permitted current view.
 
-If the photo becomes corrupt or is missing later, preserve the valid digital save and show the problem. The stored physical target/route diagram can still guide rebuilding; do not infer hidden state or replace ownership by recognizing the damaged image. Board/profile incompatibility or an unrecoverable state checksum failure must stop restoration and offer a valid backup, without inventing missing state.
+If the photo becomes corrupt or is missing later, preserve the valid digital state, show the problem before gameplay, and require attachment recovery or a different completed save. The stored target remains available for diagnosis, but it does not waive the required photo or authorize a board check without an orientation reference. Do not infer hidden state or replace ownership by recognizing the damaged image. Board/profile incompatibility or an unrecoverable state checksum failure must also stop restoration and offer a valid backup, without inventing missing state.
 
 ## 20. Performance and resource budgets
 
@@ -1833,19 +1850,22 @@ M0 must prove certificate trust, local-origin resolution, and offline installati
 | Save after the first card draw or while choosing destination tickets | Same revealed result/offer and remaining choice restored; no reroll, forced decision, or extra draw |
 | Save during partial and complete authorized placement | Photo and pending mask match the frozen operation; no payment or score during capture, cleanup, or rebuild; ordinary completion happens at most once after resume |
 | Save during cancellation/restoration of a pending placement | Resume the cancellation subphase and release reservations only after before-state reconciliation; never turn it into a claim |
-| Save while an old route is disturbed or a board-first proposal is unauthorized | Verified-photo path waits for correction; explicit state-only save retains logical state and does not adopt unexplained ownership |
+| Save while an old route is disturbed or a board-first proposal is unauthorized | Save waits for correction; retain logical state without reporting a completed save or adopting unexplained ownership |
 | Camera jog, stale callback, or hand occlusion during save capture | Invalid attempt rejected; photo cannot be attached to a different state/operation/epoch |
 | Gameplay request races with Save and pack away | Serialized outcome matches the frozen source version; later gameplay request rejected while saving/packed |
 | Remove trains immediately after the success message while app remains running | Lifecycle is already durably packed; no proposals, score changes, undo, or turn advancement |
 | Power loss before/after image finalize, checkpoint commit, and success response | Valid prior state or the exact completed checkpoint recovers; no premature safe-to-pack result, orphan reference, or duplicate save |
-| Result query or restart between checkpoint commit and readback completion | Pending validation result only; safe-to-pack success requires the durable verified result |
+| Result query or restart between checkpoint commit and photo validation | Incomplete save only; completed-save status requires both the verified checkpoint and its validated matching attachment |
 | Storage full, unreadable snapshot, or image readback failure | Remain paused with an actionable failure; never claim both state and photo were saved |
 | Save requested from PWA, then disconnect or lose acknowledgment | Laptop owns capture and durability; durable result query returns same checkpoint; no success from request acceptance alone |
 | Old successful save receipt arrives after the game has resumed | Show historical save status only; current lifecycle/checkpoint/version checks prevent permission to clear the active board |
 | Rebuild with a different valid camera pose, markers, or resolution | Fresh registration maps the same canonical target; no dependency on the old camera's pixel coordinates or an empty board |
 | Wrong parallel lane, missing old train, extra train, or hidden region during rebuilding | Highlight discrepancy and block normal Resume; no route transaction created |
 | Board changes after Resume becomes enabled | Current evidence/version revalidation rejects stale confirmation |
-| State-only save or later missing photo | Diagram can reconstruct the documented target; hidden game state remains exact and photo status is honest |
+| Missing, corrupt, undecodable, or mismatched required photo | Checkpoint reload reports the image failure before gameplay; preserve digital state without substituting an older or unrelated image |
+| Failed photo save, restart, then Quit to Menu | Select the latest earlier completed save whose required photo validates; do not promote the failed save based on logical checkpoint status |
+| Active automatic journal without a user checkpoint | Recover exact digital continuation through the separate reconciliation path; do not label it a completed user save |
+| Escape during a card write or computer continuation | Menu stays closed until the action finishes; no stranded turn or interrupted continuation |
 | Repeated resume request, crash during resume, or delayed pre-save inference | One lifecycle transition; old evidence rejected; any later pending claim spends/scores once |
 | Automatic diagnostics cleanup after saving | Named checkpoint, required state history, and image remain readable |
 | Inspect photo, thumbnail, public rebuild payload, and narration | Board/public placement information only; no hidden digital cards or tickets |
@@ -1905,7 +1925,7 @@ The rights item does not prevent designing or testing the application. Use origi
 - README, this DESIGN, the implementation task tracker, help, and compatibility descriptions match the final implementation.
 - All required rule-policy decisions are explicit and tested; no placeholders remain in a shipped data manifest.
 - CPU operation, camera verification, privacy, digital deck restoration, and offline sound pass on a clean machine.
-- A photographed checkpoint survives complete board cleanup, restart, and guided reconstruction, including partial turns and injected save faults; checkpoint retention and state-only fallback pass.
+- A photographed checkpoint survives complete board cleanup, restart, and guided reconstruction, including partial turns and injected save faults; required-photo validation, completed-save retention, and separate active-journal recovery pass.
 - The companion passes installation, certificate trust, pass-and-hide, cache, update, and reconnect checks on real iOS/iPadOS and Android devices without internet; local networking requirements are disclosed.
 - Every advertised GPU/camera configuration has supporting evidence; untested support is not implied.
 - The installer includes runtime/model/audio/native dependencies and exact license notices, with no first-launch downloads.
@@ -1934,7 +1954,7 @@ The subsequent work adds state-only named checkpoints, pack-away/rebuild lifecyc
 The follow-up implementation adds `GoldenTicket.CompanionHost`, an embedded local HTTPS game PWA
 with laptop-approved controller pairing, short private-view grants and the four human digital
 actions; `GoldenTicket.Vision`, with real Windows capture, manual board cropping and scene-reference
-comparison; and optional checkpoint-reference photos. The Windows shell now exposes
+comparison; and the original checkpoint-reference photo foundation. The Windows shell now exposes
 camera, connection and photo screens. These changes are described in
 [the implementation record and acceptance checklist](docs/IMPLEMENTATION-2026-09-12.md).
 
@@ -1993,7 +2013,11 @@ Headless synthetic interaction/rendering checks cover this behavior; real pointe
 the overhead-camera setup remains a physical acceptance check.
 
 The photo foundation explicitly distinguishes a digital checkpoint, a live unsaved crop and a saved
-photo attachment. Save and pack away does not capture a photo automatically. The photo page shows
+photo attachment. The low-level logical checkpoint operation does not capture a photo itself;
+the game-layer Save Game adds and validates the required attachment before reporting completion.
+Missing or invalid attachments remain incomplete after restart, and Quit to Menu selects only a
+completed earlier save with a matching validated image. Reload reports image failures before gameplay.
+The photo page shows
 the missing prerequisite (camera, crop, stable reference or operator confirmation), links to camera
 setup and labels its live crop as unsaved. Capture is disabled outside packed/rebuilding sessions
 or while the camera is not ready. Only successful checksum and checkpoint-binding readback supplies the saved

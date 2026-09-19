@@ -148,7 +148,7 @@
                     <StackPanel>
                         <TextBlock Style="{StaticResource Heading}" Text="Confirm and resume" />
                         <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8"
-                                   Text="You confirm the rebuilt board yourself. Check every route in the list, including lanes of parallel routes. A saved reference photo can help; automatic piece verification is not enabled." />
+                                   Text="Check every route in the list, including lanes of parallel routes. The matching saved board image is required before you can resume." />
                         <Button Content="Add or view board photo" Command="{Binding ShowCheckpointPhotoCommand}"
                                 Style="{StaticResource SecondaryButton}" Margin="0,0,0,12" />
 

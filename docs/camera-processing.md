@@ -112,8 +112,11 @@ and does not save a game. Export remains a manual local file operation.
 
 **Capture reference photo** attaches a source-derived, unsharpened crop to the selected validated
 checkpoint. It retains the separate stable-scene, operator-attestation, crop/camera identity,
-encrypted-storage and authenticated-readback checks. It does not substitute the enhanced preview
-or painted outlines as evidence. A digital save alone still contains no photograph.
+checksum and checkpoint-binding readback checks. The photo uses the current plaintext sidecar
+format. It does not substitute the enhanced preview or painted outlines as evidence.
+A logical checkpoint alone still contains no photograph. A completed user Save Game requires
+its matching validated photo; missing or corrupt attachments block checkpoint reload with an
+error. These checks establish image integrity and binding, not machine-verified board contents.
 
 ## Processing implementation
 

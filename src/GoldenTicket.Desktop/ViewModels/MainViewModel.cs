@@ -40,6 +40,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly CardCatalog _catalog;
     private readonly GameRules _rules;
     private readonly ISessionStore _store;
+    private readonly CheckpointPhotoStore _checkpointPhotoStore;
 
     private GameCoordinator? _coordinator;
     private ComputerSeatDriver? _driver;
@@ -55,12 +56,14 @@ public sealed partial class MainViewModel : ObservableObject
     {
     }
 
-    public MainViewModel(BoardManifest manifest, ISessionStore store)
+    public MainViewModel(BoardManifest manifest, ISessionStore store, CheckpointPhotoStore? photoStore = null)
     {
         _manifest = manifest;
         _catalog = CardCatalog.FromManifest(manifest);
         _rules = new GameRules(manifest, _catalog);
         _store = store;
+        _checkpointPhotoStore = photoStore ?? new CheckpointPhotoStore(
+            (store as SqliteSessionStore)?.RootDirectory ?? SqliteSessionStore.DefaultRoot);
         _presentationSettingsPath = store is SqliteSessionStore localStore
             ? Path.Combine(localStore.RootDirectory, "presentation-settings.json") : null;
         _showDestinationsWhenViewingTrainCards = Services.PresentationPreferences
@@ -84,7 +87,11 @@ public sealed partial class MainViewModel : ObservableObject
         Setup.PropertyChanged += (_, args) =>
         {
             if (_coordinator is null && args.PropertyName == nameof(SetupViewModel.HumanSeatCount)) NotifyHumanPresentation();
-            if (args.PropertyName == nameof(SetupViewModel.SelectedSavedSession)) ResumeMatchCommand.NotifyCanExecuteChanged();
+            if (args.PropertyName == nameof(SetupViewModel.SelectedSavedSession))
+            {
+                ClearEarlierSaveRecovery();
+                ResumeMatchCommand.NotifyCanExecuteChanged();
+            }
         };
     }
 
@@ -251,6 +258,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (_operationInProgress || _exitRequested || !IsGameplayScreenActive(Screen.Setup) || Setup.TryBuildSetup() is not { } setup) return;
 
+        ClearEarlierSaveRecovery();
         ResetAutomaticPhysicalFlow();
         SetOperationInProgress(true);
         HidePrivateSeat();
@@ -296,6 +304,7 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        ClearEarlierSaveRecovery();
         ResetAutomaticPhysicalFlow();
         SetOperationInProgress(true);
         HidePrivateSeat();
@@ -306,6 +315,25 @@ public sealed partial class MainViewModel : ObservableObject
             var restored = await GameCoordinator.RestoreAsync(_rules, _store, saved.SessionId);
             if (restored.Public.VerificationMode != VerificationMode.Manual)
                 throw new NotSupportedException("This build can only resume matches that use manual verification.");
+            // A journal checkpoint alone is not a completed Save Game. Validate its required
+            // image before publishing a coordinator or starting the camera restore workflow.
+            if (restored.Public.Lifecycle is SessionLifecycle.PreparingPackAway or
+                SessionLifecycle.PackedAway or SessionLifecycle.Rebuilding)
+            {
+                var checkpoint = await restored.GetCheckpointAsync();
+                await CheckpointPhoto.LoadCheckpointAsync(checkpoint);
+                if (checkpoint is not { IsSafeToPackAway: true } ||
+                    !CheckpointPhoto.HasPhotoFor(saved.SessionId, checkpoint.CheckpointId))
+                {
+                    Setup.SavedMatchMessage = CheckpointPhoto.ReferenceUnavailable
+                        ? "This saved game cannot be opened because its required board image is damaged or unreadable. " +
+                          "Restore the matching image from a backup, then try again. The saved game has not been changed."
+                        : "This save is incomplete: its required board image has not been saved and verified. " +
+                          "Restore the matching image from a backup, or use another completed save. The saved game has not been changed.";
+                    await OfferEarlierSaveRecoveryAsync(saved.SessionId);
+                    return;
+                }
+            }
             _coordinator = restored;
             NotifyHumanPresentation();
             _driver = new ComputerSeatDriver(
@@ -327,13 +355,6 @@ public sealed partial class MainViewModel : ObservableObject
                     "Saved digital state verified. Check every claimed route before continuing; any pending claim stays uncommitted.",
                 _ => "Saved match restored and verified against its journal.",
             };
-
-            // DESIGN 19.5: an interrupted save is carried forward against the preserved source state.
-            if (lifecycle == SessionLifecycle.PreparingPackAway)
-            {
-                var continued = await _coordinator.ContinuePackAwayAsync();
-                if (!continued.SafeToPack && continued.Problem is { } problem) Status = problem;
-            }
 
             await RefreshAsync();
             Game.ShowPlaying(reconnectCamera: true);
@@ -695,14 +716,45 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     public async Task ResumePackedGameAsync()
     {
-        if (_coordinator is null || Public?.Checkpoint is not { } checkpoint) return;
+        if (_operationInProgress || Busy is not null || _exitRequested || _mustReload ||
+            IsGameExitMenuOpen || _coordinator is not { } coordinator ||
+            coordinator.Public.Checkpoint is not { } checkpoint) return;
         if (!Table.RebuildAcknowledged || !Table.RebuildAttested)
         {
             Status = "Confirm the whole saved board before resuming.";
             return;
         }
 
-        await SubmitLifecycleAsync(new ResumePackedGame(_coordinator.NewEnvelope(), checkpoint.CheckpointId));
+        SetOperationInProgress(true);
+        try
+        {
+            // Re-read the durable image: a previously displayed photo may have since gone missing
+            // or become unreadable. Manual board confirmation cannot replace this required file.
+            await CheckpointPhoto.LoadCheckpointAsync(await coordinator.GetCheckpointAsync());
+            if (!ReferenceEquals(coordinator, _coordinator) || _exitRequested || _mustReload ||
+                coordinator.Public.Checkpoint?.CheckpointId != checkpoint.CheckpointId) return;
+            if (!CheckpointPhoto.HasPhotoFor(coordinator.SessionId, checkpoint.CheckpointId))
+            {
+                Status = CheckpointPhoto.ReferenceUnavailable
+                    ? "The required board image is damaged or unreadable. Restore the matching image from a backup before resuming."
+                    : "Save the required board image before resuming. Open Saved board photo to capture and verify it.";
+                return;
+            }
+            if (!Table.RebuildAcknowledged || !Table.RebuildAttested)
+            {
+                Status = "Confirm the whole saved board before resuming.";
+                return;
+            }
+            Camera.SetGameTableReference(CheckpointPhoto.PhotoImage);
+        }
+        catch (Exception)
+        {
+            Status = "The required board image could not be verified. Check storage access and try again before resuming.";
+            return;
+        }
+        finally { SetOperationInProgress(false); }
+
+        await SubmitLifecycleAsync(new ResumePackedGame(coordinator.NewEnvelope(), checkpoint.CheckpointId));
     }
 
     /// <summary>The current public projection, or null before a match is open.</summary>

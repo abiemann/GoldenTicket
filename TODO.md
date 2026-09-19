@@ -79,13 +79,15 @@ validation requirements; mark each feature complete only after those checks pass
   hardware/provider acceptance matrix remain M4/M5; preprocessing is not ML inference.
 - [ ] **Photographed save and rebuild** — the state-only half is implemented (M2): named checkpoints,
   the `PreparingPackAway`/`PackedAway`/`Rebuilding` lifecycle, commit-then-readback validation,
-  route-list guided reconstruction and exactly-once resume. Optional operator-attested
+  route-list guided reconstruction and exactly-once resume. Required operator-attested
   reference photos use plaintext format v2 with a SHA-256 checksum, immutable checkpoint binding
   and readback verification. Still missing:
   the board diagram, machine-verified photograph, pending-placement mask and full evidence lifecycle.
   The in-game Escape save now checks route positions and player colors from live frames, stores an
-  observed color inventory beside a fresh board reference photo, and returns to the main menu;
-  this does not yet make the photograph itself a machine-verified checkpoint.
+  observed color inventory beside a fresh board reference photo, and returns to the main menu
+  only after both the digital checkpoint and matching photo validate. This does not yet make the
+  photograph itself a machine-verified checkpoint. Missing or invalid required photos block reload
+  with an error; automatic journal recovery without a user checkpoint remains a separate path.
 - [ ] **Offline installer packaging** — self-contained Windows x64 distribution with required runtimes and assets included (M7).
 - [ ] **Training mode, voice, story, and audio: last feature pass** — Training follows Story without effects/ambience; narration follows visual/voice/both settings. Complete photo save-and-rebuild and packaging foundation first (M6).
 
@@ -323,7 +325,8 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
 - [x] **Visible photo capture and rebuild status.** Distinguish a digital save, a live unsaved crop
   and an attached photo. Explain disabled capture prerequisites, offer Camera setup from the photo
   page, display the saved photo inline during rebuilding, and explain zero-route saved positions.
-  Capture remains explicit and requires an operator board check; a digital save alone has no photo.
+  Technical capture requires an operator board check; the game-layer Save Game captures and
+  validates its required photo before completion. A logical checkpoint alone is not a completed save.
 - [x] **Obvious saved-match selection.** Show a checkmark, automatically select a sole save, keep
   selection across refreshes, and enable Resume only with a selected match. Display selection
   guidance and restore errors in the saved-matches panel; retain the board reconciliation gate.
@@ -399,14 +402,21 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   and test safe switching. Evaluate a baseline first; if needed train on developer data, validate
   held-out physical sets, and ship an offline model. Users never train or download a model.
 - [x] **M2: state-only pack away and rebuild.** Named checkpoints, durable packed/rebuild lifecycles,
-  frozen source state, commit-then-readback validation before any safe-to-pack result, suspended
+  frozen source state, commit-then-readback validation of the logical checkpoint, suspended
   partial operations preserved, route-list guided reconstruction with whole-target attestation,
-  and exactly-once resume. Verified by `PackAwayTests` and `PackAwayDurabilityTests`.
+  and exactly-once resume. Verified by `PackAwayTests` and `PackAwayDurabilityTests`. Completed
+  user saves additionally require a validated matching board photo; logical verification alone
+  does not authorize clearing the board.
 - [x] **Desktop exit confirmation.** An unfinished match prompts before exit with No selected;
-  wording distinguishes automatic digital saves from a verified pack-away checkpoint. No warning
-  for an already verified packed/rebuilding game solely because its optional photo is absent.
+  wording distinguishes automatic digital recovery from a completed pack-away save with its
+  validated board photo. A missing or invalid photo must not authorize clearing the board.
   Pending writes block closing; storage faults show uncertainty. Cancel retains usable tools and
   covers private hands. Confirm preserves deferred cleanup and final close without WPF reentry.
+- [x] **Completed-save and menu gates.** Treat a user save as complete only when its digital
+  checkpoint and matching board image validate. Recheck durable attachments after restart and
+  before rollback; Quit to Menu retains the latest completed earlier save instead of promoting
+  a failed photo capture. Reload reports missing or corrupt required images before gameplay.
+  Escape cannot open the save/quit dialog while an action or computer work is running.
 - [ ] **M2/M4: persistence and pack away, remaining.** Add the geometry-based rebuild diagram, complete snapshots,
   full evidence pinning and machine-verified board photographs,
   partial-operation (pending placement) targets, and current-checkpoint success receipts for the

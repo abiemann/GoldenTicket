@@ -97,17 +97,20 @@ This build implements the core game plus initial phone, camera and photo workflo
   plaintext local payloads, command deduplication, and restore by replay verified against a stored
   state fingerprint. Game saves are not encrypted; saves written in the former encrypted format
   are no longer supported and may be deleted before starting a new game.
-- Save and pack away: the game suspends mid-turn, writes a named checkpoint, reads it back and only
-  then says the pieces may be cleared away. On reload, the game checks each saved scoring marker
+- Save and pack away: a completed save requires both a digital checkpoint verified on readback and
+  its matching, validated board-photo attachment. Only then may the pieces be cleared away.
+  On reload, the game checks each saved scoring marker
   in turn, then verifies every saved train position and color across fresh camera frames before
   resuming the exact suspended action. A previously checked marker that moves must be verified
   again. The saved route list and per-seat stock remain available for manual reconstruction.
-- During play, **Escape** opens **Save Game**, **Quit to Menu**, and **Return to Game**. Save Game
+- Between running game actions, **Escape** opens **Save Game**, **Quit to Menu**, and **Return to Game**.
+  The dialog stays closed while card writes or computer work are running. Save Game
   compares every visible train position and color with the claimed routes across fresh camera
   frames, writes and reads back the digital checkpoint, captures an unprocessed board photo with
   the observed color totals, checks fresh frames again, and returns to the main menu. If any check
-  fails, the game stays open so the board and camera can be corrected. Quit to Menu discards the
-  current unsaved progress; a prior verified save remains available when one exists.
+  fails, the game stays open so the board and camera can be corrected. A checkpoint without a valid
+  matching photo is incomplete, including after an app restart. Quit to Menu discards current unsaved
+  progress and returns to the latest completed save with a validated photo, when one exists.
 - Save paths are confined to valid session directories; concurrent writers, inconsistent journal
   metadata, missing snapshots, and corrupted state stop the operation. An uncertain save outcome
   requires a reload. Unreadable saves remain listed with recovery guidance.
@@ -167,10 +170,11 @@ This build implements the core game plus initial phone, camera and photo workflo
   model hash, predictions and your optional review note. Predictions are marked unreviewed;
   saving an example does not automatically add it to training. Colors and route ownership are
   not inferred by this two-class model.
-- Optional immutable board reference photos attached to validated saved checkpoints. New photo
+- Immutable board reference photos are required for completed user saves. New photo
   sidecars use plaintext format v2 with a SHA-256 checksum. Photos are cropped from fresh camera
   frames and checked on readback. They assist manual
-  rebuilding; checkpoints retain their explicit state-only provenance.
+  rebuilding; checkpoints retain their explicit state-only provenance. Photo integrity and checkpoint
+  binding do not by themselves prove the physical board contents.
 - Explicit manual-verification opt-in, whole-board attestation for uncalibrated routes, and a board-check
   gate before restored games can resume AI or human actions. Hiding a private view invalidates late
   asynchronous results. Fault logs contain bounded error metadata rather than exception payloads.
@@ -308,11 +312,21 @@ date, turn, status and players; **Packed away** is a status, not the save's name
 If a webcam is missing, the camera setup screen asks you to connect it and keeps looking.
 Its webcam list lets you switch cameras when more than one is connected. This reload check
 only requires a clear view of all four board corners: existing trains and scoring markers
-stay in place. After the match loads, the live board view checks its orientation against
-the saved photo. The game then prompts for each scoring marker at its saved number and checks
+stay in place. Reloading a user save validates its required checkpoint photo before entering gameplay; a missing,
+corrupt, or mismatched attachment produces an error instead of waiting indefinitely for the board.
+If an earlier completed save has a valid matching photo, the error offers
+**Restore earlier completed save (discard newer actions)** and warns that all actions after that
+save will be discarded. Choosing it rechecks the photo before rewinding, then starts the normal
+camera verification. Recovery never silently falls back to an older save.
+After the match loads, the live board view checks its orientation against the saved photo.
+The game then prompts for each scoring marker at its saved number and checks
 the saved train positions and colors. It stays on the game table and resumes automatically only
 when the whole board matches. When a saved train is missing or has the wrong color, a pulsing
 yellow marker shows its exact route space. A missed or uncertain camera reading pauses the check.
+An active match recovered from its automatic journal is a separate recovery path. Its current
+digital actions can be recovered, including without a user checkpoint. An earlier checkpoint photo
+still belongs to that frozen checkpoint and does not document later actions. Journal recovery is
+not a completed Save Game and does not grant permission to clear the physical board.
 
 1. Put the board and the plastic trains on the table. **Leave the physical cards and destination
    tickets in the box** — the application deals and holds every card, for every seat.
@@ -423,19 +437,21 @@ For a live outline experiment, first remove all trains and score markers and cho
 empty board**, or load a matching previously exported empty-board crop. Return pieces and clear
 hands to inspect candidates. Uncheck **Enhanced 4K preview** to compare the raw camera image;
 piece analysis continues on the enhanced path. See [camera setup and limits](docs/camera-processing.md).
-Before clearing trains, choose **Add or view board photo**. Use **Camera setup** if prompted,
-select the four crop corners and establish a stable scene reference. Check the live crop, tick the
-board confirmation, then select **Capture reference photo**. Wait for the saved image to appear.
-The live crop is labeled **not saved**. An attached photo also appears directly above the saved
-route list on **Rebuild the board**; a checkpoint with no photo or no routes says so explicitly.
+Before clearing trains, use **Escape → Save Game** and wait for both the digital checkpoint and
+its board photo to finish validation. The technical **Add or view board photo** page can inspect
+or recover an attachment: use **Camera setup** if prompted, select the crop corners, establish a
+stable scene reference, check the board, and select **Capture reference photo**. A live crop is
+labeled **not saved**. An attached photo also appears above the route list on **Rebuild the board**.
+A logical checkpoint alone is not a completed user save; missing or invalid images need recovery.
 
 Closing an unfinished game asks **Are you sure you want to exit?**, with **No** selected by
-default. Completed game actions are saved automatically; choose **No** and use **Save and pack
-away** before clearing the physical board. A verified packed checkpoint (including an unfinished
-rebuild) needs no exit warning, even without a photo. An action or photo save still running must
+default. Completed game actions are saved automatically; choose **No** and use **Escape → Save Game**
+before clearing the physical board. A completed packed save, including an unfinished rebuild,
+requires its verified digital checkpoint and validated board photo. An action or photo save still running must
 finish before you retry closing. If the latest save is uncertain, the app warns you.
 
-Press **Escape** on the game table to open the save/quit dialog. An unresolved solo opening
+Press **Escape** on the game table when no game action or computer work is running to open the
+save/quit dialog. An unresolved solo opening
 destination choice remains underneath the dialog and returns unchanged if you dismiss it; choose
 whether to keep all three or drop one to continue. Engineering-only screens remain available
 through **Shift+Escape** for diagnostics and recovery. Other private views hide on deactivation and after 60 seconds without input.

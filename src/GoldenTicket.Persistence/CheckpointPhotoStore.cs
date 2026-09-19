@@ -206,16 +206,20 @@ public sealed class CheckpointPhotoStore
     {
         ValidateCheckpoint(checkpoint);
         var path = AttachmentPath(checkpoint.SessionId, checkpoint.CheckpointId);
-        if (!File.Exists(path)) return null;
         byte[] envelope;
-        await using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
-                         64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
+        try
         {
+            await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+                64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
             if (stream.Length is <= FixedHeaderLength or > MaximumEnvelopeBytes)
                 throw new InvalidDataException("The stored reference photo has an invalid size.");
             envelope = new byte[checked((int)stream.Length)];
             await stream.ReadExactlyAsync(envelope, cancellationToken);
         }
+        // A missing photo is distinguishable from a temporarily unreadable one. In particular,
+        // access or sharing failures must not authorize discarding a potentially completed save.
+        catch (FileNotFoundException) { return null; }
+        catch (DirectoryNotFoundException) { return null; }
         var plaintext = DecodeEnvelope(envelope);
         try
         {

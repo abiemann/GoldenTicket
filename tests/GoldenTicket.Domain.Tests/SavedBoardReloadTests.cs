@@ -3,6 +3,7 @@ using GoldenTicket.Application;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain;
 using GoldenTicket.Domain.Engine;
+using GoldenTicket.Domain.Model;
 using GoldenTicket.Vision;
 
 namespace GoldenTicket.Domain.Tests;
@@ -13,8 +14,9 @@ public sealed class SavedBoardReloadTests
     public async Task Reload_stays_on_table_until_saved_markers_and_board_are_camera_verified()
     {
         var store = new InMemorySessionStore();
-        var original = new MainViewModel(TestManifest.Manifest, store);
-        var reloaded = new MainViewModel(TestManifest.Manifest, store);
+        using var photos = new TestCheckpointPhotos();
+        var original = new MainViewModel(TestManifest.Manifest, store, photos.Store);
+        var reloaded = new MainViewModel(TestManifest.Manifest, store, photos.Store);
         try
         {
             original.Setup.ManualVerificationAccepted = true;
@@ -27,6 +29,10 @@ public sealed class SavedBoardReloadTests
             }
             original.Table.SaveName = "Camera restore";
             await original.SaveAndPackAwayAsync();
+            var saved = Assert.Single(await store.ListSessionsAsync(CancellationToken.None));
+            var packed = await store.RestoreAsync(saved.SessionId, TestManifest.Manifest,
+                TestManifest.Catalog, CancellationToken.None);
+            await photos.AttachAsync(packed.State.Checkpoint!);
 
             await reloaded.LoadSavedSessionsAsync();
             reloaded.Setup.SelectedSavedSession = reloaded.Setup.SavedSessions.Single();
@@ -81,6 +87,135 @@ public sealed class SavedBoardReloadTests
                 typeof(CameraViewModel).GetProperty(nameof(CameraViewModel.GameTableAnalysis))!
                     .SetValue(reloaded.Camera,
                         new GameTableAnalysis(board, [], readings, 1, 1, "test model"));
+            }
+        }
+        finally
+        {
+            await original.DisposeToolsAsync();
+            await reloaded.DisposeToolsAsync();
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Reload_rejects_missing_or_corrupt_required_photo_without_entering_game(bool corrupt)
+    {
+        var store = new InMemorySessionStore();
+        using var photos = new TestCheckpointPhotos();
+        var original = new MainViewModel(TestManifest.Manifest, store, photos.Store);
+        var reloaded = new MainViewModel(TestManifest.Manifest, store, photos.Store);
+        try
+        {
+            original.Setup.ManualVerificationAccepted = true;
+            await original.StartMatchAsync();
+            await original.CommitTicketsAsync();
+            original.Table.SaveName = "Incomplete image save";
+            await original.SaveAndPackAwayAsync();
+            var saved = Assert.Single(await store.ListSessionsAsync(CancellationToken.None));
+            var before = await store.RestoreAsync(saved.SessionId, TestManifest.Manifest,
+                TestManifest.Catalog, CancellationToken.None);
+            var checkpoint = before.State.Checkpoint!;
+            if (corrupt)
+            {
+                await photos.AttachAsync(checkpoint);
+                await File.WriteAllBytesAsync(photos.Store.AttachmentPath(saved.SessionId, checkpoint.CheckpointId),
+                    "damaged board image"u8.ToArray(), TestContext.Current.CancellationToken);
+            }
+
+            await reloaded.LoadSavedSessionsAsync();
+            reloaded.Setup.SelectedSavedSession = reloaded.Setup.SavedSessions.Single();
+            await reloaded.ResumeMatchAsync();
+
+            Assert.Equal(Screen.Setup, reloaded.Screen);
+            Assert.False(reloaded.Game.IsPlaying);
+            Assert.Empty(reloaded.Table.Seats);
+            Assert.Contains("required board image", reloaded.Setup.SavedMatchMessage);
+            Assert.Contains(corrupt ? "damaged or unreadable" : "incomplete", reloaded.Setup.SavedMatchMessage);
+            Assert.Null(typeof(MainViewModel).GetField("_coordinator",
+                BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(reloaded));
+            Assert.Null(typeof(MainViewModel).GetField("_savedBoardRestoreVerifier",
+                BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(reloaded));
+            var after = await store.RestoreAsync(saved.SessionId, TestManifest.Manifest,
+                TestManifest.Catalog, CancellationToken.None);
+            Assert.Equal(before.State.StateVersion, after.State.StateVersion);
+            Assert.Equal(before.Journal.Count, after.Journal.Count);
+            Assert.Equal(checkpoint, after.State.Checkpoint);
+
+            if (!corrupt)
+            {
+                // A restored matching attachment makes the same saved game usable on retry.
+                await photos.AttachAsync(checkpoint);
+                await reloaded.ResumeMatchAsync();
+                Assert.Equal(Screen.Table, reloaded.Screen);
+                Assert.True(reloaded.Game.IsPlaying);
+                Assert.True(reloaded.CheckpointPhoto.HasPhoto);
+                Assert.Contains("Checking the saved board", reloaded.Game.GuidanceInstruction);
+            }
+        }
+        finally
+        {
+            await original.DisposeToolsAsync();
+            await reloaded.DisposeToolsAsync();
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Earlier_completed_save_recovery_is_explicit_and_revalidates_the_image(bool removePhoto)
+    {
+        var store = new InMemorySessionStore();
+        using var photos = new TestCheckpointPhotos();
+        var original = new MainViewModel(TestManifest.Manifest, store, photos.Store);
+        var reloaded = new MainViewModel(TestManifest.Manifest, store, photos.Store);
+        try
+        {
+            original.Setup.ManualVerificationAccepted = true;
+            await original.StartMatchAsync();
+            await original.CommitTicketsAsync();
+            original.Table.SaveName = "Earlier completed save";
+            await original.SaveAndPackAwayAsync();
+            var session = Assert.Single(await store.ListSessionsAsync(CancellationToken.None));
+            var earlier = await store.RestoreAsync(session.SessionId, TestManifest.Manifest,
+                TestManifest.Catalog, CancellationToken.None);
+            await photos.AttachAsync(earlier.State.Checkpoint!);
+            await original.BeginRebuildAsync();
+            original.Table.RebuildAcknowledged = true;
+            await original.AttestRebuildAsync();
+            await original.ResumePackedGameAsync();
+            original.Table.SaveName = "Failed later save";
+            await original.SaveAndPackAwayAsync();
+            var incomplete = await store.RestoreAsync(session.SessionId, TestManifest.Manifest,
+                TestManifest.Catalog, CancellationToken.None);
+
+            await reloaded.LoadSavedSessionsAsync();
+            reloaded.Setup.SelectedSavedSession = reloaded.Setup.SavedSessions.Single();
+            await reloaded.ResumeMatchAsync();
+            Assert.False(reloaded.Game.IsPlaying);
+            Assert.True(reloaded.HasEarlierCompletedSave);
+            Assert.Contains("discard all actions", reloaded.Setup.SavedMatchMessage);
+            Assert.Equal(incomplete.State.StateVersion, (await store.RestoreAsync(session.SessionId,
+                TestManifest.Manifest, TestManifest.Catalog, CancellationToken.None)).State.StateVersion);
+
+            if (removePhoto)
+                File.Delete(photos.Store.AttachmentPath(session.SessionId, earlier.State.Checkpoint!.CheckpointId));
+            await reloaded.RestoreEarlierCompletedSaveCommand.ExecuteAsync(null);
+            var recovered = await store.RestoreAsync(session.SessionId, TestManifest.Manifest,
+                TestManifest.Catalog, CancellationToken.None);
+            if (removePhoto)
+            {
+                Assert.Equal(incomplete.State.StateVersion, recovered.State.StateVersion);
+                Assert.False(reloaded.Game.IsPlaying);
+                Assert.Contains("could not be restored", reloaded.Setup.SavedMatchMessage);
+            }
+            else
+            {
+                Assert.Equal(earlier.State.Checkpoint!.CheckpointId, recovered.State.Checkpoint!.CheckpointId);
+                Assert.Equal(earlier.State.StateVersion, recovered.State.StateVersion);
+                Assert.True(reloaded.Game.IsPlaying);
+                Assert.False(reloaded.HasEarlierCompletedSave);
+                Assert.Contains("Checking the saved board", reloaded.Game.GuidanceInstruction);
             }
         }
         finally

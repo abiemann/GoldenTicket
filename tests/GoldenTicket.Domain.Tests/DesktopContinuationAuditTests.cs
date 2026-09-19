@@ -12,14 +12,16 @@ public sealed class DesktopContinuationAuditTests
     [Fact]
     public async Task PackAndRebuildKeepPrivateViewsClosedUntilResume()
     {
-        var model = await HumanMatchAsync();
+        using var photos = new TestCheckpointPhotos();
+        var store = new InMemorySessionStore();
+        var model = await HumanMatchAsync(store, photos);
         await model.RevealPrivateSeatAsync();
         Assert.NotNull(model.PrivateSeat);
         model.Table.SaveName = "Privacy audit";
         await model.SaveAndPackAwayAsync();
 
         Assert.True(model.Table.IsPackedAway);
-        Assert.Contains("You can pack", model.Table.SaveStatus);
+        Assert.Contains("required board image", model.Table.SaveStatus);
         Assert.False(model.CanRevealPrivateSeat);
         await model.RevealPrivateSeatAsync();
         Assert.Null(model.PrivateSeat);
@@ -33,6 +35,15 @@ public sealed class DesktopContinuationAuditTests
 
         model.Table.RebuildAcknowledged = true;
         await model.AttestRebuildAsync();
+        await model.ResumePackedGameAsync();
+        Assert.Equal(Screen.Rebuild, model.Screen);
+        Assert.True(model.Table.IsRebuilding);
+        Assert.Contains("required board image", model.Status);
+
+        var session = Assert.Single(await store.ListSessionsAsync(CancellationToken.None));
+        var saved = await store.RestoreAsync(session.SessionId, TestManifest.Manifest,
+            TestManifest.Catalog, CancellationToken.None);
+        await photos.AttachAsync(saved.State.Checkpoint!);
         await model.ResumePackedGameAsync();
         Assert.Equal(Screen.Table, model.Screen);
         Assert.DoesNotContain("You can pack", model.Table.SaveStatus);
@@ -65,6 +76,7 @@ public sealed class DesktopContinuationAuditTests
     [Fact]
     public async Task RebuildResumeContinuesAnAiTurn()
     {
+        using var photos = new TestCheckpointPhotos();
         var store = new InMemorySessionStore();
         var setup = new MainViewModel(TestManifest.Manifest, store);
         setup.Setup.ManualVerificationAccepted = true;
@@ -79,8 +91,9 @@ public sealed class DesktopContinuationAuditTests
                 coordinator.NewEnvelope(seat.SeatId), [.. view.SetupOffer.Take(2)], []))).IsAccepted);
         }
         Assert.True((await coordinator.SaveAndPackAwayAsync("AI turn")).SafeToPack);
+        await photos.AttachAsync((await coordinator.GetCheckpointAsync())!);
 
-        var model = new MainViewModel(TestManifest.Manifest, store);
+        var model = new MainViewModel(TestManifest.Manifest, store, photos.Store);
         await model.LoadSavedSessionsAsync();
         model.Setup.SelectedSavedSession = model.Setup.SavedSessions.Single();
         await model.ResumeMatchAsync();
@@ -126,9 +139,10 @@ public sealed class DesktopContinuationAuditTests
         Assert.True(model.Table.IsRebuilding);
     }
 
-    private static async Task<MainViewModel> HumanMatchAsync()
+    private static async Task<MainViewModel> HumanMatchAsync(
+        ISessionStore? store = null, TestCheckpointPhotos? photos = null)
     {
-        var model = new MainViewModel(TestManifest.Manifest, new InMemorySessionStore());
+        var model = new MainViewModel(TestManifest.Manifest, store ?? new InMemorySessionStore(), photos?.Store);
         model.Setup.ManualVerificationAccepted = true;
         foreach (var seat in model.Setup.Seats) seat.IsComputer = false;
         await model.StartMatchAsync();

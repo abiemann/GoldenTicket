@@ -13,7 +13,7 @@ namespace GoldenTicket.Desktop.ViewModels;
 
 public sealed record CheckpointPhotoCaptureInput(byte[] PngBytes, CheckpointPhotoCapture Capture);
 
-/// <summary>Explicit optional camera-photo retention, separate from authoritative checkpoint truth.</summary>
+/// <summary>The required saved board image, separate from authoritative logical checkpoint truth.</summary>
 public sealed partial class CheckpointPhotoViewModel : ObservableObject
 {
     private readonly CheckpointPhotoStore _store;
@@ -36,6 +36,10 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
     public ICommand? CameraSetupCommand { get; }
     public bool HasLivePreview => !HasPhoto && Camera is { IsRunning: true, BoardPreview: not null };
 
+    public bool HasPhotoFor(SessionId sessionId, CheckpointId checkpointId) =>
+        _checkpoint is { } checkpoint && checkpoint.SessionId == sessionId && checkpoint.CheckpointId == checkpointId &&
+        HasPhoto && PhotoImage is not null && !IsBusy && !ReferenceUnavailable && !NeedsReferenceReload;
+
     public string PhotoStateSummary => !HasCheckpoint ? "No saved checkpoint selected."
         : HasPhoto ? "Board photo saved for this checkpoint."
         : IsBusy ? "Checking or saving the board photo…"
@@ -45,7 +49,7 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
 
     public string CaptureGuidance => !HasCheckpoint ? "Save and pack away to create a checkpoint first."
         : HasPhoto ? "This is the saved photo. You can use it with the route list when rebuilding."
-        : ReferenceUnavailable ? "Use the saved route list to rebuild. This checkpoint's unreadable attachment cannot be replaced."
+        : ReferenceUnavailable ? "Restore this checkpoint's matching board image from a backup. The game cannot resume without a readable image."
         : NeedsReferenceReload ? "Use Reload reference to check the existing attachment before another capture."
         : !CaptureAllowed ? "This game has resumed. Save and pack away again before attaching a new photo."
         : Camera is { IsRunning: false } ? "Open Camera setup and start the overhead camera preview."
@@ -116,7 +120,7 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
         CaptureDetails = "";
         CheckpointName = checkpoint?.Name ?? "No packed checkpoint selected";
         Status = HasCheckpoint
-            ? "The digital game is saved. A board photo is a separate capture step; save it before clearing the board if you want a visual reference."
+            ? "The digital checkpoint is saved. Save and verify its required board photo before clearing the board or resuming this game."
             : "Save and pack away first to create the digital checkpoint.";
         IsBusy = false;
         if (!HasCheckpoint) return;
@@ -141,7 +145,7 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
             if (generation == _generation)
             {
                 ReferenceUnavailable = true;
-                Status = "The reference photo could not be read. Rebuild from the saved route list. This checkpoint's attachment cannot be replaced; a new photo needs a new checkpoint. " + ex.Message;
+                Status = "The required board image could not be read. Restore the matching image from a backup before resuming. The digital save is unchanged. " + ex.Message;
             }
         }
         finally

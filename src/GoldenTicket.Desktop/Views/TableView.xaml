@@ -256,7 +256,7 @@
                             <StackPanel Visibility="{Binding Table.IsSaving,
                                                     Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
                                 <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,6"
-                                           Text="Saves cards, turns and claimed routes, including an unfinished turn. A board photo is a separate capture step after saving." />
+                                           Text="Saves cards, turns and claimed routes, including an unfinished turn. Complete this save by capturing its required board photo." />
                                 <TextBox Margin="0,0,0,8" Text="{Binding Table.SaveName, UpdateSourceTrigger=PropertyChanged}" />
                                 <Button Style="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"
                                         Content="Save and pack away"
@@ -275,7 +275,7 @@
                             <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8"
                                        Text="{Binding Table.RebuildHeadline}" />
                             <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8"
-                                       Text="Before clearing the board, you can attach an optional camera reference photo to this checkpoint." />
+                                       Text="Before clearing the board or resuming, save and verify the required camera image for this checkpoint." />
                             <TextBlock Text="{Binding CheckpointPhoto.PhotoStateSummary}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8" />
                             <Button Style="{StaticResource SecondaryButton}" HorizontalAlignment="Stretch" Margin="0,0,0,10"
                                     Content="Add or view board photo" Command="{Binding ShowCheckpointPhotoCommand}" />

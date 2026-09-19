@@ -505,11 +505,17 @@ public sealed class DesktopSingleHumanTests
     [Fact]
     public async Task PackedSoloCardsReturnOnlyAfterTheBoardHasBeenRebuiltAndResumed()
     {
-        var model = await StartedSingleHumanMatchAsync(new InMemorySessionStore());
+        using var photos = new TestCheckpointPhotos();
+        var store = new InMemorySessionStore();
+        var model = await StartedSingleHumanMatchAsync(store, photos);
         try
         {
             model.Table.SaveName = "Solo rebuild";
             await model.SaveAndPackAwayAsync();
+            var session = Assert.Single(await store.ListSessionsAsync(CancellationToken.None));
+            var saved = await store.RestoreAsync(session.SessionId, TestManifest.Manifest,
+                TestManifest.Catalog, CancellationToken.None);
+            await photos.AttachAsync(saved.State.Checkpoint!);
             Assert.True(model.Table.IsPackedAway);
             Assert.Null(model.PrivateSeat);
             Assert.False(model.CanRevealPrivateSeat);
@@ -533,18 +539,20 @@ public sealed class DesktopSingleHumanTests
         finally { await model.DisposeToolsAsync(); }
     }
 
-    private static MainViewModel NewSingleHumanMatch(ISessionStore? store = null, int humanIndex = 0)
+    private static MainViewModel NewSingleHumanMatch(ISessionStore? store = null, int humanIndex = 0,
+        TestCheckpointPhotos? photos = null)
     {
-        var model = new MainViewModel(TestManifest.Manifest, store ?? new InMemorySessionStore());
+        var model = new MainViewModel(TestManifest.Manifest, store ?? new InMemorySessionStore(), photos?.Store);
         model.Setup.ManualVerificationAccepted = true;
         for (var index = 0; index < model.Setup.Seats.Count; index++)
             model.Setup.Seats[index].IsComputer = index != humanIndex;
         return model;
     }
 
-    private static async Task<MainViewModel> StartedSingleHumanMatchAsync(ISessionStore store)
+    private static async Task<MainViewModel> StartedSingleHumanMatchAsync(ISessionStore store,
+        TestCheckpointPhotos? photos = null)
     {
-        var model = NewSingleHumanMatch(store);
+        var model = NewSingleHumanMatch(store, photos: photos);
         await model.StartMatchAsync();
         Assert.NotNull(model.PrivateSeat);
         await model.CommitTicketsAsync();

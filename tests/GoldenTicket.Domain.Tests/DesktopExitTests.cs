@@ -4,6 +4,7 @@ using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Domain.Model;
+using GoldenTicket.Persistence;
 
 namespace GoldenTicket.Domain.Tests;
 
@@ -54,25 +55,44 @@ public sealed class DesktopExitTests
         finally { await model.DisposeToolsAsync(); }
     }
 
-    [Fact]
-    public async Task VerifiedPackAwayAndRebuildNeedNoPhotoOrWarningButResumedPlayDoes()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PackAwayAndRebuildRequireBoardPhotoBeforeExitWithoutWarning(bool withPhoto)
     {
-        var model = await ActiveMatchAsync();
+        using var photos = new TestCheckpointPhotos();
+        var store = new InMemorySessionStore();
+        var model = await ActiveMatchAsync(store, photos.Store);
         try
         {
             model.Table.SaveName = "Exit checkpoint";
             await model.SaveAndPackAwayAsync();
             Assert.True(model.Table.IsPackedAway);
             Assert.False(model.CheckpointPhoto.HasPhoto);
-            Assert.Null(model.BeginExitRequest());
+            var session = Assert.Single(await store.ListSessionsAsync(TestContext.Current.CancellationToken));
+            var restored = await store.RestoreAsync(session.SessionId, TestManifest.Manifest,
+                TestManifest.Catalog, TestContext.Current.CancellationToken);
+            if (withPhoto)
+            {
+                await photos.AttachAsync(restored.State.Checkpoint!);
+                await model.CheckpointPhoto.LoadCheckpointAsync(restored.State.Checkpoint);
+                Assert.Null(model.BeginExitRequest());
+            }
+            else Assert.Contains("required board photo", Assert.IsType<ExitPrompt>(model.BeginExitRequest()).Message);
             model.CancelExitRequest();
 
             await model.BeginRebuildAsync();
             Assert.True(model.Table.IsRebuilding);
-            Assert.False(model.CheckpointPhoto.HasPhoto);
-            Assert.Null(model.BeginExitRequest());
+            Assert.Equal(withPhoto, model.CheckpointPhoto.HasPhoto);
+            if (withPhoto) Assert.Null(model.BeginExitRequest());
+            else Assert.Contains("required board photo", Assert.IsType<ExitPrompt>(model.BeginExitRequest()).Message);
             model.CancelExitRequest();
 
+            if (!withPhoto)
+            {
+                await photos.AttachAsync(restored.State.Checkpoint!);
+                await model.CheckpointPhoto.LoadCheckpointAsync(restored.State.Checkpoint);
+            }
             model.Table.RebuildAcknowledged = true;
             await model.AttestRebuildAsync();
             await model.ResumePackedGameAsync();
@@ -219,16 +239,16 @@ public sealed class DesktopExitTests
         finally { await model.DisposeToolsAsync(); }
     }
 
-    private static MainViewModel NewMatch(ISessionStore? store = null)
+    private static MainViewModel NewMatch(ISessionStore? store = null, CheckpointPhotoStore? photos = null)
     {
-        var model = new MainViewModel(TestManifest.Manifest, store ?? new InMemorySessionStore());
+        var model = new MainViewModel(TestManifest.Manifest, store ?? new InMemorySessionStore(), photoStore: photos);
         model.Setup.ManualVerificationAccepted = true;
         return model;
     }
 
-    private static async Task<MainViewModel> ActiveMatchAsync(ISessionStore? store = null)
+    private static async Task<MainViewModel> ActiveMatchAsync(ISessionStore? store = null, CheckpointPhotoStore? photos = null)
     {
-        var model = NewMatch(store);
+        var model = NewMatch(store, photos);
         await model.StartMatchAsync();
         Assert.NotNull(model.PrivateSeat);
         await model.CommitTicketsAsync();

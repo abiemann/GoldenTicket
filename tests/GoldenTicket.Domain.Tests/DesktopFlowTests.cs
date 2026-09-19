@@ -319,9 +319,10 @@ public class DesktopFlowTests
 /// </summary>
 public class DesktopPackAwayFlowTests
 {
-    private static async Task<MainViewModel> StartedMatchAsync()
+    private static async Task<MainViewModel> StartedMatchAsync(InMemorySessionStore? store = null,
+        TestCheckpointPhotos? photos = null)
     {
-        var model = new MainViewModel(TestManifest.Manifest, new Application.InMemorySessionStore());
+        var model = new MainViewModel(TestManifest.Manifest, store ?? new InMemorySessionStore(), photos?.Store);
         model.Setup.ManualVerificationAccepted = true;
 
         foreach (var seat in model.Setup.Seats) seat.IsComputer = true;
@@ -343,7 +344,7 @@ public class DesktopPackAwayFlowTests
     }
 
     [Fact]
-    public async Task SavingShowsTheSafeToPackWordingOnlyAfterValidation()
+    public async Task DigitalCheckpointStillRequiresBoardImageBeforeClearing()
     {
         var model = await StartedMatchAsync();
         model.Table.SaveName = "Sunday game";
@@ -351,7 +352,7 @@ public class DesktopPackAwayFlowTests
         await model.SaveAndPackAwayCommand.ExecuteAsync(null);
 
         Assert.True(model.Table.IsPackedAway);
-        Assert.Contains("pack the game away", model.Table.SaveStatus!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("required board image", model.Table.SaveStatus!, StringComparison.OrdinalIgnoreCase);
         Assert.Null(model.Table.SaveProblem);
 
         // The name box is cleared so the next save has to be named deliberately.
@@ -434,9 +435,15 @@ public class DesktopPackAwayFlowTests
     [Fact]
     public async Task ResumeNeedsTheOperatorToTickTheConfirmationFirst()
     {
-        var model = await StartedMatchAsync();
+        var store = new InMemorySessionStore();
+        using var photos = new TestCheckpointPhotos();
+        var model = await StartedMatchAsync(store, photos);
         model.Table.SaveName = "Packed";
         await model.SaveAndPackAwayCommand.ExecuteAsync(null);
+        var session = Assert.Single(await store.ListSessionsAsync(CancellationToken.None));
+        var saved = await store.RestoreAsync(session.SessionId, TestManifest.Manifest,
+            TestManifest.Catalog, CancellationToken.None);
+        await photos.AttachAsync(saved.State.Checkpoint!);
         await model.BeginRebuildCommand.ExecuteAsync(null);
 
         // Attesting without ticking the box is refused, and Resume stays blocked.
@@ -460,12 +467,10 @@ public class DesktopPackAwayFlowTests
     }
 
     /// <summary>
-    /// DESIGN 19.5: reopening a match that was interrupted mid-save carries the save forward against
-    /// the preserved source state, and does not ask the operator to reconcile a board that is
-    /// already in the box.
+    /// An interrupted digital save cannot become a completed game save without its required image.
     /// </summary>
     [Fact]
-    public async Task ReopeningAnInterruptedSaveFinishesItInsteadOfAskingAboutTheBoard()
+    public async Task ReopeningAnInterruptedSaveKeepsItIntactAndReportsIncompleteImage()
     {
         var store = new Application.InMemorySessionStore();
         var rules = new Domain.Engine.GameRules(TestManifest.Manifest, TestManifest.Catalog);
@@ -492,7 +497,8 @@ public class DesktopPackAwayFlowTests
         Assert.Equal(SessionLifecycle.PreparingPackAway, coordinator.Public.Lifecycle);
 
         // Reopen it through the interface.
-        var model = new MainViewModel(TestManifest.Manifest, store);
+        using var photos = new TestCheckpointPhotos();
+        var model = new MainViewModel(TestManifest.Manifest, store, photos.Store);
         await model.LoadSavedSessionsCommand.ExecuteAsync(null);
         model.Setup.SelectedSavedSession = model.Setup.SavedSessions.Single();
 
@@ -500,7 +506,13 @@ public class DesktopPackAwayFlowTests
 
         Assert.False(model.NeedsBoardReconciliation);
         Assert.False(model.Table.IsSaving);
-        Assert.True(model.Table.IsPackedAway);
-        Assert.Contains("pack the game away", model.Table.SaveStatus!, StringComparison.OrdinalIgnoreCase);
+        Assert.False(model.Table.IsPackedAway);
+        Assert.Equal(Screen.Setup, model.Screen);
+        Assert.Contains("required board image", model.Setup.SavedMatchMessage);
+        var unchanged = await store.RestoreAsync(setup.SessionId, TestManifest.Manifest,
+            TestManifest.Catalog, CancellationToken.None);
+        Assert.Equal(SessionLifecycle.PreparingPackAway, unchanged.State.Lifecycle);
+        Assert.Equal(coordinator.Public.StateVersion, unchanged.State.StateVersion);
+        await model.DisposeToolsAsync();
     }
 }

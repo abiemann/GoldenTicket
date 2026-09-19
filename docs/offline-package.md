@@ -120,7 +120,9 @@ not a completed license audit. Existing project notices, if present, are retaine
    beside the executable. Run `GoldenTicket.exe` from the extracted directory.
 3. The portable application uses `%LOCALAPPDATA%\GoldenTicket` for this user's state. Extracting
    a newer package beside the old one does not migrate saves to another account or delete them.
-   DPAPI-protected games, keys, and photos remain tied to the original Windows account/machine.
+   Current game and board-photo payloads are plaintext with integrity checks; companion TLS private
+   keys remain DPAPI-protected and tied to the Windows account/machine. Preserve each saved game's
+   matching board-photo attachment: completed saves require it, and reload validates it before play.
 4. Windows may show its normal unsigned-application or camera-permission prompts. The package
    does not disable those protections. A signed installer is still outstanding.
 5. For the companion, follow [phone setup](phone-setup.md). Laptop-only play does not require

@@ -10,7 +10,8 @@ public sealed class DesktopQuitCheckpointTests
     public async Task QuitToMenuDiscardsLaterPlayButLeavesPreviousSaveAvailable()
     {
         var store = new InMemorySessionStore();
-        var model = new MainViewModel(TestManifest.Manifest, store);
+        using var photos = new TestCheckpointPhotos();
+        var model = new MainViewModel(TestManifest.Manifest, store, photos.Store);
         model.Setup.ManualVerificationAccepted = true;
         model.SetGameLayerVisible(true);
         try
@@ -26,6 +27,7 @@ public sealed class DesktopQuitCheckpointTests
                 TestManifest.Catalog, CancellationToken.None);
             var savedVersion = saved.State.StateVersion;
             var savedCheckpoint = saved.State.Checkpoint!.CheckpointId;
+            await photos.AttachAsync(saved.State.Checkpoint);
 
             await model.BeginRebuildAsync();
             model.Table.RebuildAcknowledged = true;

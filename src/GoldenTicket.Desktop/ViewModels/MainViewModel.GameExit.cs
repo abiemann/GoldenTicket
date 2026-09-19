@@ -18,7 +18,6 @@ public sealed partial class MainViewModel
     private long _gameExitInventoryCameraEpoch;
     private long _gameExitInventoryCropRevision;
     private long _gameExitMinimumFrameSequence;
-    private CheckpointId? _incompleteGameExitSaveCheckpointId;
 
     [ObservableProperty] private bool _isGameExitMenuOpen;
     [ObservableProperty] private bool _isGameExitSaving;
@@ -28,7 +27,9 @@ public sealed partial class MainViewModel
     public void OpenGameExitMenu()
     {
         if (IsGameExitMenuOpen || !Game.IsPlaying || !_gameLayerVisible || _exitRequested ||
-            _toolsDisposed || _coordinator is null) return;
+            _toolsDisposed || _coordinator is null || _operationInProgress || Busy is not null) return;
+        // An action must finish its durable write, computer turns and public-view refresh before
+        // the menu can pause play. Otherwise PumpAsync would skip that continuation permanently.
         // The solo opening destination choice is deliberately persistent on the public table.
         // Cover it with this modal, then reveal the same choice when the player returns.
         if (!ShowSoloOpeningTicketsOnBoard) HidePrivateSeat();
@@ -110,8 +111,6 @@ public sealed partial class MainViewModel
         SetOperationInProgress(true);
         GameExitStatus = "Checking every train on the board by route and color…";
         var capturedVersion = coordinator.Public.StateVersion;
-        var photoStore = new CheckpointPhotoStore((_store as SqliteSessionStore)?.RootDirectory ??
-            SqliteSessionStore.DefaultRoot);
         try
         {
             var expected = coordinator.Public.RouteOwners
@@ -179,14 +178,12 @@ public sealed partial class MainViewModel
                 {
                     // A digital checkpoint can exist even when Save Game has not completed its
                     // mandatory photo and inventory. Quit must preserve the earlier save instead.
-                    _incompleteGameExitSaveCheckpointId = coordinator.Public.Checkpoint?.CheckpointId;
                     GameExitStatus = outcome.Rejection?.Message ?? outcome.Problem ??
                         "The game save is not verified yet. Try again.";
                     await RefreshAsync();
                     return;
                 }
                 checkpoint = outcome.Checkpoint;
-                _incompleteGameExitSaveCheckpointId = checkpoint?.CheckpointId;
             }
 
             if (checkpoint is null) throw new InvalidOperationException("The saved checkpoint is missing.");
@@ -236,7 +233,7 @@ public sealed partial class MainViewModel
                         .SequenceEqual(counts.OrderBy(pair => pair.Key)))
                     throw new InvalidOperationException("The board inventory changed during the save.");
 
-                await photoStore.SaveReferenceAsync(checkpoint, photo.PngBytes,
+                await _checkpointPhotoStore.SaveReferenceAsync(checkpoint, photo.PngBytes,
                     new CheckpointPhotoCapture(photo.CapturedAt, photo.CameraId,
                         photo.CameraEpoch, photo.BoardCropRevision, true),
                     CancellationToken.None, confirmedInventory);
@@ -245,7 +242,6 @@ public sealed partial class MainViewModel
 
             // The photo and camera-observed inventory have both passed durable readback.
             // This checkpoint is now a completed Save Game even if menu navigation fails.
-            _incompleteGameExitSaveCheckpointId = null;
             Table.SaveName = "";
             await LeaveGameForMenuAsync();
         }
@@ -281,8 +277,7 @@ public sealed partial class MainViewModel
             // Gameplay is auto-journaled, so merely returning to the menu would reload unsaved
             // moves. Keep an earlier verified checkpoint and atomically discard newer play.
             // A checkpoint created by a failed Save Game attempt is not a completed save.
-            var prior = await _store.FindLatestVerifiedCheckpointAsync(coordinator.SessionId,
-                _manifest, _catalog, _incompleteGameExitSaveCheckpointId, CancellationToken.None);
+            var prior = await FindLatestCompletedGameSaveAsync(coordinator.SessionId);
             if (prior is null)
                 await _store.DeleteSessionAsync(coordinator.SessionId, CancellationToken.None);
             else
@@ -309,7 +304,6 @@ public sealed partial class MainViewModel
         BoardReconciliationAcknowledged = false;
         ShowMultiHumanPhoneSetup = false;
         _mustReload = false;
-        _incompleteGameExitSaveCheckpointId = null;
         Status = null;
         await Connection.StopCommand.ExecuteAsync(null);
         Camera.EndGameTablePreview();

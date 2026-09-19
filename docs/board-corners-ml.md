@@ -26,8 +26,10 @@ real overhead-camera accuracy still needs validation.
 During play, the game table compares its current upright crop with the accepted board image. A
 changed or rotated view pauses the board preview and piece readings while the corner model locates
 fresh corners. The game tries all four rotations of those corners and resumes only when one matches
-the upright reference. A saved game can use its upright checkpoint photo for this check after
-resume. Keep the whole board in the camera frame; if corners or orientation are uncertain, the
+the upright reference. Reloading a user checkpoint requires its validated upright board photo
+before gameplay begins; a missing, corrupt, or mismatched attachment produces a reload error
+instead of starting an orientation check with no reference. Keep the whole board in the camera frame;
+if corners or orientation are uncertain, the
 table waits for a clearer view rather than displaying a possibly upside-down board. The game crop
 also receives the same narrow outward margin described below, once per newly detected quad.
 If the detected edge remains too tight, adjust the corners in the technical Camera screen; the
