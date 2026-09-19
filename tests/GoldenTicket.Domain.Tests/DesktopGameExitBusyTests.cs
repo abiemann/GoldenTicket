@@ -1,8 +1,10 @@
+using System.Reflection;
 using GoldenTicket.Application;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Domain.Model;
+using GoldenTicket.Vision;
 
 namespace GoldenTicket.Domain.Tests;
 
@@ -25,7 +27,10 @@ public sealed class DesktopGameExitBusyTests
         {
             await model.StartMatchAsync();
             await model.CommitTicketsAsync();
-            await model.DrawSoloBlindCommand.ExecuteAsync(null);
+            model.Camera.IsGameTablePreviewUpright = true;
+            var firstDraw = model.DrawSoloBlindCommand.ExecuteAsync(null);
+            ConfirmEmptyBoard(model.Camera, firstSequence: 1);
+            await firstDraw.WaitAsync(TimeSpan.FromSeconds(10));
             Assert.Equal("Taking a second train card", model.Table.PhaseText);
             var session = Assert.Single(await store.ListSessionsAsync(CancellationToken.None));
             var before = (await store.RestoreAsync(session.SessionId, manifest, catalog,
@@ -33,6 +38,7 @@ public sealed class DesktopGameExitBusyTests
 
             store.DelayCommitAfter(commitsBeforeDelay);
             drawing = model.DrawSoloBlindCommand.ExecuteAsync(null);
+            ConfirmEmptyBoard(model.Camera, firstSequence: 3);
             await store.CommitStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
             model.OpenGameExitMenu();
@@ -63,6 +69,20 @@ public sealed class DesktopGameExitBusyTests
             store.ReleaseCommit.TrySetResult();
             if (drawing is not null) await drawing.WaitAsync(TimeSpan.FromSeconds(10));
             await model.DisposeToolsAsync();
+        }
+    }
+
+    private static void ConfirmEmptyBoard(CameraViewModel camera, long firstSequence)
+    {
+        var capturedAt = DateTimeOffset.UtcNow;
+        for (var index = 0; index < 2; index++)
+        {
+            var frame = CameraFrame.CopyFromBgra32(320, 200, new byte[320 * 200 * 4],
+                sequence: firstSequence + index, epoch: 1,
+                capturedAt: capturedAt.AddSeconds(index * 1.1));
+            var analysis = new GameTableAnalysis(frame, [], [], 1, 1, "synthetic-card-save-test");
+            typeof(CameraViewModel).GetProperty(nameof(CameraViewModel.GameTableAnalysis))!
+                .GetSetMethod(nonPublic: true)!.Invoke(camera, [analysis]);
         }
     }
 

@@ -342,7 +342,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
         (double Left, double Top)[] positions = _main.Table.Seats.Count switch
         {
             2 => [(10, 330), (1180, 330)],
-            3 => [(10, 330), (1180, 330), _main.ShowSoloOpeningTicketsOnBoard ? (14, 18) : (10, 530)],
+            3 => [(10, 330), (1180, 330), _main.ShowSoloOpeningTicketsOnBoard ? (10, _main.GameTableBoardTop) : (10, 530)],
             4 => [(10, 265), (1180, 265), (10, 530), (1180, 530)],
             _ => [(10, 205), (1180, 205), (10, 395), (1180, 585), (10, 585)],
         };

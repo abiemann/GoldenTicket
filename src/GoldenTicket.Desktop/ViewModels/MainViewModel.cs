@@ -56,8 +56,10 @@ public sealed partial class MainViewModel : ObservableObject
     {
     }
 
-    public MainViewModel(BoardManifest manifest, ISessionStore store, CheckpointPhotoStore? photoStore = null)
+    public MainViewModel(BoardManifest manifest, ISessionStore store, CheckpointPhotoStore? photoStore = null,
+        TimeProvider? timeProvider = null)
     {
+        _turnTimeProvider = timeProvider ?? TimeProvider.System;
         _manifest = manifest;
         _catalog = CardCatalog.FromManifest(manifest);
         _rules = new GameRules(manifest, _catalog);
@@ -73,6 +75,7 @@ public sealed partial class MainViewModel : ObservableObject
         Table = new TableViewModel(manifest);
         InitializeTools();
         Game = new GameScreenViewModel(this);
+        InitializeTurnClock();
         Camera.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(CameraViewModel.GameTablePreview))
@@ -81,6 +84,7 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 ObserveSavedBoardRestore();
                 ObserveGameTableAnalysis();
+                ObserveCardActionBoard();
                 ObserveGameExitInventory();
             }
         };
@@ -156,6 +160,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (_gameLayerVisible == visible) return;
         _gameLayerVisible = visible;
+        UpdateTurnClock();
         HidePrivateSeat();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
         ResumeMatchCommand.NotifyCanExecuteChanged();
@@ -267,7 +272,7 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             _coordinator = await GameCoordinator.CreateAsync(
-                _rules, _store, setup, DeterministicRandom.SeedFromOperatingSystem());
+                _rules, _store, setup, DeterministicRandom.SeedFromOperatingSystem(), timeProvider: _turnTimeProvider);
 
             _driver = new ComputerSeatDriver(
                 _coordinator, new HeuristicAiPolicy(), DeterministicRandom.SeedFromOperatingSystem().S0);
@@ -312,7 +317,8 @@ public sealed partial class MainViewModel : ObservableObject
         Busy = "Restoring and verifying the saved match...";
         try
         {
-            var restored = await GameCoordinator.RestoreAsync(_rules, _store, saved.SessionId);
+            var restored = await GameCoordinator.RestoreAsync(_rules, _store, saved.SessionId,
+                timeProvider: _turnTimeProvider);
             if (restored.Public.VerificationMode != VerificationMode.Manual)
                 throw new NotSupportedException("This build can only resume matches that use manual verification.");
             // A journal checkpoint alone is not a completed Save Game. Validate its required
@@ -460,6 +466,8 @@ public sealed partial class MainViewModel : ObservableObject
     public void SetWindowActive(bool active)
     {
         _windowActive = active;
+        if (!active) _cardBoardCheck?.Completion.TrySetResult(false);
+        UpdateTurnClock();
         if (!active && !ShowSoloOpeningTicketsOnBoard) HidePrivateSeat();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
         NotifySoloDrawCommands();
@@ -505,7 +513,8 @@ public sealed partial class MainViewModel : ObservableObject
             coordinator.SessionId, CommandId.New(), seat.StateVersion, seat.SeatId);
 
         if (build(envelope, seat) is not { } command) return;
-        if (_boardFirstInvalidMoveMessage is not null && command is SelectTrainCard or RequestTicketOffer)
+        if ((_boardFirstInvalidMoveMessage is not null || _cardActionBoardWarning is not null) &&
+            command is SelectTrainCard or RequestTicketOffer or CommitTicketSelection)
         {
             seat.Message = "Correct or remove the trains from the unclaimed route before drawing cards.";
             return;
@@ -518,6 +527,8 @@ public sealed partial class MainViewModel : ObservableObject
         string? privateRejection = null;
         try
         {
+            if (command is SelectTrainCard or RequestTicketOffer or CommitTicketSelection &&
+                !await CheckBoardBeforeCardActionAsync(coordinator, seat.StateVersion)) return;
             var outcome = await coordinator.SubmitAsync(command);
             accepted = outcome.IsAccepted;
             privateRejection = outcome.Result.Rejection?.Message;
@@ -858,6 +869,7 @@ public sealed partial class MainViewModel : ObservableObject
     private void RequireReload()
     {
         _mustReload = true;
+        UpdateTurnClock();
         HidePrivateSeat();
         Status = "Play is paused after an error. Reopen the saved match to verify its last durable state.";
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
@@ -871,6 +883,7 @@ public sealed partial class MainViewModel : ObservableObject
     /// </summary>
     private async Task PumpAsync()
     {
+        UpdateTurnClock();
         if (_coordinator is null || _driver is null || IsGameInputPaused || _scoreMarkerStep is not null ||
             NeedsBoardReconciliation || _mustReload) return;
 
@@ -890,6 +903,7 @@ public sealed partial class MainViewModel : ObservableObject
     private async Task RefreshAsync()
     {
         if (_coordinator is null) return;
+        UpdateTurnClock();
         CloseSoloCardPanel();
 
         var view = _coordinator.Public;
@@ -926,14 +940,17 @@ public sealed partial class MainViewModel : ObservableObject
         var view = _coordinator!.Public;
         FinalScores.Clear();
 
-        foreach (var score in result.Scores.OrderByDescending(score => score.Total))
+        var standings = result.Scores.OrderByDescending(score => score.Total)
+            .ThenByDescending(score => score.CompletedTicketCount)
+            .ThenByDescending(score => score.HoldsLongestRouteBonus).ToArray();
+        foreach (var score in standings)
         {
             var seat = view.SeatOf(score.SeatId);
             var trail = score.LongestTrailWitness.IsEmpty
                 ? "none"
-                : string.Join("  ->  ", score.LongestTrailWitness.Select(_manifest.Describe));
+                : string.Join(" → ", score.LongestTrailWitness.Select(_manifest.Describe));
 
-            FinalScores.Add(new FinalScoreRow(
+            var row = new FinalScoreRow(
                 seat.DisplayName,
                 seat.Color,
                 seat.Symbol,
@@ -945,12 +962,20 @@ public sealed partial class MainViewModel : ObservableObject
                 $"{score.CompletedTicketCount} completed, {score.IncompleteTickets.Length} missed",
                 score.LongestTrailLength,
                 trail,
-                result.Winners.Contains(score.SeatId)));
+                result.Winners.Contains(score.SeatId))
+            {
+                Portrait = Game.SeatChoices.First(choice => choice.TrainColor == seat.Color)
+                    .PortraitFor(seat.Kind == SeatKind.Computer),
+                RankLabel = $"#{Array.FindIndex(standings, other => other.Total == score.Total &&
+                    other.CompletedTicketCount == score.CompletedTicketCount &&
+                    other.HoldsLongestRouteBonus == score.HoldsLongestRouteBonus) + 1}"
+            };
+            FinalScores.Add(WithTurnTiming(row, score.SeatId));
         }
 
         var winners = string.Join(" and ", result.Winners.Select(seat => view.SeatOf(seat).DisplayName));
         FinalSummary = result.SharedVictory
-            ? $"Shared victory: {winners}. {result.TieBreakExplanation}"
+            ? $"Shared victory: {winners}. Tied on points, completed tickets and the longest continuous route."
             : $"{winners} wins. {result.TieBreakExplanation}";
     }
 }
@@ -967,4 +992,12 @@ public sealed record FinalScoreRow(
     string TicketSummary,
     int LongestTrailLength,
     string WitnessTrail,
-    bool IsWinner);
+    bool IsWinner)
+{
+    public System.Windows.Media.ImageSource? Portrait { get; init; }
+    public string RankLabel { get; init; } = "";
+    public string TotalTurnTimeText { get; init; } = "—";
+    public string AverageTurnTimeText { get; init; } = "—";
+    public string TimingNote { get; init; } = "Timing was not recorded for this game.";
+    public int CompletedTurns { get; init; }
+}

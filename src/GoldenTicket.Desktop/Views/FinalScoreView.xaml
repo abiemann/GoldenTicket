@@ -6,66 +6,207 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              d:DataContext="{d:DesignInstance vm:MainViewModel}"
-             mc:Ignorable="d">
-
+             mc:Ignorable="d" Background="Transparent">
     <UserControl.Resources>
         <local:PlayerColorBrushConverter x:Key="PlayerColorBrush" />
         <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
         <local:TrainCountTextConverter x:Key="TrainCountText" />
+        <Style x:Key="ResultNavigationButton" TargetType="Button">
+            <Setter Property="Background" Value="#F01A2531" />
+            <Setter Property="Foreground" Value="#FFFFE7B0" />
+            <Setter Property="BorderBrush" Value="#FFD4AC6B" />
+            <Setter Property="BorderThickness" Value="1.5" />
+            <Setter Property="FontSize" Value="22" />
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Frame" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Frame" Property="Background" Value="#FF69412F" /></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="#FFFFD576" /></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Visibility" Value="Hidden" /></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="10" />
+            <Setter Property="Background" Value="#70232D36" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="5" Margin="1">
+                            <Track x:Name="PART_Track" Orientation="{TemplateBinding Orientation}" IsDirectionReversed="True">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton x:Name="Decrease" Command="{x:Static ScrollBar.PageUpCommand}" Focusable="False" Opacity="0" />
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb x:Name="ScrollGrip" MinHeight="24">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border x:Name="Grip" Background="#FFB18C52" CornerRadius="5" Margin="1" />
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Grip" Property="Background" Value="#FFFFD576" /></Trigger>
+                                                    <Trigger Property="IsDragging" Value="True"><Setter TargetName="Grip" Property="Background" Value="#FFFFD576" /></Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton x:Name="Increase" Command="{x:Static ScrollBar.PageDownCommand}" Focusable="False" Opacity="0" />
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Orientation" Value="Horizontal">
+                                <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
+                                <Setter TargetName="ScrollGrip" Property="MinWidth" Value="24" />
+                                <Setter TargetName="ScrollGrip" Property="MinHeight" Value="0" />
+                                <Setter TargetName="Decrease" Property="Command" Value="{x:Static ScrollBar.PageLeftCommand}" />
+                                <Setter TargetName="Increase" Property="Command" Value="{x:Static ScrollBar.PageRightCommand}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Width" Value="Auto" /><Setter Property="Height" Value="12" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="ScoreLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FFE6D9C3" /><Setter Property="FontSize" Value="13" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="ScoreValue" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FFFFE7B0" /><Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" /><Setter Property="HorizontalAlignment" Value="Right" />
+        </Style>
     </UserControl.Resources>
-
-    <ScrollViewer Padding="24" VerticalScrollBarVisibility="Auto">
-        <StackPanel MaxWidth="1000" HorizontalAlignment="Left">
-
-            <TextBlock Style="{StaticResource Display}" Text="Final scores" />
-            <TextBlock FontSize="16" FontWeight="SemiBold" Margin="0,0,0,16" Text="{Binding FinalSummary}" />
-
-            <ItemsControl ItemsSource="{Binding FinalScores}">
+    <Grid Margin="24,18,24,18">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+        <Border HorizontalAlignment="Center" MaxWidth="1000" Padding="30,13" Margin="0,0,0,12"
+                CornerRadius="12" Background="#F01A2531" BorderBrush="#FFD4AC6B" BorderThickness="1.5">
+            <StackPanel>
+                <TextBlock Text="THE FINAL STANDINGS" Foreground="#FFFFE7B0" FontSize="27" FontWeight="Bold" TextAlignment="Center" />
+                <TextBlock Text="{Binding FinalSummary}" Foreground="#FFF8EEDC" FontSize="15"
+                           TextWrapping="Wrap" TextAlignment="Center" Margin="0,5,0,0" AutomationProperties.LiveSetting="Polite" />
+            </StackPanel>
+        </Border>
+        <ScrollViewer x:Name="ResultsScroll" Grid.Row="1" HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Disabled" PanningMode="HorizontalOnly"
+                      ScrollChanged="OnResultsScrollChanged" PreviewMouseWheel="OnResultsMouseWheel"
+                      CanContentScroll="False" FocusVisualStyle="{x:Null}">
+            <ItemsControl x:Name="ResultCards" ItemsSource="{Binding FinalScores}"
+                          Height="{Binding ViewportHeight, ElementName=ResultsScroll}" HorizontalAlignment="Center">
+                <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Style="{StaticResource Card}">
-                            <StackPanel>
-                                <StackPanel Orientation="Horizontal">
-                                    <Border Width="18" Height="18" CornerRadius="9" Margin="0,0,8,0"
-                                            VerticalAlignment="Center"
-                                            BorderBrush="{StaticResource Text.Primary}" BorderThickness="1"
-                                            Background="{Binding Color, Converter={StaticResource PlayerColorBrush}}" />
-                                    <TextBlock Text="{Binding Symbol}" FontSize="16" Margin="0,0,8,0" />
-                                    <TextBlock Text="{Binding SeatName}" FontSize="18" FontWeight="SemiBold" />
-                                    <TextBlock Text="  ·  winner" FontSize="16" FontWeight="SemiBold"
-                                               Foreground="{StaticResource Status.Success}"
-                                               Visibility="{Binding IsWinner, Converter={StaticResource BoolToVisibility}}" />
-                                    <TextBlock FontSize="18" FontWeight="SemiBold" Margin="16,0,0,0"
-                                               Foreground="{StaticResource Action.Primary}">
-                                        <Run Text="{Binding Total, Mode=OneWay}" /><Run Text=" points" />
-                                    </TextBlock>
+                        <Border x:Name="PlayerResultPanel" Width="338" MaxHeight="700" VerticalAlignment="Center" Margin="9,4,9,12" Padding="17,13"
+                                CornerRadius="15" Background="#F51A2531" BorderBrush="#FFB18C52" BorderThickness="1.5">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="22" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" MinHeight="45" />
+                                </Grid.RowDefinitions>
+                                <Grid>
+                                    <TextBlock Text="{Binding RankLabel}" Foreground="#FFDCC18A" FontSize="13" FontWeight="SemiBold" />
+                                    <Border HorizontalAlignment="Right" Background="#FFFFD576" CornerRadius="4" Padding="9,2"
+                                            Visibility="{Binding IsWinner, Converter={StaticResource BoolToVisibility}}">
+                                        <TextBlock Text="WINNER" Foreground="#FF36271C" FontSize="11" FontWeight="Bold" />
+                                    </Border>
+                                </Grid>
+                                <StackPanel Grid.Row="1" Margin="0,6,0,10">
+                                    <Border Width="106" Height="106" CornerRadius="8" BorderThickness="3"
+                                            BorderBrush="{Binding Color, Converter={StaticResource PlayerColorBrush}}"
+                                            HorizontalAlignment="Center" Background="#FF101821" ClipToBounds="True">
+                                        <Image Source="{Binding Portrait}" Stretch="UniformToFill" />
+                                    </Border>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
+                                        <TextBlock Text="{Binding Symbol}" Foreground="{Binding Color, Converter={StaticResource PlayerColorBrush}}"
+                                                   FontSize="18" Margin="0,0,7,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding SeatName}" Foreground="#FFFFE7B0" FontSize="22"
+                                                   FontWeight="SemiBold" MaxWidth="265" TextTrimming="CharacterEllipsis" ToolTip="{Binding SeatName}" />
+                                    </StackPanel>
                                 </StackPanel>
-
-                                <TextBlock Margin="0,8,0,0">
-                                    <Run Text="Routes " /><Run Text="{Binding RoutePoints, Mode=OneWay}" /><Run
-                                        Text="   ·   destinations +" /><Run Text="{Binding TicketsGained, Mode=OneWay}" /><Run
-                                        Text=" / -" /><Run Text="{Binding TicketsLost, Mode=OneWay}" /><Run
-                                        Text="   ·   longest-route bonus " /><Run Text="{Binding LongestBonus, Mode=OneWay}" />
+                                <Border Grid.Row="2" Background="#FFF9EDD4" BorderBrush="#FFE1BD79" BorderThickness="1"
+                                        CornerRadius="7" Padding="10,4" Margin="0,0,0,10">
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                        <TextBlock Text="{Binding Total}" Foreground="#FF382A20" FontSize="37" FontWeight="Bold" />
+                                        <TextBlock Text="POINTS" Foreground="#FF75553A" FontSize="11" FontWeight="SemiBold"
+                                                   Margin="8,0,0,8" VerticalAlignment="Bottom" />
+                                    </StackPanel>
+                                </Border>
+                                <Grid Grid.Row="3" Margin="0,0,0,9">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions><RowDefinition Height="23" /><RowDefinition Height="23" /><RowDefinition Height="23" /><RowDefinition Height="23" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                    <TextBlock Text="Claimed routes" Style="{StaticResource ScoreLabel}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding RoutePoints}" Style="{StaticResource ScoreValue}" />
+                                    <TextBlock Grid.Row="1" Text="Completed destinations" Style="{StaticResource ScoreLabel}" />
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TicketsGained, StringFormat=+{0}}" Style="{StaticResource ScoreValue}" />
+                                    <TextBlock Grid.Row="2" Text="Missed destinations" Style="{StaticResource ScoreLabel}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding TicketsLost, StringFormat=−{0}}" Style="{StaticResource ScoreValue}" />
+                                    <TextBlock Grid.Row="3" Text="Longest-route bonus" Style="{StaticResource ScoreLabel}" />
+                                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding LongestBonus, StringFormat=+{0}}" Style="{StaticResource ScoreValue}" />
+                                    <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Text="{Binding TicketSummary}" FontSize="12"
+                                               Foreground="#FFDCC18A" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                </Grid>
+                                <Border Grid.Row="4" Background="#16FFFFFF" CornerRadius="6" Padding="9,7" Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="Turn time" Foreground="#FFDCC18A" FontSize="11" />
+                                                <TextBlock Text="{Binding TotalTurnTimeText}" Foreground="#FFF8EEDC" FontSize="18" FontWeight="SemiBold" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="Average turn" Foreground="#FFDCC18A" FontSize="11" />
+                                                <TextBlock Text="{Binding AverageTurnTimeText}" Foreground="#FFF8EEDC" FontSize="18" FontWeight="SemiBold" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <TextBlock FontSize="10" Foreground="#FFDCC18A" Margin="0,5,0,0">
+                                            <Run Text="{Binding CompletedTurns, Mode=OneWay}" /><Run Text=" fully timed turns" />
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding TimingNote}" Foreground="#FFDCC18A" FontSize="10" TextWrapping="Wrap" Margin="0,3,0,0" />
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Grid.Row="5" Foreground="#FFFFE7B0" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,5">
+                                    <Run Text="Longest continuous route · " /><Run Text="{Binding LongestTrailLength, Mode=OneWay, Converter={StaticResource TrainCountText}}" />
                                 </TextBlock>
-
-                                <TextBlock Style="{StaticResource Caption}" Text="{Binding TicketSummary}" />
-
-                                <TextBlock Margin="0,8,0,0" FontWeight="SemiBold">
-                                    <Run Text="Longest continuous route: " /><Run
-                                        Text="{Binding LongestTrailLength, Mode=OneWay, Converter={StaticResource TrainCountText}}" />
-                                </TextBlock>
-                                <TextBlock Style="{StaticResource Caption}" Text="{Binding WitnessTrail}" />
-                            </StackPanel>
+                                <ScrollViewer x:Name="WitnessTrailScroll" Grid.Row="6" VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly" Padding="0,0,5,0"
+                                              FocusVisualStyle="{x:Null}" AutomationProperties.Name="Full longest continuous route">
+                                    <TextBlock Text="{Binding WitnessTrail}" TextWrapping="Wrap" Foreground="#FFE6D9C3" FontSize="12" LineHeight="18" />
+                                </ScrollViewer>
+                            </Grid>
                         </Border>
+                        <DataTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsWinner}" Value="True">
+                                <Setter TargetName="PlayerResultPanel" Property="BorderBrush" Value="#FFFFD576" />
+                                <Setter TargetName="PlayerResultPanel" Property="BorderThickness" Value="3" />
+                            </DataTrigger>
+                        </DataTemplate.Triggers>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-
-            <Border Style="{StaticResource Panel}">
-                <TextBlock Style="{StaticResource Caption}"
-                           Text="The longest continuous route is the exact maximum trail that never reuses a route, computed from confirmed state. The trail shown is the one that achieves it; a tie awards the bonus to every seat that reaches the same length." />
-            </Border>
-
+        </ScrollViewer>
+        <StackPanel x:Name="PlayerNavigation" Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center"
+                    Margin="0,9,0,0" Visibility="Collapsed">
+            <Button x:Name="PreviousPlayerButton" Content="‹" Style="{StaticResource ResultNavigationButton}"
+                    Click="OnPreviousPlayer" IsEnabled="False" AutomationProperties.Name="Previous player results" />
+            <Button x:Name="NextPlayerButton" Content="›" Style="{StaticResource ResultNavigationButton}"
+                    Click="OnNextPlayer" IsEnabled="False" Margin="12,0,0,0" AutomationProperties.Name="Next player results" />
         </StackPanel>
-    </ScrollViewer>
+    </Grid>
 </UserControl>

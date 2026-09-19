@@ -27,6 +27,7 @@ public sealed partial class MainViewModel
     public bool ShowSoloTicketOffer => _soloTicketOffer.Count > 0;
     public int SoloTicketMinimumKeep => _soloTicketMinimumKeep;
     public bool CanKeepSoloTickets => ShowSoloTicketOffer && !_operationInProgress &&
+        _cardActionBoardWarning is null &&
         _windowActive && !IsGameInputPaused && !NeedsBoardReconciliation &&
         _soloTicketOffer.Count(choice => choice.Keep) >= _soloTicketMinimumKeep;
     public string? SoloTicketOfferMessage
@@ -42,6 +43,7 @@ public sealed partial class MainViewModel
         _windowActive && _systemAvailable && !NeedsBoardReconciliation &&
         !IsGameInputPaused && _scoreMarkerStep is null &&
         PrivateSeat is null && BoardFirstProposal is null && _boardFirstInvalidMoveMessage is null &&
+        _cardActionBoardWarning is null &&
         !ShowSoloTicketOffer &&
         _soloDrawActionsVersion == coordinator.Public.StateVersion;
 
@@ -197,6 +199,7 @@ public sealed partial class MainViewModel
             if (!ReferenceEquals(coordinator, _coordinator) ||
                 coordinator.Public.StateVersion != version || seat.Offer is null ||
                 !_rules.GetLegalActions(seat).MustCommitTicketSelection) return;
+            if (!await CheckBoardBeforeCardActionAsync(coordinator, version)) return;
             var outcome = await coordinator.SubmitAsync(new CommitTicketSelection(
                 coordinator.NewEnvelope(seat.SeatId), kept, returned));
             if (!outcome.IsAccepted)
@@ -235,6 +238,7 @@ public sealed partial class MainViewModel
                 !IsGameplayScreenActive(Screen.Table) || !_windowActive) return;
             var command = build(coordinator, seat);
             if (command is null) return;
+            if (!await CheckBoardBeforeCardActionAsync(coordinator, version)) return;
             var outcome = await coordinator.SubmitAsync(command);
             if (!outcome.IsAccepted)
             {

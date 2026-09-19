@@ -451,8 +451,10 @@
                     <StackPanel>
                         <TextBlock Text="THE GAME TABLE" Foreground="#FFFFE7B0" FontSize="21"
                                    FontWeight="Bold" HorizontalAlignment="Center" />
-                        <TextBlock x:Name="GuidancePhaseText" Text="{Binding Game.GuidanceTurn}" Foreground="#FFDCC18A" FontSize="15"
-                                   HorizontalAlignment="Center" />
+                        <TextBlock x:Name="GuidancePhaseText" Foreground="#FFDCC18A" FontSize="15"
+                                   HorizontalAlignment="Center">
+                            <Run Text="{Binding Game.GuidanceTurn, Mode=OneWay}" /><Run Text="{Binding TurnClockSuffix, Mode=OneWay}" />
+                        </TextBlock>
                         <TextBlock x:Name="GuidanceSeatText" Text="{Binding Game.GuidanceSeat}" Foreground="White" FontSize="18"
                                    FontWeight="SemiBold" HorizontalAlignment="Center" />
                         <TextBlock x:Name="GuidanceInstructionText" Text="{Binding Game.GuidanceInstruction}" Foreground="#FFF8EEDC" FontSize="13"
@@ -581,11 +583,35 @@
                                         <ColumnDefinition Width="76" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <Border Grid.Column="0" Width="66" Height="66" CornerRadius="5" ClipToBounds="True"
-                                            BorderBrush="{Binding Seat.Color, Converter={StaticResource PlayerColorBrush}}"
-                                            BorderThickness="3" HorizontalAlignment="Center">
-                                        <Image Source="{Binding Portrait}" Stretch="UniformToFill" />
-                                    </Border>
+                                    <Grid Grid.Column="0" Width="66" Height="66" HorizontalAlignment="Center">
+                                        <Border CornerRadius="5" ClipToBounds="True" BorderThickness="3">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="BorderBrush" Value="{Binding Seat.Color, Converter={StaticResource PlayerColorBrush}}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Seat.Color}" Value="Black">
+                                                            <Setter Property="BorderBrush" Value="#FF000000" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <Image Source="{Binding Portrait}" Stretch="UniformToFill" />
+                                        </Border>
+                                        <!-- Separate the black color ring from the dark player panel. -->
+                                        <Border CornerRadius="5" BorderThickness="0.5" BorderBrush="#FFD4AC6B"
+                                                IsHitTestVisible="False">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Seat.Color}" Value="Black">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                        </Border>
+                                    </Grid>
                                     <TextBlock x:Name="TrainsRemainingText" Grid.Column="1" Margin="10,0,0,0"
                                                HorizontalAlignment="Left" Foreground="#FFF8EEDC" FontSize="11">
                                         <Run Text="{Binding Seat.TrainsRemaining, Converter={StaticResource TrainCountText}}" />

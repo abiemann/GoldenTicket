@@ -234,6 +234,18 @@ The candidate remains provisional until both payment authorization and current p
 
 If the player started a route during an already selected card action, explain the conflict and guide them to restore the physical board. Do not reinterpret the card action as a claim or discard an already revealed card to make the history fit.
 
+The desktop camera flow checks committed train inventory during `TurnStart`,
+`AwaitingSecondTrainCard`, and `AwaitingTicketKeep`. Before submitting a local human card
+action, it requires two distinct fresh captures taken after the click, at least one second
+apart, matching the complete committed board. Cached or already-processing pre-click frames
+cannot authorize a draw. Unclaimed trains cancel the card request without spending cards or
+advancing the turn; at `TurnStart`, the existing board-first detector can then offer the route's
+payment dialog. Later in a draw action, the user must remove those trains. The check times out
+after five seconds without a command submission and is canceled on focus loss. Explicitly
+camera-free technical play retains its manual workflow; a game using the camera cannot silently
+fall back to that path after the camera stops. Companion phone actions do not yet use this
+desktop gate and remain part of the unfinished multi-human verification flow.
+
 ### 4.5 AI turn
 
 AI card actions run digitally and produce a brief public summary. Keep enough pacing for humans to follow the game, with a user-controlled speed and Skip narration button. Consecutive AI card turns may continue automatically, but never run past an unresolved physical claim.
@@ -430,6 +442,27 @@ showing a game-themed dialog naming the player whose saved turn resumes. Its sty
 releases AI work and human input; restoring the board alone does not advance play.
 The game-table seat heading reads **Checking...** during reload verification and while this dialog
 is open. Acknowledging **OK** restores the active player's name.
+
+**Final standings and turn timing (implemented September 19, 2026).** When the final scoring
+marker has been verified, the game displays horizontally scrolling portrait panels over the board.
+Each panel preserves total points, route points, destination gains/losses and completed/missed
+counts, longest-route bonus, longest-trail length and its full scrollable witness trail. Player
+colors, portraits and winner highlights follow the game theme; navigation arrows supplement the
+horizontal scrollbar only when the panels overflow, with unavailable directions hidden.
+Standings follow the existing points, completed-ticket and longest-bonus
+tie breakers.
+
+A monotonic counter records each player's full turn, including decisions, physical train placement
+and scoring-marker movement. A committed route advances the digital turn before its marker moves;
+timing remains assigned to the claiming player until that marker is verified. The game table shows
+the current turn's elapsed time, and final panels show recorded total time and the average of fully
+timed turns. Menus, reload/rebuild verification, technical tools, window inactivity, system sleep
+and faults pause timing. New timing data is supplementary versioned SQLite metadata, written with
+accepted commands and flushed after marker verification and clean shutdown; it does not alter the
+game journal or state fingerprint. Rewinding a save removes later timing snapshots. Old saves
+remain readable and show unavailable historical times. An interrupted active turn or a turn first
+observed in an older save is partial and excluded from the average; the UI identifies partial
+timing coverage.
 
 A **Return to game** button at the top of the technical interface reverses the transition and
 brings the game layer back over the entire content area. Both layers bind to the same game

@@ -502,7 +502,19 @@
               Visibility="{Binding Game.IsPlaying, Converter={StaticResource BoolToVisibility}}">
             <views:GameTableView Visibility="{Binding GameplayScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=Table}" />
             <views:RebuildView Visibility="{Binding GameplayScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=Rebuild}" />
-            <views:FinalScoreView Visibility="{Binding GameplayScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=FinalScore}" />
+            <Grid Visibility="{Binding GameplayScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=FinalScore}">
+                <Image Source="/GoldenTicket;component/Assets/golden-ticket-snowy-twilight.png"
+                       Stretch="UniformToFill" Opacity="0.5" IsHitTestVisible="False" />
+                <Viewbox Stretch="Uniform" Margin="22,65,22,22" IsHitTestVisible="False">
+                    <Border Width="1440" Height="900" CornerRadius="10" BorderThickness="3"
+                            BorderBrush="#FFE1BD79" Background="#FF101821" ClipToBounds="True">
+                        <Image x:Name="FinalBoardImage" Source="{Binding Camera.GameTablePreview}"
+                               Stretch="Fill" AutomationProperties.Name="Game board behind final standings" />
+                    </Border>
+                </Viewbox>
+                <Border Background="#46000912" IsHitTestVisible="False" />
+                <views:FinalScoreView />
+            </Grid>
 
             <Button Content="Phone QR" Command="{Binding OpenMultiHumanPhoneSetupCommand}"
                     Style="{StaticResource PhoneShortcutButton}" Padding="14,8" FontSize="13"

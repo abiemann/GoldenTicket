@@ -137,6 +137,8 @@ public sealed partial class MainViewModel
     public async Task SetSystemAvailableAsync(bool available)
     {
         _systemAvailable = available;
+        if (!available) _cardBoardCheck?.Completion.TrySetResult(false);
+        UpdateTurnClock();
         Camera.SetGameTableCameraRecoveryEnabled(available);
         HidePrivateSeat();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
@@ -153,6 +155,10 @@ public sealed partial class MainViewModel
     {
         if (_toolsDisposed) return;
         _toolsDisposed = true;
+        _cardBoardCheck?.Completion.TrySetResult(false);
+        _turnClockTimer?.Stop();
+        UpdateTurnClock();
+        await PersistTurnClockAsync();
         HidePrivateSeat();
         try { await Connection.DisposeAsync(); }
         finally { await Camera.DisposeAsync(); }

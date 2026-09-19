@@ -91,7 +91,12 @@ This build implements the core game plus initial phone, camera and photo workflo
   When it reaches 64 MB, the older segment moves to `board-interactions.previous.jsonl`; both
   segments are cleared on the next app launch.
 - Exact final scoring, including the longest continuous route as a true maximum edge-simple trail
-  with the witness trail shown.
+  with the witness trail shown. Final standings appear over the board as horizontally scrolling
+  portrait panels, with the full points breakdown, destination totals and a scrollable route trail.
+- Per-player turn timing: the live counter includes decisions, train placement and scoring-marker
+  movement. Menus, technical tools, window inactivity, sleep and saved-game restoration pause it.
+  Final standings show recorded total time and the average of fully timed turns. Older saves have
+  no retrospective timing; interrupted or partially recorded turns are excluded from the average.
 - Heuristic computer opponents at three difficulty levels, which see only their own seat's view.
 - Durable local saves: an append-only event journal in SQLite with a tamper-evident hash chain,
   plaintext local payloads, command deduplication, and restore by replay verified against a stored
@@ -395,6 +400,10 @@ not a completed Save Game and does not grant permission to clear the physical bo
    be the second card. Click the D pile to draw destinations, then choose at least one from the
    compact row below the board. Their city rings and connecting lines stay visible while choosing.
    The draw controls are disabled during the computer's turn.
+   With the camera in use, card actions wait for two fresh whole-board checks. Trains placed
+   before the first draw keep the turn with you: a payable route opens the detected-route payment
+   dialog instead of taking a card. If you have already drawn a card, remove any unclaimed trains
+   before finishing that draw action. A camera timeout takes no card and does not advance the turn.
    The computer chooses its own destinations by value and estimated route cost and may keep all three.
    The chosen players sit to the left and right of the board with their matching portraits, train
    colors, remaining trains, and face-down card and destination stacks showing public counts.
@@ -443,8 +452,11 @@ not a completed Save Game and does not grant permission to clear the physical bo
    continuing automatically on **THE GAME TABLE**. If the camera cannot read the marker, the
    game waits for a clear view of it. Nothing is spent or scored until placement is verified.
 7. After someone finishes a turn with two trains or fewer, every seat takes one more turn, and then
-   the results screen shows each seat's route points, destination tickets, longest continuous route
-   and the trail that achieved it.
+   portrait panels appear over the board with each player's final points, route points, destination
+   gains and losses, completed/missed tickets, longest-route bonus and full route trail. Scroll
+   horizontally or use the arrows to see every player. Total and average turn times include physical
+   placement and scoring-marker movement, excluding pauses. Timing begins when the updated app is
+   used; unavailable history is shown as unavailable.
 
 For multiple humans, follow the phone setup shown on **THE GAME TABLE**. Select a Private LAN
 connection and explicitly start the local host; only then can the table display a connection QR.

@@ -28,6 +28,7 @@ public sealed class InMemorySessionStore : ISessionStore
         public long StateVersion { get; set; }
         public List<JournaledEvent> Journal { get; } = [];
         public Dictionary<CommandId, StoredCommandOutcome> Outcomes { get; } = [];
+        public SortedDictionary<long, TurnTimingSnapshot> TimingSnapshots { get; } = [];
         public string? LatestStateHash { get; set; }
     }
 
@@ -71,7 +72,7 @@ public sealed class InMemorySessionStore : ISessionStore
         {
             return Task.FromResult(
                 _sessions.TryGetValue(sessionId, out var entry) && entry.Outcomes.TryGetValue(commandId, out var outcome)
-                    ? outcome
+                    ? outcome with { Timing = CloneTiming(outcome.Timing) }
                     : null);
         }
     }
@@ -91,16 +92,34 @@ public sealed class InMemorySessionStore : ISessionStore
                 throw new SessionIntegrityException("The saved match changed. Reload it before committing another action.");
             if (entry.Outcomes.ContainsKey(outcome.CommandId))
                 throw new SessionIntegrityException("This command already has a durable outcome.");
+            var timing = CloneTiming(outcome.Timing);
             Append(entry, state.StateVersion, transition);
 
             entry.LatestStateHash = stateHash;
-            entry.Outcomes[outcome.CommandId] = outcome;
+            entry.Outcomes[outcome.CommandId] = outcome with { Timing = timing };
+            if (timing is not null) entry.TimingSnapshots[state.StateVersion] = timing;
             entry.Lifecycle = state.Lifecycle;
             entry.TurnNumber = state.TurnNumber;
             entry.StateVersion = state.StateVersion;
             entry.UpdatedAt = DateTimeOffset.UtcNow;
         }
 
+        return Task.CompletedTask;
+    }
+
+    public Task SaveTurnTimingAsync(
+        SessionId sessionId, long stateVersion, TurnTimingSnapshot timing,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(timing);
+        lock (_gate)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var entry = Require(sessionId);
+            if (entry.StateVersion != stateVersion)
+                throw new SessionIntegrityException("The saved match changed. Reload it before saving turn timing.");
+            entry.TimingSnapshots[stateVersion] = CloneTiming(timing)!;
+        }
         return Task.CompletedTask;
     }
 
@@ -111,7 +130,7 @@ public sealed class InMemorySessionStore : ISessionStore
         {
             cancellationToken.ThrowIfCancellationRequested();
             var entry = Require(sessionId);
-            if (!entry.Outcomes.TryAdd(outcome.CommandId, outcome))
+            if (!entry.Outcomes.TryAdd(outcome.CommandId, outcome with { Timing = CloneTiming(outcome.Timing) }))
                 throw new SessionIntegrityException("This command already has a durable outcome.");
         }
         return Task.CompletedTask;
@@ -125,12 +144,14 @@ public sealed class InMemorySessionStore : ISessionStore
     {
         List<JournaledEvent> journal;
         string? expected;
+        TurnTimingSnapshot? timing;
 
         lock (_gate)
         {
             var entry = Require(sessionId);
             journal = [.. entry.Journal];
             expected = entry.LatestStateHash;
+            timing = TimingAt(entry, entry.StateVersion);
         }
 
         var state = GameReducer.Rebuild(manifest, catalog, journal);
@@ -142,7 +163,7 @@ public sealed class InMemorySessionStore : ISessionStore
                 $"Replaying the journal of {sessionId} produced {actual} but the store recorded {expected}.");
         }
 
-        return Task.FromResult(new RestoredSession(state, journal));
+        return Task.FromResult(new RestoredSession(state, journal, UsableTiming(timing, state)));
     }
 
     public Task<PackAwayCheckpoint?> ReadCheckpointAsync(
@@ -222,12 +243,18 @@ public sealed class InMemorySessionStore : ISessionStore
                          pair.Value.StateVersionAfter > restored.State.StateVersion)
                          .Select(pair => pair.Key).ToArray())
                 entry.Outcomes.Remove(id);
+            foreach (var version in entry.TimingSnapshots.Keys
+                         .Where(version => version > restored.State.StateVersion).ToArray())
+                entry.TimingSnapshots.Remove(version);
             entry.Lifecycle = restored.State.Lifecycle;
             entry.TurnNumber = restored.State.TurnNumber;
             entry.StateVersion = restored.State.StateVersion;
             entry.LatestStateHash = StateHash.Compute(restored.State);
             entry.UpdatedAt = DateTimeOffset.UtcNow;
-            return Task.FromResult(restored);
+            return Task.FromResult(restored with
+            {
+                Timing = UsableTiming(TimingAt(entry, restored.State.StateVersion), restored.State)
+            });
         }
     }
 
@@ -242,6 +269,30 @@ public sealed class InMemorySessionStore : ISessionStore
         var sequence = entry.Journal.Count == 0 ? -1 : entry.Journal[^1].Sequence;
         foreach (var domainEvent in transition.Events)
             entry.Journal.Add(new JournaledEvent(++sequence, stateVersion, domainEvent));
+    }
+
+    private static TurnTimingSnapshot? TimingAt(Entry entry, long stateVersion) =>
+        CloneTiming(entry.TimingSnapshots.Where(pair => pair.Key <= stateVersion)
+            .Select(pair => pair.Value).LastOrDefault());
+
+    private static TurnTimingSnapshot? CloneTiming(TurnTimingSnapshot? timing) =>
+        timing is null ? null : timing with { Turns = timing.Turns.ToArray() };
+
+    private static TurnTimingSnapshot? UsableTiming(TurnTimingSnapshot? timing, GameState state)
+    {
+        if (timing?.Turns is null) return null;
+        var previousTurn = 0;
+        var unfinished = false;
+        foreach (var turn in timing.Turns)
+        {
+            if (turn is null || turn.TurnNumber <= previousTurn || turn.TurnNumber > state.TurnNumber ||
+                unfinished || !state.Seats.Any(seat => seat.SeatId == turn.SeatId) ||
+                turn.ElapsedTicks < 0 || turn.ElapsedTicks > TimeSpan.FromDays(365).Ticks)
+                return null;
+            previousTurn = turn.TurnNumber;
+            unfinished = !turn.Completed;
+        }
+        return timing.AwaitingScoreMarker && !unfinished ? null : timing;
     }
 
     private Entry Require(SessionId sessionId) =>

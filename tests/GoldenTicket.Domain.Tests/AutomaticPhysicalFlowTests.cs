@@ -186,7 +186,8 @@ public sealed class AutomaticPhysicalFlowTests
     [Fact]
     public async Task Manual_claim_also_waits_for_the_physical_score_marker_before_the_next_turn()
     {
-        var model = new MainViewModel(TestManifest.Manifest, new InMemorySessionStore());
+        var clock = new ManualFrameTimeProvider();
+        var model = new MainViewModel(TestManifest.Manifest, new InMemorySessionStore(), timeProvider: clock);
         model.Setup.ManualVerificationAccepted = true;
         foreach (var seat in model.Setup.Seats) seat.IsComputer = true;
         try
@@ -195,6 +196,7 @@ public sealed class AutomaticPhysicalFlowTests
             var placement = Assert.IsType<PlacementInstruction>(model.Table.Placement);
             var scoreBefore = model.Table.Seats.Single(seat => seat.SeatId == placement.SeatId).Score;
 
+            clock.Advance(TimeSpan.FromSeconds(11));
             model.Table.WholeBoardAcknowledged = true;
             var confirmation = model.ConfirmPlacementAsync();
             await WaitUntilAsync(() => model.Game.GuidanceInstruction == "Thank you");
@@ -205,6 +207,9 @@ public sealed class AutomaticPhysicalFlowTests
             await confirmation;
             Assert.Contains("Move", model.Game.GuidanceInstruction);
             Assert.Equal("Scoring", model.Game.GuidanceTurn);
+            Assert.Equal(placement.SeatId,
+                GetCoordinator(model).TurnTiming.Turns.Single(turn => !turn.Completed).SeatId);
+            clock.Advance(TimeSpan.FromSeconds(17));
 
             var target = model.Table.Seats.Single(seat => seat.SeatId == placement.SeatId).Score % 100 + 1;
             model.Camera.IsGameTablePreviewUpright = true;
@@ -215,6 +220,10 @@ public sealed class AutomaticPhysicalFlowTests
             PublishScore(model.Camera, 2, firstAt.AddSeconds(1.1), color, target);
             await WaitUntilAsync(() => model.Game.GuidanceTurn != "Scoring");
             Assert.NotEqual(placement.OperationId, model.Table.Placement?.OperationId);
+            var timedTurn = GetCoordinator(model).TurnTiming.Turns.First();
+            Assert.Equal(placement.SeatId, timedTurn.SeatId);
+            Assert.True(timedTurn.Completed);
+            Assert.Equal(TimeSpan.FromSeconds(28).Ticks, timedTurn.ElapsedTicks);
         }
         finally { await model.DisposeToolsAsync(); }
     }

@@ -168,6 +168,9 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
             connection, sessionId, state.StateVersion, state.JournalSequence, state.BoardRevision, stateHash, cancellationToken);
 
         await WriteCommandOutcomeAsync(connection, sessionId, outcome, cancellationToken);
+        if (outcome.Timing is not null)
+            await WriteTurnTimingAsync(connection, sessionId, state.StateVersion, outcome.Timing,
+                cancellationToken);
 
         // DESIGN 19.2/19.3: the checkpoint row is written in the same transaction as the event that
         // created or re-statused it, so a listing can never disagree with the journal.
@@ -189,6 +192,20 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
             ("$lifecycle", state.Lifecycle.ToString()),
             ("$sessionId", sessionId.Value));
 
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task SaveTurnTimingAsync(
+        SessionId sessionId, long stateVersion, TurnTimingSnapshot timing,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(timing);
+        await using var connection = await OpenAsync(sessionId, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var stored = await ReadLatestSnapshotAsync(connection, sessionId, cancellationToken);
+        if (stored.StateVersion != stateVersion)
+            throw new SessionIntegrityException("The saved match changed. Reload it before saving turn timing.");
+        await WriteTurnTimingAsync(connection, sessionId, stateVersion, timing, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
 
@@ -252,7 +269,8 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
                 "Restoration stops without exposing private cards or changing the save.");
         }
 
-        return new RestoredSession(state, journal);
+        var timing = await ReadTurnTimingAsync(connection, state, cancellationToken);
+        return new RestoredSession(state, journal, timing);
     }
 
     public async Task<IReadOnlyList<SessionSummary>> ListSessionsAsync(CancellationToken cancellationToken)
@@ -386,6 +404,11 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
                 "DELETE FROM Snapshot WHERE SessionId = $sessionId AND StateVersion > $version;",
                 cancellationToken, ("$sessionId", sessionId.Value),
                 ("$version", state.StateVersion));
+            if (await HasTurnTimingTableAsync(connection, cancellationToken))
+                await ExecuteAsync(connection,
+                    "DELETE FROM TurnTiming WHERE SessionId = $sessionId AND StateVersion > $version;",
+                    cancellationToken, ("$sessionId", sessionId.Value),
+                    ("$version", state.StateVersion));
             await ExecuteAsync(connection,
                 "DELETE FROM CommandResult WHERE SessionId = $sessionId AND (Accepted = 0 OR StateVersionAfter > $version);",
                 cancellationToken, ("$sessionId", sessionId.Value),
@@ -414,6 +437,76 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
     }
 
     // ---- Internals --------------------------------------------------------------------------
+
+    private static async Task WriteTurnTimingAsync(
+        SqliteConnection connection, SessionId sessionId, long stateVersion,
+        TurnTimingSnapshot timing, CancellationToken cancellationToken)
+    {
+        var payload = JsonSerializer.SerializeToUtf8Bytes(timing);
+        // Optional metadata is additive: older v4 saves remain readable without this table.
+        // Both creation and the write participate in the caller's game/timing transaction.
+        await ExecuteAsync(connection, """
+            CREATE TABLE IF NOT EXISTS TurnTiming (
+                SessionId    TEXT NOT NULL,
+                StateVersion INTEGER NOT NULL,
+                Payload      BLOB NOT NULL,
+                PRIMARY KEY (SessionId, StateVersion)
+            );
+            """, cancellationToken);
+        await ExecuteAsync(connection, """
+            INSERT INTO TurnTiming (SessionId, StateVersion, Payload)
+            VALUES ($sessionId, $version, $payload)
+            ON CONFLICT (SessionId, StateVersion) DO UPDATE SET Payload = excluded.Payload;
+            """, cancellationToken, ("$sessionId", sessionId.Value),
+            ("$version", stateVersion), ("$payload", payload));
+    }
+
+    private static async Task<bool> HasTurnTimingTableAsync(
+        SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'TurnTiming';";
+        return await command.ExecuteScalarAsync(cancellationToken) is not null;
+    }
+
+    private static async Task<TurnTimingSnapshot?> ReadTurnTimingAsync(
+        SqliteConnection connection, GameState state, CancellationToken cancellationToken)
+    {
+        if (!await HasTurnTimingTableAsync(connection, cancellationToken)) return null;
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Payload FROM TurnTiming WHERE SessionId = $sessionId AND StateVersion <= $version
+            ORDER BY StateVersion DESC LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$sessionId", state.SessionId.Value);
+        command.Parameters.AddWithValue("$version", state.StateVersion);
+        var payload = await command.ExecuteScalarAsync(cancellationToken);
+        if (payload is null) return null;
+        try
+        {
+            var timing = JsonSerializer.Deserialize<TurnTimingSnapshot>((byte[])payload);
+            if (timing?.Turns is null) return null;
+            var previousTurn = 0;
+            var unfinished = false;
+            // Statistics are supplementary. Damaged metadata must neither fabricate time nor
+            // prevent a verified game journal from loading; a full year of active time on one
+            // turn is treated as invalid metadata, not an elapsed-time estimate.
+            foreach (var turn in timing.Turns)
+            {
+                if (turn is null || turn.TurnNumber <= previousTurn || turn.TurnNumber > state.TurnNumber ||
+                    unfinished || !state.Seats.Any(seat => seat.SeatId == turn.SeatId) ||
+                    turn.ElapsedTicks < 0 || turn.ElapsedTicks > TimeSpan.FromDays(365).Ticks)
+                    return null;
+                previousTurn = turn.TurnNumber;
+                unfinished = !turn.Completed;
+            }
+            return timing.AwaitingScoreMarker && !unfinished ? null : timing;
+        }
+        catch (Exception error) when (error is JsonException or NotSupportedException or InvalidCastException)
+        {
+            return null;
+        }
+    }
 
     private async Task<SqliteConnection> OpenAsync(
         SessionId sessionId, CancellationToken cancellationToken, bool create = false)

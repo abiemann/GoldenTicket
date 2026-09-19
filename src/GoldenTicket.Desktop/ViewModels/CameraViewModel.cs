@@ -30,6 +30,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     private BoardRegistration? _registration;
     private BoardRegistration? _gameTableRegistration;
     private bool _gameTablePreviewRequested;
+    public bool IsGameTablePreviewRequested => _gameTablePreviewRequested;
     private bool _gameTableCameraAutoStart;
     private bool _gameTableCameraRecoveryEnabled = true;
     private bool _gameTableCameraRetryBusy;

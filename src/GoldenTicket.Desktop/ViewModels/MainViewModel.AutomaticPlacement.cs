@@ -46,6 +46,8 @@ public sealed partial class MainViewModel
         ResetPlacementInventory();
         _scoreMarkerMoveVerifier.Reset();
         ResetBoardFirstClaimFlow();
+        ResetCardActionBoard();
+        _cardBoardCameraSeen = false;
         Game.ClearGuidance();
         NotifyScoreMarkerDetectionPromptChanged();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
@@ -350,6 +352,7 @@ public sealed partial class MainViewModel
         HidePrivateSeat();
         var generation = _automaticFlowGeneration;
         var beforeScore = coordinator.Public.SeatOf(placement.SeatId).RouteScore;
+        coordinator.HoldTurnTimingForScoreMarker();
         try
         {
             var command = new SubmitClaimEvidence(
@@ -359,6 +362,7 @@ public sealed partial class MainViewModel
             var outcome = await coordinator.SubmitAsync(command);
             if (!outcome.IsAccepted)
             {
+                coordinator.ReleaseTurnTimingForScoreMarker();
                 BoardInteractionLog.Write("placement.accept-rejected", new
                 {
                     route = placement.RouteId.Value,
@@ -437,6 +441,8 @@ public sealed partial class MainViewModel
         SetOperationInProgress(true);
         try
         {
+            _coordinator.ReleaseTurnTimingForScoreMarker();
+            await PersistTurnClockAsync();
             _scoreMarkerStep = null;
             _scoreMarkerMoveVerifier.Reset();
             NotifyScoreMarkerDetectionPromptChanged();

@@ -46,7 +46,7 @@ public sealed record CoordinatorUpdate(PublicView Public, ImmutableArray<PublicE
 /// queue that performs version checks and the durable transaction; the queue is never held while
 /// waiting for a human, a search result, or anything else that can take arbitrary time.
 /// </summary>
-public sealed class GameCoordinator
+public sealed partial class GameCoordinator
 {
     private readonly SemaphoreSlim _writer = new(1, 1);
     private readonly SemaphoreSlim _packAwayWorkflow = new(1, 1);
@@ -58,12 +58,15 @@ public sealed class GameCoordinator
     private volatile PublicView _publicView;
     private volatile bool _storageFaulted;
 
-    private GameCoordinator(GameRules rules, ISessionStore store, GameState state)
+    private GameCoordinator(GameRules rules, ISessionStore store, GameState state,
+        TimeProvider? clock = null, TurnTimingSnapshot? timing = null, bool restored = false)
     {
         _rules = rules;
         _store = store;
         _state = state;
         _publicView = Projector.ProjectPublic(state);
+        _turnTiming = new TurnTimingTracker(clock, timing, restored);
+        _turnTiming.Synchronize(_publicView);
     }
 
     /// <summary>Raised after each committed transaction. Carries public information only.</summary>
@@ -92,14 +95,15 @@ public sealed class GameCoordinator
         ISessionStore store,
         SessionSetup setup,
         RandomState seed,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        TimeProvider? timeProvider = null)
     {
         var (state, transition) = rules.CreateSession(setup, seed);
 
         await store.CreateAsync(
             state, CommandId.New(), transition, StateHash.Compute(state), cancellationToken);
 
-        var coordinator = new GameCoordinator(rules, store, state);
+        var coordinator = new GameCoordinator(rules, store, state, timeProvider);
         coordinator.AppendHistory(transition.Events);
         return coordinator;
     }
@@ -112,11 +116,13 @@ public sealed class GameCoordinator
         GameRules rules,
         ISessionStore store,
         SessionId sessionId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        TimeProvider? timeProvider = null)
     {
         var restored = await store.RestoreAsync(sessionId, rules.Manifest, rules.Catalog, cancellationToken);
 
-        var coordinator = new GameCoordinator(rules, store, restored.State);
+        var coordinator = new GameCoordinator(rules, store, restored.State, timeProvider,
+            restored.Timing, restored: true);
         coordinator.AppendHistory(restored.Journal.Select(row => row.Event));
 
         // A physical attestation from a previous process cannot describe the board after restart.
@@ -232,12 +238,14 @@ public sealed class GameCoordinator
             var next = _state.Fork();
             GameReducer.ApplyTransition(next, transition.Events);
             var hash = StateHash.Compute(next);
+            _turnTiming.Synchronize(Projector.ProjectPublic(next));
 
             try
             {
                 await _store.CommitAsync(
                     next,
-                    new StoredCommandOutcome(envelope.CommandId, true, next.StateVersion, null, null),
+                    new StoredCommandOutcome(envelope.CommandId, true, next.StateVersion, null, null,
+                        _turnTiming.Snapshot()),
                     transition,
                     hash,
                     cancellationToken);

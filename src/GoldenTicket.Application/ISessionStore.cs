@@ -16,10 +16,12 @@ public sealed record StoredCommandOutcome(
     bool Accepted,
     long StateVersionAfter,
     string? RejectionCode,
-    string? RejectionMessage);
+    string? RejectionMessage,
+    TurnTimingSnapshot? Timing = null);
 
 /// <summary>A restored match and the journal it was rebuilt from.</summary>
-public sealed record RestoredSession(GameState State, IReadOnlyList<JournaledEvent> Journal);
+public sealed record RestoredSession(GameState State, IReadOnlyList<JournaledEvent> Journal,
+    TurnTimingSnapshot? Timing = null);
 
 /// <summary>Enough to list saved matches without opening private state (DESIGN 19.4 step 1).</summary>
 public sealed record SessionSummary(
@@ -63,6 +65,14 @@ public interface ISessionStore
         Transition transition,
         string stateHash,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Saves timing-only progress at the current durable state version, such as completing a
+    /// physical score-marker move. A stale version must not overwrite a later turn's timing.
+    /// </summary>
+    Task SaveTurnTimingAsync(
+        SessionId sessionId, long stateVersion, TurnTimingSnapshot timing,
+        CancellationToken cancellationToken) => Task.CompletedTask;
 
     /// <summary>Records a refusal so retrying the same command id returns the same refusal.</summary>
     Task RecordRejectionAsync(

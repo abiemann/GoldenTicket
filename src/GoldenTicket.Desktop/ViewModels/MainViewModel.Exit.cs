@@ -16,6 +16,7 @@ public sealed partial class MainViewModel
     public ExitPrompt? BeginExitRequest()
     {
         _exitRequested = true;
+        UpdateTurnClock();
         ResumeMatchCommand.NotifyCanExecuteChanged();
         HidePrivateSeat();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
@@ -46,6 +47,7 @@ public sealed partial class MainViewModel
     public void CancelExitRequest()
     {
         _exitRequested = false;
+        UpdateTurnClock();
         ResumeMatchCommand.NotifyCanExecuteChanged();
         // A canceled prompt never reveals private cards automatically.
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
