@@ -151,6 +151,64 @@ public sealed class RoutePlacementVerifierTests
     }
 
     [Fact]
+    public void Observed_chicago_pittsburgh_positions_confirm_placement_and_inventory()
+    {
+        const string route = "chicago--pittsburgh--a";
+        var now = DateTimeOffset.UtcNow;
+        // September 19 camera diagnostics: all three were blue at >95% confidence,
+        // but the last center sat 14.3 reference pixels across from the printed slot.
+        var first = SceneAtResolution(1996, 1248, 1, 1, now,
+            (1402.4, 469.4, MarkerColor.Blue, .958),
+            (1478.8, 451.4, MarkerColor.Blue, .955),
+            (1557.7, 445.4, MarkerColor.Blue, .954));
+        var second = SceneAtResolution(1996, 1248, 2, 1, now.AddSeconds(1.1),
+            (1403.1, 469.7, MarkerColor.Blue, .956),
+            (1478.7, 451.7, MarkerColor.Blue, .956),
+            (1557.5, 445.8, MarkerColor.Blue, .954));
+        var placement = new RoutePlacementVerifier();
+        var inventory = new BoardInventoryVerifier([new(route, MarkerColor.Blue, 3)]);
+
+        Assert.Equal(RoutePlacementState.Stabilizing,
+            placement.Observe(first.Frame, first.Candidates, route, MarkerColor.Blue, 3, "claim", 1, 1).State);
+        Assert.Equal(BoardInventoryState.Stabilizing,
+            inventory.Observe(first.Frame, first.Candidates, 1, 1).State);
+        Assert.True(placement.Observe(second.Frame, second.Candidates,
+            route, MarkerColor.Blue, 3, "claim", 1, 1).Confirmed);
+        Assert.True(inventory.Observe(second.Frame, second.Candidates, 1, 1).Confirmed);
+        var sibling = new RoutePlacementVerifier().Observe(second.Frame, second.Candidates,
+            "chicago--pittsburgh--b", MarkerColor.Blue, 3, "other-lane", 1, 1);
+        Assert.Equal(RoutePlacementState.Incomplete, sibling.State);
+        Assert.Equal(0, sibling.MatchedCount);
+    }
+
+    [Theory]
+    [InlineData(-15, true)] // A little outside lane A, away from lane B.
+    [InlineData(-19, false)] // Beyond the permitted slack.
+    [InlineData(10, false)] // Between the lanes.
+    [InlineData(15, false)] // Closer to lane B.
+    public void Positioning_slack_still_requires_the_correct_parallel_lane(double across, bool accepted)
+    {
+        const string route = "chicago--pittsburgh--a";
+        ClassicUsRouteGeometry.TryGetSlots(route, out var slots);
+        var trains = slots.Select(slot =>
+            (slot.ReferenceX - slot.TangentY * across,
+                slot.ReferenceY + slot.TangentX * across, MarkerColor.Blue, .96)).ToArray();
+        var now = DateTimeOffset.UtcNow;
+        var first = SceneAtResolution(1996, 1248, 1, 1, now, trains);
+        var second = SceneAtResolution(1996, 1248, 2, 1, now.AddSeconds(1.1), trains);
+        var placement = new RoutePlacementVerifier();
+        var inventory = new BoardInventoryVerifier([new(route, MarkerColor.Blue, 3)]);
+
+        Assert.Equal(accepted ? RoutePlacementState.Stabilizing : RoutePlacementState.Incomplete,
+            placement.Observe(first.Frame, first.Candidates, route, MarkerColor.Blue, 3, "claim", 1, 1).State);
+        Assert.Equal(accepted ? BoardInventoryState.Stabilizing : BoardInventoryState.MissingTrains,
+            inventory.Observe(first.Frame, first.Candidates, 1, 1).State);
+        Assert.Equal(accepted, placement.Observe(second.Frame, second.Candidates,
+            route, MarkerColor.Blue, 3, "claim", 1, 1).Confirmed);
+        Assert.Equal(accepted, inventory.Observe(second.Frame, second.Candidates, 1, 1).Confirmed);
+    }
+
+    [Fact]
     public void Yellow_trains_on_kansas_city_oklahoma_city_lane_b_do_not_confirm_blue_lane_a()
     {
         const string requested = "kansas-city--oklahoma-city--a";

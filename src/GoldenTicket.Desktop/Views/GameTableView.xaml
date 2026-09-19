@@ -138,6 +138,77 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="DestinationTicketChoiceStyle" TargetType="CheckBox">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Border x:Name="CardFrame" Background="#FFFBEED5"
+                                BorderBrush="#FFD4AC6B" BorderThickness="2" CornerRadius="5">
+                            <Grid>
+                                <ContentPresenter Margin="10,25,10,9" HorizontalAlignment="Stretch"
+                                                  VerticalAlignment="Center" />
+                                <Border x:Name="SelectionBadge" Background="#FF1A2531"
+                                        CornerRadius="3" Width="20" Height="20" Margin="3"
+                                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                                        Visibility="Collapsed" IsHitTestVisible="False">
+                                    <TextBlock Text="✓" Foreground="#FFFFD576" FontSize="13"
+                                               FontWeight="Bold" HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="CardFrame" Property="BorderBrush" Value="#FFFFD576" />
+                                <Setter TargetName="SelectionBadge" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="CardFrame" Property="Opacity" Value="0.84" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="CardFrame" Property="BorderBrush" Value="#FFFFE7B0" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="CardFrame" Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="GameTableActionButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#FF69412F" />
+            <Setter Property="Foreground" Value="#FFFFE7B0" />
+            <Setter Property="BorderBrush" Value="#FFF0D7A0" />
+            <Setter Property="BorderThickness" Value="1.5" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Frame" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Frame" Property="Background" Value="#FF805039" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Frame" Property="Background" Value="#FF4E3024" />
+                                <Setter TargetName="Frame" Property="BorderThickness" Value="2" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Frame" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="GameScrollThumbStyle" TargetType="Thumb">
             <Setter Property="MinWidth" Value="32" />
             <Setter Property="Template">
@@ -387,7 +458,7 @@
                                        Foreground="#FFDCC18A" FontSize="10" TextWrapping="Wrap"
                                        VerticalAlignment="Center" />
                             <Button Grid.Column="1" Content="OK" Width="76" Height="32" Margin="0"
-                                    HorizontalAlignment="Right" Style="{StaticResource PrimaryButton}"
+                                    HorizontalAlignment="Right" Style="{StaticResource GameTableActionButtonStyle}"
                                     IsEnabled="{Binding BoardFirstProposal.CanConfirmPayment}"
                                     Command="{Binding ConfirmBoardFirstClaimCommand}" />
                         </Grid>
@@ -642,21 +713,18 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <CheckBox IsChecked="{Binding Keep}" Width="278" Margin="4,0"
-                                              VerticalAlignment="Center" Cursor="Hand">
-                                        <Border Width="251" Height="90" CornerRadius="5" Padding="5"
-                                                Background="#FFFBEED5" BorderBrush="#FFD4AC6B"
-                                                BorderThickness="2">
-                                            <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding Description}" Foreground="#FF31241D"
-                                                           FontSize="13" FontWeight="SemiBold" TextAlignment="Center"
-                                                           TextWrapping="Wrap" />
-                                                <TextBlock Foreground="#FF77512F" FontSize="11"
-                                                           TextAlignment="Center" Margin="0,3,0,0">
-                                                    <Run Text="{Binding Points, Mode=OneWay}" /><Run Text=" points" />
-                                                </TextBlock>
-                                            </StackPanel>
-                                        </Border>
+                                    <CheckBox IsChecked="{Binding Keep, Mode=TwoWay}" Width="278" Height="90" Margin="4,0"
+                                              VerticalAlignment="Center" Style="{StaticResource DestinationTicketChoiceStyle}"
+                                              AutomationProperties.Name="{Binding Description}">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Description}" Foreground="#FF31241D"
+                                                       FontSize="13" FontWeight="SemiBold" TextAlignment="Center"
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock Foreground="#FF77512F" FontSize="11"
+                                                       TextAlignment="Center" Margin="0,3,0,0">
+                                                <Run Text="{Binding Points, Mode=OneWay}" /><Run Text=" points" />
+                                            </TextBlock>
+                                        </StackPanel>
                                     </CheckBox>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
@@ -666,8 +734,7 @@
                                        FontSize="11" VerticalAlignment="Center" Margin="0,0,10,0" />
                             <Button Content="KEEP SELECTED" Width="168" Height="29"
                                     Command="{Binding KeepSoloTicketsCommand}"
-                                    Background="#FF69412F" Foreground="#FFFFE7B0"
-                                    BorderBrush="#FFF0D7A0" BorderThickness="1.5" />
+                                    Style="{StaticResource GameTableActionButtonStyle}" />
                         </StackPanel>
                     </Grid>
                 </Border>

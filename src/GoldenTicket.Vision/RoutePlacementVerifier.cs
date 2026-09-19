@@ -26,7 +26,9 @@ public sealed class RoutePlacementVerifier
 {
     private const double MinimumConfidence = .55;
     private const double MaximumAlongTolerance = 36; // physical trains can sit toward one end of a printed space
-    private const double AcrossTolerance = 13;
+    // Reference-board pixels. Allow small sideways placement/parallax errors while the
+    // parallel-lane guard below still rejects pieces between lanes or closer to the other lane.
+    internal const double AcrossTolerance = 16;
     private const double SingleSpaceAlongTolerance = 20;
     private static readonly TimeSpan MaximumFrameAge = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan MinimumStableInterval = TimeSpan.FromSeconds(1);

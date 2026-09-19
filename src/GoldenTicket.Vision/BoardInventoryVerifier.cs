@@ -148,7 +148,8 @@ public sealed class BoardInventoryVerifier
                 var dy = y - slot.Y;
                 var along = dx * slot.TangentX + dy * slot.TangentY;
                 var across = -dx * slot.TangentY + dy * slot.TangentX;
-                if (Math.Abs(along) > slot.AlongTolerance || Math.Abs(across) > 13)
+                if (Math.Abs(along) > slot.AlongTolerance ||
+                    Math.Abs(across) > RoutePlacementVerifier.AcrossTolerance)
                     continue;
                 var distance = Math.Sqrt(dx * dx + dy * dy);
                 if (distance < bestDistance)
