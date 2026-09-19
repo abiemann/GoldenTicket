@@ -86,6 +86,82 @@ public sealed class BoardInventoryVerifierTests
     }
 
     [Fact]
+    public void Gameplay_retains_confirmed_route_colors_when_current_color_samples_become_unreadable()
+    {
+        BoardInventoryRoute[] routes = [new(BlueRoute, MarkerColor.Blue, 2), new(GreenRoute, MarkerColor.Green, 2)];
+        var gameplay = new BoardInventoryVerifier(routes, verifyClaimedRouteColors: false);
+        var at = DateTimeOffset.UtcNow;
+        var first = NeutralScene(1, at, Complete);
+        var second = NeutralScene(2, at.AddSeconds(1.1), Complete);
+
+        Assert.All(first.Candidates, candidate => Assert.Null(RoutePlacementVerifier.ReadCandidateColor(first.Frame, candidate)));
+        Assert.Equal(BoardInventoryState.Stabilizing, gameplay.Observe(first.Frame, first.Candidates, 1, 1).State);
+        var accepted = gameplay.Observe(second.Frame, second.Candidates, 1, 1);
+        Assert.True(accepted.Confirmed);
+        Assert.Equal(2, accepted.ConfirmedByColor[MarkerColor.Blue]);
+        Assert.Equal(2, accepted.ConfirmedByColor[MarkerColor.Green]);
+        // The default checkpoint audit still requires visible evidence of every train color.
+        Assert.Equal(BoardInventoryState.Ambiguous,
+            new BoardInventoryVerifier(routes).Observe(second.Frame, second.Candidates, 1, 1).State);
+    }
+
+    [Fact]
+    public void Gameplay_color_trust_does_not_allow_missing_moved_duplicate_or_extra_trains()
+    {
+        BoardInventoryVerifier Gameplay() => new(
+            [new(BlueRoute, MarkerColor.Blue, 2), new(GreenRoute, MarkerColor.Green, 2)],
+            verifyClaimedRouteColors: false);
+        var at = DateTimeOffset.UtcNow;
+        var missing = NeutralScene(1, at, Complete[..^1]);
+        Assert.Equal(BoardInventoryState.MissingTrains, Gameplay().Observe(missing.Frame, missing.Candidates, 1, 1).State);
+        var moved = NeutralScene(1, at, [.. Complete[..^1], new(900, 400, MarkerColor.Green)]);
+        Assert.Equal(BoardInventoryState.MissingTrains, Gameplay().Observe(moved.Frame, moved.Candidates, 1, 1).State);
+        var complete = NeutralScene(1, at, Complete);
+        Assert.Equal(BoardInventoryState.Ambiguous,
+            Gameplay().Observe(complete.Frame, [.. complete.Candidates, complete.Candidates[0]], 1, 1).State);
+        var extra = NeutralScene(1, at, [.. Complete, new(900, 400, MarkerColor.Yellow)]);
+        Assert.Equal(BoardInventoryState.UnexpectedTrain, Gameplay().Observe(extra.Frame, extra.Candidates, 1, 1).State);
+    }
+
+    [Fact]
+    public void Gameplay_must_still_verify_new_route_colors_before_payment()
+    {
+        BoardInventoryVerifier Pending() => new([new(GreenRoute, MarkerColor.Green, 2)],
+            new(BlueRoute, MarkerColor.Blue, 2), pendingSlotMask: 3, verifyClaimedRouteColors: false);
+        var at = DateTimeOffset.UtcNow;
+        var unreadable = NeutralScene(1, at, Complete);
+        var ambiguous = Pending().Observe(unreadable.Frame, unreadable.Candidates, 1, 1);
+        Assert.Equal(BoardInventoryState.Ambiguous, ambiguous.State);
+        Assert.Equal(BlueRoute, ambiguous.RouteId);
+        var wrong = Scene(1, 1, at, [new(1586, 755, MarkerColor.Red), .. Complete[1..]]);
+        Assert.Equal(BoardInventoryState.WrongColor, Pending().Observe(wrong.Frame, wrong.Candidates, 1, 1).State);
+        var partial = Scene(1, 1, at, Complete[1..]);
+        Assert.Equal(BoardInventoryState.MissingTrains, Pending().Observe(partial.Frame, partial.Candidates, 1, 1).State);
+
+        var verifier = Pending();
+        var first = Scene(1, 1, at, Complete);
+        var stable = Scene(2, 1, at.AddSeconds(1.1), Complete);
+        Assert.Equal(BoardInventoryState.Stabilizing, verifier.Observe(first.Frame, first.Candidates, 1, 1).State);
+        Assert.True(verifier.Observe(stable.Frame, stable.Candidates, 1, 1).Confirmed);
+    }
+
+    [Fact]
+    public void Gameplay_occupancy_still_requires_distinct_frames_and_current_calibration()
+    {
+        var verifier = new BoardInventoryVerifier(
+            [new(BlueRoute, MarkerColor.Blue, 2), new(GreenRoute, MarkerColor.Green, 2)],
+            verifyClaimedRouteColors: false);
+        var at = DateTimeOffset.UtcNow;
+        var first = NeutralScene(1, at, Complete);
+        Assert.Equal(BoardInventoryState.Stabilizing, verifier.Observe(first.Frame, first.Candidates, 1, 1).State);
+        Assert.Equal(BoardInventoryState.WaitingForFreshFrame, verifier.Observe(first.Frame, first.Candidates, 1, 1).State);
+        var changed = NeutralScene(2, at.AddSeconds(1.1), Complete);
+        Assert.Equal(BoardInventoryState.Stabilizing, verifier.Observe(changed.Frame, changed.Candidates, 2, 1).State);
+        var stable = NeutralScene(3, at.AddSeconds(2.2), Complete);
+        Assert.True(verifier.Observe(stable.Frame, stable.Candidates, 2, 1).Confirmed);
+    }
+
+    [Fact]
     public void Missing_wrong_color_or_ambiguous_route_never_confirms()
     {
         var now = DateTimeOffset.UtcNow;
@@ -318,6 +394,16 @@ public sealed class BoardInventoryVerifierTests
     }
 
     private readonly record struct Train(double X, double Y, MarkerColor Color);
+
+    private static (CameraFrame Frame, PieceCandidate[] Candidates) NeutralScene(long sequence,
+        DateTimeOffset capturedAt, Train[] trains)
+    {
+        var scene = Scene(sequence, 1, capturedAt, trains);
+        var neutral = new byte[scene.Frame.Width * scene.Frame.Height * 4];
+        Array.Fill(neutral, (byte)120);
+        return (CameraFrame.CopyFromBgra32(scene.Frame.Width, scene.Frame.Height, neutral,
+            sequence, 1, capturedAt), scene.Candidates);
+    }
 
     private static (CameraFrame Frame, PieceCandidate[] Candidates) Scene(long sequence, long epoch,
         DateTimeOffset capturedAt, Train[] trains)

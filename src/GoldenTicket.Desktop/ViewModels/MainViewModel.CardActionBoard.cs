@@ -22,6 +22,8 @@ public sealed partial class MainViewModel
     private string? _cardActionBoardWarning;
     private string? _cardBoardGuidance;
     private bool _cardBoardCameraSeen;
+    private string? _lastCardBoardProblemLogKey;
+    private DateTimeOffset _lastCardBoardProblemLogAt;
 
     private bool UsesCameraForCardActions => _cardBoardCameraSeen ||
         _gameLayerVisible && Camera.IsGameTablePreviewRequested ||
@@ -43,7 +45,7 @@ public sealed partial class MainViewModel
     private BoardInventoryVerifier NewCardBoardVerifier(GameCoordinator coordinator) =>
         new(coordinator.Public.RouteOwners.Select(route => new BoardInventoryRoute(route.Key.Value,
             ToMarkerColor(coordinator.Public.SeatOf(route.Value).Color),
-            _manifest.Route(route.Key).Length)).ToArray());
+            _manifest.Route(route.Key).Length)).ToArray(), verifyClaimedRouteColors: false);
 
     private void ResetCardActionBoard()
     {
@@ -59,6 +61,7 @@ public sealed partial class MainViewModel
         _cardActionBoardWarning = message;
         if (message is null)
         {
+            _lastCardBoardProblemLogKey = null;
             if (_cardBoardGuidance is not null && Game.GuidanceInstruction == _cardBoardGuidance)
                 Game.ClearGuidance();
             _cardBoardGuidance = null;
@@ -89,9 +92,50 @@ public sealed partial class MainViewModel
                 : "You already chose to draw cards this turn. Remove these unclaimed trains to continue.");
         }
         if (observation.RouteId is { } routeId)
-            return $"Check the trains on {_manifest.Describe(new RouteId(routeId))}. " +
-                "The camera must verify your claimed routes before drawing cards.";
+        {
+            var route = _manifest.Describe(new RouteId(routeId));
+            return observation.State switch
+            {
+                BoardInventoryState.Ambiguous =>
+                    $"The camera cannot clearly identify the train positions on {route}. " +
+                    "The claim is still recorded. Keep the trains in their spaces and clear hands or glare " +
+                    "while the camera checks again.",
+                BoardInventoryState.MissingTrains =>
+                    $"The camera cannot verify every train on {route}. The claim is still recorded. " +
+                    "Make sure every train is visible in its space before drawing cards.",
+                BoardInventoryState.WrongColor =>
+                    $"The camera reads a different train color on {route}. The claim is still recorded. " +
+                    "Check the pieces and lighting before drawing cards.",
+                _ => $"The camera cannot verify the claimed route {route}. " +
+                    "The claim is still recorded. Check the board view before drawing cards."
+            };
+        }
         return "Check for unclaimed or misplaced trains. The board must match the game before drawing cards.";
+    }
+
+    private void LogCardBoardProblem(GameTableAnalysis analysis, BoardInventoryObservation observation,
+        GameCoordinator coordinator)
+    {
+        var routeId = observation.RouteId ?? observation.UnexpectedTrains?.RouteId;
+        var key = $"{coordinator.SessionId.Value}/{coordinator.Public.StateVersion}/" +
+            $"{analysis.Board.Epoch}/{analysis.CropRevision}/{analysis.ModelRevision}/" +
+            $"{observation.State}/{routeId}/{observation.UnexpectedTrains}/{_cardBoardCheck is not null}";
+        if (_lastCardBoardProblemLogKey == key &&
+            analysis.Board.CapturedAt >= _lastCardBoardProblemLogAt &&
+            analysis.Board.CapturedAt - _lastCardBoardProblemLogAt < TimeSpan.FromSeconds(1)) return;
+        _lastCardBoardProblemLogKey = key;
+        _lastCardBoardProblemLogAt = analysis.Board.CapturedAt;
+        BoardInteractionLog.Write("card-action.board-problem", new
+        {
+            session = coordinator.SessionId.Value, version = coordinator.Public.StateVersion,
+            turn = coordinator.Public.TurnNumber, phase = coordinator.Public.TurnPhase.ToString(),
+            analysis.Board.Sequence, analysis.Board.Epoch, analysis.Board.CapturedAt,
+            ageMs = analysis.Board.Age.TotalMilliseconds,
+            analysis.CropRevision, analysis.ModelRevision,
+            state = observation.State.ToString(), route = routeId, observation.UnexpectedTrains,
+            cardCheckPending = _cardBoardCheck is not null,
+            nearbyCandidates = routeId is null ? Array.Empty<object>() : DescribeNearbyPlacementCandidates(analysis, routeId)
+        });
     }
 
     private static bool CardBoardHasProblem(BoardInventoryObservation observation) =>
@@ -133,7 +177,10 @@ public sealed partial class MainViewModel
         var observation = _cardBoardMonitor!.Observe(analysis.Board, analysis.Candidates,
             analysis.CropRevision, analysis.ModelRevision);
         if (CardBoardHasProblem(observation))
+        {
+            LogCardBoardProblem(analysis, observation, coordinator);
             SetCardBoardWarning(CardBoardProblem(observation, coordinator));
+        }
         else if (observation.Confirmed) SetCardBoardWarning(null);
 
         if (_cardBoardCheck is not { } check) return;

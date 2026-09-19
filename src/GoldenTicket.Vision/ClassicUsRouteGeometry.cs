@@ -19,7 +19,7 @@ public readonly record struct BoardSlotPoint(double X, double Y, double TangentX
 public static class ClassicUsRouteGeometry
 {
     public const string ProfileId = "ttr-us-classic-en-v1";
-    public const string GeometryVersion = "classic-us-slots-2026-09-18-v3";
+    public const string GeometryVersion = "classic-us-slots-2026-09-19-v4";
     // The original 3456 × 2160 empty-board photo, before scaling to the 1996 × 1248
     // reference used below. The original user photo is not shipped; its compact grayscale
     // calibration is embedded by ClassicUsBoardAlignment to keep live crops in these axes.
@@ -78,7 +78,10 @@ public static class ClassicUsRouteGeometry
             // occupied lane-A spaces pass without weakening parallel-lane checks.
             ["duluth--omaha--a"] = Lane((1084, 443), (1069, 510)),
             ["duluth--omaha--b"] = Lane((1107, 447), (1091, 514)),
-            ["duluth--sault-st-marie"] = Lane((1184, 371), (1253, 340), (1316, 307)),
+            // Live black trains sit above the original first two centers, leaving the
+            // Duluth end at the sideways cutoff. Shift toward the train bodies while
+            // retaining the original placements and separation from Duluth--Toronto.
+            ["duluth--sault-st-marie"] = Lane((1184, 363), (1253, 332), (1316, 307)),
             ["duluth--toronto"] = Lane((1182, 385), (1254, 370), (1328, 356), (1401, 341), (1475, 327), (1546, 318)),
             ["duluth--winnipeg"] = Lane((948, 219), (995, 271), (1044, 322), (1091, 370)),
             ["el-paso--houston"] = Lane((804, 1046), (869, 1073), (938, 1091), (1007, 1093), (1077, 1084), (1147, 1061)),

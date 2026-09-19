@@ -155,10 +155,11 @@ public sealed partial class MainViewModel
                 .Select(route => new BoardInventoryRoute(route.Key.Value,
                     ToMarkerColor(coordinator.Public.SeatOf(route.Value).Color),
                     _manifest.Route(route.Key).Length))
-                .Append(new BoardInventoryRoute(placement.RouteId.Value,
-                    ToMarkerColor(placement.Color), placement.TrainCount))
                 .ToArray();
-            _placementInventoryVerifier = new BoardInventoryVerifier(expected);
+            _placementInventoryVerifier = new BoardInventoryVerifier(expected,
+                new BoardInventoryRoute(placement.RouteId.Value,
+                    ToMarkerColor(placement.Color), placement.TrainCount),
+                pendingSlotMask: (1 << placement.TrainCount) - 1, verifyClaimedRouteColors: false);
             _placementInventoryKey = inventoryKey;
             _showingPlacementInventoryCorrection = false;
         }
@@ -312,7 +313,7 @@ public sealed partial class MainViewModel
     private Task AcceptCameraPlacementAsync(PlacementInstruction placement, GameTableAnalysis analysis) =>
         AcceptPhysicalPlacementAsync(placement, EvidenceKind.CameraAutomatic, analysis.ModelId,
             $"{placement.TrainCount} {placement.Color} train pieces matched every measured slot of " +
-            $"{placement.RouteId.Value}, and every earlier claimed route retained its trains and color " +
+            $"{placement.RouteId.Value}, and every earlier claimed route retained its occupied spaces " +
             "in distinct upright frames at least one second apart; " +
             $"camera epoch {analysis.Board.Epoch}, frame {analysis.Board.Sequence}, " +
             $"crop {analysis.CropRevision}, model revision {analysis.ModelRevision}.");

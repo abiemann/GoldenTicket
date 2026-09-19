@@ -12,6 +12,79 @@ namespace GoldenTicket.Domain.Tests;
 public sealed class DesktopCardActionBoardTests
 {
     [Fact]
+    public async Task Claimed_Calgary_trains_with_unclear_colors_clear_the_warning_and_allow_a_fresh_draw()
+    {
+        await using var fixture = await Fixture.CreateAsync(claimedCalgary: true);
+        var model = fixture.Model;
+        var before = await fixture.SnapshotAsync();
+        var handCount = fixture.Coordinator.Public.SeatOf(before.Seat).TrainCardCount;
+        model.Camera.IsGameTablePreviewUpright = true;
+        var at = DateTimeOffset.UtcNow;
+        fixture.Publish(1, at, claimedCalgaryCount: 0);
+        Assert.Contains("cannot verify every train on Calgary - Helena", model.Game.GuidanceInstruction);
+        Assert.Contains("The claim is still recorded", model.Game.GuidanceInstruction);
+        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+
+        fixture.Publish(2, at.AddSeconds(1.1), claimedCalgaryCount: 4, claimedCalgaryColor: null);
+        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+        fixture.Publish(3, at.AddSeconds(2.2), claimedCalgaryCount: 4, claimedCalgaryColor: null);
+        Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
+        Assert.Null(model.BoardFirstProposal);
+        await fixture.AssertUnchangedAsync(before);
+
+        var draw = model.DrawSoloBlindCommand.ExecuteAsync(null);
+        Assert.False(draw.IsCompleted);
+        var freshAt = DateTimeOffset.UtcNow;
+        fixture.Publish(4, freshAt, claimedCalgaryCount: 4, claimedCalgaryColor: null);
+        Assert.False(draw.IsCompleted);
+        fixture.Publish(5, freshAt.AddSeconds(1.1), claimedCalgaryCount: 4, claimedCalgaryColor: null);
+        await draw.WaitAsync(TimeSpan.FromSeconds(7), TestContext.Current.CancellationToken);
+
+        Assert.Equal(before.Version + 1, fixture.Coordinator.Public.StateVersion);
+        Assert.Equal(before.Turn, fixture.Coordinator.Public.TurnNumber);
+        Assert.Equal(before.Seat, fixture.Coordinator.Public.ActiveSeatId);
+        Assert.Equal(TurnPhase.AwaitingSecondTrainCard, fixture.Coordinator.Public.TurnPhase);
+        Assert.Equal(handCount + 1, fixture.Coordinator.Public.SeatOf(before.Seat).TrainCardCount);
+        Assert.Equal(7, fixture.Coordinator.Public.SeatOf(before.Seat).RouteScore);
+        Assert.Equal(before.Seat, fixture.Coordinator.Public.RouteOwners[new RouteId("calgary--helena")]);
+        Assert.Null(fixture.Coordinator.Public.PendingClaim);
+        Assert.Null(model.BoardFirstProposal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Committed_color_reuse_still_blocks_missing_or_extra_trains_without_spending_another_card(bool extra)
+    {
+        await using var fixture = await Fixture.CreateAsync(claimedCalgary: true);
+        var model = fixture.Model;
+        await model.DrawSoloBlindCommand.ExecuteAsync(null); // No camera has been used yet.
+        Assert.Equal(TurnPhase.AwaitingSecondTrainCard, fixture.Coordinator.Public.TurnPhase);
+        var before = await fixture.SnapshotAsync();
+        var faceUp = model.Table.Market.First(slot => model.DrawSoloFaceUpCommand.CanExecute(slot));
+        model.Camera.IsGameTablePreviewUpright = true;
+        var at = DateTimeOffset.UtcNow;
+        fixture.Publish(1, at, blackTrains: extra, claimedCalgaryCount: extra ? 4 : 3,
+            claimedCalgaryColor: null);
+
+        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+        Assert.False(model.DrawSoloFaceUpCommand.CanExecute(faceUp));
+        Assert.Contains(extra ? "You already chose to draw cards" : "The claim is still recorded",
+            model.Game.GuidanceInstruction);
+        Assert.Null(model.BoardFirstProposal);
+        await model.DrawSoloFaceUpCommand.ExecuteAsync(faceUp);
+        await fixture.AssertUnchangedAsync(before);
+
+        fixture.Publish(2, at.AddSeconds(1.1), claimedCalgaryCount: 4, claimedCalgaryColor: null);
+        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+        fixture.Publish(3, at.AddSeconds(2.2), claimedCalgaryCount: 4, claimedCalgaryColor: null);
+        Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
+        Assert.True(model.DrawSoloFaceUpCommand.CanExecute(faceUp));
+        await fixture.AssertUnchangedAsync(before);
+        Assert.Equal(before.Seat, fixture.Coordinator.Public.RouteOwners[new RouteId("calgary--helena")]);
+    }
+
+    [Fact]
     public async Task Black_trains_after_the_first_card_block_the_second_card_until_removed()
     {
         await using var fixture = await Fixture.CreateAsync();
@@ -216,7 +289,7 @@ public sealed class DesktopCardActionBoardTests
         public GameCoordinator Coordinator { get; } = Assert.IsType<GameCoordinator>(typeof(MainViewModel)
             .GetField("_coordinator", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(model));
 
-        public static async Task<Fixture> CreateAsync(bool payableRoute = false)
+        public static async Task<Fixture> CreateAsync(bool payableRoute = false, bool claimedCalgary = false)
         {
             var manifest = ManifestLoader.LoadClassicUs();
             var store = new InMemorySessionStore();
@@ -227,9 +300,9 @@ public sealed class DesktopCardActionBoardTests
             model.Setup.Seats[2].Color = PlayerColor.Blue;
             for (var index = 0; index < model.Setup.Seats.Count; index++)
                 model.Setup.Seats[index].IsComputer = index != 0;
-            if (payableRoute)
+            if (payableRoute || claimedCalgary)
             {
-                // Seed 42 deals the human two pink cards, a legal payment for this grey route.
+                // Seed 42 starts with a legal two-pink-card payment for Little Rock-Saint Louis.
                 var game = await GameCoordinator.CreateAsync(new GameRules(manifest,
                         CardCatalog.FromManifest(manifest)), store, model.Setup.TryBuildSetup()!,
                     DeterministicRandom.SeedFrom(42));
@@ -239,6 +312,7 @@ public sealed class DesktopCardActionBoardTests
                     Assert.True((await game.SubmitAsync(new CommitTicketSelection(
                         game.NewEnvelope(seat.SeatId), [.. view.SetupOffer.Take(2)], []))).IsAccepted);
                 }
+                if (claimedCalgary) await ClaimCalgaryAsync(game);
                 await model.LoadSavedSessionsAsync();
                 model.Setup.SelectedSavedSession = Assert.Single(model.Setup.SavedSessions);
                 await model.ResumeMatchAsync();
@@ -256,6 +330,35 @@ public sealed class DesktopCardActionBoardTests
             Assert.Equal(PlayerColor.Black, fixture.Coordinator.Public.SeatOf(
                 fixture.Coordinator.Public.ActiveSeatId).Color);
             return fixture;
+        }
+
+        private static async Task ClaimCalgaryAsync(GameCoordinator game)
+        {
+            var human = game.Public.ActiveSeatId;
+            var routeId = new RouteId("calgary--helena");
+            LegalClaim? choice = null;
+            for (var attempt = 0; attempt < 20; attempt++)
+            {
+                choice = (await game.GetLegalActionsAsync(human)).Claims.FirstOrDefault(claim => claim.RouteId == routeId);
+                if (choice is not null) break;
+                do { await DrawTurnAsync(game); } while (game.Public.ActiveSeatId != human);
+            }
+            Assert.NotNull(choice);
+            var hand = await game.GetSeatViewAsync(human);
+            Assert.True((await game.SubmitAsync(new PlanClaim(game.NewEnvelope(human), routeId,
+                LegalActionCalculator.ResolveCards(hand, choice.Payments[0])))).IsAccepted);
+            Assert.True((await game.SubmitAsync(new SubmitClaimEvidence(game.NewEnvelope(human),
+                game.Public.PendingClaim!.OperationId, EvidenceKind.CameraAutomatic, "synthetic-test",
+                "All four black Calgary-Helena trains were verified."))).IsAccepted);
+            while (game.Public.ActiveSeatId != human) await DrawTurnAsync(game);
+            Assert.Equal(7, game.Public.SeatOf(human).RouteScore);
+        }
+
+        private static async Task DrawTurnAsync(GameCoordinator game)
+        {
+            var seat = game.Public.ActiveSeatId;
+            Assert.True((await game.SubmitAsync(new SelectTrainCard(game.NewEnvelope(seat), null))).IsAccepted);
+            Assert.True((await game.SubmitAsync(new SelectTrainCard(game.NewEnvelope(seat), null))).IsAccepted);
         }
 
         public async Task<Snapshot> SnapshotAsync() => new(Coordinator.Public.StateVersion,
@@ -280,17 +383,19 @@ public sealed class DesktopCardActionBoardTests
         }
 
         public void Publish(long sequence, DateTimeOffset capturedAt, bool blackTrains = false,
-            bool stale = false)
+            bool stale = false, int? claimedCalgaryCount = null, MarkerColor? claimedCalgaryColor = MarkerColor.Black)
         {
             const int width = 960, height = 600;
             var pixels = new byte[width * height * 4];
             Array.Fill(pixels, (byte)180);
             var candidates = new List<PieceCandidate>();
-            if (blackTrains)
+            if (blackTrains) Paint("little-rock--saint-louis", 2, MarkerColor.Black);
+            if (claimedCalgaryCount is { } count) Paint("calgary--helena", count, claimedCalgaryColor);
+
+            void Paint(string routeId, int trainCount, MarkerColor? color)
             {
-                Assert.True(ClassicUsRouteGeometry.TryGetSlots("little-rock--saint-louis", out var slots));
-                Assert.Equal(2, slots.Count);
-                foreach (var spot in slots)
+                Assert.True(ClassicUsRouteGeometry.TryGetSlots(routeId, out var slots));
+                foreach (var spot in slots.Take(trainCount))
                 {
                     var x = (int)Math.Round(spot.X * width);
                     var y = (int)Math.Round(spot.Y * height);
@@ -299,7 +404,7 @@ public sealed class DesktopCardActionBoardTests
                     for (var px = x - halfWidth; px <= x + halfWidth; px++)
                     {
                         var offset = (py * width + px) * 4;
-                        pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = 20;
+                        pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = color == MarkerColor.Black ? (byte)20 : (byte)128;
                     }
                     candidates.Add(new(PieceCandidateKind.Train,
                         [new((double)(x - halfWidth) / width, (double)(y - halfHeight) / height),
@@ -312,6 +417,9 @@ public sealed class DesktopCardActionBoardTests
             var frame = CameraFrame.CopyFromBgra32(width, height, pixels, sequence,
                 epoch: 1, capturedAt: capturedAt, clock: frameClock);
             frameClock?.Advance(TimeSpan.FromSeconds(3));
+            if (claimedCalgaryColor is null && claimedCalgaryCount is > 0)
+                Assert.All(candidates.TakeLast(claimedCalgaryCount.Value),
+                    candidate => Assert.Null(RoutePlacementVerifier.ReadCandidateColor(frame, candidate)));
             var analysis = new GameTableAnalysis(frame, candidates, [], 1, 1, "synthetic-card-action-test");
             typeof(CameraViewModel).GetProperty(nameof(CameraViewModel.GameTableAnalysis))!
                 .GetSetMethod(nonPublic: true)!.Invoke(Model.Camera, [analysis]);

@@ -8,7 +8,7 @@ need the original photograph or a separately installed image file.
 | Property | Value |
 | --- | --- |
 | Board profile | `ttr-us-classic-en-v1` |
-| Geometry version | `classic-us-slots-2026-09-18-v3` |
+| Geometry version | `classic-us-slots-2026-09-19-v4` |
 | Reference size | 320 × 200 |
 | Resource SHA-256 | `0b8ab46ff79d5ea6ddc9aef338c340e394a4bca498bf6a797a4740c909baccec` |
 | Original photo | `GoldenTicket-board-20260914-181653.png` |
@@ -40,3 +40,12 @@ reference from that frame. Matching uses the existing interior artwork samples a
 bounded correction logic; expected route occupancy and detected pieces are not inputs.
 Changing this calibration requires rechecking printed-slot coordinates and adjacent
 lanes against the new reference, and updating its provenance and validation evidence.
+
+## Route-center correction, September 19
+
+The v4 geometry moves the first two Duluth–Sault St. Marie centers up by eight
+reference pixels. Replaying the supplied gameplay screenshot found three separate
+black trains at high confidence, but the first sat only 0.01 pixels inside the old
+16-pixel sideways limit. The correction leaves room for small detection shifts,
+retains the original centered placements, and increases separation from the nearby
+Duluth–Toronto spaces. The artwork reference, model and global tolerances are unchanged.

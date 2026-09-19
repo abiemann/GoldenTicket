@@ -230,15 +230,30 @@ The game completes these actions through the rules engine. It does not wait for 
 
 A human may begin placing trains without preselecting a route. When the board stabilizes, the app proposes a matching route for the active seat. It then asks that human to authorize the digital payment privately. A visual observation cannot silently choose between legal payment combinations.
 
-The candidate remains provisional until both payment authorization and current physical evidence are available. Enter `AwaitClaimAuthorization`, bind the proposal to its seat, state version, board revision, camera epoch, and proposal ID, and block unrelated card actions. Allow only authorization, rejection with physical restoration, pause, or recovery. After authorization, obtain fresh full-board evidence; the proposal frame alone cannot commit the claim.
+The candidate remains provisional until both payment authorization and current physical evidence are available. Enter `AwaitClaimAuthorization`, bind the proposal to its seat, state version, board revision, camera epoch, and proposal ID, and block unrelated card actions. Allow only authorization, rejection with physical restoration, pause, or recovery. A route suggestion alone cannot commit the claim.
+
+The single-human desktop flow confirms the new route and whole board before opening payment:
+two distinct fresh observations must identify every new train in the correct lane and color,
+retain the occupied spaces of committed routes, and find no extra trains. Continue checking while
+the player chooses cards. Payment is enabled only while the confirmation remains current. At
+authorization, check the latest board snapshot and the proposal's seat, state, camera, crop and
+model identities. Persist `PlanClaim`, check the latest single-frame occupancy of the committed
+routes and the newly confirmed route, then submit the held stable color evidence to the normal
+claim commit path without another color check or multi-frame placement wait. If trains move,
+extras appear, evidence becomes stale or its camera identity changes during persistence, retain
+the authorized pending placement and recheck it. The scoring-marker movement and verification step is unchanged. A durable
+authorization substate and the companion equivalent remain broader verification work.
 
 If the player started a route during an already selected card action, explain the conflict and guide them to restore the physical board. Do not reinterpret the card action as a claim or discard an already revealed card to make the history fit.
 
 The desktop camera flow checks committed train inventory during `TurnStart`,
 `AwaitingSecondTrainCard`, and `AwaitingTicketKeep`. Before submitting a local human card
 action, it requires two distinct fresh captures taken after the click, at least one second
-apart, matching the complete committed board. Cached or already-processing pre-click frames
-cannot authorize a draw. Unclaimed trains cancel the card request without spending cards or
+apart, matching the complete committed board's occupancy. During normal gameplay, committed
+routes retain their recorded owner and physical color; their sampled color is not reclassified
+as a condition of drawing cards or confirming another route. Current distinct ML train detections,
+correct positions, parallel-lane assignment and absence of extras remain mandatory. Cached or
+already-processing pre-click frames cannot authorize a draw. Unclaimed trains cancel the card request without spending cards or
 advancing the turn; at `TurnStart`, the existing board-first detector can then offer the route's
 payment dialog. Later in a draw action, the user must remove those trains. The check times out
 after five seconds without a command submission and is canceled on focus loss. Explicitly
@@ -472,6 +487,11 @@ brings the game layer back over the entire content area. Both layers bind to the
 coordinator, camera service and companion state; changing the presentation does not recreate
 the match, reset camera settings or discard technical work. Private views follow the hiding
 rules in section 4.7 when leaving their workflow.
+
+The engineering **Game table** history includes the colors of computer blind train-card draws,
+resolved from committed events and rebuilt when a saved journal is restored. This local history
+has a separate projection from public history and update events. Human blind draws remain
+redacted, and normal player summaries and companion projections remain public.
 
 The transition lasts 260 ms when Windows client-area animations are enabled and is immediate
 when they are disabled. Only the active layer accepts input, focus moves to it, and the game
@@ -764,7 +784,10 @@ stateDiagram-v2
     FinalScoring --> Finished
 ```
 
-Board-first observations enter an authorization substate of `HumanPrivate`, then reuse the same `AwaitPhysical` protocol. They do not create a second claim path with weaker checks.
+Board-first observations enter an authorization substate of `HumanPrivate`, then reuse the same
+pending-claim and commit protocol. In the single-human desktop flow, full-board stability is
+established before payment, so still-current evidence can complete `AwaitPhysical` immediately
+after reservation. Stale or changed evidence leaves the claim pending for fresh verification.
 
 ### 9.2 Orthogonal readiness gates
 
@@ -935,9 +958,18 @@ Successive frames are correlated. Requiring five identical predictions is useful
 
 ### 12.5 Match against expected changes
 
-For a pending claim, generate the expected after-state from the legal operation. Compare all target segments, both lanes of any parallel group, and all other occupied/empty route regions. Require complete placement, correct physical color, no unexplained change, and acceptable coverage. Each relevant segment must pass its visibility and confidence floor; a high route-average score cannot compensate for one unknown or wrong segment.
+For a pending claim, generate the expected after-state from the legal operation. Compare all target segments, both lanes of any parallel group, and all other occupied/empty route regions. Require complete placement and correct physical color on the new route, no unexplained occupancy change elsewhere, and acceptable coverage. Each relevant segment must pass its visibility and confidence floor; a high route-average score cannot compensate for one unknown or wrong segment on the new route.
 
-For board-first human placement, enumerate legal route claims for the current seat and rank observation agreement. A unique plausible candidate may be presented for payment approval. Multiple candidates or insufficient visibility produce a specific question or a highlighted correction, not an automatic best guess.
+The desktop's ordinary-play inventory checks retain committed route colors from game state.
+They still require a separate current ML-detected train in each claimed space, reject duplicate
+assignments and ambiguous parallel lanes, and reject missing or extra pieces. This prevents a
+temporary color-reading change on an already accepted train from blocking later card actions.
+New pending routes always require current color evidence and stable frames. Save and reload
+audits use the strict default policy and verify the current colors of every committed and
+pending train as well as their positions. An occupancy-only gameplay check must never provide
+the color evidence for a save or reload.
+
+For board-first human placement, enumerate legal route claims for the current seat and rank observation agreement. A unique candidate proceeds to whole-board confirmation before payment approval. Multiple candidates or insufficient visibility produce a specific question or a highlighted correction, not an automatic best guess.
 
 Never renormalize probabilities over legal moves and then treat the winning legal move as high-confidence physical evidence. A camera error can make every legal candidate implausible. Preserve a reject/unknown hypothesis with an absolute quality floor.
 
@@ -1845,7 +1877,11 @@ Re-enabling vision requires a full registration and board comparison. Manual mod
 |---|---|
 | Trains placed in a different order | Accept complete authorized placement without requiring the demonstrated order |
 | One segment left empty | Claim remains pending |
-| One wrong-color train | Correct segment highlighted; no commit |
+| One wrong-color train on a new route | Correct segment highlighted; no commit |
+| Color reading changes on an occupied committed route | Retain the recorded claim color during ordinary play; still verify its train positions and reject extras |
+| Committed train has the wrong or uncertain color during save/reload | Strict color audit blocks completion until corrected |
+| Board-first payment after current whole-board confirmation | Commit through the pending-claim protocol without a second placement wait |
+| Board or camera evidence changes during board-first payment | Disable payment or retain the authorized pending claim for fresh verification; no stale-evidence commit |
 | Neighboring parallel lane filled | Reject wrong physical lane |
 | Correct new claim plus moved old train | Reject until unrelated mismatch is corrected |
 | Motionless hand covers an old route | Wait; low motion cannot imply visibility |

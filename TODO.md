@@ -59,6 +59,13 @@ See the
 - [x] Require post-click whole-board verification for local human card actions, including the
   second train card and destination selection. Preserve the human's turn and offer payment for
   a payable board-first route instead of consuming a draw; reject stale/in-flight camera results.
+- [x] Confirm a human's board-first route and whole-board inventory before showing payment.
+  Use the still-current confirmed evidence after payment authorization to commit through the
+  normal pending-claim path without a second placement wait. Preserve scoring-marker verification
+  and leave the claim pending if evidence becomes stale or changes during persistence.
+- [x] Retain committed route colors during ordinary gameplay while checking fresh occupancy,
+  distinct train detections, positions and extras. Keep new-route, save and reload color checks
+  strict. Log card-action board failures with the route and nearby public candidate details.
 - [ ] Re-register the live board crop automatically after a saved game is reloaded or the camera
   restarts; for now, use the technical Camera screen to register it again.
 - [x] Measure all 309 printed train spaces on the 100 classic-US routes and show one pulsing
@@ -426,9 +433,9 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   camera choice, native-format fallback, preview, CPU/GPU preprocessing and manual crop against
   the real board. Evaluate the experimental empty-board detector. Add printable markers, board
   landmarks, automatic calibration, detailed quality gates and recording/replay.
-- [ ] **M4: verification.** A first board-first solo-human path now proposes one legal route from
-  stable camera observations, asks the player to choose its card payment, and requires fresh
-  placement evidence before committing. Complete the durable authorization substate, whole-board
+- [ ] **M4: verification.** The board-first solo-human path confirms the new route and whole-board
+  inventory before payment, then commits with guarded current evidence without a second placement
+  wait. Complete the durable authorization substate, broader whole-board
   recognition, occlusion/unknown foreground rejection, jog/reconnect recovery, stale-epoch
   rejection, wake gesture, and explicit mode-change reconciliation. Persist the score-marker
   move obligation with the claim so an app restart cannot skip the physical marker check.

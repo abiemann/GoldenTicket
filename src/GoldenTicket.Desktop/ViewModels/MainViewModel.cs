@@ -105,6 +105,8 @@ public sealed partial class MainViewModel : ObservableObject
 
     public TableViewModel Table { get; }
 
+    public ObservableCollection<string> EngineeringHistory { get; } = [];
+
     public GameScreenViewModel Game { get; }
 
     public ObservableCollection<FinalScoreRow> FinalScores { get; } = [];
@@ -910,6 +912,12 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSoloHumanTurn));
         ReconcileBoardFirstClaimFlow(view);
         Table.Update(view, _coordinator.PublicHistory);
+        EngineeringHistory.Clear();
+        foreach (var entry in _coordinator.EngineeringHistory.TakeLast(40))
+        {
+            var who = entry.Seat is { } seat ? view.SeatOf(seat).DisplayName + ": " : "";
+            EngineeringHistory.Add(who + entry.Text.Replace("destination ticket", "destination", StringComparison.Ordinal));
+        }
         if (_scoreMarkerStep is { } scoreStep)
             Table.ShowPendingScoreMarker(view.TurnNumber, scoreStep.SeatName,
                 scoreStep.Color, scoreStep.ToPrintedScore);

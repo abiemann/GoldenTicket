@@ -203,8 +203,8 @@
                     <StackPanel>
                         <TextBlock Style="{StaticResource Heading}" Text="What has happened" />
                         <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8"
-                                   Text="Public events only. A blind draw shows that a card was taken, never which one." />
-                        <ItemsControl ItemsSource="{Binding Table.History}">
+                                   Text="Computer draws include their card colors. Human blind draws remain private." />
+                        <ItemsControl ItemsSource="{Binding EngineeringHistory}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <TextBlock Text="{Binding}" Margin="0,1" />

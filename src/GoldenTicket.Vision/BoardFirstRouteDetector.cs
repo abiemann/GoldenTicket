@@ -2,8 +2,8 @@ namespace GoldenTicket.Vision;
 
 /// <summary>
 /// Finds a single physical route filled by the active human's trains before the route has
-/// been selected digitally. This is only a proposal: the rules engine must still authorize
-/// the route and its card payment, then verify fresh board evidence before committing it.
+/// been selected digitally. The caller confirms the whole board before offering payment;
+/// the rules engine then authorizes the route and payment using guarded current evidence.
 /// </summary>
 public sealed class BoardFirstRouteDetector
 {

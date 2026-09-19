@@ -3,6 +3,7 @@ using GoldenTicket.Application;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Manifest;
+using GoldenTicket.Domain.Model;
 using GoldenTicket.Domain.Projections;
 using GoldenTicket.Vision;
 using System.Windows.Media;
@@ -120,6 +121,8 @@ public sealed class AutomaticPhysicalFlowTests
             await Task.Delay(50, TestContext.Current.CancellationToken);
             PublishBlueTrains(model.Camera, route.RouteId.Value, 2, at.AddSeconds(1.1));
             PublishBlueTrains(model.Camera, route.RouteId.Value, 3, at.AddSeconds(2.2));
+            Assert.Null(model.BoardFirstProposal);
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 4, at.AddSeconds(3.3));
             await WaitUntilAsync(() => model.BoardFirstProposal is not null);
 
             var proposal = Assert.IsType<BoardFirstClaimProposal>(model.BoardFirstProposal);
@@ -141,7 +144,7 @@ public sealed class AutomaticPhysicalFlowTests
             // A fresh board alignment changes the crop revision without changing the
             // physical route. Keep the chosen cards visible, but pause payment until
             // the route has been confirmed in the new crop.
-            PublishBlueTrains(model.Camera, route.RouteId.Value, 4, at.AddSeconds(3.3),
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 5, at.AddSeconds(4.4),
                 cropRevision: 2);
             Assert.Same(proposal, model.BoardFirstProposal);
             Assert.False(proposal.CameraEvidenceCurrent);
@@ -149,14 +152,16 @@ public sealed class AutomaticPhysicalFlowTests
             await model.ConfirmBoardFirstClaimCommand.ExecuteAsync(null);
             Assert.Null(coordinator.Public.PendingClaim);
 
-            PublishTrains(model.Camera, route.RouteId.Value, 5, at.AddSeconds(4.4),
+            PublishTrains(model.Camera, route.RouteId.Value, 6, at.AddSeconds(5.5),
                 MarkerColor.Blue, count: 0, cropRevision: 2);
             Assert.Same(proposal, model.BoardFirstProposal);
             Assert.False(proposal.CanConfirmPayment);
 
-            PublishBlueTrains(model.Camera, route.RouteId.Value, 6, at.AddSeconds(5.5),
-                cropRevision: 2);
             PublishBlueTrains(model.Camera, route.RouteId.Value, 7, at.AddSeconds(6.6),
+                cropRevision: 2);
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 8, at.AddSeconds(7.7),
+                cropRevision: 2);
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 9, at.AddSeconds(8.8),
                 cropRevision: 2);
             Assert.Same(proposal, model.BoardFirstProposal);
             Assert.True(proposal.CameraEvidenceCurrent);
@@ -164,14 +169,12 @@ public sealed class AutomaticPhysicalFlowTests
             Assert.Equal(payment.Total, proposal.SelectedCount);
             await model.ConfirmBoardFirstClaimCommand.ExecuteAsync(null);
             Assert.Null(model.BoardFirstProposal);
-            Assert.NotNull(coordinator.Public.PendingClaim);
-            Assert.Contains("Keep your", model.Game.GuidanceInstruction);
-
-            PublishBlueTrains(model.Camera, route.RouteId.Value, 8, at.AddSeconds(7.7),
-                cropRevision: 2);
-            PublishBlueTrains(model.Camera, route.RouteId.Value, 9, at.AddSeconds(8.8),
-                cropRevision: 2);
-            await WaitUntilAsync(() => model.Game.GuidanceTurn == "Scoring");
+            Assert.Null(coordinator.Public.PendingClaim);
+            Assert.Equal(active, coordinator.Public.RouteOwners[route.RouteId]);
+            Assert.Equal("Scoring", model.Game.GuidanceTurn);
+            var committedVersion = coordinator.Public.StateVersion;
+            await model.ConfirmBoardFirstClaimCommand.ExecuteAsync(null);
+            Assert.Equal(committedVersion, coordinator.Public.StateVersion);
             var seat = coordinator.Public.SeatOf(active);
             Assert.StartsWith($"Move {seat.DisplayName}'s {seat.Color} scoring marker",
                 model.Game.GuidanceInstruction);
@@ -179,6 +182,132 @@ public sealed class AutomaticPhysicalFlowTests
             Assert.Null(coordinator.Public.PendingClaim);
             Assert.Equal(Screen.Table, model.Screen);
             Assert.Null(model.PrivateSeat);
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("wrong-color")]
+    [InlineData("extra")]
+    [InlineData("stale")]
+    [InlineData("orientation")]
+    [InlineData("crop")]
+    [InlineData("model")]
+    [InlineData("epoch")]
+    [InlineData("state")]
+    [InlineData("missing-during-write")]
+    [InlineData("extra-during-write")]
+    public async Task Board_first_payment_does_not_spend_when_its_confirmed_board_or_turn_changes(string change)
+    {
+        var store = new DelayedPaymentStore();
+        var model = new MainViewModel(ManifestLoader.LoadClassicUs(), store);
+        model.Setup.ManualVerificationAccepted = true;
+        try
+        {
+            await model.StartMatchAsync();
+            await model.CommitTicketsAsync();
+            var coordinator = GetCoordinator(model);
+            var active = coordinator.Public.ActiveSeatId;
+            var route = (await coordinator.GetLegalActionsAsync(active)).Claims.First(claim =>
+                RoutePlacementVerifier.Supports(claim.RouteId.Value, claim.Length));
+            model.Camera.IsGameTablePreviewUpright = true;
+            var at = DateTimeOffset.UtcNow;
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 1, at);
+            await WaitUntilAsync(() => typeof(MainViewModel)
+                .GetField("_boardFirstLegalActions", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(model) is not null);
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 2, at.AddSeconds(1.1));
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 3, at.AddSeconds(2.2));
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 4, at.AddSeconds(3.3));
+            var proposal = Assert.IsType<BoardFirstClaimProposal>(model.BoardFirstProposal);
+            var payment = proposal.Payments[0].Option;
+            foreach (var card in proposal.Cards.Where(card => card.Kind == payment.Color)
+                         .Take(payment.ColorCards)) card.IsSelected = true;
+            foreach (var card in proposal.Cards.Where(card => card.Kind == TrainCardKind.Locomotive)
+                         .Take(payment.Locomotives)) card.IsSelected = true;
+            Assert.True(proposal.CanConfirmPayment);
+
+            if (change.EndsWith("-during-write", StringComparison.Ordinal))
+            {
+                var raceHand = await coordinator.GetSeatViewAsync(active);
+                var raceScore = coordinator.Public.SeatOf(active).RouteScore;
+                store.DelayNextCommit = true;
+                var confirming = model.ConfirmBoardFirstClaimCommand.ExecuteAsync(null);
+                await store.CommitStarted.Task.WaitAsync(TimeSpan.FromSeconds(5),
+                    TestContext.Current.CancellationToken);
+                PublishTrains(model.Camera, route.RouteId.Value, 5, at.AddSeconds(4.4),
+                    MarkerColor.Blue, count: change == "missing-during-write" ? 0 : int.MaxValue,
+                    extraTrain: change == "extra-during-write");
+                store.ReleaseCommit.TrySetResult();
+                await confirming;
+
+                Assert.NotNull(coordinator.Public.PendingClaim);
+                Assert.False(coordinator.Public.RouteOwners.ContainsKey(route.RouteId));
+                Assert.Equal(raceScore, coordinator.Public.SeatOf(active).RouteScore);
+                var afterRace = await coordinator.GetSeatViewAsync(active);
+                Assert.Equal(raceHand.Hand, afterRace.Hand);
+                Assert.Equal(raceHand.TrainsRemaining, afterRace.TrainsRemaining);
+                return;
+            }
+
+            if (change == "orientation") model.Camera.IsGameTablePreviewUpright = false;
+            else if (change == "state")
+                Assert.True((await coordinator.SubmitAsync(new SelectTrainCard(coordinator.NewEnvelope(active), null))).IsAccepted);
+            else PublishTrains(model.Camera, route.RouteId.Value, 5,
+                change == "stale" ? DateTimeOffset.UtcNow.AddSeconds(-3) : at.AddSeconds(4.4),
+                change == "wrong-color" ? MarkerColor.Red : MarkerColor.Blue,
+                count: change == "missing" ? 0 : int.MaxValue,
+                cropRevision: change == "crop" ? 2 : 1,
+                modelRevision: change == "model" ? 2 : 1,
+                epoch: change == "epoch" ? 2 : 1, extraTrain: change == "extra");
+            var before = await coordinator.ComputeStateHashAsync();
+            var beforeHand = await coordinator.GetSeatViewAsync(active);
+            await model.ConfirmBoardFirstClaimCommand.ExecuteAsync(null);
+
+            Assert.Equal(before, await coordinator.ComputeStateHashAsync());
+            Assert.Null(coordinator.Public.PendingClaim);
+            Assert.False(coordinator.Public.RouteOwners.ContainsKey(route.RouteId));
+            var afterHand = await coordinator.GetSeatViewAsync(active);
+            Assert.Equal(beforeHand.Hand, afterHand.Hand);
+            Assert.Equal(beforeHand.TrainsRemaining, afterHand.TrainsRemaining);
+        }
+        finally
+        {
+            store.ReleaseCommit.TrySetResult();
+            await model.DisposeToolsAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Board_first_payment_dialog_waits_until_extra_trains_have_been_removed()
+    {
+        var model = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
+        model.Setup.ManualVerificationAccepted = true;
+        try
+        {
+            await model.StartMatchAsync();
+            await model.CommitTicketsAsync();
+            var coordinator = GetCoordinator(model);
+            var active = coordinator.Public.ActiveSeatId;
+            var route = (await coordinator.GetLegalActionsAsync(active)).Claims.First(claim =>
+                RoutePlacementVerifier.Supports(claim.RouteId.Value, claim.Length));
+            model.Camera.IsGameTablePreviewUpright = true;
+            var at = DateTimeOffset.UtcNow;
+            PublishTrains(model.Camera, route.RouteId.Value, 1, at, MarkerColor.Blue, extraTrain: true);
+            await WaitUntilAsync(() => typeof(MainViewModel)
+                .GetField("_boardFirstLegalActions", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(model) is not null);
+            for (var index = 2; index <= 4; index++)
+                PublishTrains(model.Camera, route.RouteId.Value, index, at.AddSeconds((index - 1) * 1.1),
+                    MarkerColor.Blue, extraTrain: true);
+            Assert.Null(model.BoardFirstProposal);
+            Assert.Null(coordinator.Public.PendingClaim);
+
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 5, at.AddSeconds(4.4));
+            Assert.Null(model.BoardFirstProposal);
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 6, at.AddSeconds(5.5));
+            Assert.NotNull(model.BoardFirstProposal);
         }
         finally { await model.DisposeToolsAsync(); }
     }
@@ -386,7 +515,7 @@ public sealed class AutomaticPhysicalFlowTests
 
     private static void PublishTrains(CameraViewModel camera, string routeId,
         long sequence, DateTimeOffset capturedAt, MarkerColor color, int count = int.MaxValue,
-        long cropRevision = 1)
+        long cropRevision = 1, long modelRevision = 1, long epoch = 1, bool extraTrain = false)
     {
         const int width = 960;
         const int height = 600;
@@ -403,7 +532,13 @@ public sealed class AutomaticPhysicalFlowTests
             MarkerColor.Blue => (20, 75, 195),
             _ => (20, 20, 20)
         };
-        foreach (var spot in slots.Take(count))
+        var observedSlots = slots.Take(count);
+        if (extraTrain)
+        {
+            ClassicUsRouteGeometry.TryGetSlots("calgary--winnipeg", out var extraSlots);
+            observedSlots = observedSlots.Concat(extraSlots.Take(1));
+        }
+        foreach (var spot in observedSlots)
         {
             var x = (int)Math.Round(spot.X * width);
             var y = (int)Math.Round(spot.Y * height);
@@ -425,8 +560,8 @@ public sealed class AutomaticPhysicalFlowTests
         }
 
         var frame = CameraFrame.CopyFromBgra32(width, height, pixels, sequence,
-            epoch: 1, capturedAt: capturedAt);
-        var analysis = new GameTableAnalysis(frame, candidates, [], cropRevision, 1,
+            epoch: epoch, capturedAt: capturedAt);
+        var analysis = new GameTableAnalysis(frame, candidates, [], cropRevision, modelRevision,
             "synthetic-test-model");
         typeof(CameraViewModel).GetProperty(nameof(CameraViewModel.GameTableAnalysis))!
             .GetSetMethod(nonPublic: true)!.Invoke(camera, [analysis]);
@@ -437,5 +572,37 @@ public sealed class AutomaticPhysicalFlowTests
         for (var attempt = 0; attempt < 100 && !condition(); attempt++)
             await Task.Delay(20, TestContext.Current.CancellationToken);
         Assert.True(condition(), "The expected game-table guidance was not reached.");
+    }
+
+    private sealed class DelayedPaymentStore : ISessionStore
+    {
+        private readonly InMemorySessionStore _inner = new();
+        public bool DelayNextCommit { get; set; }
+        public TaskCompletionSource CommitStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseCommit { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task CommitAsync(GameState state, StoredCommandOutcome outcome,
+            Transition transition, string stateHash, CancellationToken token)
+        {
+            if (DelayNextCommit)
+            {
+                DelayNextCommit = false;
+                CommitStarted.TrySetResult();
+                await ReleaseCommit.Task.WaitAsync(token);
+            }
+            await _inner.CommitAsync(state, outcome, transition, stateHash, token);
+        }
+        public Task CreateAsync(GameState state, CommandId commandId, Transition transition,
+            string stateHash, CancellationToken token) => _inner.CreateAsync(state, commandId, transition, stateHash, token);
+        public Task<StoredCommandOutcome?> FindCommandOutcomeAsync(SessionId sessionId,
+            CommandId commandId, CancellationToken token) => _inner.FindCommandOutcomeAsync(sessionId, commandId, token);
+        public Task RecordRejectionAsync(SessionId sessionId, StoredCommandOutcome outcome,
+            CancellationToken token) => _inner.RecordRejectionAsync(sessionId, outcome, token);
+        public Task<RestoredSession> RestoreAsync(SessionId sessionId, BoardManifest manifest,
+            CardCatalog catalog, CancellationToken token) => _inner.RestoreAsync(sessionId, manifest, catalog, token);
+        public Task<PackAwayCheckpoint?> ReadCheckpointAsync(SessionId sessionId,
+            CheckpointId checkpointId, CancellationToken token) => _inner.ReadCheckpointAsync(sessionId, checkpointId, token);
+        public Task<IReadOnlyList<SessionSummary>> ListSessionsAsync(CancellationToken token) => _inner.ListSessionsAsync(token);
+        public Task DeleteSessionAsync(SessionId sessionId, CancellationToken token) => _inner.DeleteSessionAsync(sessionId, token);
     }
 }

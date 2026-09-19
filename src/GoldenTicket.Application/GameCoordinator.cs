@@ -41,6 +41,9 @@ public sealed record PackAwayOutcome(
 /// <summary>A committed transaction, published to whatever is displaying the match.</summary>
 public sealed record CoordinatorUpdate(PublicView Public, ImmutableArray<PublicEventEntry> NewEntries);
 
+/// <summary>Local engineering history, including computer blind-draw colors. Not a public projection.</summary>
+public sealed record EngineeringEventEntry(SeatId? Seat, string Text);
+
 /// <summary>
 /// The single authoritative writer for one match (DESIGN 18.1). Commands are serialised through one
 /// queue that performs version checks and the durable transaction; the queue is never held while
@@ -53,6 +56,7 @@ public sealed partial class GameCoordinator
     private readonly GameRules _rules;
     private readonly ISessionStore _store;
     private readonly List<PublicEventEntry> _history = [];
+    private readonly List<EngineeringEventEntry> _engineeringHistory = [];
 
     private GameState _state;
     private volatile PublicView _publicView;
@@ -88,6 +92,12 @@ public sealed partial class GameCoordinator
     public IReadOnlyList<PublicEventEntry> PublicHistory
     {
         get { lock (_history) return [.. _history]; }
+    }
+
+    /// <summary>For the laptop's engineering view only; human blind draws remain private.</summary>
+    public IReadOnlyList<EngineeringEventEntry> EngineeringHistory
+    {
+        get { lock (_history) return [.. _engineeringHistory]; }
     }
 
     public static async Task<GameCoordinator> CreateAsync(
@@ -492,13 +502,24 @@ public sealed partial class GameCoordinator
     private ImmutableArray<PublicEventEntry> AppendHistory(IEnumerable<GameEvent> events)
     {
         var added = ImmutableArray.CreateBuilder<PublicEventEntry>();
+        var engineering = new List<EngineeringEventEntry>();
         foreach (var domainEvent in events)
         {
-            if (domainEvent.ToPublicEntry(_rules.Manifest) is { } entry) added.Add(entry);
+            if (domainEvent.ToPublicEntry(_rules.Manifest) is not { } entry) continue;
+            added.Add(entry);
+            var text = domainEvent is BlindCardDrawn draw &&
+                _state.Seats.Any(seat => seat.SeatId == draw.SeatId && seat.Kind == SeatKind.Computer)
+                    ? $"Drew a {_rules.Catalog.KindOf(draw.Card)} card from the deck."
+                    : entry.Text;
+            engineering.Add(new EngineeringEventEntry(entry.Seat, text));
         }
 
         var entries = added.ToImmutable();
-        lock (_history) _history.AddRange(entries);
+        lock (_history)
+        {
+            _history.AddRange(entries);
+            _engineeringHistory.AddRange(engineering);
+        }
         return entries;
     }
 

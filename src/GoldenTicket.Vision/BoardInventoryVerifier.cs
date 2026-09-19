@@ -26,7 +26,8 @@ public sealed record BoardInventoryObservation(BoardInventoryState State,
 /// Checks that the whole rectified board contains exactly the physical trains recorded in
 /// the claimed routes, optionally including a subset of one authorized pending placement.
 /// The game state supplies the routes; matching pending slots do not claim them. Two distinct
-/// fresh camera results must agree on the same occupied slots before saving.
+/// fresh camera results must agree on the same occupied slots. Save/reload audits verify colors;
+/// ordinary gameplay may retain committed route colors while checking current occupancy.
 /// </summary>
 public sealed class BoardInventoryVerifier
 {
@@ -43,6 +44,7 @@ public sealed class BoardInventoryVerifier
     private readonly ExpectedSlot[] _slots;
     private readonly IReadOnlyDictionary<MarkerColor, int> _expectedByColor;
     private readonly BoardInventoryRoute? _pendingRoute;
+    private readonly bool _verifyClaimedRouteColors;
     private readonly int? _requiredPendingMask;
     private int? _lastPendingMask;
     private readonly string _operationKey = Guid.NewGuid().ToString("N");
@@ -54,11 +56,13 @@ public sealed class BoardInventoryVerifier
     private DateTimeOffset? _firstMatchingAt;
 
     public BoardInventoryVerifier(IReadOnlyList<BoardInventoryRoute> expectedRoutes,
-        BoardInventoryRoute? pendingRoute = null, int? pendingSlotMask = null)
+        BoardInventoryRoute? pendingRoute = null, int? pendingSlotMask = null,
+        bool verifyClaimedRouteColors = true)
     {
         ArgumentNullException.ThrowIfNull(expectedRoutes);
         _routes = expectedRoutes.ToArray();
         _pendingRoute = pendingRoute;
+        _verifyClaimedRouteColors = verifyClaimedRouteColors;
         _requiredPendingMask = pendingSlotMask;
         _expectedByColor = _routes.GroupBy(route => route.Color)
             .ToDictionary(group => group.Key, group => group.Sum(route => route.TrainCount));
@@ -105,11 +109,14 @@ public sealed class BoardInventoryVerifier
             .ToArray();
         foreach (var route in _routes)
         {
-            // Check each route independently against this frame. Prior confirmation must
-            // never substitute for the current positions and colors of its pieces.
+            // Committed claims retain their owner/color during gameplay, but never substitute
+            // for current piece detections. Checkpoint audits also re-read their colors.
             var verifier = new RoutePlacementVerifier();
-            var observation = verifier.Observe(board, candidates, route.RouteId, route.Color,
-                route.TrainCount, _operationKey, cropRevision, modelRevision);
+            var observation = _verifyClaimedRouteColors
+                ? verifier.Observe(board, candidates, route.RouteId, route.Color,
+                    route.TrainCount, _operationKey, cropRevision, modelRevision)
+                : verifier.ObserveOccupancy(board, candidates, route.RouteId, route.Color,
+                    route.TrainCount, _operationKey, cropRevision, modelRevision);
             if (observation.MatchedCount == route.TrainCount &&
                 observation.State is RoutePlacementState.Stabilizing or RoutePlacementState.Confirmed)
                 continue;

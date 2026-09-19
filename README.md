@@ -78,18 +78,23 @@ This build implements the core game plus initial phone, camera and photo workflo
   the physical data audit is still outstanding.
 - Full turn structure: the two-card draw with its subphases, the face-up market with the
   three-locomotive reset and discard reshuffles, destination-ticket offers, and route claims.
-- Route claims use the reserve-then-verify protocol: planning a claim reserves the payment but
-  spends nothing. The classic-US board has measured centers for all 309 printed train spaces across
+- Route claims reserve the authorized payment before committing it. Planning spends nothing.
+  The classic-US board has measured centers for all 309 printed train spaces across
   100 routes. One pulsing yellow cue appears on each requested space. Two fresh camera observations
   must identify a separate train of the player's color in every requested space before one atomic
-  commit spends the cards, records ownership, scores and ends the turn. Adjacent parallel lanes are
-  checked separately. Train-color checks tolerate neutral highlights when a physical color still
-  has sufficient support and clearly leads the other piece colors. This geometry and automated
-  tests still need live-camera accuracy validation.
+  commit spends the cards, records ownership, scores and ends the turn. For a human who places
+  trains first, the route and whole board are verified before the payment dialog opens. A valid
+  payment then uses that still-current confirmation without a second placement wait.
+  Adjacent parallel lanes are checked separately. Train-color checks tolerate neutral highlights
+  when a physical color still has sufficient support and clearly leads the other piece colors. This geometry and automated
+  tests still need live-camera accuracy validation. During ordinary play, earlier claims retain
+  their recorded color and owner while the camera checks their current train positions, separate
+  pieces and any extras. New routes, saving and reloading still require live color verification.
   Each normal app launch starts a fresh local board-decision log at
   `%LOCALAPPDATA%\GoldenTicket\diagnostics\board-interactions.jsonl`. It records camera and model
   availability, detected candidate positions and confidence near the requested route, color and
-  slot checks, and claim/score-marker outcomes. It contains no camera images or private cards.
+  slot checks, card-action board problems, and claim/score-marker outcomes. It contains no camera
+  images or private cards.
   When it reaches 64 MB, the older segment moves to `board-interactions.previous.jsonl`; both
   segments are cleared on the next app launch.
 - Exact final scoring, including the longest continuous route as a true maximum edge-simple trail
@@ -408,8 +413,10 @@ not a completed Save Game and does not grant permission to clear the physical bo
    be the second card. Click the D pile to draw destinations, then choose at least one from the
    compact row below the board. Their city rings and connecting lines stay visible while choosing.
    The draw controls are disabled during the computer's turn.
-   With the camera in use, card actions wait for two fresh whole-board checks. Trains placed
-   before the first draw keep the turn with you: a payable route opens the detected-route payment
+   With the camera in use, card actions wait for two fresh whole-board checks of train positions
+   and extras. Previously claimed routes keep their recorded colors; a changing color reading
+   does not undo a claim or block a draw. Trains placed before the first draw keep the turn with
+   you: a payable route opens the detected-route payment
    dialog instead of taking a card. If you have already drawn a card, remove any unclaimed trains
    before finishing that draw action. A camera timeout takes no card and does not advance the turn.
    The computer chooses its own destinations by value and estimated route cost and may keep all three.
@@ -426,7 +433,9 @@ not a completed Save Game and does not grant permission to clear the physical bo
    cards slide into centered positions along the bottom after opening setup.
    The complete scene scales together when the window is resized or maximized.
    Shift+Escape opens engineering-only screens for diagnostics and recovery. Their **Game table**
-   screen still contains development controls. A camera restart or format change requires checking
+   screen still contains development controls. Its history names the train-card colors computers
+   draw from the deck, including draws restored from a save; human blind draws stay private.
+   A camera restart or format change requires checking
    and restoring the board crop through the technical Camera screen.
 4. With one human, opening destination choices appear directly on the laptop. With multiple
    humans, the visible game table guides setup of one shared phone for private cards. Start hosting
@@ -436,11 +445,13 @@ not a completed Save Game and does not grant permission to clear the physical bo
    the T and D stacks show read-only mini cards on the table when clicked. These previews and the
    route-payment choices scroll sideways with the game's gold scrollbar; the mouse wheel also moves
    them horizontally. A human can place trains on a legal, camera-measured route before choosing it
-   digitally: after stable detection, the table shows each usable train card separately. Select the
-   exact cards to spend, then click **OK** when the selection is legal. The game checks the placed
-   trains and
-   every previously claimed route in fresh frames before committing the claim. If trains have been
-   moved off an older route, return them to that route; the new claim waits until the board matches.
+   digitally: the camera first confirms the new trains' positions and color, checks the occupied
+   spaces of earlier claims, and checks for extra trains across two fresh observations. Then the
+   table shows each usable train card separately. Select the exact cards to spend and click **OK**.
+   While that board confirmation remains current, the claim commits without asking you to wait
+   through placement verification again. A changed or stale camera view pauses payment or leaves
+   an authorized claim pending for a fresh check. If trains have been moved off an older route,
+   return them to that route; the payment dialog waits until the board matches.
    If extra trains are detected on an unclaimed route, the warning names that route and the observed
    color and count when the camera can identify them. Remove those trains before continuing.
    A stable, recognizable partial or unpayable solo placement shows **Invalid Move** with the route,
@@ -452,13 +463,16 @@ not a completed Save Game and does not grant permission to clear the physical bo
    With multiple humans, the shared phone is the intended private controller; actions do
    not automatically reveal a private screen on the laptop.
 
-6. When any seat claims a route, the public screen names the seat, its colour and symbol, both
-   endpoint cities, the exact lane, and how many trains to place. Place them in any order.
+6. For computer claims and routes selected digitally before placement, the public screen names
+   the seat, its colour and symbol, both endpoint cities, the exact lane, and how many trains to
+   place. Place them in any order.
    The board shows one pulsing yellow cue in each requested train space. The camera checks those
    spaces and all earlier claimed trains automatically, shows “Thank you” for three seconds,
    then asks you to move that player's scoring marker. It waits until the marker appears at the new printed score before
    continuing automatically on **THE GAME TABLE**. If the camera cannot read the marker, the
    game waits for a clear view of it. Nothing is spent or scored until placement is verified.
+   A human's already-verified board-first claim proceeds from payment to the same confirmation
+   and scoring-marker step.
 7. After someone finishes a turn with two trains or fewer, every seat takes one more turn, and then
    portrait panels appear over the board with each player's final points, route points, destination
    gains and losses, completed/missed tickets, longest-route bonus and full route trail. Scroll

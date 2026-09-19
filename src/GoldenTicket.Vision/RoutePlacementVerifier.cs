@@ -36,7 +36,7 @@ public sealed class RoutePlacementVerifier
     private readonly record struct Slot(double X, double Y, double TangentX, double TangentY);
     private readonly record struct LocatedCandidate(PieceCandidate Candidate, double X, double Y);
     private readonly record struct Identity(string OperationKey, string RouteId, MarkerColor Color,
-        int TrainCount, long CropRevision, long ModelRevision, long CameraEpoch);
+        int TrainCount, long CropRevision, long ModelRevision, long CameraEpoch, bool VerifyColor);
 
     private Identity? _identity;
     private long _lastSequence;
@@ -62,6 +62,20 @@ public sealed class RoutePlacementVerifier
     public RoutePlacementObservation Observe(CameraFrame uprightRectifiedBoard,
         IReadOnlyList<PieceCandidate> candidates, string routeId, MarkerColor color, int trainCount,
         string operationKey, long cropRevision, long modelRevision)
+        => ObserveCore(uprightRectifiedBoard, candidates, routeId, color, trainCount,
+            operationKey, cropRevision, modelRevision, verifyColor: true);
+
+    // Normal gameplay inherits the recorded color of a committed claim. Its current pieces
+    // must still occupy distinct measured spaces; new claims and checkpoint audits read colors.
+    internal RoutePlacementObservation ObserveOccupancy(CameraFrame uprightRectifiedBoard,
+        IReadOnlyList<PieceCandidate> candidates, string routeId, MarkerColor color, int trainCount,
+        string operationKey, long cropRevision, long modelRevision)
+        => ObserveCore(uprightRectifiedBoard, candidates, routeId, color, trainCount,
+            operationKey, cropRevision, modelRevision, verifyColor: false);
+
+    private RoutePlacementObservation ObserveCore(CameraFrame uprightRectifiedBoard,
+        IReadOnlyList<PieceCandidate> candidates, string routeId, MarkerColor color, int trainCount,
+        string operationKey, long cropRevision, long modelRevision, bool verifyColor)
     {
         ArgumentNullException.ThrowIfNull(uprightRectifiedBoard);
         ArgumentNullException.ThrowIfNull(candidates);
@@ -69,7 +83,7 @@ public sealed class RoutePlacementVerifier
         ArgumentException.ThrowIfNullOrWhiteSpace(operationKey);
 
         var identity = new Identity(operationKey, routeId, color, trainCount, cropRevision,
-            modelRevision, uprightRectifiedBoard.Epoch);
+            modelRevision, uprightRectifiedBoard.Epoch, verifyColor);
         if (_identity != identity)
         {
             Reset();
@@ -123,18 +137,21 @@ public sealed class RoutePlacementVerifier
                 state = RoutePlacementState.Ambiguous;
                 break;
             }
-            var read = ReadColor(uprightRectifiedBoard, onSlot[0].Candidate);
-            if (read is null)
+            if (verifyColor)
             {
-                unverifiedSlotMask |= 1 << index;
-                state = RoutePlacementState.Ambiguous;
-                break;
-            }
-            if (read != color)
-            {
-                unverifiedSlotMask |= 1 << index;
-                state = RoutePlacementState.WrongColor;
-                break;
+                var read = ReadColor(uprightRectifiedBoard, onSlot[0].Candidate);
+                if (read is null)
+                {
+                    unverifiedSlotMask |= 1 << index;
+                    state = RoutePlacementState.Ambiguous;
+                    break;
+                }
+                if (read != color)
+                {
+                    unverifiedSlotMask |= 1 << index;
+                    state = RoutePlacementState.WrongColor;
+                    break;
+                }
             }
             matched++;
         }
