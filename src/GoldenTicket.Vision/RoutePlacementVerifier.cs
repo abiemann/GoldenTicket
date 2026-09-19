@@ -11,7 +11,8 @@ public enum RoutePlacementState
     Confirmed
 }
 
-public sealed record RoutePlacementObservation(RoutePlacementState State, int MatchedCount)
+public sealed record RoutePlacementObservation(RoutePlacementState State, int MatchedCount,
+    int UnverifiedSlotMask = 0)
 {
     public bool Confirmed => State == RoutePlacementState.Confirmed;
 }
@@ -95,6 +96,7 @@ public sealed class RoutePlacementVerifier
                 candidate.Outline.Average(point => point.Y) * 1248))
             .ToArray();
         var matched = 0;
+        var unverifiedSlotMask = 0;
         var state = RoutePlacementState.Incomplete;
         var used = new HashSet<PieceCandidate>(ReferenceEqualityComparer.Instance);
         for (var index = 0; index < spots.Length; index++)
@@ -104,23 +106,31 @@ public sealed class RoutePlacementVerifier
                 .ToArray();
             if (onSlot.Length > 1)
             {
+                unverifiedSlotMask |= 1 << index;
                 state = RoutePlacementState.Ambiguous;
                 break;
             }
-            if (onSlot.Length == 0) continue;
+            if (onSlot.Length == 0)
+            {
+                unverifiedSlotMask |= 1 << index;
+                continue;
+            }
             if (!used.Add(onSlot[0].Candidate))
             {
+                unverifiedSlotMask |= 1 << index;
                 state = RoutePlacementState.Ambiguous;
                 break;
             }
             var read = ReadColor(uprightRectifiedBoard, onSlot[0].Candidate);
             if (read is null)
             {
+                unverifiedSlotMask |= 1 << index;
                 state = RoutePlacementState.Ambiguous;
                 break;
             }
             if (read != color)
             {
+                unverifiedSlotMask |= 1 << index;
                 state = RoutePlacementState.WrongColor;
                 break;
             }
@@ -130,7 +140,7 @@ public sealed class RoutePlacementVerifier
         if (state is RoutePlacementState.WrongColor or RoutePlacementState.Ambiguous || matched != trainCount)
         {
             _firstMatchingAt = null;
-            return new(state, matched);
+            return new(state, matched, unverifiedSlotMask);
         }
 
         if (_firstMatchingAt is null || uprightRectifiedBoard.CapturedAt < _firstMatchingAt)

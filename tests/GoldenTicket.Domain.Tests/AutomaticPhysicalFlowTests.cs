@@ -5,6 +5,8 @@ using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Domain.Projections;
 using GoldenTicket.Vision;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace GoldenTicket.Domain.Tests;
 
@@ -56,6 +58,10 @@ public sealed class AutomaticPhysicalFlowTests
                 ? "calgary--winnipeg" : "calgary--seattle";
             Assert.DoesNotContain(legal.Claims, claim => claim.RouteId.Value == routeId);
 
+            var preview = BitmapSource.Create(960, 600, 96, 96, PixelFormats.Bgra32,
+                null, new byte[960 * 600 * 4], 960 * 4);
+            preview.Freeze();
+            model.Camera.GameTablePreview = preview;
             model.Camera.IsGameTablePreviewUpright = true;
             var color = Enum.Parse<MarkerColor>(coordinator.Public.SeatOf(active).Color.ToString());
             var at = DateTimeOffset.UtcNow;
@@ -70,6 +76,10 @@ public sealed class AutomaticPhysicalFlowTests
             Assert.Contains(manifest.Describe(new RouteId(routeId)), model.Game.GuidanceInstruction);
             Assert.Contains("2 of", model.Game.GuidanceInstruction);
             Assert.Contains("train cards", model.Game.GuidanceInstruction);
+            var routeLength = manifest.Route(new RouteId(routeId)).Length;
+            Assert.True(model.Game.ShowPlacementTarget);
+            Assert.Equal(Enumerable.Range(3, routeLength - 2),
+                model.Game.PlacementTargets.Select(target => target.Number));
             Assert.Null(coordinator.Public.PendingClaim);
             Assert.Equal(TurnPhase.TurnStart, coordinator.Public.TurnPhase);
             Assert.Equal(Screen.Table, model.Screen);
@@ -79,6 +89,7 @@ public sealed class AutomaticPhysicalFlowTests
             PublishTrains(model.Camera, routeId, 5, at.AddSeconds(4.4), color, 0);
             await WaitUntilAsync(() => model.Game.GuidanceTurn != "Invalid Move");
             Assert.Equal(model.Table.TurnText, model.Game.GuidanceTurn);
+            Assert.False(model.Game.ShowPlacementTarget);
         }
         finally { await model.DisposeToolsAsync(); }
     }
@@ -160,7 +171,11 @@ public sealed class AutomaticPhysicalFlowTests
                 cropRevision: 2);
             PublishBlueTrains(model.Camera, route.RouteId.Value, 9, at.AddSeconds(8.8),
                 cropRevision: 2);
-            await WaitUntilAsync(() => model.Game.GuidanceInstruction == "Thank you");
+            await WaitUntilAsync(() => model.Game.GuidanceTurn == "Scoring");
+            var seat = coordinator.Public.SeatOf(active);
+            Assert.StartsWith($"Move {seat.DisplayName}'s {seat.Color} scoring marker",
+                model.Game.GuidanceInstruction);
+            Assert.True(model.ShowScoreMarkerDetectionPrompt);
             Assert.Null(coordinator.Public.PendingClaim);
             Assert.Equal(Screen.Table, model.Screen);
             Assert.Null(model.PrivateSeat);

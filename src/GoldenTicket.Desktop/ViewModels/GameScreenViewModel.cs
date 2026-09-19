@@ -258,6 +258,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
     [ObservableProperty] private bool _showPlacementTarget;
     [ObservableProperty] private double _placementTargetX;
     [ObservableProperty] private double _placementTargetY;
+    private (RouteId RouteId, int TrainCount, int SlotMask)? _unverifiedTrainSpaces;
     public IReadOnlyList<PlacementTargetRow> PlacementTargets { get; private set; } = [];
 
     public double PlacementTargetLeft => PlacementTargetX - 23;
@@ -266,8 +267,36 @@ public sealed partial class GameScreenViewModel : ObservableObject
     partial void OnPlacementTargetXChanged(double value) => OnPropertyChanged(nameof(PlacementTargetLeft));
     partial void OnPlacementTargetYChanged(double value) => OnPropertyChanged(nameof(PlacementTargetTop));
 
+    internal void ShowUnverifiedTrainSpaces(RouteId routeId, int trainCount, int slotMask)
+    {
+        var target = (RouteId: routeId, TrainCount: trainCount, SlotMask: slotMask);
+        if (_unverifiedTrainSpaces == target) return;
+        _unverifiedTrainSpaces = target;
+        RefreshPlacementTarget();
+    }
+
+    internal void ClearUnverifiedTrainSpaces()
+    {
+        if (_unverifiedTrainSpaces is null) return;
+        _unverifiedTrainSpaces = null;
+        RefreshPlacementTarget();
+    }
+
     private void RefreshPlacementTarget()
     {
+        if (_unverifiedTrainSpaces is { } uncertain &&
+            _main.Camera.GameTablePreview is not null &&
+            _main.Camera.IsGameTablePreviewUpright &&
+            PlacementBoardOverlay.TryGetTargets(_main.Manifest, uncertain.RouteId,
+                uncertain.TrainCount, out var routeTargets))
+        {
+            SetPlacementTargets(routeTargets.Select((point, index) => (point, index))
+                .Where(item => (uncertain.SlotMask & (1 << item.index)) != 0)
+                .Select(item => new PlacementTargetRow(item.point.X, item.point.Y, item.index + 1))
+                .ToArray());
+            return;
+        }
+
         var savedTarget = _main.SavedBoardRestoreTarget;
         var placement = _main.Table.Placement;
         if (savedTarget is null &&
@@ -280,15 +309,23 @@ public sealed partial class GameScreenViewModel : ObservableObject
                 savedTarget?.TrainCount ?? placement!.TrainCount,
                 out var targets))
         {
-            PlacementTargets = [];
-            OnPropertyChanged(nameof(PlacementTargets));
-            ShowPlacementTarget = false;
+            SetPlacementTargets([]);
             return;
         }
 
-        PlacementTargets = targets.Select((point, index) =>
-            new PlacementTargetRow(point.X, point.Y, index + 1)).ToArray();
+        SetPlacementTargets(targets.Select((point, index) =>
+            new PlacementTargetRow(point.X, point.Y, index + 1)).ToArray());
+    }
+
+    private void SetPlacementTargets(IReadOnlyList<PlacementTargetRow> targets)
+    {
+        PlacementTargets = targets;
         OnPropertyChanged(nameof(PlacementTargets));
+        if (PlacementTargets.Count == 0)
+        {
+            ShowPlacementTarget = false;
+            return;
+        }
         PlacementTargetX = PlacementTargets.Average(point => point.X);
         PlacementTargetY = PlacementTargets.Average(point => point.Y);
         ShowPlacementTarget = true;

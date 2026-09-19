@@ -19,7 +19,7 @@ public sealed class BoardFirstMoveFeedbackDetectorTests
 
         Assert.Null(detector.Observe(first.Frame, first.Candidates, routes,
             MarkerColor.Yellow, "turn-2", 1, 1));
-        Assert.Equal(new BoardFirstMoveFeedback(SeattleCalgary, 2, 4, false),
+        Assert.Equal(new BoardFirstMoveFeedback(SeattleCalgary, 2, 4, false, 0b1100),
             detector.Observe(second.Frame, second.Candidates, routes,
                 MarkerColor.Yellow, "turn-2", 1, 1));
     }

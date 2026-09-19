@@ -112,6 +112,45 @@ public sealed class RoutePlacementVerifierTests
     }
 
     [Fact]
+    public void Four_observed_atlanta_new_orleans_trains_confirm_lane_a_and_identify_an_unverified_space()
+    {
+        const string laneA = "atlanta--new-orleans--a";
+        const string laneB = "atlanta--new-orleans--b";
+        var now = DateTimeOffset.UtcNow;
+        // Centers measured from three supplied frames. The model found every train,
+        // but the old geometry put the second one outside the lane tolerance.
+        var first = SceneAtResolution(1996, 1248, 1, 1, now,
+            (1509.6, 802, MarkerColor.Yellow, .96),
+            (1453.1, 851.3, MarkerColor.Yellow, .96),
+            (1409.5, 910.8, MarkerColor.Yellow, .96),
+            (1380.7, 970.5, MarkerColor.Yellow, .96));
+        var second = SceneAtResolution(1996, 1248, 2, 1, now.AddSeconds(1.1),
+            (1506.7, 808.5, MarkerColor.Yellow, .96),
+            (1450, 856.5, MarkerColor.Yellow, .96),
+            (1406.2, 916.8, MarkerColor.Yellow, .96),
+            (1376.2, 975, MarkerColor.Yellow, .96));
+        var verifier = new RoutePlacementVerifier();
+
+        Assert.Equal(RoutePlacementState.Stabilizing,
+            verifier.Observe(first.Frame, first.Candidates, laneA,
+                MarkerColor.Yellow, 4, "human-claim", 1, 1).State);
+        Assert.True(verifier.Observe(second.Frame, second.Candidates, laneA,
+            MarkerColor.Yellow, 4, "human-claim", 1, 1).Confirmed);
+        Assert.False(new RoutePlacementVerifier().Observe(first.Frame, first.Candidates,
+            laneB, MarkerColor.Yellow, 4, "human-claim", 1, 1).Confirmed);
+
+        var missingSecond = SceneAtResolution(1996, 1248, 3, 1, now.AddSeconds(2.2),
+            (1506.7, 808.5, MarkerColor.Yellow, .96),
+            (1406.2, 916.8, MarkerColor.Yellow, .96),
+            (1376.2, 975, MarkerColor.Yellow, .96));
+        var incomplete = verifier.Observe(missingSecond.Frame, missingSecond.Candidates,
+            laneA, MarkerColor.Yellow, 4, "human-claim", 1, 1);
+        Assert.Equal(RoutePlacementState.Incomplete, incomplete.State);
+        Assert.Equal(3, incomplete.MatchedCount);
+        Assert.Equal(0b0010, incomplete.UnverifiedSlotMask);
+    }
+
+    [Fact]
     public void Yellow_trains_on_kansas_city_oklahoma_city_lane_b_do_not_confirm_blue_lane_a()
     {
         const string requested = "kansas-city--oklahoma-city--a";

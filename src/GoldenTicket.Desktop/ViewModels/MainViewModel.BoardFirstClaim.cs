@@ -141,6 +141,7 @@ public sealed partial class MainViewModel
     private BoardFirstClaimProposal? _boardFirstProposal;
     private DateTimeOffset? _boardFirstRecheckSince;
     private string? _boardFirstInvalidMoveMessage;
+    private int _boardFirstInvalidMoveMask;
     private DateTimeOffset? _boardFirstInvalidMoveAbsentSince;
 
     public BoardFirstClaimProposal? BoardFirstProposal
@@ -167,7 +168,9 @@ public sealed partial class MainViewModel
         BoardFirstProposal = null;
         _boardFirstRecheckSince = null;
         _boardFirstInvalidMoveMessage = null;
+        _boardFirstInvalidMoveMask = 0;
         _boardFirstInvalidMoveAbsentSince = null;
+        Game.ClearUnverifiedTrainSpaces();
     }
 
     private void ReconcileBoardFirstClaimFlow(PublicView view)
@@ -330,9 +333,11 @@ public sealed partial class MainViewModel
         _boardFirstInvalidMoveAbsentSince = null;
         var route = _manifest.Route(new RouteId(feedback.RouteId));
         var routeText = _manifest.Describe(route.RouteId);
+        var unverifiedCount = feedback.RequiredTrains - feedback.DetectedTrains;
         var explanation = feedback.DetectedTrains < feedback.RequiredTrains
-            ? $"{routeText}: {feedback.DetectedTrains} of {feedback.RequiredTrains} train spaces detected. " +
-              "Fill every space."
+            ? $"{routeText}: camera verified {feedback.DetectedTrains} of {feedback.RequiredTrains} train spaces. " +
+              $"Check the yellow marker{(unverifiedCount == 1 ? "" : "s")} and center the " +
+              $"train{(unverifiedCount == 1 ? "" : "s")} there."
             : $"{routeText} cannot be claimed yet.";
         if (!feedback.CanClaim)
         {
@@ -346,30 +351,39 @@ public sealed partial class MainViewModel
             else
                 explanation += " This parallel lane is unavailable.";
         }
-        if (_boardFirstInvalidMoveMessage == explanation) return;
+        var messageChanged = _boardFirstInvalidMoveMessage != explanation;
+        if (!messageChanged && _boardFirstInvalidMoveMask == feedback.UnverifiedSlotMask) return;
         _boardFirstInvalidMoveMessage = explanation;
+        _boardFirstInvalidMoveMask = feedback.UnverifiedSlotMask;
+        Game.ShowUnverifiedTrainSpaces(route.RouteId, feedback.RequiredTrains,
+            feedback.UnverifiedSlotMask);
         BoardInteractionLog.Write("board-first.invalid-move", new
         {
             route = feedback.RouteId,
             feedback.DetectedTrains,
             feedback.RequiredTrains,
             feedback.CanClaim,
+            feedback.UnverifiedSlotMask,
+            nearbyCandidates = DescribeNearbyPlacementCandidates(analysis, feedback.RouteId),
             analysis.Board.Sequence,
             analysis.Board.Epoch
         });
-        Game.ShowGuidance("Invalid Move", active.DisplayName, explanation);
+        if (messageChanged) Game.ShowGuidance(feedback.CanClaim ? "Check Train Placement" : "Invalid Move",
+            active.DisplayName, explanation);
     }
 
     private void ClearBoardFirstInvalidMove()
     {
         _boardFirstMoveFeedbackDetector.Reset();
         _boardFirstInvalidMoveAbsentSince = null;
+        Game.ClearUnverifiedTrainSpaces();
         if (_boardFirstInvalidMoveMessage is null) return;
         BoardInteractionLog.Write("board-first.invalid-move-cleared", new
         {
             previous = _boardFirstInvalidMoveMessage
         });
         _boardFirstInvalidMoveMessage = null;
+        _boardFirstInvalidMoveMask = 0;
         Game.ClearGuidance();
     }
 

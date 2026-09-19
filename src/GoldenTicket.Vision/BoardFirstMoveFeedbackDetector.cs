@@ -3,7 +3,7 @@ namespace GoldenTicket.Vision;
 public sealed record BoardFirstDiagnosticRoute(string RouteId, int TrainCount, bool CanClaim);
 
 public sealed record BoardFirstMoveFeedback(string RouteId, int DetectedTrains, int RequiredTrains,
-    bool CanClaim);
+    bool CanClaim, int UnverifiedSlotMask = 0);
 
 /// <summary>
 /// Presentation-only diagnosis of a solo human's uncommitted pieces. Unlike a claim, feedback
@@ -67,7 +67,8 @@ public sealed class BoardFirstMoveFeedbackDetector
             // one-space route also merits feedback if the player cannot legally claim it.
             if (observation.MatchedCount < (route.TrainCount == 1 ? 1 : 2)) continue;
             possible.Add(new BoardFirstMoveFeedback(route.RouteId,
-                observation.MatchedCount, route.TrainCount, route.CanClaim));
+                observation.MatchedCount, route.TrainCount, route.CanClaim,
+                observation.UnverifiedSlotMask));
         }
 
         // Ambiguous or valid arrangements must not be called an invalid move.

@@ -10,7 +10,7 @@ public sealed partial class MainViewModel
         SessionId SessionId, OperationId OperationId, SeatId SeatId, string SeatName,
         PlayerColor Color, int FromPrintedScore, int ToPrintedScore, int Points)
     {
-        public bool ThankYouFinished { get; set; }
+        public bool ReadyForMarker { get; set; }
     }
 
     private readonly RoutePlacementVerifier _routePlacementVerifier = new();
@@ -24,7 +24,7 @@ public sealed partial class MainViewModel
     private long _automaticFlowGeneration;
     private string? _placementVerificationBlock;
 
-    public bool ShowScoreMarkerDetectionPrompt => _scoreMarkerStep is { ThankYouFinished: true } &&
+    public bool ShowScoreMarkerDetectionPrompt => _scoreMarkerStep is { ReadyForMarker: true } &&
         !_mustReload && !NeedsBoardReconciliation && IsGameplayScreenActive(Screen.Table);
 
     private void NotifyScoreMarkerDetectionPromptChanged() =>
@@ -70,7 +70,7 @@ public sealed partial class MainViewModel
             return;
         }
 
-        if (_scoreMarkerStep is { ThankYouFinished: true } scoreStep)
+        if (_scoreMarkerStep is { ReadyForMarker: true } scoreStep)
         {
             NotePlacementVerificationBlock("score-marker-step");
             if (_scoreCompletionInProgress || scoreStep.SessionId != coordinator.SessionId) return;
@@ -390,13 +390,17 @@ public sealed partial class MainViewModel
             _scoreMarkerMoveVerifier.Reset();
             NotifyScoreMarkerDetectionPromptChanged();
             OnPropertyChanged(nameof(CanRevealPrivateSeat));
-            Game.ShowGuidance("Scoring", placement.SeatName, "Thank you");
-            await Task.Delay(TimeSpan.FromSeconds(3));
-            if (_scoreMarkerStep != step || generation != _automaticFlowGeneration ||
-                !ReferenceEquals(coordinator, _coordinator)) return;
-            step.ThankYouFinished = true;
+            if (coordinator.Public.SeatOf(placement.SeatId).Kind == SeatKind.Computer)
+            {
+                Game.ShowGuidance("Scoring", placement.SeatName, "Thank you");
+                await Task.Delay(TimeSpan.FromSeconds(3));
+                if (_scoreMarkerStep != step || generation != _automaticFlowGeneration ||
+                    !ReferenceEquals(coordinator, _coordinator)) return;
+            }
+            step.ReadyForMarker = true;
             Game.ShowGuidance("Scoring", step.SeatName,
-                $"Move {step.SeatName}'s {step.Color} scoring marker {step.Points} spaces " +
+                $"Move {step.SeatName}'s {step.Color} scoring marker {step.Points} " +
+                $"{(step.Points == 1 ? "space" : "spaces")} " +
                 $"from {step.FromPrintedScore} to {step.ToPrintedScore}. " +
                 $"The camera will continue when it sees the marker on {step.ToPrintedScore}.");
             NotifyScoreMarkerDetectionPromptChanged();
@@ -419,7 +423,7 @@ public sealed partial class MainViewModel
 
     private async Task FinishScoreMarkerStepAsync(ScoreMarkerStep step)
     {
-        if (_scoreCompletionInProgress || _scoreMarkerStep != step || !step.ThankYouFinished ||
+        if (_scoreCompletionInProgress || _scoreMarkerStep != step || !step.ReadyForMarker ||
             _coordinator?.SessionId != step.SessionId) return;
         _scoreCompletionInProgress = true;
         SetOperationInProgress(true);

@@ -19,7 +19,7 @@ public readonly record struct BoardSlotPoint(double X, double Y, double TangentX
 public static class ClassicUsRouteGeometry
 {
     public const string ProfileId = "ttr-us-classic-en-v1";
-    public const string GeometryVersion = "classic-us-slots-2026-09-18-v2";
+    public const string GeometryVersion = "classic-us-slots-2026-09-18-v3";
     // The original 3456 × 2160 empty-board photo, before scaling to the 1996 × 1248
     // reference used below. Kept as provenance; the photo is user-supplied, not shipped.
     public const string ReferencePhotoSha256 =
@@ -33,7 +33,9 @@ public static class ClassicUsRouteGeometry
             ["atlanta--charleston"] = Lane((1616, 811), (1684, 811)),
             ["atlanta--miami"] = Lane((1587, 845), (1630, 895), (1674, 946), (1717, 996), (1763, 1045)),
             ["atlanta--nashville"] = One(1508, 754, .84, .54),
-            ["atlanta--new-orleans--a"] = Lane((1508, 816), (1460, 866), (1417, 921), (1379, 977)),
+            // Four yellow trains in live board photos sit consistently above/left
+            // of the original measured centers. Keep this lane distinct from B.
+            ["atlanta--new-orleans--a"] = Lane((1505, 811), (1457, 861), (1414, 916), (1376, 972)),
             ["atlanta--new-orleans--b"] = Lane((1534, 832), (1484, 880), (1442, 936), (1402, 990)),
             ["atlanta--raleigh--a"] = Lane((1586, 755), (1643, 712)),
             ["atlanta--raleigh--b"] = Lane((1605, 770), (1656, 727)),
