@@ -76,6 +76,7 @@ public sealed partial class MainViewModel : ObservableObject
                 AlignDestinationMarkers();
             if (args.PropertyName == nameof(CameraViewModel.GameTableAnalysis))
             {
+                ObserveSavedBoardRestore();
                 ObserveGameTableAnalysis();
                 ObserveGameExitInventory();
             }
@@ -312,8 +313,7 @@ public sealed partial class MainViewModel : ObservableObject
 
             ShowGameplayScreen(Screen.Table);
 
-            // A packed or half-saved match has no board on the table to reconcile: its own workflow
-            // handles the physical side (DESIGN 19.4, 19.8).
+            // Packed checkpoints remain suspended until the camera has checked their saved board.
             var lifecycle = _coordinator.Public.Lifecycle;
             NeedsBoardReconciliation = lifecycle == SessionLifecycle.Setup || lifecycle == SessionLifecycle.Active;
             BoardReconciliationAcknowledged = false;
@@ -321,8 +321,8 @@ public sealed partial class MainViewModel : ObservableObject
             Status = lifecycle switch
             {
                 SessionLifecycle.PreparingPackAway => "This match was in the middle of being saved. Finish or cancel the save.",
-                SessionLifecycle.PackedAway => "This match is packed away. Rebuild the board to continue it.",
-                SessionLifecycle.Rebuilding => "This match is part way through being rebuilt.",
+                SessionLifecycle.PackedAway => "Checking the saved scoring markers and train positions.",
+                SessionLifecycle.Rebuilding => "Checking the saved scoring markers and train positions.",
                 _ when NeedsBoardReconciliation =>
                     "Saved digital state verified. Check every claimed route before continuing; any pending claim stays uncommitted.",
                 _ => "Saved match restored and verified against its journal.",
@@ -335,10 +335,9 @@ public sealed partial class MainViewModel : ObservableObject
                 if (!continued.SafeToPack && continued.Problem is { } problem) Status = problem;
             }
 
-            if (_coordinator.Public.Lifecycle == SessionLifecycle.Rebuilding) ShowGameplayScreen(Screen.Rebuild);
-
             await RefreshAsync();
-            Game.ShowPlaying();
+            Game.ShowPlaying(reconnectCamera: true);
+            StartSavedBoardRestore();
             PresentMultiHumanPhoneSetup();
         }
         catch (Exception exception)
@@ -669,6 +668,8 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (_coordinator is null || Public?.Checkpoint is not { } checkpoint) return;
 
+        CancelSavedBoardRestore();
+        Game.ClearGuidance();
         await SubmitLifecycleAsync(new BeginBoardRebuild(_coordinator.NewEnvelope(), checkpoint.CheckpointId));
         if (_coordinator.Public.Lifecycle == SessionLifecycle.Rebuilding) ShowGameplayScreen(Screen.Rebuild);
     }

@@ -844,6 +844,31 @@ internal static partial class Program
                         Bounds(settings).Top <= Bounds(reload).Bottom)
                         throw new InvalidOperationException("The Settings button must sit below and right-align with Reload the previous game.");
                 });
+                savedMenu.Game.SelectWelcome(1);
+                await savedMenu.Game.ActivateSelectedAsync();
+                var builtInCamera = new CameraDevice("built-in-synthetic", "Built-in webcam");
+                var overheadCamera = new CameraDevice("overhead-synthetic", "Overhead webcam");
+                savedMenu.Camera.Devices.Add(builtInCamera);
+                savedMenu.Camera.Devices.Add(overheadCamera);
+                savedMenu.Camera.SelectedDevice = builtInCamera;
+                await RenderSizes("game-reload-camera-setup", () => new GameScreenView { DataContext = savedMenu }, view =>
+                {
+                    var dialog = (Border)view.FindName("CameraSetupDialog");
+                    var help = (TextBlock)view.FindName("CameraSetupHelp");
+                    var markerInstruction = (TextBlock)view.FindName("CameraSetupMarkerInstruction");
+                    var picker = (ComboBox)view.FindName("CameraSetupDevicePicker");
+                    var play = (Button)view.FindName("ConfirmationPlayButton");
+                    if (!IsElementShown(dialog) || !savedMenu.Game.IsReloadCameraSetup ||
+                        help.Text != "Choose the webcam showing the whole board. Keep all four corners visible." ||
+                        markerInstruction.Visibility != Visibility.Collapsed ||
+                        !ReferenceEquals(picker.ItemsSource, savedMenu.Camera.Devices) ||
+                        picker.Items.Count != 2 || !Equals(picker.SelectedItem, builtInCamera) ||
+                        play.Content as string != "RELOAD GAME" || play.IsEnabled)
+                        throw new InvalidOperationException("Reload must show the shared live-camera setup with a webcam picker before restoring a match.");
+                    picker.SelectedItem = overheadCamera;
+                    if (savedMenu.Camera.SelectedDevice != overheadCamera)
+                        throw new InvalidOperationException("The reload webcam selector must change the selected camera.");
+                }, [(1280, 800)]);
             }
             finally
             {

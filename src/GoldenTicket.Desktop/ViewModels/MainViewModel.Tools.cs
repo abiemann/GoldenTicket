@@ -138,6 +138,7 @@ public sealed partial class MainViewModel
     public async Task SetSystemAvailableAsync(bool available)
     {
         _systemAvailable = available;
+        Camera.SetGameTableCameraRecoveryEnabled(available);
         HidePrivateSeat();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
         if (!available) await Camera.StopCommand.ExecuteAsync(null);

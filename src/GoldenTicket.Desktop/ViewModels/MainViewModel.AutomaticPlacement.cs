@@ -32,6 +32,7 @@ public sealed partial class MainViewModel
 
     private void ResetAutomaticPhysicalFlow()
     {
+        CancelSavedBoardRestore();
         BoardInteractionLog.Write("placement.flow-reset", new { hasPlacement = Table.Placement is not null });
         _automaticFlowGeneration++;
         _scoreMarkerStep = null;

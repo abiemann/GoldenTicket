@@ -18,12 +18,42 @@ public partial class GameScreenView : UserControl
     private CameraViewModel? _cornerOverlayCamera;
     private FrameComputeMode? _settingsProcessorAtOpen;
     private bool _settingsOkBusy;
+    private bool _cameraSetupRefreshBusy;
+    private DateTimeOffset _cameraSetupNoFrameSince = DateTimeOffset.MinValue;
+    private readonly DispatcherTimer _cameraSetupRetryTimer;
 
     public GameScreenView()
     {
         InitializeComponent();
+        _cameraSetupRetryTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromSeconds(3)
+        };
+        _cameraSetupRetryTimer.Tick += async (_, _) =>
+        {
+            if (Game is not { IsCameraSetup: true } || _cameraSetupRefreshBusy) return;
+            if ((DataContext as MainViewModel)?.Camera is { IsRunning: true } camera)
+            {
+                if (camera.Capture.LatestFrame is { Age: var age } && age <= TimeSpan.FromSeconds(2))
+                {
+                    _cameraSetupNoFrameSince = DateTimeOffset.MinValue;
+                    return;
+                }
+                if (_cameraSetupNoFrameSince == DateTimeOffset.MinValue)
+                    _cameraSetupNoFrameSince = DateTimeOffset.UtcNow;
+                if (DateTimeOffset.UtcNow - _cameraSetupNoFrameSince < TimeSpan.FromSeconds(12)) return;
+                _cameraSetupNoFrameSince = DateTimeOffset.MinValue;
+                if (camera.IsBusy) return;
+                await camera.StopCommand.ExecuteAsync(null);
+            }
+            await EnsureCameraPreviewAsync(refreshDevices: true);
+        };
         Loaded += (_, _) => AttachCornerOverlayCamera((DataContext as MainViewModel)?.Camera);
-        Unloaded += (_, _) => AttachCornerOverlayCamera(null);
+        Unloaded += (_, _) =>
+        {
+            _cameraSetupRetryTimer.Stop();
+            AttachCornerOverlayCamera(null);
+        };
         DataContextChanged += (_, _) =>
         {
             if (IsLoaded) AttachCornerOverlayCamera((DataContext as MainViewModel)?.Camera);
@@ -102,11 +132,8 @@ public partial class GameScreenView : UserControl
         {
             if (e.Key == Key.Escape)
             {
-                game.CancelCameraSetup();
-                (DataContext as MainViewModel)?.Camera.EndGameBoardFraming();
                 e.Handled = true;
-                await StopSetupCameraIfOwnedAsync();
-                FocusCurrentChoice();
+                await CancelCameraSetupAsync(game);
             }
             return;
         }
@@ -138,7 +165,11 @@ public partial class GameScreenView : UserControl
                 await StartPlayAsync(game);
                 return;
             }
-            else await game.ActivateSelectedAsync();
+            else
+            {
+                await game.ActivateSelectedAsync();
+                if (game.IsReloadCameraSetup) await PrepareCameraSetupAsync(game);
+            }
             FocusCurrentChoice();
         }
     }
@@ -175,6 +206,7 @@ public partial class GameScreenView : UserControl
         if (game is null) return;
         game.SelectWelcome(ReferenceEquals(sender, ReloadButton) ? 1 : 0);
         await game.ActivateSelectedAsync();
+        if (game.IsReloadCameraSetup) await PrepareCameraSetupAsync(game);
         FocusCurrentChoice();
     }
 
@@ -256,26 +288,41 @@ public partial class GameScreenView : UserControl
             FocusCurrentChoice();
             return;
         }
+        await PrepareCameraSetupAsync(game);
+    }
+
+    private async Task PrepareCameraSetupAsync(GameScreenViewModel game)
+    {
+        if (!game.IsCameraSetup || DataContext is not MainViewModel model) return;
         _ = Dispatcher.BeginInvoke(DispatcherPriority.Input,
             new Action(() => { if (IsVisible && game.IsCameraSetup) Keyboard.Focus(ConfirmationCancelButton); }));
-        (DataContext as MainViewModel)?.Camera.BeginGameBoardFraming(
+        if (game.IsReloadCameraSetup) model.Camera.BeginReloadBoardFraming();
+        else model.Camera.BeginGameBoardFraming(
             game.SeatChoices.Where(choice => choice.IsChosen)
                 .Select(choice => Enum.Parse<MarkerColor>(choice.TrainColor.ToString())).ToArray());
-        await EnsureCameraPreviewAsync();
+        _cameraSetupNoFrameSince = DateTimeOffset.MinValue;
+        _cameraSetupRetryTimer.Start();
+        await EnsureCameraPreviewAsync(refreshDevices: true);
     }
 
     private async Task EnsureCameraPreviewAsync(bool refreshDevices = false)
     {
-        if (DataContext is not MainViewModel model || !model.Game.IsCameraSetup) return;
-        var camera = model.Camera;
-        if (camera.IsRunning || camera.IsBusy) return;
-        if (refreshDevices || camera.SelectedDevice is null)
-            await camera.RefreshDevicesCommand.ExecuteAsync(null);
-        if (!model.Game.IsCameraSetup || camera.IsRunning || camera.IsBusy || camera.SelectedDevice is null) return;
-        await camera.StartCommand.ExecuteAsync(null);
-        if (!camera.IsRunning) return;
-        if (model.Game.IsCameraSetup || model.Game.IsPlaying) _setupCameraEpoch = camera.Capture.Epoch;
-        else await camera.StopCommand.ExecuteAsync(null);
+        if (_cameraSetupRefreshBusy || DataContext is not MainViewModel model || !model.Game.IsCameraSetup) return;
+        _cameraSetupRefreshBusy = true;
+        try
+        {
+            var camera = model.Camera;
+            if (camera.IsBusy) return;
+            if (refreshDevices || camera.SelectedDevice is null)
+                await camera.RefreshDevicesCommand.ExecuteAsync(null);
+            if (!model.Game.IsCameraSetup || camera.IsBusy || camera.SelectedDevice is null) return;
+            if (camera.IsRunning && camera.Capture.ActiveDevice?.Id == camera.SelectedDevice.Id) return;
+            await camera.StartCommand.ExecuteAsync(null);
+            if (!camera.IsRunning) return;
+            if (model.Game.IsCameraSetup || model.Game.IsPlaying) _setupCameraEpoch = camera.Capture.Epoch;
+            else await camera.StopCommand.ExecuteAsync(null);
+        }
+        finally { _cameraSetupRefreshBusy = false; }
     }
 
     private async Task StopSetupCameraIfOwnedAsync()
@@ -289,28 +336,45 @@ public partial class GameScreenView : UserControl
     private async void RetryCamera_Click(object sender, RoutedEventArgs e) =>
         await EnsureCameraPreviewAsync(refreshDevices: true);
 
-    private async void CancelCameraSetup_Click(object sender, RoutedEventArgs e)
+    private async void CameraSetupDevicePicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (Game is not { IsCameraSetup: true, IsBusy: false } game) return;
+        if (Game is not { IsCameraSetup: true } ||
+            (DataContext as MainViewModel)?.Camera is not { } camera ||
+            sender is not ComboBox { SelectedItem: CameraDevice selected }) return;
+        camera.SelectedDevice = selected;
+        if (!camera.IsRunning || camera.Capture.ActiveDevice?.Id == selected.Id) return;
+        await EnsureCameraPreviewAsync();
+    }
+
+    private async Task CancelCameraSetupAsync(GameScreenViewModel game)
+    {
+        _cameraSetupRetryTimer.Stop();
         game.CancelCameraSetup();
         (DataContext as MainViewModel)?.Camera.EndGameBoardFraming();
         await StopSetupCameraIfOwnedAsync();
         FocusCurrentChoice();
     }
 
+    private async void CancelCameraSetup_Click(object sender, RoutedEventArgs e)
+    {
+        if (Game is not { IsCameraSetup: true, IsBusy: false } game) return;
+        await CancelCameraSetupAsync(game);
+    }
+
     private async void CameraSetupPlay_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is not MainViewModel model ||
             model.Game is not { IsCameraSetup: true, IsBusy: false } game ||
-            !model.Camera.CanStartGameWithBoard) return;
-        model.Camera.BeginGameTablePreview();
+            !game.CanContinueCameraSetup) return;
+        if (!game.IsReloadCameraSetup) model.Camera.BeginGameTablePreview();
         await game.ConfirmCameraSetupAndPlayAsync();
         if (game.IsPlaying)
         {
+            _cameraSetupRetryTimer.Stop();
             model.Camera.EndGameBoardFraming();
             _setupCameraEpoch = null;
         }
-        else model.Camera.EndGameTablePreview();
+        else if (game.IsNewGameCameraSetup) model.Camera.EndGameTablePreview();
         if (game.IsCameraSetup) Keyboard.Focus(ConfirmationPlayButton);
         else FocusCurrentChoice();
     }

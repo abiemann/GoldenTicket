@@ -206,11 +206,21 @@ public sealed partial class GameScreenViewModel : ObservableObject
         {
             if (args.PropertyName is nameof(CameraViewModel.GameTablePreview) or
                 nameof(CameraViewModel.IsGameTablePreviewUpright)) RefreshPlacementTarget();
+            if (args.PropertyName is nameof(CameraViewModel.HasFreshGameBoardCorners) or
+                nameof(CameraViewModel.CanStartGameWithBoard))
+            {
+                OnPropertyChanged(nameof(CanContinueCameraSetup));
+                OnPropertyChanged(nameof(ShowSetupMarkerInstruction));
+            }
+            if (args.PropertyName == nameof(CameraViewModel.Status))
+                OnPropertyChanged(nameof(CameraSetupNoCameraStatus));
         };
         _main.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(MainViewModel.ShowSoloOpeningTicketsOnBoard))
                 TableSeatsChanged(null, null);
+            if (args.PropertyName == nameof(MainViewModel.SavedBoardRestoreTarget))
+                RefreshPlacementTarget();
         };
         UpdateSelection();
         RefreshPlacementTarget();
@@ -258,12 +268,16 @@ public sealed partial class GameScreenViewModel : ObservableObject
 
     private void RefreshPlacementTarget()
     {
-        if (_main.Table.Placement is not { } placement ||
-            !_main.Table.Seats.Any(seat => seat.SeatId == placement.SeatId &&
-                seat.Operator == "computer") ||
+        var savedTarget = _main.SavedBoardRestoreTarget;
+        var placement = _main.Table.Placement;
+        if (savedTarget is null &&
+            (placement is null || !_main.Table.Seats.Any(seat => seat.SeatId == placement.SeatId &&
+                seat.Operator == "computer")) ||
             _main.Camera.GameTablePreview is null ||
             !_main.Camera.IsGameTablePreviewUpright ||
-            !PlacementBoardOverlay.TryGetTargets(_main.Manifest, placement.RouteId, placement.TrainCount,
+            !PlacementBoardOverlay.TryGetTargets(_main.Manifest,
+                savedTarget?.RouteId ?? placement!.RouteId,
+                savedTarget?.TrainCount ?? placement!.TrainCount,
                 out var targets))
         {
             PlacementTargets = [];
@@ -310,11 +324,25 @@ public sealed partial class GameScreenViewModel : ObservableObject
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private bool _isFaceFlipping;
     [ObservableProperty] private string? _message;
+    private bool _isReloadCameraSetup;
 
     public bool IsWelcome => Stage == GameScreenStage.Welcome;
     public bool IsSettings => Stage == GameScreenStage.Settings;
     public bool IsCharacterSelection => Stage == GameScreenStage.CharacterSelection;
     public bool IsCameraSetup => Stage == GameScreenStage.CameraSetup;
+    public bool IsReloadCameraSetup => IsCameraSetup && _isReloadCameraSetup;
+    public bool IsNewGameCameraSetup => IsCameraSetup && !_isReloadCameraSetup;
+    public string CameraSetupTitle => _isReloadCameraSetup ? "Reconnect the board" : "Before we begin";
+    public string CameraSetupHelp => _isReloadCameraSetup
+        ? "Choose the webcam showing the whole board. Keep all four corners visible."
+        : "Position the board game and camera so the entire board is visible";
+    public string CameraSetupActionLabel => _isReloadCameraSetup ? "RELOAD GAME" : "PLAY!";
+    public string CameraSetupNoCameraStatus => _isReloadCameraSetup
+        ? "Please connect the webcam showing the board. This screen will find it automatically."
+        : _main.Camera.Status;
+    public bool ShowSetupMarkerInstruction => IsNewGameCameraSetup && !_main.Camera.CanStartGameWithBoard;
+    public bool CanContinueCameraSetup => !IsBusy && (IsReloadCameraSetup
+        ? _main.Camera.HasFreshGameBoardCorners : IsNewGameCameraSetup && _main.Camera.CanStartGameWithBoard);
     public bool IsPlaying => Stage == GameScreenStage.Playing;
     public bool IsStartSelected => WelcomeSelection == 0;
     public bool IsReloadSelected => WelcomeSelection == 1;
@@ -326,6 +354,14 @@ public sealed partial class GameScreenViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSettings));
         OnPropertyChanged(nameof(IsCharacterSelection));
         OnPropertyChanged(nameof(IsCameraSetup));
+        OnPropertyChanged(nameof(IsReloadCameraSetup));
+        OnPropertyChanged(nameof(IsNewGameCameraSetup));
+        OnPropertyChanged(nameof(CameraSetupTitle));
+        OnPropertyChanged(nameof(CameraSetupHelp));
+        OnPropertyChanged(nameof(CameraSetupActionLabel));
+        OnPropertyChanged(nameof(CameraSetupNoCameraStatus));
+        OnPropertyChanged(nameof(ShowSetupMarkerInstruction));
+        OnPropertyChanged(nameof(CanContinueCameraSetup));
         OnPropertyChanged(nameof(IsPlaying));
         Message = null;
     }
@@ -338,6 +374,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
 
     partial void OnSeatSelectionChanged(int value) => UpdateSelection();
     partial void OnIsFaceFlippingChanged(bool value) => OnPropertyChanged(nameof(CanPlay));
+    partial void OnIsBusyChanged(bool value) => OnPropertyChanged(nameof(CanContinueCameraSetup));
 
     private void UpdateSelection()
     {
@@ -345,14 +382,15 @@ public sealed partial class GameScreenViewModel : ObservableObject
         OnPropertyChanged(nameof(IsPlaySelected));
     }
 
-    public void ShowPlaying()
+    public void ShowPlaying(bool reconnectCamera = false)
     {
         Stage = GameScreenStage.Playing;
-        _main.Camera.RequestGameTablePreview();
+        _main.Camera.RequestGameTablePreview(reconnectCamera);
     }
 
     public void ShowWelcome()
     {
+        _isReloadCameraSetup = false;
         Stage = GameScreenStage.Welcome;
         WelcomeSelection = 0;
         SeatSelection = -1;
@@ -455,18 +493,12 @@ public sealed partial class GameScreenViewModel : ObservableObject
         _main.Setup.StartingSeatIndex = 0;
     }
 
-    private async Task ReloadPreviousAsync()
+    private Task ReloadPreviousAsync()
     {
-        if (!HasPreviousGame) return;
-        IsBusy = true;
-        try
-        {
-            _main.Setup.SelectedSavedSession = _main.Setup.SavedSessions[0];
-            await _main.ResumeMatchAsync();
-            if (Stage != GameScreenStage.Playing)
-                Message = _main.Setup.SavedMatchMessage ?? "The previous game could not be opened.";
-        }
-        finally { IsBusy = false; }
+        if (!HasPreviousGame) return Task.CompletedTask;
+        _isReloadCameraSetup = true;
+        Stage = GameScreenStage.CameraSetup;
+        return Task.CompletedTask;
     }
 
     private void OpenCameraSetup()
@@ -477,6 +509,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
             Message = $"Choose at least {_main.Setup.MinPlayers} characters to play.";
             return;
         }
+        _isReloadCameraSetup = false;
         Stage = GameScreenStage.CameraSetup;
     }
 
@@ -496,6 +529,11 @@ public sealed partial class GameScreenViewModel : ObservableObject
     public void CancelCameraSetup()
     {
         if (!IsCameraSetup || IsBusy) return;
+        if (IsReloadCameraSetup)
+        {
+            ShowWelcome();
+            return;
+        }
         SelectSeat(-1);
         Stage = GameScreenStage.CharacterSelection;
     }
@@ -503,6 +541,20 @@ public sealed partial class GameScreenViewModel : ObservableObject
     public async Task ConfirmCameraSetupAndPlayAsync()
     {
         if (!IsCameraSetup || IsBusy) return;
+        if (IsReloadCameraSetup)
+        {
+            if (!_main.Camera.HasFreshGameBoardCorners || !HasPreviousGame) return;
+            IsBusy = true;
+            try
+            {
+                _main.Setup.SelectedSavedSession = _main.Setup.SavedSessions[0];
+                await _main.ResumeMatchAsync();
+                if (Stage != GameScreenStage.Playing)
+                    Message = _main.Setup.SavedMatchMessage ?? "The previous game could not be opened.";
+            }
+            finally { IsBusy = false; }
+            return;
+        }
         _main.Setup.ManualVerificationAccepted = true;
         await StartMatchAsync();
     }

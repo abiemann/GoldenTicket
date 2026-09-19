@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -108,6 +109,35 @@ internal static partial class Program
                 if (markers.Items.Count != 0 || IsElementShown(markers))
                     throw new InvalidOperationException("The board must not retain stale targets after placement clears.");
             }, [(1280, 800)]);
+
+            // A missing train on a saved route uses the same shiny cue, with the saved lane's
+            // measured slot rather than an unrelated new-claim position.
+            var savedRoute = manifest.Routes.Single(route => route.RouteId.Value == "dallas--houston--a");
+            var setSavedTarget = typeof(MainViewModel).GetMethod("SetSavedBoardRestoreTarget",
+                BindingFlags.Instance | BindingFlags.NonPublic)!;
+            setSavedTarget.Invoke(model, [(savedRoute.RouteId, savedRoute.Length)]);
+            if (!PlacementBoardOverlay.TryGetTargets(manifest, savedRoute.RouteId,
+                    savedRoute.Length, out var savedSlots) || !model.Game.ShowPlacementTarget ||
+                model.Game.PlacementTargets.Count != savedRoute.Length)
+                throw new InvalidOperationException("A saved missing train must show its route cue.");
+            await RenderSizes("game-saved-train-target", () => new GameTableView { DataContext = model }, view =>
+            {
+                var markers = (ItemsControl)view.FindName("PlacementTargetMarkers");
+                var board = (Image)view.FindName("LiveBoardImage");
+                var marker = (ContentPresenter)markers.ItemContainerGenerator.ContainerFromIndex(0);
+                var pulse = FindNamedDescendant<Ellipse>(marker, "PlacementPulseRing");
+                var center = marker.TranslatePoint(new Point(marker.ActualWidth / 2,
+                    marker.ActualHeight / 2), board);
+                var expected = new Point(savedSlots[0].X / 960 * board.ActualWidth,
+                    savedSlots[0].Y / 600 * board.ActualHeight);
+                if (!IsElementShown(markers) || markers.Items.Count != 1 ||
+                    pulse is null || !IsElementShown(pulse) ||
+                    Math.Abs(center.X - expected.X) > 3 || Math.Abs(center.Y - expected.Y) > 3)
+                    throw new InvalidOperationException("The saved train cue missed its measured lane.");
+            }, [(1000, 620), (1280, 800)]);
+            setSavedTarget.Invoke(model, [null]);
+            if (model.Game.ShowPlacementTarget)
+                throw new InvalidOperationException("The saved train cue must clear when verification advances.");
 
             model.Table.Placement = placement;
             model.Table.WholeBoardAcknowledged = true;

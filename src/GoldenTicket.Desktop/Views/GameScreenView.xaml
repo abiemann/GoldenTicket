@@ -117,6 +117,100 @@
             </Style.Triggers>
         </Style>
 
+        <Style x:Key="GameCameraPickerItem" TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="#FFF8EEDC" />
+            <Setter Property="Padding" Value="12,9" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="ItemFrame" Background="Transparent" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter ContentSource="Content" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemFrame" Property="Background" Value="#663D3027" />
+                                <Setter Property="Foreground" Value="#FFFFD576" />
+                            </Trigger>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="ItemFrame" Property="Background" Value="#EC522D26" />
+                                <Setter Property="Foreground" Value="#FFFFE7B0" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="GameCameraPicker" TargetType="ComboBox">
+            <Setter Property="Background" Value="#DB17212C" />
+            <Setter Property="Foreground" Value="#FFF8EEDC" />
+            <Setter Property="BorderBrush" Value="#99DFB75C" />
+            <Setter Property="BorderThickness" Value="2" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="ItemContainerStyle" Value="{StaticResource GameCameraPickerItem}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <Border x:Name="PickerFrame" Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
+                                <Grid>
+                                    <ContentPresenter Content="{TemplateBinding SelectionBoxItem}"
+                                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                      ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                                      VerticalAlignment="Center" Margin="13,0,38,0"
+                                                      IsHitTestVisible="False" />
+                                    <Path Data="M 0,0 L 6,6 L 12,0" Stroke="#FFFFD576" StrokeThickness="2"
+                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                          HorizontalAlignment="Right" VerticalAlignment="Center"
+                                          Margin="0,0,15,0" IsHitTestVisible="False" />
+                                </Grid>
+                            </Border>
+                            <ToggleButton Focusable="False" ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="Transparent" />
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup" Placement="Bottom"
+                                   PlacementTarget="{Binding ElementName=PickerFrame}"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True" StaysOpen="False" PopupAnimation="Slide">
+                                <Border Background="#F21B2733" BorderBrush="#FFD6AD5C"
+                                        BorderThickness="2" CornerRadius="8" Padding="3"
+                                        Width="{Binding ActualWidth, ElementName=PickerFrame}">
+                                    <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto"
+                                                  CanContentScroll="True">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="PickerFrame" Property="BorderBrush" Value="#FFFFD576" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="PickerFrame" Property="BorderBrush" Value="#FFFFD576" />
+                            </Trigger>
+                            <Trigger Property="IsDropDownOpen" Value="True">
+                                <Setter TargetName="PickerFrame" Property="Background" Value="#EC522D26" />
+                                <Setter TargetName="PickerFrame" Property="BorderBrush" Value="#FFFFD576" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="PickerFrame" Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="PhoneShortcutButton" TargetType="Button" BasedOn="{StaticResource GameChoiceButton}">
             <Setter Property="Visibility" Value="Collapsed" />
             <Style.Triggers>
@@ -328,17 +422,30 @@
             <Border x:Name="CameraSetupDialog" Width="880" Padding="24" CornerRadius="12"
                     Background="#EA151E29" BorderBrush="#FFD6AD5C" BorderThickness="1">
                 <StackPanel HorizontalAlignment="Center">
-                    <TextBlock Text="Before we begin" Foreground="#FFFFE7B0" FontSize="30"
+                    <TextBlock Text="{Binding Game.CameraSetupTitle}" Foreground="#FFFFE7B0" FontSize="30"
                                FontWeight="SemiBold" HorizontalAlignment="Center" />
                     <TextBlock x:Name="CameraSetupHelp"
-                               Text="Position the board game and camera so the entire board is visible"
+                               Text="{Binding Game.CameraSetupHelp}"
                                Foreground="#FFF8EEDC" FontSize="19" TextAlignment="Center"
                                Margin="0,12,0,6" />
                     <TextBlock x:Name="CameraSetupMarkerInstruction"
                                Text="Place scoring markers on or near the 1"
                                Foreground="#FFF8EEDC" FontSize="16" TextAlignment="Center"
-                               Margin="0,0,0,16"
-                               Visibility="{Binding Camera.CanStartGameWithBoard, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}" />
+                               Margin="0,0,0,8"
+                               Visibility="{Binding Game.ShowSetupMarkerInstruction, Converter={StaticResource BoolToVisibility}}" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,12">
+                        <TextBlock Text="Webcam" Foreground="#FFF8EEDC" FontSize="16"
+                                   VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <ComboBox x:Name="CameraSetupDevicePicker" Width="470" Height="38"
+                                  Style="{StaticResource GameCameraPicker}"
+                                  ItemsSource="{Binding Camera.Devices}"
+                                  SelectedItem="{Binding Camera.SelectedDevice, Mode=TwoWay}"
+                                  DisplayMemberPath="Name" SelectionChanged="CameraSetupDevicePicker_SelectionChanged"
+                                  AutomationProperties.Name="Board webcam" />
+                        <Button Content="Refresh" Style="{StaticResource GameSetupActionButton}"
+                                Width="105" Height="38" Padding="4" FontSize="15" Margin="10,0,0,0"
+                                Click="RetryCamera_Click" AutomationProperties.Name="Refresh webcams" />
+                    </StackPanel>
                     <Border x:Name="CameraSetupPreviewFrame" Width="800" Height="440" CornerRadius="8"
                             Background="#0E141B" BorderBrush="#99DFB75C" BorderThickness="2"
                             ClipToBounds="True">
@@ -357,7 +464,7 @@
                             </Border>
                             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="660"
                                         Visibility="{Binding Camera.IsRunning, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
-                                <TextBlock Text="{Binding Camera.Status}" Foreground="#FFF8EEDC" FontSize="19"
+                                <TextBlock Text="{Binding Game.CameraSetupNoCameraStatus}" Foreground="#FFF8EEDC" FontSize="19"
                                            TextWrapping="Wrap" TextAlignment="Center" />
                                 <TextBlock Text="{Binding Camera.Problem}" Foreground="#FFFFD576" FontSize="15"
                                            TextWrapping="Wrap" TextAlignment="Center" Margin="0,8,0,0"
@@ -372,9 +479,9 @@
                         <Button x:Name="ConfirmationCancelButton" Content="CANCEL"
                                 Style="{StaticResource GameSetupActionButton}" Width="180" Height="56"
                                 FontSize="20" Margin="0,0,16,0" Click="CancelCameraSetup_Click" />
-                        <Button x:Name="ConfirmationPlayButton" Content="PLAY!"
+                        <Button x:Name="ConfirmationPlayButton" Content="{Binding Game.CameraSetupActionLabel}"
                                 Style="{StaticResource GameSetupActionButton}" Width="235" Height="56"
-                                FontSize="22" FontWeight="Bold" IsEnabled="{Binding Camera.CanStartGameWithBoard}"
+                                FontSize="22" FontWeight="Bold" IsEnabled="{Binding Game.CanContinueCameraSetup}"
                                 Click="CameraSetupPlay_Click" />
                     </StackPanel>
                     <TextBlock Text="{Binding Game.Message}" Foreground="#FFFFD576"

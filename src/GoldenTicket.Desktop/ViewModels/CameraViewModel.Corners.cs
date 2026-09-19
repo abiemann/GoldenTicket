@@ -15,6 +15,7 @@ public sealed partial class CameraViewModel
     private (long Epoch, int Width, int Height)? _autoCornerCapture;
     private long _cornerOperationRevision;
     private bool _gameBoardFramingActive;
+    private bool _reloadBoardFraming;
     private long _gameBoardFramingRevision;
     private DateTimeOffset _lastGameBoardCheckAt = DateTimeOffset.MinValue;
     private DateTimeOffset _gameBoardAcceptedAt = DateTimeOffset.MinValue;
@@ -65,8 +66,21 @@ public sealed partial class CameraViewModel
     {
         EndGameTablePreview();
         _gameBoardFramingActive = true;
+        _reloadBoardFraming = false;
         _gameBoardFramingRevision++;
         _gameSetupColors = selectedColors?.Distinct().ToArray() ?? [];
+        _lastGameBoardCheckAt = DateTimeOffset.MinValue;
+        _firstGameBoardMiss = null;
+        ClearGameBoardFraming();
+        GameBoardFramingStatus = "Checking the live image for all four board corners…";
+    }
+
+    public void BeginReloadBoardFraming()
+    {
+        EndGameTablePreview();
+        _gameBoardFramingActive = true;
+        _reloadBoardFraming = true;
+        _gameBoardFramingRevision++;
         _lastGameBoardCheckAt = DateTimeOffset.MinValue;
         _firstGameBoardMiss = null;
         ClearGameBoardFraming();
@@ -76,6 +90,7 @@ public sealed partial class CameraViewModel
     public void EndGameBoardFraming()
     {
         _gameBoardFramingActive = false;
+        _reloadBoardFraming = false;
         _gameBoardFramingRevision++;
         _firstGameBoardMiss = null;
         _gameSetupColors = [];
@@ -245,6 +260,11 @@ public sealed partial class CameraViewModel
                 _gameBoardCapture = (current.Epoch, current.Width, current.Height);
                 _gameBoardAcceptedAt = DateTimeOffset.UtcNow;
                 GameBoardCorners = result.Corners.ToArray();
+                if (_reloadBoardFraming)
+                {
+                    GameBoardFramingStatus = "All four board corners are visible. You can reload the saved game.";
+                    return;
+                }
                 if (GameBoardFramingStatus.StartsWith("Checking the live image", StringComparison.Ordinal) ||
                     GameBoardFramingStatus.StartsWith("The live board view changed", StringComparison.Ordinal))
                     GameBoardFramingStatus = "Checking for trains and scoring markers…";

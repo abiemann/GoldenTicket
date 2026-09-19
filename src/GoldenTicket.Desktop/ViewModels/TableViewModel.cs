@@ -362,7 +362,7 @@ public sealed partial class TableViewModel : ObservableObject
         _ when view.Lifecycle == SessionLifecycle.PreparingPackAway =>
             "Saving the current position. Wait for the completed save before removing any trains.",
         _ when view.Lifecycle == SessionLifecycle.PackedAway =>
-            "This match is packed away. Use the saved-position rebuild workflow to continue.",
+            "Checking the saved scoring markers and trains before play continues.",
         _ when view.Lifecycle == SessionLifecycle.Rebuilding =>
             "Rebuild the saved target, including empty lanes, before resuming play.",
         TurnPhase.RulesDecisionRequired =>

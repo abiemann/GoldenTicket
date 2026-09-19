@@ -22,11 +22,18 @@ public sealed record CameraPhoto(byte[] PngBytes, long FrameSequence, long Camer
 public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
 {
     private readonly DispatcherTimer _previewTimer;
+    private readonly DispatcherTimer _gameTableCameraRetryTimer;
+    private readonly Func<CancellationToken, Task<IReadOnlyList<CameraDevice>>> _enumerateDevices;
+    private readonly Func<CameraDevice, CameraCapturePreference, CancellationToken, Task> _startCapture;
     private readonly SceneReferenceMonitor _monitor = new();
     private readonly CancellationTokenSource _lifetime = new();
     private BoardRegistration? _registration;
     private BoardRegistration? _gameTableRegistration;
     private bool _gameTablePreviewRequested;
+    private bool _gameTableCameraAutoStart;
+    private bool _gameTableCameraRecoveryEnabled = true;
+    private bool _gameTableCameraRetryBusy;
+    private DateTimeOffset _gameTableCameraNoFrameSince = DateTimeOffset.MinValue;
     private long _gameTableCropRevision;
     private bool _gameTableCropBusy;
     private DateTimeOffset _lastGameTableCropAt = DateTimeOffset.MinValue;
@@ -38,7 +45,9 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     public CameraViewModel(string? processingSettingsPath = null, string? pieceModelDirectory = null,
         Func<string, bool, IPieceModelDetector>? pieceModelFactory = null,
         string? boardCornerModelDirectory = null,
-        Func<string, bool, IBoardCornerDetector>? boardCornerModelFactory = null)
+        Func<string, bool, IBoardCornerDetector>? boardCornerModelFactory = null,
+        Func<CancellationToken, Task<IReadOnlyList<CameraDevice>>>? enumerateDevices = null,
+        Func<CameraDevice, CameraCapturePreference, CancellationToken, Task>? startCapture = null)
     {
         _processingSettingsPath = processingSettingsPath;
         _pieceModelDirectory = pieceModelDirectory ?? Path.Combine(AppContext.BaseDirectory, "models", "pieces");
@@ -46,11 +55,18 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         _boardCornerModelDirectory = boardCornerModelDirectory ?? Path.Combine(AppContext.BaseDirectory, "models", "board-corners");
         _boardCornerModelFactory = boardCornerModelFactory ?? ((directory, preferGpu) => LearnedBoardCornerDetector.Load(directory, preferGpu));
         Capture = new CameraCaptureService();
+        _enumerateDevices = enumerateDevices ?? CameraCaptureService.EnumerateAsync;
+        _startCapture = startCapture ?? Capture.StartAsync;
         _previewTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
             Interval = TimeSpan.FromMilliseconds(200)
         };
         _previewTimer.Tick += PreviewTick;
+        _gameTableCameraRetryTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromSeconds(3)
+        };
+        _gameTableCameraRetryTimer.Tick += GameTableCameraRetryTick;
         SelectedPreference = Preferences.First(option => option.Value == CameraCapturePreference.Balanced1080p);
         SelectedProcessor = ProcessorModes.First(option => option.Value ==
             Services.FrameProcessingPreferences.Load(processingSettingsPath));
@@ -128,7 +144,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
             timeout.CancelAfter(TimeSpan.FromSeconds(10));
             var selectedId = SelectedDevice?.Id;
-            var devices = await CameraCaptureService.EnumerateAsync(timeout.Token);
+            var devices = await _enumerateDevices(timeout.Token);
             Devices.Clear();
             foreach (var device in devices) Devices.Add(device);
             SelectedDevice = Devices.FirstOrDefault(d => d.Id == selectedId) ?? Devices.FirstOrDefault();
@@ -136,7 +152,12 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
                 ? "No camera found. Set the Pixel USB connection to Webcam, or connect a UVC camera, then refresh."
                 : $"{Devices.Count} camera(s) found. Choose the overhead camera and start preview.";
         }
-        catch (Exception ex) { Problem = "Could not list cameras: " + ex.Message; }
+        catch (Exception ex)
+        {
+            Devices.Clear();
+            SelectedDevice = null;
+            Problem = "Could not list cameras: " + ex.Message;
+        }
         finally { IsBusy = false; }
     }
 
@@ -151,16 +172,21 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         try
         {
             InvalidateGameTablePreview();
+            if (_gameTableCameraRetryBusy)
+                GameTablePreviewStatus = "Webcam found. Starting the live board view…";
             ClearRegistration();
             await InitializeProcessingAsync();
-            await Capture.StartAsync(SelectedDevice, SelectedPreference.Value, _lifetime.Token);
+            await _startCapture(SelectedDevice, SelectedPreference.Value, _lifetime.Token);
             IsRunning = true;
+            _gameTableCameraNoFrameSince = DateTimeOffset.MinValue;
             FormatText = Capture.NegotiatedFormat?.ToString() ?? "Waiting for first frame";
             AvailableFormats.Clear();
             foreach (var format in Capture.AvailableFormats) AvailableFormats.Add(format.ToString());
             Status = "Live preview. Keep the whole board visible and clear your hands. ML will select its four corners.";
             _previewSequence = -1;
             _previewTimer.Start();
+            if (_gameTablePreviewRequested)
+                GameTablePreviewStatus = "Waiting for the webcam image…";
         }
         catch (Exception ex)
         {
@@ -170,6 +196,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             BoardPreview = null;
             Problem = ex.Message;
             Status = "Camera could not start. The game state has not changed.";
+            if (_gameTablePreviewRequested)
+                GameTablePreviewStatus = "Could not start the webcam. Check its connection; the game will keep trying.";
         }
         finally { IsBusy = false; }
     }
@@ -215,8 +243,11 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             if (_gameTableRegistration is not null)
             {
                 GameTablePreview = null;
-                GameTablePreviewStatus = "Camera unavailable. Reconnect it and check the board framing.";
             }
+            if (_gameTablePreviewRequested)
+                GameTablePreviewStatus = Capture.IsRunning
+                    ? "Waiting for the webcam image…"
+                    : GameTableCameraConnectionMessage;
             ExpireGameBoardFraming(null);
             ClearDetectionPreview();
             _monitor.MarkStale();
@@ -540,6 +571,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         });
         ClearGameTableAnalysis();
         _gameTablePreviewRequested = true;
+        _gameTableCameraNoFrameSince = DateTimeOffset.MinValue;
         var orientation = _gameBoardOrientationIndex ?? 0;
         var padded = BoardCropPadding.Expand(frame, GameBoardCorners);
         var corners = GameBoardOrientations.Enumerate(padded.Corners)[orientation];
@@ -564,9 +596,21 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     }
 
     /// <summary>Used for restored games: an accepted technical crop can rejoin this table later.</summary>
-    public void RequestGameTablePreview()
+    public void RequestGameTablePreview(bool reconnectCamera = false)
     {
         _gameTablePreviewRequested = true;
+        // A restored game may open with no camera attached. An already-running play camera
+        // should also recover if its stream is disconnected later.
+        _gameTableCameraAutoStart = reconnectCamera || Capture.IsRunning;
+        if (_gameTableCameraAutoStart) _gameTableCameraRetryTimer.Start();
+        if (!Capture.IsRunning)
+        {
+            GameTablePreviewStatus = _gameTableCameraAutoStart
+                ? GameTableCameraConnectionMessage
+                : "Open Camera in the utility screens to find the board again.";
+            if (_gameTableCameraAutoStart) _ = RetryGameTableCameraAsync();
+            return;
+        }
         if (_gameTableRegistration is not null) return;
         if (_registration is { } registration && Capture.LatestFrame is { } frame && registration.Matches(frame))
             AdoptTechnicalBoardCrop(frame, registration);
@@ -582,9 +626,70 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     public void EndGameTablePreview()
     {
         _gameTablePreviewRequested = false;
+        _gameTableCameraAutoStart = false;
+        _gameTableCameraNoFrameSince = DateTimeOffset.MinValue;
+        _gameTableCameraRetryTimer.Stop();
         _gameTableReference = null;
         _gameTableReferencePhoto = null;
         InvalidateGameTablePreview();
+    }
+
+    private const string GameTableCameraConnectionMessage =
+        "Please connect a webcam. The game will find it and check the board automatically.";
+
+    public void SetGameTableCameraRecoveryEnabled(bool enabled)
+    {
+        _gameTableCameraRecoveryEnabled = enabled;
+        if (enabled && _gameTablePreviewRequested && _gameTableCameraAutoStart && !Capture.IsRunning)
+            _ = RetryGameTableCameraAsync();
+    }
+
+    private async void GameTableCameraRetryTick(object? sender, EventArgs args) =>
+        await RetryGameTableCameraAsync();
+
+    private async Task RetryGameTableCameraAsync()
+    {
+        if (!_gameTablePreviewRequested || !_gameTableCameraAutoStart || !_gameTableCameraRecoveryEnabled || _disposed ||
+            _gameTableCameraRetryBusy || IsBusy) return;
+        _gameTableCameraRetryBusy = true;
+        try
+        {
+            if (Capture.IsRunning)
+            {
+                if (Capture.LatestFrame is { } frame && frame.Age <= TimeSpan.FromSeconds(2))
+                {
+                    _gameTableCameraNoFrameSince = DateTimeOffset.MinValue;
+                    return;
+                }
+                if (_gameTableCameraNoFrameSince == DateTimeOffset.MinValue)
+                {
+                    _gameTableCameraNoFrameSince = DateTimeOffset.UtcNow;
+                    return;
+                }
+                if (DateTimeOffset.UtcNow - _gameTableCameraNoFrameSince < TimeSpan.FromSeconds(12)) return;
+                _gameTableCameraNoFrameSince = DateTimeOffset.MinValue;
+                await StopAsync();
+                if (!_gameTablePreviewRequested || !_gameTableCameraRecoveryEnabled || _disposed ||
+                    Capture.IsRunning) return;
+            }
+            GameTablePreviewStatus = GameTableCameraConnectionMessage;
+            await RefreshDevicesAsync();
+            if (!_gameTablePreviewRequested || !_gameTableCameraRecoveryEnabled || _disposed ||
+                Capture.IsRunning) return;
+            if (SelectedDevice is null) return;
+            GameTablePreviewStatus = "Webcam found. Starting the live board view…";
+            await StartAsync();
+            if ((!_gameTablePreviewRequested || !_gameTableCameraRecoveryEnabled) && IsRunning)
+                await StopAsync();
+        }
+        catch (Exception ex)
+        {
+            // Discovery and startup normally report their own errors. Keep retrying if a device
+            // disappears between enumeration and opening its stream.
+            Problem = "Could not reconnect the webcam: " + ex.Message;
+            GameTablePreviewStatus = GameTableCameraConnectionMessage;
+        }
+        finally { _gameTableCameraRetryBusy = false; }
     }
 
     private void InvalidateGameTablePreview()
@@ -715,6 +820,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         _lifetime.Cancel();
         _previewTimer.Stop();
         _previewTimer.Tick -= PreviewTick;
+        _gameTableCameraRetryTimer.Stop();
+        _gameTableCameraRetryTimer.Tick -= GameTableCameraRetryTick;
         try { await Capture.DisposeAsync(); }
         finally
         {

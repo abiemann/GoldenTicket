@@ -98,9 +98,10 @@ This build implements the core game plus initial phone, camera and photo workflo
   state fingerprint. Game saves are not encrypted; saves written in the former encrypted format
   are no longer supported and may be deleted before starting a new game.
 - Save and pack away: the game suspends mid-turn, writes a named checkpoint, reads it back and only
-  then says the pieces may be cleared away. Reopening shows the saved position route by route with
-  per-seat stock guidance, takes the operator's whole-board confirmation, and resumes the exact
-  suspended action once. Packing away and rebuilding provably change nothing about the game.
+  then says the pieces may be cleared away. On reload, the game checks each saved scoring marker
+  in turn, then verifies every saved train position and color across fresh camera frames before
+  resuming the exact suspended action. A previously checked marker that moves must be verified
+  again. The saved route list and per-seat stock remain available for manual reconstruction.
 - During play, **Escape** opens **Save Game**, **Quit to Menu**, and **Return to Game**. Save Game
   compares every visible train position and color with the claimed routes across fresh camera
   frames, writes and reads back the digital checkpoint, captures an unprocessed board photo with
@@ -292,7 +293,9 @@ dotnet run --project tools/GoldenTicket.Simulator -- simulate --games 20 --seats
 ## Playing a match
 
 The app opens on the game screen. Choose **Start a new game** with ↑/↓ and Enter, or hover and
-click. When saved matches exist, **Reload the previous game** opens the most recently updated one.
+click. When saved matches exist, **Reload the previous game** first opens the live camera
+setup screen. Choose the webcam that shows the physical board and keep all four corners
+visible, then choose **RELOAD GAME** to restore the most recently updated match.
 The **Settings** button beneath these choices opens display mode, camera quality, processor,
 and preview options. **OK** applies a changed processor choice and returns to the game menu.
 Display mode defaults to a resizable window; **Full screen** hides the title bar,
@@ -302,6 +305,14 @@ The main screen currently reloads the most recent save. Selecting a different sa
 only on the engineering-only **Saved matches** screen. A single saved match is checked
 automatically there. Check the physical board before play resumes. Named saves show their name,
 date, turn, status and players; **Packed away** is a status, not the save's name.
+If a webcam is missing, the camera setup screen asks you to connect it and keeps looking.
+Its webcam list lets you switch cameras when more than one is connected. This reload check
+only requires a clear view of all four board corners: existing trains and scoring markers
+stay in place. After the match loads, the live board view checks its orientation against
+the saved photo. The game then prompts for each scoring marker at its saved number and checks
+the saved train positions and colors. It stays on the game table and resumes automatically only
+when the whole board matches. When a saved train is missing or has the wrong color, a pulsing
+yellow marker shows its exact route space. A missed or uncertain camera reading pauses the check.
 
 1. Put the board and the plastic trains on the table. **Leave the physical cards and destination
    tickets in the box** — the application deals and holds every card, for every seat.

@@ -2,6 +2,8 @@ using GoldenTicket.Application;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain;
 using GoldenTicket.Domain.Manifest;
+using GoldenTicket.Vision;
+using System.Reflection;
 
 namespace GoldenTicket.Domain.Tests;
 
@@ -201,7 +203,7 @@ public sealed class DesktopGameScreenTests
     }
 
     [Fact]
-    public async Task PreviousGameAppearsAfterSaveAndReloadsItsExistingSession()
+    public async Task PreviousGameOpensCameraPhaseBeforeRestoringItsSession()
     {
         var store = new InMemorySessionStore();
         var first = NewModel(store);
@@ -215,6 +217,42 @@ public sealed class DesktopGameScreenTests
 
             second.Game.SelectWelcome(1);
             await second.Game.ActivateSelectedAsync();
+            Assert.Equal(GameScreenStage.CameraSetup, second.Game.Stage);
+            Assert.True(second.Game.IsReloadCameraSetup);
+            Assert.False(second.Game.IsNewGameCameraSetup);
+            Assert.Equal("RELOAD GAME", second.Game.CameraSetupActionLabel);
+            Assert.False(second.Game.CanContinueCameraSetup);
+            Assert.False(second.NeedsBoardReconciliation);
+
+            await second.Game.ConfirmCameraSetupAndPlayAsync();
+            Assert.Equal(GameScreenStage.CameraSetup, second.Game.Stage);
+            Assert.False(second.NeedsBoardReconciliation);
+            second.Game.CancelCameraSetup();
+            Assert.Equal(GameScreenStage.Welcome, second.Game.Stage);
+
+            second.Game.SelectWelcome(1);
+            await second.Game.ActivateSelectedAsync();
+            var camera = second.Camera;
+            var capture = camera.Capture;
+            var captureType = typeof(CameraCaptureService);
+            var cameraType = typeof(CameraViewModel);
+            var pixels = new byte[320 * 180 * 4];
+            var frame = CameraFrame.CopyFromBgra32(320, 180, pixels, 1, 1);
+            captureType.GetField("_epoch", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(capture, 1L);
+            captureType.GetField("_running", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(capture, true);
+            captureType.GetField("_latest", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(capture, frame);
+            camera.IsRunning = true;
+            camera.BeginReloadBoardFraming();
+            cameraType.GetField("_gameBoardCapture", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(camera, (1L, 320, 180));
+            cameraType.GetField("_gameBoardAcceptedAt", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(camera, DateTimeOffset.UtcNow);
+            cameraType.GetProperty(nameof(CameraViewModel.GameBoardCorners))!.GetSetMethod(true)!
+                .Invoke(camera, [new NormalizedPoint[]
+                { new(.1, .1), new(.9, .1), new(.9, .9), new(.1, .9) }]);
+            Assert.True(second.Game.CanContinueCameraSetup);
+
+            await second.Game.ConfirmCameraSetupAndPlayAsync();
             Assert.Equal(GameScreenStage.Playing, second.Game.Stage);
             Assert.True(second.NeedsBoardReconciliation);
         }

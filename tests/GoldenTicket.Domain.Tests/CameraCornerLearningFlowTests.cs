@@ -12,6 +12,23 @@ public sealed class CameraCornerLearningFlowTests
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     [Fact]
+    public async Task Reload_camera_phase_accepts_corners_without_new_game_piece_rules()
+    {
+        await using var fixture = new Fixture();
+        fixture.Camera.BeginReloadBoardFraming();
+
+        await fixture.CheckGameBoardAsync();
+
+        Assert.True(fixture.Camera.HasFreshGameBoardCorners);
+        Assert.False(fixture.Camera.CanStartGameWithBoard);
+        Assert.Contains("You can reload", fixture.Camera.GameBoardFramingStatus);
+        Assert.False(fixture.Camera.HasBoardCrop);
+
+        fixture.Camera.EndGameBoardFraming();
+        Assert.False(fixture.Camera.HasFreshGameBoardCorners);
+    }
+
+    [Fact]
     public async Task Game_setup_keeps_success_through_one_miss_then_warns_after_a_second_miss()
     {
         await using var fixture = new Fixture();
