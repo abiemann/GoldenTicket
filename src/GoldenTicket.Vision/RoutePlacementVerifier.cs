@@ -218,21 +218,24 @@ public sealed class RoutePlacementVerifier
             votes[ClassifyColor(pixels[offset + 2], pixels[offset + 1], pixels[offset])]++;
             samples++;
         }
-        var best = 0;
-        var second = 0;
-        for (var index = 1; index <= 5; index++)
+        // Neutral highlights reduce total support, but are not a competing piece color.
+        // Rank only physical colors, retaining the support floor over all samples below.
+        var best = 1;
+        var second = 2;
+        if (votes[second] > votes[best]) (best, second) = (second, best);
+        for (var index = 3; index <= 5; index++)
         {
             if (votes[index] > votes[best])
             {
                 second = best;
                 best = index;
             }
-            else if (votes[index] > votes[second] && index != best)
+            else if (votes[index] > votes[second])
             {
                 second = index;
             }
         }
-        if (best == 0 || votes[best] < samples * .55 || votes[best] - votes[second] < samples * .35)
+        if (votes[best] < samples * .55 || votes[best] - votes[second] < samples * .35)
             return null;
         return (MarkerColor)(best - 1);
     }

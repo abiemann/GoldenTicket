@@ -75,6 +75,10 @@ See the
   open. See the [canonical alignment check](docs/evidence/canonical-alignment-2026-09-19/validation.md).
 - [x] Recover shifted corner estimates after refocusing within the existing correction bounds,
   and retain the earlier registration when fresh artwork confirms it fits better.
+- [x] Treat neutral train highlights as reduced color support, rather than a competing player
+  color. The supplied Calgary–Helena screenshot reproduces one rejected black train despite
+  all four detections being within their spaces. Preserve the total-support and competing-color
+  thresholds; broader live-camera validation remains open.
 - [ ] Persist the physical scoring-marker move gate across app restart; resume currently requires
   board reconciliation, but it does not restore the in-memory post-claim marker instruction.
 - [ ] Validate score-piece color and printed-1 acceptance with the real overhead camera for all

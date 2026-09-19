@@ -83,7 +83,9 @@ This build implements the core game plus initial phone, camera and photo workflo
   100 routes. One pulsing yellow cue appears on each requested space. Two fresh camera observations
   must identify a separate train of the player's color in every requested space before one atomic
   commit spends the cards, records ownership, scores and ends the turn. Adjacent parallel lanes are
-  checked separately. This geometry and automated tests still need live-camera accuracy validation.
+  checked separately. Train-color checks tolerate neutral highlights when a physical color still
+  has sufficient support and clearly leads the other piece colors. This geometry and automated
+  tests still need live-camera accuracy validation.
   Each normal app launch starts a fresh local board-decision log at
   `%LOCALAPPDATA%\GoldenTicket\diagnostics\board-interactions.jsonl`. It records camera and model
   availability, detected candidate positions and confidence near the requested route, color and

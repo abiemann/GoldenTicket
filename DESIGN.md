@@ -2123,7 +2123,11 @@ sidecars with SHA-256 checksums for `LogicalStateOnly` checkpoints, not `Verifie
 The local learned piece model supplies train candidates to a measured automatic claim check for
 all 100 classic-US routes and 309 printed train spaces. One pulsing cue marks each requested space.
 Two fresh upright observations must identify a separate train of the requested player color in
-every space of the correct lane. A durable camera-evidence event precedes the claim commit. The
+every space of the correct lane. Train-color sampling requires at least 55% of all samples to
+support one physical color and a 35% sample-count lead over the next physical color. Neutral
+samples count against total support but do not compete as a sixth player color, allowing modest
+highlights on black trains such as those in the Calgary–Helena screenshot replay.
+A durable camera-evidence event precedes the claim commit. The
 table then shows “Thank you” for three seconds and asks for the scoring marker to move; two fresh
 readings of its new printed position release the next turn. The slot map has visual and synthetic
 test coverage, but live-camera accuracy across routes and rotations remains unmeasured. Full-board
