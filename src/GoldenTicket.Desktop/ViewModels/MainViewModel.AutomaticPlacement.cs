@@ -32,6 +32,7 @@ public sealed partial class MainViewModel
 
     private void ResetAutomaticPhysicalFlow()
     {
+        IsCheckingResumedGame = false;
         IsResumeTurnAnnouncementOpen = false;
         ResumeTurnAnnouncementText = "";
         CancelSavedBoardRestore();

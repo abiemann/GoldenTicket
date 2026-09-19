@@ -26,10 +26,12 @@ public sealed class DesktopResumeTurnTests
         try
         {
             Assert.True(model.NeedsBoardReconciliation);
+            Assert.Equal("Checking...", model.Game.GuidanceSeat);
             model.BoardReconciliationAcknowledged = true;
             await model.ConfirmBoardReconciledAsync();
             var resumed = Coordinator(model);
             Assert.True(model.IsResumeTurnAnnouncementOpen);
+            Assert.Equal("Checking...", model.Game.GuidanceSeat);
             Assert.Contains(saved.Public.SeatOf(expectedSeat).DisplayName, model.ResumeTurnAnnouncementText);
             Assert.Contains($"turn {expectedTurn}", model.ResumeTurnAnnouncementText);
             Assert.Equal(expectedSeat, resumed.Public.ActiveSeatId);
@@ -44,6 +46,7 @@ public sealed class DesktopResumeTurnTests
 
             await model.AcknowledgeResumeTurnCommand.ExecuteAsync(null);
             Assert.False(model.IsResumeTurnAnnouncementOpen);
+            Assert.Equal(resumed.Public.SeatOf(resumed.Public.ActiveSeatId).DisplayName, model.Game.GuidanceSeat);
             if (computer)
                 Assert.True(resumed.Public.StateVersion > expectedVersion,
                     "Acknowledgment must let the saved computer turn continue.");
@@ -78,12 +81,14 @@ public sealed class DesktopResumeTurnTests
         var model = await ReloadAsync(store, photos);
         try
         {
+            Assert.Equal("Checking...", model.Game.GuidanceSeat);
             await model.BeginRebuildAsync();
             model.Table.RebuildAcknowledged = true;
             await model.AttestRebuildAsync();
             await model.ResumePackedGameAsync();
             var resumed = Coordinator(model);
             Assert.True(model.IsResumeTurnAnnouncementOpen);
+            Assert.Equal("Checking...", model.Game.GuidanceSeat);
             Assert.Contains("unfinished train placement", model.ResumeTurnAnnouncementText);
             Assert.Equal(expected, resumed.Public.PendingClaim);
             Assert.Equal(expected.SeatId, resumed.Public.ActiveSeatId);
@@ -97,6 +102,7 @@ public sealed class DesktopResumeTurnTests
 
             await model.AcknowledgeResumeTurnCommand.ExecuteAsync(null);
             Assert.False(model.IsResumeTurnAnnouncementOpen);
+            Assert.Equal(resumed.Public.SeatOf(expected.SeatId).DisplayName, model.Game.GuidanceSeat);
             Assert.NotNull(model.Table.Placement);
             Assert.Equal(expected, resumed.Public.PendingClaim);
             Assert.Equal(turn, resumed.Public.TurnNumber);
@@ -132,6 +138,7 @@ public sealed class DesktopResumeTurnTests
             for (var index = 0; index < 10; index++) Publish(slots[1]);
             Assert.Equal(SessionLifecycle.PackedAway, resumed.Public.Lifecycle);
             Assert.False(model.IsResumeTurnAnnouncementOpen);
+            Assert.Equal("Checking...", model.Game.GuidanceSeat);
 
             for (var index = 0; index < 12 && resumed.Public.Lifecycle != SessionLifecycle.Active; index++)
                 Publish(slots[0]);
@@ -139,6 +146,7 @@ public sealed class DesktopResumeTurnTests
                 await Task.Delay(20, TestContext.Current.CancellationToken);
             Assert.Equal(SessionLifecycle.Active, resumed.Public.Lifecycle);
             Assert.True(model.IsResumeTurnAnnouncementOpen, model.Game.GuidanceInstruction);
+            Assert.Equal("Checking...", model.Game.GuidanceSeat);
             Assert.Contains("Computer 1 goes first", model.ResumeTurnAnnouncementText);
             Assert.Equal(pending, resumed.Public.PendingClaim);
             Assert.Empty(resumed.Public.RouteOwners);
@@ -146,6 +154,7 @@ public sealed class DesktopResumeTurnTests
             Publish(slots[0]);
             Assert.Equal(version, resumed.Public.StateVersion);
             await model.AcknowledgeResumeTurnCommand.ExecuteAsync(null);
+            Assert.Equal("Computer 1", model.Game.GuidanceSeat);
             Assert.Equal(pending, resumed.Public.PendingClaim);
             Assert.Empty(resumed.Public.RouteOwners);
 
@@ -171,6 +180,7 @@ public sealed class DesktopResumeTurnTests
             model.BoardReconciliationAcknowledged = true;
             await model.ConfirmBoardReconciledAsync();
             Assert.False(model.IsResumeTurnAnnouncementOpen);
+            Assert.Equal("Player 2", model.Game.GuidanceSeat);
             Assert.Empty((await Coordinator(model).GetSeatViewAsync(new(1))).SetupOffer);
             Assert.NotEmpty((await Coordinator(model).GetSeatViewAsync(new(2))).SetupOffer);
         }

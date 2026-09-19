@@ -11,25 +11,58 @@
         <local:TrainCountTextConverter x:Key="TrainCountText" />
         <DataTemplate x:Key="SeatCardLayerTemplate">
             <Border Width="36" Height="35" Background="{Binding Fill}"
-                    BorderBrush="#FFF0D7A0" BorderThickness="1">
+                    CornerRadius="3">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="BorderBrush" Value="#FFF0D7A0" />
+                        <Setter Property="BorderThickness" Value="1" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                <Setter Property="BorderBrush" Value="#FFFFD576" />
+                                <Setter Property="BorderThickness" Value="4" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsKeyboardFocused, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                <Setter Property="BorderBrush" Value="#FFFFD576" />
+                                <Setter Property="BorderThickness" Value="4" />
+                            </DataTrigger>
+                            <!-- Only the front card carries the highlight. -->
+                            <DataTrigger Binding="{Binding Letter}" Value="">
+                                <Setter Property="BorderBrush" Value="#FFF0D7A0" />
+                                <Setter Property="BorderThickness" Value="1" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
                 <TextBlock Text="{Binding Letter}" Foreground="#FFFFE7B0" FontWeight="Bold"
                            FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Border>
         </DataTemplate>
         <Style x:Key="SoloDeckButtonStyle" TargetType="Button">
-            <Setter Property="Visibility" Value="Collapsed" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="HitArea" Background="Transparent" BorderBrush="Transparent"
-                                BorderThickness="2" CornerRadius="5" />
+                        <Grid x:Name="HitArea" Background="Transparent">
+                            <ItemsControl Width="50" Height="42" VerticalAlignment="Bottom"
+                                          ItemsSource="{TemplateBinding Content}"
+                                          ItemTemplate="{StaticResource SeatCardLayerTemplate}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemContainerStyle>
+                                    <Style TargetType="ContentPresenter">
+                                        <Setter Property="Canvas.Left" Value="{Binding Left}" />
+                                        <Setter Property="Canvas.Top" Value="{Binding Top}" />
+                                    </Style>
+                                </ItemsControl.ItemContainerStyle>
+                            </ItemsControl>
+                        </Grid>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="HitArea" Property="BorderBrush" Value="#99E1BD79" />
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="HitArea" Property="BorderBrush" Value="#FFE1BD79" />
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="HitArea" Property="Opacity" Value="0.84" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -43,7 +76,8 @@
                         <Condition Binding="{Binding DataContext.IsSoloHumanTurn, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" Value="True" />
                         <Condition Binding="{Binding DataContext.ShowSoloOpeningTicketsOnBoard, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" Value="False" />
                     </MultiDataTrigger.Conditions>
-                    <Setter Property="Visibility" Value="Visible" />
+                    <Setter Property="IsHitTestVisible" Value="True" />
+                    <Setter Property="Focusable" Value="True" />
                 </MultiDataTrigger>
             </Style.Triggers>
         </Style>
@@ -556,34 +590,6 @@
                                                HorizontalAlignment="Left" Foreground="#FFF8EEDC" FontSize="11">
                                         <Run Text="{Binding Seat.TrainsRemaining, Converter={StaticResource TrainCountText}}" />
                                     </TextBlock>
-                                    <ItemsControl Grid.Column="1" Width="50" Height="42" HorizontalAlignment="Center"
-                                                  VerticalAlignment="Bottom" Margin="0,0,0,1"
-                                                  ItemsSource="{Binding TrainCardLayers}"
-                                                  ItemTemplate="{StaticResource SeatCardLayerTemplate}">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                        <ItemsControl.ItemContainerStyle>
-                                            <Style TargetType="ContentPresenter">
-                                                <Setter Property="Canvas.Left" Value="{Binding Left}" />
-                                                <Setter Property="Canvas.Top" Value="{Binding Top}" />
-                                            </Style>
-                                        </ItemsControl.ItemContainerStyle>
-                                    </ItemsControl>
-                                    <ItemsControl Grid.Column="2" Width="50" Height="42" HorizontalAlignment="Center"
-                                                  VerticalAlignment="Bottom" Margin="0,0,0,1"
-                                                  ItemsSource="{Binding DestinationLayers}"
-                                                  ItemTemplate="{StaticResource SeatCardLayerTemplate}">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                        <ItemsControl.ItemContainerStyle>
-                                            <Style TargetType="ContentPresenter">
-                                                <Setter Property="Canvas.Left" Value="{Binding Left}" />
-                                                <Setter Property="Canvas.Top" Value="{Binding Top}" />
-                                            </Style>
-                                        </ItemsControl.ItemContainerStyle>
-                                    </ItemsControl>
                                     <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding Seat.DisplayName}"
                                                Foreground="#FFFFE7B0" FontSize="12" FontWeight="Bold"
                                                TextAlignment="Center" TextTrimming="CharacterEllipsis" />
@@ -606,12 +612,14 @@
                                     <Button Grid.Row="0" Grid.Column="1" Width="54" Height="44"
                                             HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,1"
                                             Style="{StaticResource SoloDeckButtonStyle}"
+                                            Content="{Binding TrainCardLayers}"
                                             ToolTip="Show your train cards" AutomationProperties.Name="Show your train cards"
                                             Command="{Binding DataContext.ToggleSoloTrainCardsCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
                                             CommandParameter="{Binding}" />
                                     <Button Grid.Row="0" Grid.Column="2" Width="54" Height="44"
                                             HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,1"
                                             Style="{StaticResource SoloDeckButtonStyle}"
+                                            Content="{Binding DestinationLayers}"
                                             ToolTip="Show your destinations" AutomationProperties.Name="Show your destinations"
                                             Command="{Binding DataContext.ToggleSoloDestinationsCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
                                             CommandParameter="{Binding}" />

@@ -101,8 +101,9 @@ This build implements the core game plus initial phone, camera and photo workflo
   its matching, validated board-photo attachment. Only then may the pieces be cleared away.
   On reload, the game checks each saved scoring marker
   in turn, then verifies every saved train position and color across fresh camera frames before
-  announcing whose turn resumes. A themed **OK** button releases play from that saved turn and
-  action. A previously checked marker that moves must be verified
+  announcing whose turn resumes. The game-table heading shows **Checking...** throughout these
+  checks and until the themed **OK** button is clicked, then shows the active player's name and
+  releases play from the saved turn and action. A previously checked marker that moves must be verified
   again. The saved route list and per-seat stock remain available for manual reconstruction.
 - Between running game actions, **Escape** opens **Save Game**, **Quit to Menu**, and **Return to Game**.
   The dialog stays closed while card writes or computer work are running. It can save a computer's

@@ -428,6 +428,8 @@ destination choice. Held-key repeats do not reopen the dialog or repeat the reve
 On reload, verify saved scoring markers, confirmed routes, and the saved pending slots before
 showing a game-themed dialog naming the player whose saved turn resumes. Its styled **OK** button
 releases AI work and human input; restoring the board alone does not advance play.
+The game-table seat heading reads **Checking...** during reload verification and while this dialog
+is open. Acknowledging **OK** restores the active player's name.
 
 A **Return to game** button at the top of the technical interface reverses the transition and
 brings the game layer back over the entire content area. Both layers bind to the same game
@@ -2003,6 +2005,8 @@ Later gameplay stays on
 **THE GAME TABLE** after human and computer actions, including physical scoring-marker confirmation.
 Clicking the solo human's T or D stack opens a compact read-only card panel in a free gap in that
 tile's side column; technical private controls for taking a turn are available after **Shift+Escape**.
+Hover and keyboard focus highlight only the front T or D card with the same rounded gold border
+as the draw piles, without an outer stack outline or dotted focus marks.
 The train-card preview groups the hand by card kind, including locomotives, and displays quantities
 above one in a top-left badge. This read-only grouping leaves individual cards available for payment.
 Unexpected-train guidance names a uniquely identifiable unclaimed route and the observed color/count;

@@ -9,6 +9,8 @@ public sealed partial class MainViewModel
 {
     [ObservableProperty] private bool _isResumeTurnAnnouncementOpen;
     [ObservableProperty] private string _resumeTurnAnnouncementText = "";
+    // Presentation spans verification and its acknowledgment, even after the verifier is cleared.
+    [ObservableProperty] private bool _isCheckingResumedGame;
 
     private bool IsGameInputPaused => IsGameExitMenuOpen || IsResumeTurnAnnouncementOpen;
 
@@ -16,7 +18,11 @@ public sealed partial class MainViewModel
     {
         ShowResumeTurnAnnouncement();
         if (IsResumeTurnAnnouncementOpen) await RefreshAsync();
-        else await PumpAsync();
+        else
+        {
+            IsCheckingResumedGame = false;
+            await PumpAsync();
+        }
     }
 
     partial void OnIsResumeTurnAnnouncementOpenChanged(bool value)
@@ -29,6 +35,7 @@ public sealed partial class MainViewModel
     private void ShowResumeTurnAnnouncement()
     {
         if (_coordinator?.Public is not { Lifecycle: SessionLifecycle.Active } view) return;
+        IsCheckingResumedGame = true;
         HidePrivateSeat();
         CloseSoloCardPanel();
         var seat = view.SeatOf(view.ActiveSeatId);
@@ -47,6 +54,7 @@ public sealed partial class MainViewModel
         if (!CanAcknowledgeResumeTurn()) return;
         SetOperationInProgress(true);
         IsResumeTurnAnnouncementOpen = false;
+        IsCheckingResumedGame = false;
         try { await PumpAsync(); }
         catch (Exception) { RequireReload(); }
         finally { SetOperationInProgress(false); }

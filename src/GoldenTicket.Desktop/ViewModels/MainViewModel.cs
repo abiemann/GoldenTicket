@@ -336,6 +336,8 @@ public sealed partial class MainViewModel : ObservableObject
                 if (!SavedPendingPlacementMatches(restored))
                     throw new InvalidDataException("The saved board photo does not match the unfinished placement.");
             }
+            IsCheckingResumedGame = restored.Public.Lifecycle is SessionLifecycle.Setup or
+                SessionLifecycle.Active or SessionLifecycle.PackedAway or SessionLifecycle.Rebuilding;
             _coordinator = restored;
             NotifyHumanPresentation();
             _driver = new ComputerSeatDriver(
