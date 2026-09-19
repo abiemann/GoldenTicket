@@ -88,9 +88,9 @@ public partial class GameTableView : UserControl
     private void PositionDrawPanels(bool animate)
     {
         // These coordinates leave an 18-pixel gap and center both panels as one group in
-        // the 1440-pixel scene. The outer positions reserve the bottom seat at five players.
+        // the 1440-pixel scene. Every player count leaves this space clear after setup.
         var center = _model is { ShowSoloOpeningTicketsOnBoard: false } &&
-                     _model.Table.Seats.Count is > 0 and < 5;
+                     _model.Table.Seats.Count > 0;
         MovePanel(DrawPilesPanel, center ? CenteredDrawPilesLeft : OuterDrawPilesLeft, animate);
         MovePanel(FaceUpMarketPanel, center ? CenteredFaceUpMarketLeft : OuterFaceUpMarketLeft, animate);
     }
@@ -102,10 +102,18 @@ public partial class GameTableView : UserControl
 
         Canvas.SetLeft(SoloCardPanel, Math.Clamp(station.Left, 8, TableScene.Width - SoloCardPanel.Width - 8));
         var estimatedPanelHeight = _model?.ShowSoloDestinations == true ? 188 : 132;
-        var below = station.Top + PlayerStationHeight + 6;
-        Canvas.SetTop(SoloCardPanel, below + estimatedPanelHeight <= TableScene.Height - 8
-            ? below
-            : Math.Max(8, station.Top - estimatedPanelHeight - 8));
+        var column = _model!.Game.TableSeats
+            .Where(tile => Math.Abs(tile.Left - station.Left) < SoloCardPanel.Width).ToArray();
+        // Prefer beside the owner's station, then another free gap in the same column.
+        // The third station must remain visible when the solo player opens their cards.
+        var candidates = new[] { station.Top + PlayerStationHeight + 6,
+            station.Top - estimatedPanelHeight - 8, 8d }
+            .Concat(column.Select(tile => tile.Top + PlayerStationHeight + 6));
+        var top = candidates.First(candidate => candidate >= 8 &&
+            candidate + estimatedPanelHeight <= TableScene.Height - 8 &&
+            column.All(tile => candidate + estimatedPanelHeight + 6 <= tile.Top ||
+                candidate >= tile.Top + PlayerStationHeight + 6));
+        Canvas.SetTop(SoloCardPanel, top);
     }
 
     private void OnSoloCardPanelVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)

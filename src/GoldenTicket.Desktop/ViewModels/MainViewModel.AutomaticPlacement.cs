@@ -404,7 +404,7 @@ public sealed partial class MainViewModel
                 $"Move {step.SeatName}'s {step.Color} scoring marker {step.Points} " +
                 $"{(step.Points == 1 ? "space" : "spaces")} " +
                 $"from {step.FromPrintedScore} to {step.ToPrintedScore}. " +
-                $"The camera will continue when it sees the marker on {step.ToPrintedScore}.");
+                $"The game will continue when the camera sees the marker on {step.ToPrintedScore}.");
             NotifyScoreMarkerDetectionPromptChanged();
         }
         catch (Exception error)

@@ -186,11 +186,13 @@ The public screen contains:
 - Active player name, color, symbol, and turn status.
 - A latest-action line at the foot of every player's tile, derived only from allowlisted public
   events. Consecutive train-card draws are summarized together without exposing blind card kinds.
-  The first two seats face each other; a fifth seat is centered below the board, with two on each
-  side. Each tile aligns the player name, train cards, and destinations on one row with score and
+  Seats alternate between the left and right sides of the board, starting on the left; five
+  players form a column of three on the left and two on the right, centered vertically together.
+  Private card previews use a free gap in their owner's side column. Each tile aligns the player
+  name, train cards, and destinations on one row with score and
   counts beneath; remaining trains are text above the stacks, and the action line is centered.
-  With two to four players, the draw piles and face-up train market sit centered along the
-  bottom after setup; with five, they stay at the outer edges to leave the fifth seat below the board.
+  With two to five players, the draw piles and face-up train market sit centered along the
+  bottom after setup; no player tile occupies this area.
   For one human, the T pile and face-up market submit legal train-card draws directly from the
   table; after the first draw, the hand preview can show the new card without leaving the board.
   The D pile opens an in-game destination choice below the board, with endpoint rings and lines
@@ -264,7 +266,7 @@ destinations on the upright live board. Shared cities get one ring; visible prin
 refine the ring positions. Closing the panel or switching to T removes the rings. Multiple-human
 games never show this overlay.
 
-For exactly one human, show the three opening destination tickets in a compact **Your Cards** row below the live board. Shift the board upward so it partially underlays the persistent game-table guidance, and hide the draw piles and face-up market during this opening choice. In the board's rectified canonical coordinates, draw thick rings around both endpoint cities of every offered destination, with a thin line connecting each card's pair of rings. Start from calibrated city-dot coordinates and refine each ring against the printed orange dot in the live crop when the dot is identifiable; retain the calibrated coordinate when detection is uncertain. Keep the rings in register as the window scales. On a confirmed drop, hide the rejected card and its line and rings together, retaining a ring for any endpoint shared with another kept card. Then slide the remaining **Your Cards** panel vertically down and off-screen before the existing ticket-selection command durably records the two kept destinations. A canceled drop changes nothing. Keep the live table guidance visible above the board. The unresolved opening choice has no **Back to table** action, and plain Escape does not dismiss it; the player must keep all three or confirm one drop to continue normal play. After either choice, retain the public board rather than automatically covering it with the solo private view; clicking the human's T or D stack opens a compact card preview beneath their tile. Animate the draw piles and face-up market from the outer bottom edges to centered positions for two to four players; keep the outer positions with five players to leave room for the fifth seat. Use **Your cards** on the laptop and **Back to table** instead of pass-the-device wording for later private actions. A deliberate Back to table or Escape remains respected for later private views; ordinary focus loss and idle time do not cover the solo opening choice. Shift+Escape and system privacy or recovery paths remain available, and refreshing the public state must not reopen a deliberately hidden hand. Normal board-check, pack-away and rebuild gates still apply before card actions. Derive the mode from the actual match roster, including resumed matches; setup edits affect only a future match. Hide **Connect phone** and prevent starting companion gameplay in single-human mode.
+For exactly one human, show the three opening destination tickets in a compact **Your Cards** row below the live board. Shift the board upward so it partially underlays the persistent game-table guidance, and hide the draw piles and face-up market during this opening choice. In the board's rectified canonical coordinates, draw thick rings around both endpoint cities of every offered destination, with a thin line connecting each card's pair of rings. Start from calibrated city-dot coordinates and refine each ring against the printed orange dot in the live crop when the dot is identifiable; retain the calibrated coordinate when detection is uncertain. Keep the rings in register as the window scales. On a confirmed drop, hide the rejected card and its line and rings together, retaining a ring for any endpoint shared with another kept card. Then slide the remaining **Your Cards** panel vertically down and off-screen before the existing ticket-selection command durably records the two kept destinations. A canceled drop changes nothing. Keep the live table guidance visible above the board. The unresolved opening choice has no **Back to table** action, and plain Escape does not dismiss it; the player must keep all three or confirm one drop to continue normal play. After either choice, retain the public board rather than automatically covering it with the solo private view; clicking the human's T or D stack opens a compact card preview in a free gap in their tile's side column. Animate the draw piles and face-up market from the outer bottom edges to centered positions for two to five players; all player tiles remain on the left and right sides of the board. Use **Your cards** on the laptop and **Back to table** instead of pass-the-device wording for later private actions. A deliberate Back to table or Escape remains respected for later private views; ordinary focus loss and idle time do not cover the solo opening choice. Shift+Escape and system privacy or recovery paths remain available, and refreshing the public state must not reopen a deliberately hidden hand. Normal board-check, pack-away and rebuild gates still apply before card actions. Derive the mode from the actual match roster, including resumed matches; setup edits affect only a future match. Hide **Connect phone** and prevent starting companion gameplay in single-human mode.
 
 The compact solo T/D preview is available only on the human's turn. During a computer turn, its stack targets cannot be clicked, and a preview closes as play advances.
 
@@ -449,9 +451,9 @@ verified upright crop replaces another verified crop, retain the last upright im
 than 1.5 seconds while rendering its replacement, then show black until the new image is ready.
 Uncertain orientation still blanks the board immediately and pauses piece readings.
 
-Two to five selected seats occupy positions around the board,
+Two to five selected seats occupy the left and right sides of the board,
 with their portraits, physical train colors, remaining train counts and face-down card/destination
-stacks labeled only with public counts. The public five-card market sits beside it. The whole
+stacks labeled only with public counts. The public five-card market sits below the board. The whole
 scene scales uniformly when the window changes size or is maximized. The game-table view has no
 top-left card or control buttons and no on-screen Shift+Escape hint. Shift+Escape opens the
 technical layer, whose **Game table** screen provides the private-card reveal, turn actions,
@@ -1999,12 +2001,13 @@ Single-human play now uses the laptop's card view directly for opening destinati
 opening choice has no **Back to table** action; plain Escape covers it with the save/quit dialog.
 Later gameplay stays on
 **THE GAME TABLE** after human and computer actions, including physical scoring-marker confirmation.
-Clicking the solo human's T or D stack opens a compact read-only card panel beneath the tile; the
-technical private controls for taking a turn are available after **Shift+Escape**.
+Clicking the solo human's T or D stack opens a compact read-only card panel in a free gap in that
+tile's side column; technical private controls for taking a turn are available after **Shift+Escape**.
+The train-card preview groups the hand by card kind, including locomotives, and displays quantities
+above one in a top-left badge. This read-only grouping leaves individual cards available for payment.
 On a confirmed opening drop, the rejected card and board highlight vanish together, then the
 remaining cards panel slides down. Either opening choice returns to the public table. The draw
-panels animate to the centered bottom layout for two to four players and remain at the outer edges
-with five.
+panels animate to the centered bottom layout for two to five players.
 Setup changes update the proposed mode; an active or resumed match uses its own human-seat count.
 Multiple-human games present shared-phone setup on the visible game table; companion card and
 handoff acceptance remains outstanding. The solo workflow keeps

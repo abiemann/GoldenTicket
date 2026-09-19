@@ -385,7 +385,8 @@ not a completed Save Game and does not grant permission to clear the physical bo
    at least two must be kept. There is no **Back to table** action for this choice, and plain Escape
    leaves it open. After either choice, the public board stays visible. In solo play, click the T or D
    stack in the human's tile on that human's turn to slide down small train cards or destinations
-   without leaving the table. The stacks cannot be opened during the computer's turn.
+   without leaving the table. The train-card preview shows one card per color, including locomotives,
+   with a top-left quantity badge only for duplicates. The stacks cannot be opened during the computer's turn.
    Opening the destination stack also circles the endpoint cities of the held destinations on the
    live board; closing it removes those circles. This board overlay is for one-human games only.
    On the solo human's turn, click the T draw pile or a face-up train card to take a train card.
@@ -394,17 +395,17 @@ not a completed Save Game and does not grant permission to clear the physical bo
    compact row below the board. Their city rings and connecting lines stay visible while choosing.
    The draw controls are disabled during the computer's turn.
    The computer chooses its own destinations by value and estimated route cost and may keep all three.
-   The chosen players sit around it with their matching portraits, train colors, remaining trains,
-   and face-down card and destination stacks showing public counts. The first two face each other;
-   with five players, two tiles flank each side of the board and the fifth sits centered below it
-   during normal play (the fifth moves to the free corner during solo opening selection).
+   The chosen players sit to the left and right of the board with their matching portraits, train
+   colors, remaining trains, and face-down card and destination stacks showing public counts.
+   Seats alternate left and right, starting on the left; five players form a column of three on
+   the left and two on the right, with both columns centered vertically. No player tile occupies
+   the area below the board. Private card previews use a free gap in their owner's side column.
    Each tile aligns the player name, train-card label, and destination label on one row, with their
    score and card counts directly below. Remaining trains appear as text above the card stacks,
    and the latest public action is centered along the tile's bottom edge. During opening selection, each
    unresolved three-ticket offer is included in its player's public count without revealing any
-   destination identity. With two to four players, the draw piles and five face-up train cards
-   slide into centered positions along the bottom after opening setup. With five players, they
-   remain at the outer bottom edges to leave room for the fifth player tile.
+   destination identity. For all two-to-five-player games, the draw piles and five face-up train
+   cards slide into centered positions along the bottom after opening setup.
    The complete scene scales together when the window is resized or maximized.
    Shift+Escape opens engineering-only screens for diagnostics and recovery. Their **Game table**
    screen still contains development controls. A camera restart or format change requires checking

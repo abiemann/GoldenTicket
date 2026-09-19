@@ -4,6 +4,7 @@ using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Domain.Model;
+using GoldenTicket.Domain.Randomness;
 using GoldenTicket.Persistence;
 using GoldenTicket.Vision;
 
@@ -158,7 +159,7 @@ public sealed class DesktopSingleHumanTests
             Assert.False(model.ShowSoloCardPanel);
             await model.ToggleSoloTrainCardsCommand.ExecuteAsync(human);
             Assert.True(model.ShowSoloTrainCards);
-            Assert.Equal(4, model.SoloTrainCards.Count);
+            Assert.Equal(4, model.SoloTrainCards.Sum(card => card.Count));
             Assert.True(model.ShowDestinationsWhenViewingTrainCards);
             Assert.True(model.ShowDestinationMarkersOnBoard);
             Assert.NotEmpty(model.BoardDestinationMarkers);
@@ -192,6 +193,69 @@ public sealed class DesktopSingleHumanTests
             Assert.Empty(model.BoardDestinationMarkers);
             Assert.Empty(model.BoardDestinationLines);
             Assert.False(model.ShowDestinationMarkersOnBoard);
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Fact]
+    public async Task Solo_train_preview_groups_duplicate_colors_and_refreshes_counts_after_a_draw()
+    {
+        var store = new InMemorySessionStore();
+        var model = NewSingleHumanMatch(store);
+        try
+        {
+            // This deterministic deal gives the human two pink, one white and one yellow card.
+            var game = await GameCoordinator.CreateAsync(
+                new GameRules(TestManifest.Manifest, TestManifest.Catalog), store,
+                model.Setup.TryBuildSetup()!, DeterministicRandom.SeedFrom(42));
+            foreach (var seat in game.Seats)
+            {
+                var view = await game.GetSeatViewAsync(seat.SeatId);
+                Assert.True((await game.SubmitAsync(new CommitTicketSelection(
+                    game.NewEnvelope(seat.SeatId), [.. view.SetupOffer.Take(2)], []))).IsAccepted);
+            }
+            await model.LoadSavedSessionsAsync();
+            model.Setup.SelectedSavedSession = Assert.Single(model.Setup.SavedSessions);
+            await model.ResumeMatchAsync();
+            model.BoardReconciliationAcknowledged = true;
+            await model.ConfirmBoardReconciledAsync();
+            await model.AcknowledgeResumeTurnCommand.ExecuteAsync(null);
+            var coordinator = (GameCoordinator)typeof(MainViewModel)
+                .GetField("_coordinator", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(model)!;
+            var human = model.Game.TableSeats.Single(tile => tile.Seat.Operator == "human");
+            var before = await coordinator.GetSeatViewAsync(human.Seat.SeatId);
+            var hashBeforePreview = await coordinator.ComputeStateHashAsync();
+
+            await model.ToggleSoloTrainCardsCommand.ExecuteAsync(human);
+
+            Assert.True(model.ShowSoloTrainCards);
+            Assert.Collection(model.SoloTrainCards,
+                card => { Assert.Equal(TrainCardKind.Pink, card.Kind); Assert.Equal(2, card.Count); },
+                card => { Assert.Equal(TrainCardKind.White, card.Kind); Assert.Equal(1, card.Count); },
+                card => { Assert.Equal(TrainCardKind.Yellow, card.Kind); Assert.Equal(1, card.Count); });
+            Assert.Equal(before.Hand.Length, model.SoloTrainCards.Sum(card => card.Count));
+            Assert.Equal(hashBeforePreview, await coordinator.ComputeStateHashAsync());
+            Assert.Equal(before.Hand.ToArray(),
+                (await coordinator.GetSeatViewAsync(human.Seat.SeatId)).Hand.ToArray());
+
+            // A matching face-up draw must update the existing yellow preview, not add a duplicate.
+            var yellow = model.Table.Market.First(slot => slot.Kind == TrainCardKind.Yellow);
+            Assert.True(model.DrawSoloFaceUpCommand.CanExecute(yellow));
+            await model.DrawSoloFaceUpCommand.ExecuteAsync(yellow);
+
+            Assert.True(model.IsSoloHumanTurn);
+            Assert.True(model.ShowSoloTrainCards);
+            Assert.Equal(3, model.SoloTrainCards.Count);
+            Assert.Equal(2, Assert.Single(model.SoloTrainCards, card => card.Kind == TrainCardKind.Yellow).Count);
+            Assert.Equal(5, model.SoloTrainCards.Sum(card => card.Count));
+            var after = await coordinator.GetSeatViewAsync(human.Seat.SeatId);
+            Assert.Equal(before.Hand.Length + 1, after.Hand.Length);
+            Assert.All(before.Hand, card => Assert.Contains(card, after.Hand));
+            Assert.Equal(5, after.Hand.Select(card => card.Id).Distinct().Count());
+            Assert.Equal(TrainCardKind.Yellow,
+                Assert.Single(after.Hand, card => !before.Hand.Any(old => old.Id == card.Id)).Kind);
+            Assert.Null(model.PrivateSeat);
+            Assert.Equal(Screen.Table, model.Screen);
         }
         finally { await model.DisposeToolsAsync(); }
     }

@@ -8,7 +8,11 @@ namespace GoldenTicket.Desktop.ViewModels;
 
 public enum SoloCardPanelSelection { None, TrainCards, Destinations }
 
-public sealed record SoloTrainCardRow(TrainCardKind Kind, string Label);
+public sealed record SoloTrainCardRow(TrainCardKind Kind, string Label, int Count)
+{
+    public bool ShowCount => Count > 1;
+    public string Description => $"{Label}: {Count} {(Count == 1 ? "card" : "cards")}";
+}
 
 public sealed record SoloDestinationCardRow(string Origin, string Destination, int Points, bool Completed)
 {
@@ -103,7 +107,8 @@ public sealed partial class MainViewModel
 
             if (kind == SoloCardPanelSelection.TrainCards)
             {
-                SoloTrainCards = view.Hand.Select(card => new SoloTrainCardRow(card.Kind, card.Kind.ToString()))
+                SoloTrainCards = view.Hand.GroupBy(card => card.Kind).OrderBy(group => group.Key)
+                    .Select(group => new SoloTrainCardRow(group.Key, group.Key.ToString(), group.Count()))
                     .ToArray();
                 OnPropertyChanged(nameof(SoloTrainCards));
             }

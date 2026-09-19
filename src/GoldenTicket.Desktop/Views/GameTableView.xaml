@@ -83,6 +83,7 @@
         </Style>
         <Style x:Key="DrawPileCardButtonStyle" TargetType="Button">
             <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Width" Value="50" />
             <Setter Property="Height" Value="54" />
             <Setter Property="Foreground" Value="#FFFFE7B0" />
@@ -102,9 +103,14 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="CardFrame" Property="BorderBrush" Value="#FFFFD576" />
+                                <Setter TargetName="CardFrame" Property="BorderThickness" Value="4" />
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
                                 <Setter TargetName="CardFrame" Property="BorderBrush" Value="#FFFFD576" />
+                                <Setter TargetName="CardFrame" Property="BorderThickness" Value="4" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="CardFrame" Property="Opacity" Value="0.84" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -486,13 +492,13 @@
                     <StackPanel>
                         <TextBlock Text="Move the scoring marker" Foreground="#FFFFE7B0"
                                    FontSize="17" FontWeight="Bold" TextAlignment="Center" />
-                        <TextBlock Text="The camera will continue automatically when it sees the marker at the required score."
+                        <TextBlock Text="The game will continue when the camera sees the marker at the required score."
                                    Foreground="#FFF8EEDC" FontSize="11" TextAlignment="Center"
                                    TextWrapping="Wrap" Margin="0,5,0,0" />
                     </StackPanel>
                 </Border>
 
-                <Border Canvas.Left="1180" Canvas.Top="96" Width="250" Height="147" CornerRadius="9"
+                <Border Canvas.Left="1180" Canvas.Top="18" Width="250" Height="147" CornerRadius="9"
                         Visibility="{Binding Game.ShowManualPlacementControls, Converter={StaticResource BoolToVisibility}}"
                         Background="#F21A2531" BorderBrush="#FFB18C52" BorderThickness="1.5"
                         Padding="11" AutomationProperties.LiveSetting="Polite">
@@ -641,10 +647,21 @@
                                     <DataTemplate>
                                         <Border Width="101" Height="67" Margin="3" CornerRadius="4"
                                                 Background="{Binding Kind, Converter={StaticResource CardKindBrush}}"
-                                                BorderBrush="#FFF0D7A0" BorderThickness="2">
-                                            <TextBlock Text="{Binding Label}" Foreground="#FF1A2531" FontSize="11"
-                                                       FontWeight="Bold" TextAlignment="Center" TextWrapping="NoWrap"
-                                                       VerticalAlignment="Bottom" Background="#EEF5EAD5" Padding="2" />
+                                                BorderBrush="#FFF0D7A0" BorderThickness="2"
+                                                AutomationProperties.Name="{Binding Description}">
+                                            <Grid>
+                                                <TextBlock Text="{Binding Label}" Foreground="#FF1A2531" FontSize="11"
+                                                           FontWeight="Bold" TextAlignment="Center" TextWrapping="NoWrap"
+                                                           VerticalAlignment="Bottom" Background="#EEF5EAD5" Padding="2" />
+                                                <Border Background="#FF1A2531" CornerRadius="3"
+                                                        MinWidth="20" Height="20" Margin="3" Padding="4,0"
+                                                        Visibility="{Binding ShowCount, Converter={StaticResource BoolToVisibility}}"
+                                                        HorizontalAlignment="Left" VerticalAlignment="Top">
+                                                    <TextBlock Text="{Binding Count}" Foreground="#FFFFD576" FontSize="13"
+                                                               FontWeight="Bold" HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center" />
+                                                </Border>
+                                            </Grid>
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>

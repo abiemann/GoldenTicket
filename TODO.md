@@ -33,13 +33,15 @@ See the
   Camera confirmation uses measured train-space centers for all 100 classic-US routes; each
   requested space receives its own pulsing yellow cue. Live overhead-camera acceptance remains open.
 - [x] After PLAY, show the accepted live board crop in a uniformly scaled game table. Position
-  2–5 player portraits and their public train/card/destination counts around it, with face-down
-  stacks and a latest-public-action line per seat. Put up to two seats on each side and a fifth
-  below the board. Center the draw piles and five-card market along the bottom for fewer than five
-  seats, keeping them at the outer edges for five. In solo play, T and D stacks reveal compact
-  private card previews only when clicked; ordinary turns stay on the game table. Preserve the
-  panel above the board as the human guidance area for the current phase, acting seat and next
-  instruction throughout the game.
+  2–5 player portraits and their public train/card/destination counts on its left and right sides,
+  with face-down stacks and a latest-public-action line per seat. Alternate seats left and right;
+  five players occupy three places on the left and two on the right. Center the draw piles and
+  five-card market along the bottom after opening setup for all player counts. In solo play,
+  T and D stacks reveal compact private card previews only when clicked; ordinary turns stay on
+  the game table. Preserve the panel above the board as the human guidance area for the current
+  phase, acting seat and next instruction throughout the game.
+- [x] Group the solo train-card preview by color, including locomotives, with a top-left quantity
+  badge for duplicates so large hands remain easy to count.
 - [ ] Re-register the live board crop automatically after a saved game is reloaded or the camera
   restarts; for now, use the technical Camera screen to register it again.
 - [x] Measure all 309 printed train spaces on the 100 classic-US routes and show one pulsing
