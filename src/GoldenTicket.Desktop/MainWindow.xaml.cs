@@ -32,6 +32,11 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         GameLayer.RenderTransform = _gameTranslation;
+        ResumeTurnOkButton.IsEnabledChanged += (_, args) =>
+        {
+            if (args.NewValue is true && _model?.IsResumeTurnAnnouncementOpen == true)
+                FocusGameOrResumeAnnouncement();
+        };
 
         try
         {
@@ -41,7 +46,7 @@ public partial class MainWindow : Window
             _model.SetGameLayerVisible(true);
             Loaded += async (_, _) =>
             {
-                GameLayer.FocusCurrentChoice();
+                FocusGameOrResumeAnnouncement();
                 await Task.WhenAll(_model.LoadSavedSessionsAsync(), _model.Camera.InitializeProcessingAsync());
             };
         }
@@ -130,6 +135,11 @@ public partial class MainWindow : Window
 
     private void OnDisplayModeChanged(object? sender, PropertyChangedEventArgs args)
     {
+        if (args.PropertyName == nameof(MainViewModel.IsResumeTurnAnnouncementOpen))
+        {
+            FocusGameOrResumeAnnouncement();
+            return;
+        }
         if (args.PropertyName != nameof(MainViewModel.DisplayMode) || _model is null) return;
 
         if (_model.DisplayMode == DisplayMode.FullScreen)
@@ -205,7 +215,7 @@ public partial class MainWindow : Window
         _lastInteraction = Environment.TickCount64;
         if (e.Key != Key.Escape || _model is null) return;
 
-        if (_model.IsGameExitSaving)
+        if (_model.IsGameExitSaving || _model.IsResumeTurnAnnouncementOpen)
         {
             e.Handled = true;
             return;
@@ -266,9 +276,22 @@ public partial class MainWindow : Window
 
     private void ReturnToGame_Click(object sender, RoutedEventArgs e) => ReturnToGameLayer();
 
+    private void FocusGameOrResumeAnnouncement() =>
+        _ = Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+        {
+            if (_cleanupStarted) return;
+            if (_model?.IsResumeTurnAnnouncementOpen == true)
+                ResumeTurnOkButton.Focus();
+            else if (!_technicalVisible && !_layerTransition)
+                GameLayer.FocusCurrentChoice();
+            else if (_technicalVisible && !_layerTransition)
+                ReturnToGameButton.Focus();
+        }));
+
     private void RevealTechnicalLayer()
     {
-        if (_technicalVisible || _layerTransition || _exitPromptOpen || _cleanupStarted) return;
+        if (_technicalVisible || _layerTransition || _exitPromptOpen || _cleanupStarted ||
+            _model?.IsResumeTurnAnnouncementOpen == true) return;
         _model?.HidePrivateSeat();
         _model?.SetGameLayerVisible(false);
         _technicalVisible = true;
@@ -286,7 +309,8 @@ public partial class MainWindow : Window
 
     private void ReturnToGameLayer()
     {
-        if (!_technicalVisible || _layerTransition || _exitPromptOpen || _cleanupStarted) return;
+        if (!_technicalVisible || _layerTransition || _exitPromptOpen || _cleanupStarted ||
+            _model?.IsResumeTurnAnnouncementOpen == true) return;
         _model?.HidePrivateSeat();
         _technicalVisible = false;
         _layerTransition = true;

@@ -1,0 +1,59 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using GoldenTicket.Application;
+using GoldenTicket.Domain;
+
+namespace GoldenTicket.Desktop.ViewModels;
+
+public sealed partial class MainViewModel
+{
+    [ObservableProperty] private bool _isResumeTurnAnnouncementOpen;
+    [ObservableProperty] private string _resumeTurnAnnouncementText = "";
+
+    private bool IsGameInputPaused => IsGameExitMenuOpen || IsResumeTurnAnnouncementOpen;
+
+    private async Task AnnounceResumedTurnAsync()
+    {
+        ShowResumeTurnAnnouncement();
+        if (IsResumeTurnAnnouncementOpen) await RefreshAsync();
+        else await PumpAsync();
+    }
+
+    partial void OnIsResumeTurnAnnouncementOpenChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanRevealPrivateSeat));
+        NotifySoloDrawCommands();
+        AcknowledgeResumeTurnCommand.NotifyCanExecuteChanged();
+    }
+
+    private void ShowResumeTurnAnnouncement()
+    {
+        if (_coordinator?.Public is not { Lifecycle: SessionLifecycle.Active } view) return;
+        HidePrivateSeat();
+        CloseSoloCardPanel();
+        var seat = view.SeatOf(view.ActiveSeatId);
+        ResumeTurnAnnouncementText = $"{seat.DisplayName} goes first. Resume turn {view.TurnNumber}." +
+            (view.PendingClaim is not null ? " Their unfinished train placement will continue." : "");
+        IsResumeTurnAnnouncementOpen = true;
+    }
+
+    private bool CanAcknowledgeResumeTurn() => IsResumeTurnAnnouncementOpen &&
+        !_operationInProgress && !_mustReload && !_exitRequested && !_toolsDisposed &&
+        _coordinator is { StorageFaulted: false };
+
+    [RelayCommand(CanExecute = nameof(CanAcknowledgeResumeTurn))]
+    private async Task AcknowledgeResumeTurnAsync()
+    {
+        if (!CanAcknowledgeResumeTurn()) return;
+        SetOperationInProgress(true);
+        IsResumeTurnAnnouncementOpen = false;
+        try { await PumpAsync(); }
+        catch (Exception) { RequireReload(); }
+        finally { SetOperationInProgress(false); }
+    }
+
+    private bool SavedPendingPlacementMatches(GameCoordinator coordinator) =>
+        CheckpointPhoto.PendingPlacement is not { } pending ||
+        coordinator.Public.PendingClaim is { } claim &&
+        pending.Matches(claim, coordinator.Public.SeatOf(claim.SeatId).Color);
+}

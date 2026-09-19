@@ -838,6 +838,86 @@ public class PackAwayDurabilityTests : IDisposable
         Assert.Empty(await reopened.CheckInvariantsAsync(token));
     }
 
+    [Fact]
+    public async Task ComputerPlacementReloadsFromDiskWithTheSameTurnAndPaymentReservedExactlyOnce()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var store = new Persistence.SqliteSessionStore(_root);
+        var rules = new GameRules(TestManifest.Manifest, TestManifest.Catalog);
+        var setup = Setup();
+        var coordinator = await GameCoordinator.CreateAsync(
+            rules, store, setup, DeterministicRandom.SeedFrom(2026), token);
+        var driver = new ComputerSeatDriver(coordinator, new HeuristicAiPolicy(), aiSeed: 2026);
+
+        // Save a seat other than the starting seat, so restoring to the default player fails.
+        for (var step = 0; step < 400; step++)
+        {
+            await driver.AdvanceAsync(token);
+            if (coordinator.Public.PendingClaim is not { } placement) continue;
+            if (placement.SeatId != setup.Seats[0].SeatId) break;
+            Assert.True((await coordinator.SubmitAsync(new SubmitClaimEvidence(
+                coordinator.NewEnvelope(placement.SeatId), placement.OperationId,
+                EvidenceKind.ManualAttestation, "tester", "whole board checked"), token)).IsAccepted);
+        }
+
+        var pending = Assert.IsType<GoldenTicket.Domain.Projections.PublicPendingClaim>(coordinator.Public.PendingClaim);
+        Assert.NotEqual(setup.Seats[0].SeatId, pending.SeatId);
+        Assert.Equal(SeatKind.Computer, coordinator.Public.SeatOf(pending.SeatId).Kind);
+        var turn = coordinator.Public.TurnNumber;
+        var before = await coordinator.GetSeatViewAsync(pending.SeatId, token);
+        var logicalHash = await coordinator.ComputeLogicalStateHashAsync(token);
+        Assert.NotEmpty(before.ReservedCards);
+
+        var saved = await coordinator.SaveAndPackAwayAsync("Computer placing trains", token);
+        Assert.True(saved.SafeToPack, saved.Problem);
+        Assert.Equal(pending.OperationId, saved.Checkpoint!.PendingOperationId);
+        Assert.DoesNotContain(saved.Checkpoint.PhysicalTarget, route => route.RouteId == pending.RouteId);
+
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        var reopened = await GameCoordinator.RestoreAsync(
+            rules, new Persistence.SqliteSessionStore(_root), coordinator.SessionId, token);
+        var checkpoint = reopened.Public.Checkpoint!;
+        Assert.Equal(pending.SeatId, reopened.Public.ActiveSeatId);
+        Assert.Equal(turn, reopened.Public.TurnNumber);
+        Assert.Equal(pending, reopened.Public.PendingClaim);
+        Assert.Equal(logicalHash, await reopened.ComputeLogicalStateHashAsync(token));
+        Assert.True((await reopened.SubmitAsync(
+            new BeginBoardRebuild(reopened.NewEnvelope(), checkpoint.CheckpointId), token)).IsAccepted);
+        Assert.True((await reopened.SubmitAsync(new AttestBoardRebuild(
+            reopened.NewEnvelope(), checkpoint.CheckpointId, checkpoint.PhysicalTargetHash, "tester"), token)).IsAccepted);
+        Assert.True((await reopened.SubmitAsync(
+            new ResumePackedGame(reopened.NewEnvelope(), checkpoint.CheckpointId), token)).IsAccepted);
+
+        Assert.Equal(pending.SeatId, reopened.Public.ActiveSeatId);
+        Assert.Equal(turn, reopened.Public.TurnNumber);
+        Assert.Equal(TurnPhase.AwaitingPhysicalPlacement, reopened.Public.TurnPhase);
+        Assert.Equal(pending, reopened.Public.PendingClaim);
+        var resumed = await reopened.GetSeatViewAsync(pending.SeatId, token);
+        Assert.Equal(before.Hand.ToArray(), resumed.Hand.ToArray());
+        Assert.Equal(before.ReservedCards.ToArray(), resumed.ReservedCards.ToArray());
+        var seatBefore = before.Public.SeatOf(pending.SeatId);
+        Assert.Equal(seatBefore, resumed.Public.SeatOf(pending.SeatId));
+
+        var evidence = new SubmitClaimEvidence(reopened.NewEnvelope(pending.SeatId), pending.OperationId,
+            EvidenceKind.ManualAttestation, "tester", "whole board checked after reload");
+        Assert.True((await reopened.SubmitAsync(evidence, token)).IsAccepted);
+        Assert.True((await reopened.SubmitAsync(evidence, token)).IsAccepted); // Same command is idempotent.
+        Assert.False((await reopened.SubmitAsync(evidence with
+        {
+            Envelope = reopened.NewEnvelope(pending.SeatId),
+        }, token)).IsAccepted);
+        Assert.Equal(turn + 1, reopened.Public.TurnNumber);
+        Assert.Null(reopened.Public.PendingClaim);
+        var after = reopened.Public.SeatOf(pending.SeatId);
+        Assert.Equal(seatBefore.TrainsRemaining - pending.TrainCount, after.TrainsRemaining);
+        Assert.Equal(seatBefore.TrainCardCount - before.ReservedCards.Length, after.TrainCardCount);
+        Assert.Equal(pending.SeatId, reopened.Public.RouteOwners[pending.RouteId]);
+        var onDisk = await store.RestoreAsync(coordinator.SessionId, TestManifest.Manifest, TestManifest.Catalog, token);
+        Assert.Single(onDisk.Journal.Select(row => row.Event).OfType<ClaimCommitted>(),
+            claim => claim.OperationId == pending.OperationId);
+        Assert.Empty(await reopened.CheckInvariantsAsync(token));
+    }
+
     /// <summary>
     /// The checkpoint carries the logical-state fingerprint in a readable local save. The
     /// redundant metadata columns still have to agree with that payload on readback.

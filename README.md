@@ -101,13 +101,18 @@ This build implements the core game plus initial phone, camera and photo workflo
   its matching, validated board-photo attachment. Only then may the pieces be cleared away.
   On reload, the game checks each saved scoring marker
   in turn, then verifies every saved train position and color across fresh camera frames before
-  resuming the exact suspended action. A previously checked marker that moves must be verified
+  announcing whose turn resumes. A themed **OK** button releases play from that saved turn and
+  action. A previously checked marker that moves must be verified
   again. The saved route list and per-seat stock remain available for manual reconstruction.
 - Between running game actions, **Escape** opens **Save Game**, **Quit to Menu**, and **Return to Game**.
-  The dialog stays closed while card writes or computer work are running. Save Game
-  compares every visible train position and color with the claimed routes across fresh camera
+  The dialog stays closed while card writes or computer work are running. It can save a computer's
+  turn while waiting for its trains, including an empty, partial, or complete unfinished placement.
+  Save Game compares every visible train position and color with the claimed routes and the
+  authorized pending placement across fresh camera
   frames, writes and reads back the digital checkpoint, captures an unprocessed board photo with
-  the observed color totals, checks fresh frames again, and returns to the main menu. If any check
+  the observed color totals and pending slot mask, checks fresh frames again, and returns to the main menu.
+  The saved active player, turn, phase, and reserved payment remain unchanged. Finish any scoring-marker
+  move or cancelled-placement restoration before saving. If any check
   fails, the game stays open so the board and camera can be corrected. A checkpoint without a valid
   matching photo is incomplete, including after an app restart. Quit to Menu discards current unsaved
   progress and returns to the latest completed save with a validated photo, when one exists.
@@ -195,9 +200,11 @@ These are later milestones in `DESIGN.md`, and nothing here pretends they exist:
   laptop pairing after page reload; WSS/event-cursor recovery and durable controller registration
   remain design gaps. See [implementation details](docs/IMPLEMENTATION-2026-09-12.md).
 - **No machine-verified photo checkpoint.** The Escape save checks live train positions and colors
-  against claimed routes before and after its board photo. The image remains an operator-attested
+  against claimed routes and an authorized pending placement before and after its board photo.
+  The image remains an operator-attested
   reference with a checksum, checkpoint association and readback checks. Checkpoints remain
-  `LogicalStateOnly`; partial placement masks and automatic whole-board reconciliation are still M4.
+  `LogicalStateOnly`; pending slot masks are separate photo metadata, not route ownership.
+  The full evidence lifecycle and general automatic whole-board reconciliation remain M4.
 - **No story mode, narration or sound.** That is M6.
 - **No installer.** M7.
 - **No complete semantic board geometry.** The separate classic-US slot map measures all 309 train
@@ -326,8 +333,10 @@ artwork match is weak. New and manually adopted crops wait for this check before
 The adjustment uses image agreement, not expected train positions; every train still needs its
 own detection and color check. See the [Los Angeles–San Francisco check](docs/evidence/canonical-alignment-2026-09-19/validation.md).
 The game then prompts for each scoring marker at its saved number and checks
-the saved train positions and colors. It stays on the game table and resumes automatically only
-when the whole board matches. When a saved train is missing or has the wrong color, a pulsing
+the saved train positions and colors, including the exact saved subset of any unfinished placement.
+When the whole board matches, a dialog announces whose turn resumes. Choose its themed **OK** button
+to continue; computer work and player actions wait for that acknowledgment.
+When a saved train is missing or has the wrong color, a pulsing
 yellow marker shows its exact route space. A missed or uncertain camera reading pauses the check.
 An active match recovered from its automatic journal is a separate recovery path. Its current
 digital actions can be recovered, including without a user checkpoint. An earlier checkpoint photo
@@ -457,13 +466,14 @@ requires its verified digital checkpoint and validated board photo. An action or
 finish before you retry closing. If the latest save is uncertain, the app warns you.
 
 Press **Escape** on the game table when no game action or computer work is running to open the
-save/quit dialog. An unresolved solo opening
+save/quit dialog. Waiting for a computer's train placement is a supported save point; the game
+remembers both whose turn it is and which pending trains are already on the board. An unresolved solo opening
 destination choice remains underneath the dialog and returns unchanged if you dismiss it; choose
 whether to keep all three or drop one to continue. Engineering-only screens remain available
 through **Shift+Escape** for diagnostics and recovery. Other private views hide on deactivation and after 60 seconds without input.
 Lock/suspend handlers request covering; real Windows lifecycle behavior remains an interactive
 acceptance test.
-When reopening a save, check the list of committed routes and attest to the physical board before
+When reopening a save, restore the saved board and acknowledge the turn announcement before
 continuing. Any pending placement or cancellation still needs its own normal completion checks.
 
 ## Repository layout

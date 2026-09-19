@@ -115,7 +115,7 @@ internal static partial class Program
             var savedRoute = manifest.Routes.Single(route => route.RouteId.Value == "dallas--houston--a");
             var setSavedTarget = typeof(MainViewModel).GetMethod("SetSavedBoardRestoreTarget",
                 BindingFlags.Instance | BindingFlags.NonPublic)!;
-            setSavedTarget.Invoke(model, [(savedRoute.RouteId, savedRoute.Length)]);
+            setSavedTarget.Invoke(model, [(savedRoute.RouteId, savedRoute.Length, (1 << savedRoute.Length) - 1)]);
             if (!PlacementBoardOverlay.TryGetTargets(manifest, savedRoute.RouteId,
                     savedRoute.Length, out var savedSlots) || !model.Game.ShowPlacementTarget ||
                 model.Game.PlacementTargets.Count != savedRoute.Length)
@@ -135,6 +135,15 @@ internal static partial class Program
                     Math.Abs(center.X - expected.X) > 3 || Math.Abs(center.Y - expected.Y) > 3)
                     throw new InvalidOperationException("The saved train cue missed its measured lane.");
             }, [(1000, 620), (1280, 800)]);
+            var partialRoute = manifest.Routes.Single(route => route.RouteId.Value == "los-angeles--san-francisco--b");
+            setSavedTarget.Invoke(model, [(partialRoute.RouteId, partialRoute.Length, 2)]);
+            if (!PlacementBoardOverlay.TryGetTargets(manifest, partialRoute.RouteId,
+                    partialRoute.Length, out var partialSlots) ||
+                model.Game.PlacementTargets.Count != 1 ||
+                model.Game.PlacementTargets[0].Number != 2 ||
+                model.Game.PlacementTargets[0].X != partialSlots[1].X ||
+                model.Game.PlacementTargets[0].Y != partialSlots[1].Y)
+                throw new InvalidOperationException("An unfinished saved route must highlight only the train slot present in its photo.");
             setSavedTarget.Invoke(model, [null]);
             if (model.Game.ShowPlacementTarget)
                 throw new InvalidOperationException("The saved train cue must clear when verification advances.");

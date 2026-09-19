@@ -33,6 +33,7 @@ public sealed class DesktopQuitCheckpointTests
             model.Table.RebuildAcknowledged = true;
             await model.AttestRebuildAsync();
             await model.ResumePackedGameAsync();
+            await model.AcknowledgeResumeTurnCommand.ExecuteAsync(null);
             await model.RevealPrivateSeatAsync();
             Assert.NotNull(model.PrivateSeat);
             await model.DrawBlindCardAsync();

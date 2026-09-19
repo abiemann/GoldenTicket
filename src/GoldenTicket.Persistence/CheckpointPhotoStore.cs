@@ -1,10 +1,12 @@
 using System.Buffers.Binary;
+using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using GoldenTicket.Domain;
 using GoldenTicket.Domain.Model;
+using GoldenTicket.Domain.Projections;
 
 namespace GoldenTicket.Persistence;
 
@@ -40,6 +42,34 @@ public sealed record CheckpointTrainInventory(
 }
 
 /// <summary>
+/// Trains already placed for an uncommitted route, with one bit per route slot. This records
+/// physical progress beside the photo; it neither spends the reserved cards nor claims the route.
+/// </summary>
+public sealed record CheckpointPendingPlacement(
+    OperationId OperationId,
+    RouteId RouteId,
+    SeatId SeatId,
+    PlayerColor Color,
+    int RouteLength,
+    int OccupiedSlotMask)
+{
+    [JsonIgnore]
+    public int TrainCount => BitOperations.PopCount((uint)OccupiedSlotMask);
+
+    /// <summary>Check public saved-operation identity before using photo progress during rebuild.</summary>
+    public bool Matches(PublicPendingClaim? pending, PlayerColor color) =>
+        HasValidShape && pending is { AwaitingRestore: false } &&
+        OperationId == pending.OperationId && RouteId == pending.RouteId &&
+        SeatId == pending.SeatId && Color == color && RouteLength == pending.TrainCount;
+
+    internal bool HasValidShape =>
+        Guid.TryParseExact(OperationId.Value, "N", out var operation) && operation.ToString("N") == OperationId.Value &&
+        !string.IsNullOrWhiteSpace(RouteId.Value) && SeatId.Value > 0 && Enum.IsDefined(Color) &&
+        RouteLength is > 0 and <= 30 && OccupiedSlotMask >= 0 &&
+        (OccupiedSlotMask >> RouteLength) == 0;
+}
+
+/// <summary>
 /// An immutable, operator-attested reference beside a state-only checkpoint. It does not upgrade
 /// the checkpoint to VerifiedBoardPhoto and is never evidence for accepting a game command.
 /// </summary>
@@ -62,7 +92,9 @@ public sealed record CheckpointPhotoReference(
     DateTimeOffset StoredAt,
     CheckpointPhotoCapture Capture,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    CheckpointTrainInventory? ObservedTrainInventory = null)
+    CheckpointTrainInventory? ObservedTrainInventory = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    CheckpointPendingPlacement? PendingPlacement = null)
 {
     public const string DisplayLabel = "Operator-attested reference photo. Rebuild from the saved route list and check the whole board before resuming.";
 }
@@ -117,10 +149,12 @@ public sealed class CheckpointPhotoStore
         ReadOnlyMemory<byte> png,
         CheckpointPhotoCapture capture,
         CancellationToken cancellationToken = default,
-        CheckpointTrainInventory? observedTrainInventory = null)
+        CheckpointTrainInventory? observedTrainInventory = null,
+        CheckpointPendingPlacement? pendingPlacement = null)
     {
         ValidateCheckpoint(checkpoint);
-        ValidateInventory(observedTrainInventory, checkpoint);
+        ValidatePendingPlacement(pendingPlacement, checkpoint);
+        ValidateInventory(observedTrainInventory, checkpoint, pendingPlacement);
         ArgumentNullException.ThrowIfNull(capture);
         ValidateCapture(capture, checkpoint, requireFresh: true);
         cancellationToken.ThrowIfCancellationRequested();
@@ -138,7 +172,7 @@ public sealed class CheckpointPhotoStore
                 checkpoint.PhysicalTargetHash, checkpoint.ProfileId, checkpoint.ManifestHash,
                 checkpoint.SourceStateVersion, checkpoint.SourceJournalSequence, checkpoint.BoardRevision,
                 Hash(image), width, height, image.Length, _clock.GetUtcNow(), capture,
-                observedTrainInventory);
+                observedTrainInventory, pendingPlacement);
             var path = AttachmentPath(checkpoint.SessionId, checkpoint.CheckpointId);
             if (File.Exists(path))
                 return await ReadMatchingExistingAsync(checkpoint, reference, cancellationToken);
@@ -257,7 +291,8 @@ public sealed class CheckpointPhotoStore
         try
         {
             if (existing.Reference.ImageHash != requested.ImageHash || existing.Reference.Capture != requested.Capture ||
-                existing.Reference.ObservedTrainInventory != requested.ObservedTrainInventory)
+                existing.Reference.ObservedTrainInventory != requested.ObservedTrainInventory ||
+                existing.Reference.PendingPlacement != requested.PendingPlacement)
                 throw new InvalidOperationException("This checkpoint already has its immutable reference photo. Save a new checkpoint for a different photo.");
             return existing.Reference;
         }
@@ -278,17 +313,44 @@ public sealed class CheckpointPhotoStore
             reference.StoredAt < reference.Capture.CapturedAt - TimeSpan.FromSeconds(5))
             throw new InvalidDataException("The reference photo does not belong to this exact saved checkpoint.");
         ValidateCapture(reference.Capture, checkpoint, requireFresh: false);
-        ValidateInventory(reference.ObservedTrainInventory, checkpoint);
+        ValidatePendingPlacement(reference.PendingPlacement, checkpoint);
+        ValidateInventory(reference.ObservedTrainInventory, checkpoint, reference.PendingPlacement);
     }
 
-    private static void ValidateInventory(CheckpointTrainInventory? inventory, PackAwayCheckpoint checkpoint)
+    private static void ValidatePendingPlacement(CheckpointPendingPlacement? pending, PackAwayCheckpoint checkpoint)
+    {
+        // Legacy attachments have no uncommitted physical progress. An explicit zero mask is
+        // retained for new saves made before any of the pending operation's trains were placed.
+        if (pending is null) return;
+        if (!pending.HasValidShape || checkpoint.SuspendedTurnPhase != TurnPhase.AwaitingPhysicalPlacement ||
+            pending.OperationId != checkpoint.PendingOperationId ||
+            checkpoint.PhysicalTarget.Any(route => route.RouteId == pending.RouteId))
+            throw new InvalidDataException("The photo's pending placement must belong to its saved, uncommitted route operation.");
+    }
+
+    private static void ValidateInventory(CheckpointTrainInventory? inventory, PackAwayCheckpoint checkpoint,
+        CheckpointPendingPlacement? pending)
     {
         // Legacy photo references did not contain an observed inventory. They remain readable.
         if (inventory is null) return;
         if (!Enum.IsDefined(inventory.Provenance) || inventory.Blue < 0 || inventory.Red < 0 ||
             inventory.Green < 0 || inventory.Yellow < 0 || inventory.Black < 0 ||
-            inventory.Total != checkpoint.TotalTrainsOnBoard)
+            inventory.Total != (long)checkpoint.TotalTrainsOnBoard + (pending?.TrainCount ?? 0))
             throw new InvalidDataException("The observed train inventory must identify its source and match the saved board's total train count.");
+        if (pending is not null)
+        {
+            var pendingColorCount = pending.Color switch
+            {
+                PlayerColor.Blue => inventory.Blue,
+                PlayerColor.Red => inventory.Red,
+                PlayerColor.Green => inventory.Green,
+                PlayerColor.Yellow => inventory.Yellow,
+                PlayerColor.Black => inventory.Black,
+                _ => 0,
+            };
+            if (pendingColorCount < pending.TrainCount)
+                throw new InvalidDataException("The observed train inventory must include the pending placement's colour and train count.");
+        }
     }
 
     private void ValidateCapture(CheckpointPhotoCapture capture, PackAwayCheckpoint checkpoint, bool requireFresh)

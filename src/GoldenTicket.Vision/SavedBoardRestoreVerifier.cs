@@ -33,7 +33,8 @@ public sealed class SavedBoardRestoreVerifier
     private long _lastSequence;
 
     public SavedBoardRestoreVerifier(IReadOnlyList<SavedScoreMarker> markers,
-        IReadOnlyList<BoardInventoryRoute> routes)
+        IReadOnlyList<BoardInventoryRoute> routes, BoardInventoryRoute? pendingRoute = null,
+        int? pendingSlotMask = null)
     {
         ArgumentNullException.ThrowIfNull(markers);
         ArgumentNullException.ThrowIfNull(routes);
@@ -41,7 +42,7 @@ public sealed class SavedBoardRestoreVerifier
         if (_markers.Select(marker => marker.Color).Distinct().Count() != _markers.Length)
             throw new ArgumentException("Each scoring marker color must appear once.", nameof(markers));
         _mismatchCounts = new int[_markers.Length];
-        _inventoryVerifier = new BoardInventoryVerifier(routes);
+        _inventoryVerifier = new BoardInventoryVerifier(routes, pendingRoute, pendingSlotMask);
     }
 
     public SavedBoardRestoreObservation Observe(CameraFrame board,

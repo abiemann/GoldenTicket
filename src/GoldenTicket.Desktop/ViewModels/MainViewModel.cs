@@ -188,7 +188,7 @@ public sealed partial class MainViewModel : ObservableObject
     private (SeatId SeatId, string Name)? _revealable;
 
     public bool CanRevealPrivateSeat => _revealable is not null && !_operationInProgress && !_exitRequested
-        && !IsGameExitMenuOpen && _windowActive && _systemAvailable && !_toolsDisposed &&
+        && !IsGameInputPaused && _windowActive && _systemAvailable && !_toolsDisposed &&
         IsGameplayScreenActive(Screen.Table) && !NeedsBoardReconciliation && !_mustReload
         && _scoreMarkerStep is null
         && BoardFirstProposal is null
@@ -333,6 +333,8 @@ public sealed partial class MainViewModel : ObservableObject
                     await OfferEarlierSaveRecoveryAsync(saved.SessionId);
                     return;
                 }
+                if (!SavedPendingPlacementMatches(restored))
+                    throw new InvalidDataException("The saved board photo does not match the unfinished placement.");
             }
             _coordinator = restored;
             NotifyHumanPresentation();
@@ -492,7 +494,7 @@ public sealed partial class MainViewModel : ObservableObject
     /// </summary>
     private async Task SubmitPrivateAsync(Func<CommandEnvelope, PrivateSeatViewModel, GameCommand?> build)
     {
-        if (_coordinator is not { } coordinator || _operationInProgress || IsGameExitMenuOpen ||
+        if (_coordinator is not { } coordinator || _operationInProgress || IsGameInputPaused ||
             BoardFirstProposal is not null ||
             _exitRequested || !_windowActive || _mustReload ||
             NeedsBoardReconciliation || PrivateSeat is not { } seat) return;
@@ -607,7 +609,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private bool CanSubmitOperator() => !_operationInProgress && !IsGameExitMenuOpen &&
+    private bool CanSubmitOperator() => !_operationInProgress && !IsGameInputPaused &&
         _scoreMarkerStep is null && !_exitRequested && !_mustReload &&
         !NeedsBoardReconciliation && IsGameplayScreenActive(Screen.Table);
 
@@ -678,7 +680,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     public async Task CancelSaveAsync()
     {
-        if (_coordinator is null || _operationInProgress || _exitRequested || _mustReload) return;
+        if (_coordinator is null || _operationInProgress || IsGameInputPaused || _exitRequested || _mustReload) return;
 
         await SubmitLifecycleAsync(new CancelPackAwayPreparation(
             _coordinator.NewEnvelope(), "cancelled by the operator"));
@@ -717,7 +719,7 @@ public sealed partial class MainViewModel : ObservableObject
     public async Task ResumePackedGameAsync()
     {
         if (_operationInProgress || Busy is not null || _exitRequested || _mustReload ||
-            IsGameExitMenuOpen || _coordinator is not { } coordinator ||
+            IsGameInputPaused || _coordinator is not { } coordinator ||
             coordinator.Public.Checkpoint is not { } checkpoint) return;
         if (!Table.RebuildAcknowledged || !Table.RebuildAttested)
         {
@@ -738,6 +740,11 @@ public sealed partial class MainViewModel : ObservableObject
                 Status = CheckpointPhoto.ReferenceUnavailable
                     ? "The required board image is damaged or unreadable. Restore the matching image from a backup before resuming."
                     : "Save the required board image before resuming. Open Saved board photo to capture and verify it.";
+                return;
+            }
+            if (!SavedPendingPlacementMatches(coordinator))
+            {
+                Status = "The saved board image does not match the unfinished placement.";
                 return;
             }
             if (!Table.RebuildAcknowledged || !Table.RebuildAttested)
@@ -762,7 +769,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     private async Task SubmitLifecycleAsync(GameCommand command)
     {
-        if (_coordinator is null || _operationInProgress || _exitRequested || _mustReload) return;
+        if (_coordinator is null || _operationInProgress || IsGameInputPaused || _exitRequested || _mustReload) return;
 
         SetOperationInProgress(true);
         HidePrivateSeat();
@@ -786,7 +793,9 @@ public sealed partial class MainViewModel : ObservableObject
                     ShowGameplayScreen(Screen.Table);
                     if (revealUnchanged) generation = _revealGeneration;
                 }
-                await PumpAsync();
+                if (command is ResumePackedGame)
+                    await AnnounceResumedTurnAsync();
+                else await PumpAsync();
             }
             else
             {
@@ -806,7 +815,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     public async Task ConfirmBoardReconciledAsync()
     {
-        if (_coordinator is null || _operationInProgress || _exitRequested || _mustReload || !NeedsBoardReconciliation ||
+        if (_coordinator is null || _operationInProgress || IsGameInputPaused || _exitRequested || _mustReload || !NeedsBoardReconciliation ||
             !BoardReconciliationAcknowledged) return;
 
         SetOperationInProgress(true);
@@ -816,7 +825,7 @@ public sealed partial class MainViewModel : ObservableObject
         Status = "Board reconciliation confirmed by the operator. Manual verification remains active.";
         try
         {
-            await PumpAsync();
+            await AnnounceResumedTurnAsync();
         }
         catch (Exception)
         {
@@ -836,6 +845,7 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
         NotifySoloDrawCommands();
         ResumeMatchCommand.NotifyCanExecuteChanged();
+        AcknowledgeResumeTurnCommand.NotifyCanExecuteChanged();
     }
 
     private void RequireReload()
@@ -854,7 +864,7 @@ public sealed partial class MainViewModel : ObservableObject
     /// </summary>
     private async Task PumpAsync()
     {
-        if (_coordinator is null || _driver is null || IsGameExitMenuOpen || _scoreMarkerStep is not null ||
+        if (_coordinator is null || _driver is null || IsGameInputPaused || _scoreMarkerStep is not null ||
             NeedsBoardReconciliation || _mustReload) return;
 
         Busy = "Computer seats are playing...";

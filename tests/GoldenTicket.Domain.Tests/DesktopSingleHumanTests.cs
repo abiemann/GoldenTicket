@@ -495,6 +495,10 @@ public sealed class DesktopSingleHumanTests
             Assert.False(model.NeedsBoardReconciliation);
             Assert.Equal(Screen.Table, model.Screen);
             Assert.Null(model.PrivateSeat);
+            Assert.True(model.IsResumeTurnAnnouncementOpen);
+            await model.RevealPrivateSeatAsync();
+            Assert.Null(model.PrivateSeat);
+            await model.AcknowledgeResumeTurnCommand.ExecuteAsync(null);
             await model.RevealPrivateSeatAsync();
             Assert.NotNull(model.PrivateSeat);
             Assert.Equal(model.Table.Seats[0].SeatId, model.PrivateSeat.SeatId);
@@ -532,6 +536,8 @@ public sealed class DesktopSingleHumanTests
             await model.ResumePackedGameAsync();
             Assert.Equal(Screen.Table, model.Screen);
             Assert.Null(model.PrivateSeat);
+            Assert.True(model.IsResumeTurnAnnouncementOpen);
+            await model.AcknowledgeResumeTurnCommand.ExecuteAsync(null);
             await model.RevealPrivateSeatAsync();
             Assert.NotNull(model.PrivateSeat);
             Assert.Equal(model.Table.Seats[0].SeatId, model.PrivateSeat.SeatId);

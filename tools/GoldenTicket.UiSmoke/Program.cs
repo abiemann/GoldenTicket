@@ -69,6 +69,7 @@ internal static partial class Program
                 await VerifyGameTableLayout();
                 await VerifyPlacementTarget();
                 await VerifyGameLayerTransition();
+                await VerifyResumeTurnAnnouncement();
                 await VerifySavedMatchSelection();
                 await VerifySavedMatchName();
                 await RenderSizes("setup", () => new SetupView { DataContext = model });

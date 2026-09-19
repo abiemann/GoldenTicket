@@ -128,6 +128,10 @@ public sealed class DesktopAuditTests
 
         Assert.False(model.NeedsBoardReconciliation);
         Assert.False(model.BoardReconciliationAcknowledged);
+        Assert.True(model.IsResumeTurnAnnouncementOpen);
+        Assert.Equal(before, StateHash.Compute((await store.RestoreAsync(
+            coordinator.SessionId, TestManifest.Manifest, TestManifest.Catalog, CancellationToken.None)).State));
+        await model.AcknowledgeResumeTurnCommand.ExecuteAsync(null);
         Assert.True(model.Table.Placement is not null || model.Table.RulesDecisionText is not null ||
                     model.Screen == Screen.FinalScore);
         Assert.NotEqual(before, StateHash.Compute((await store.RestoreAsync(

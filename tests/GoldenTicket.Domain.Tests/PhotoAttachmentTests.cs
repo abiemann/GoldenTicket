@@ -57,6 +57,7 @@ public sealed class PhotoAttachmentTests : IDisposable
         Assert.Null(checkpoint.PhotoHash);
         Assert.Equal(TargetProvenance.LogicalStateOnly, checkpoint.TargetProvenance);
         Assert.Null(restored.Reference.ObservedTrainInventory); // Older references have no inventory field.
+        Assert.Null(restored.Reference.PendingPlacement);
         var envelope = await File.ReadAllBytesAsync(store.AttachmentPath(checkpoint.SessionId, checkpoint.CheckpointId), Token);
         Assert.True(envelope.AsSpan(0, 8).SequenceEqual("GTPHOTO1"u8));
         Assert.Equal(2, BinaryPrimitives.ReadInt32LittleEndian(envelope.AsSpan(8)));
@@ -69,6 +70,7 @@ public sealed class PhotoAttachmentTests : IDisposable
         Assert.Contains(checkpoint.LogicalStateHash, metadata, StringComparison.Ordinal);
         Assert.Contains(capture.CameraId, metadata, StringComparison.Ordinal);
         Assert.DoesNotContain("ObservedTrainInventory", metadata, StringComparison.Ordinal);
+        Assert.DoesNotContain("PendingPlacement", metadata, StringComparison.Ordinal);
         Assert.True(plaintext[(4 + metadataLength)..].SequenceEqual(png));
         Assert.Empty(Directory.EnumerateFiles(_root, "*.pending", SearchOption.AllDirectories));
     }
@@ -96,6 +98,132 @@ public sealed class PhotoAttachmentTests : IDisposable
                     CheckpointTrainInventoryProvenance.CameraObserved)));
         Assert.Null(checkpoint.PhotoHash);
         Assert.Equal(TargetProvenance.LogicalStateOnly, checkpoint.TargetProvenance);
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1, 1)]
+    [InlineData(5, 2)]
+    [InlineData(7, 3)]
+    public async Task PendingPlacementSlotsRoundTripWithoutClaimingTheRoute(int mask, int count)
+    {
+        var operation = OperationId.New();
+        var checkpoint = Checkpoint() with
+        {
+            SuspendedTurnPhase = TurnPhase.AwaitingPhysicalPlacement,
+            PendingOperationId = operation,
+        };
+        var pending = new CheckpointPendingPlacement(operation, new RouteId("pending-route"),
+            new SeatId(2), PlayerColor.Blue, 3, mask);
+        var inventory = new CheckpointTrainInventory(count, 0, 3, 0, 0,
+            CheckpointTrainInventoryProvenance.CameraObserved);
+        var capture = Capture();
+        var png = WpfPng();
+        var store = new CheckpointPhotoStore(_root);
+
+        var saved = await store.SaveReferenceAsync(checkpoint, png, capture, Token, inventory, pending);
+        var restored = await new CheckpointPhotoStore(_root).ReadReferenceAsync(checkpoint, Token);
+
+        Assert.Equal(saved, restored!.Reference);
+        Assert.Equal(pending, restored.Reference.PendingPlacement);
+        Assert.Equal(count, restored.Reference.PendingPlacement!.TrainCount);
+        Assert.Equal(3, checkpoint.TotalTrainsOnBoard);
+        Assert.Equal(3 + count, restored.Reference.ObservedTrainInventory!.Total);
+        Assert.DoesNotContain(checkpoint.PhysicalTarget, route => route.RouteId == pending.RouteId);
+        Assert.Equal(saved, await store.SaveReferenceAsync(checkpoint, png, capture, Token, inventory, pending));
+        if (mask == 1)
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                store.SaveReferenceAsync(checkpoint, png, capture, Token, inventory,
+                    pending with { OccupiedSlotMask = 2 }));
+    }
+
+    [Theory]
+    [InlineData("operation")]
+    [InlineData("phase")]
+    [InlineData("claimed-route")]
+    [InlineData("seat")]
+    [InlineData("color")]
+    [InlineData("length")]
+    [InlineData("negative-mask")]
+    [InlineData("extra-slot")]
+    [InlineData("total")]
+    [InlineData("color-total")]
+    public async Task PendingPlacementMustMatchTheCheckpointAndItsObservedInventory(string mismatch)
+    {
+        var operation = OperationId.New();
+        var checkpoint = Checkpoint() with
+        {
+            SuspendedTurnPhase = TurnPhase.AwaitingPhysicalPlacement,
+            PendingOperationId = operation,
+        };
+        var pending = new CheckpointPendingPlacement(operation, new RouteId("pending-route"),
+            new SeatId(2), PlayerColor.Blue, 3, 1);
+        var inventory = new CheckpointTrainInventory(1, 0, 3, 0, 0,
+            CheckpointTrainInventoryProvenance.CameraObserved);
+        pending = mismatch switch
+        {
+            "operation" => pending with { OperationId = OperationId.New() },
+            "claimed-route" => pending with { RouteId = checkpoint.PhysicalTarget[0].RouteId },
+            "seat" => pending with { SeatId = new SeatId(0) },
+            "color" => pending with { Color = (PlayerColor)99 },
+            "length" => pending with { RouteLength = 31 },
+            "negative-mask" => pending with { OccupiedSlotMask = -1 },
+            "extra-slot" => pending with { OccupiedSlotMask = 8 },
+            _ => pending,
+        };
+        if (mismatch == "phase") checkpoint = checkpoint with { SuspendedTurnPhase = TurnPhase.TurnStart };
+        if (mismatch == "total") inventory = inventory with { Blue = 0 };
+        if (mismatch == "color-total") inventory = inventory with { Blue = 0, Green = 4 };
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => new CheckpointPhotoStore(_root)
+            .SaveReferenceAsync(checkpoint, WpfPng(), Capture(), Token, inventory, pending));
+        Assert.False(Directory.Exists(_root));
+    }
+
+    [Fact]
+    public void PendingPlacementMustMatchTheRestoredPublicOperationBeforeUse()
+    {
+        var pending = new CheckpointPendingPlacement(OperationId.New(), new RouteId("pending-route"),
+            new SeatId(2), PlayerColor.Blue, 3, 5);
+        var operation = new GoldenTicket.Domain.Projections.PublicPendingClaim(
+            pending.OperationId, pending.SeatId, pending.RouteId, pending.RouteLength, false);
+
+        Assert.True(pending.Matches(operation, PlayerColor.Blue));
+        Assert.False(pending.Matches(null, PlayerColor.Blue));
+        Assert.False(pending.Matches(operation with { OperationId = OperationId.New() }, PlayerColor.Blue));
+        Assert.False(pending.Matches(operation with { RouteId = new RouteId("other") }, PlayerColor.Blue));
+        Assert.False(pending.Matches(operation with { SeatId = new SeatId(1) }, PlayerColor.Blue));
+        Assert.False(pending.Matches(operation with { TrainCount = 2 }, PlayerColor.Blue));
+        Assert.False(pending.Matches(operation with { AwaitingRestore = true }, PlayerColor.Blue));
+        Assert.False(pending.Matches(operation, PlayerColor.Red));
+    }
+
+    [Fact]
+    public async Task PendingSlotMaskIsValidatedOnReadDespiteARecomputedEnvelopeChecksum()
+    {
+        var operation = OperationId.New();
+        var checkpoint = Checkpoint() with
+        {
+            SuspendedTurnPhase = TurnPhase.AwaitingPhysicalPlacement,
+            PendingOperationId = operation,
+        };
+        var pending = new CheckpointPendingPlacement(operation, new RouteId("pending-route"),
+            new SeatId(2), PlayerColor.Blue, 3, 1);
+        var store = new CheckpointPhotoStore(_root);
+        await store.SaveReferenceAsync(checkpoint, WpfPng(), Capture(), Token,
+            new CheckpointTrainInventory(1, 0, 3, 0, 0, CheckpointTrainInventoryProvenance.CameraObserved), pending);
+        var path = store.AttachmentPath(checkpoint.SessionId, checkpoint.CheckpointId);
+        var envelope = await File.ReadAllBytesAsync(path, Token);
+        var plaintext = envelope.AsSpan(52);
+        var metadataLength = BinaryPrimitives.ReadInt32LittleEndian(plaintext);
+        var metadata = plaintext.Slice(4, metadataLength);
+        var mask = metadata.IndexOf("\"OccupiedSlotMask\":1"u8);
+        Assert.True(mask >= 0);
+        metadata[mask + "\"OccupiedSlotMask\":"u8.Length] = (byte)'8';
+        SHA256.HashData(plaintext).CopyTo(envelope.AsSpan(20, 32));
+        await File.WriteAllBytesAsync(path, envelope, Token);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.ReadReferenceAsync(checkpoint, Token));
     }
 
     [Theory]

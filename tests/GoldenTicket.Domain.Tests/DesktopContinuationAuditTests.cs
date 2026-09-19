@@ -47,6 +47,9 @@ public sealed class DesktopContinuationAuditTests
         await model.ResumePackedGameAsync();
         Assert.Equal(Screen.Table, model.Screen);
         Assert.DoesNotContain("You can pack", model.Table.SaveStatus);
+        Assert.True(model.IsResumeTurnAnnouncementOpen);
+        Assert.False(model.CanRevealPrivateSeat);
+        await model.AcknowledgeResumeTurnCommand.ExecuteAsync(null);
         Assert.True(model.CanRevealPrivateSeat);
         Assert.Null(model.PrivateSeat);
     }
@@ -102,6 +105,9 @@ public sealed class DesktopContinuationAuditTests
         await model.AttestRebuildAsync();
         await model.ResumePackedGameAsync();
 
+        Assert.True(model.IsResumeTurnAnnouncementOpen);
+        Assert.Null(model.Table.Placement);
+        await model.AcknowledgeResumeTurnCommand.ExecuteAsync(null);
         Assert.True(model.Table.Placement is not null || model.Screen == Screen.FinalScore,
             "The resumed AI match must advance to a human/operator boundary, rather than stall at its saved turn.");
     }

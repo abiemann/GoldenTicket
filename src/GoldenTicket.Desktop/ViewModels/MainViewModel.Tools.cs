@@ -51,7 +51,7 @@ public sealed partial class MainViewModel
     }
 
     private bool CanCompanionControl => CanConnectPhone && !_toolsDisposed && !_exitRequested &&
-        !IsGameExitMenuOpen && _systemAvailable && !_mustReload &&
+        !IsGameInputPaused && _systemAvailable && !_mustReload &&
         (!_operationInProgress || _handlingRemoteCommand) && !NeedsBoardReconciliation &&
         IsGameplayScreenActive(Screen.Table) && _coordinator is { StorageFaulted: false };
 

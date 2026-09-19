@@ -32,6 +32,8 @@ public sealed partial class MainViewModel
 
     private void ResetAutomaticPhysicalFlow()
     {
+        IsResumeTurnAnnouncementOpen = false;
+        ResumeTurnAnnouncementText = "";
         CancelSavedBoardRestore();
         BoardInteractionLog.Write("placement.flow-reset", new { hasPlacement = Table.Placement is not null });
         _automaticFlowGeneration++;
@@ -61,10 +63,10 @@ public sealed partial class MainViewModel
             return;
         }
 
-        if (_coordinator is not { } coordinator || IsGameExitMenuOpen || !IsGameplayScreenActive(Screen.Table) ||
+        if (_coordinator is not { } coordinator || IsGameInputPaused || !IsGameplayScreenActive(Screen.Table) ||
             _mustReload || NeedsBoardReconciliation)
         {
-            NotePlacementVerificationBlock(_coordinator is null ? "no-game" : IsGameExitMenuOpen ? "exit-menu-open" :
+            NotePlacementVerificationBlock(_coordinator is null ? "no-game" : IsGameInputPaused ? "game-dialog-open" :
                 !IsGameplayScreenActive(Screen.Table) ? "table-not-active" : _mustReload ? "reload-required" :
                 "board-reconciliation-required");
             return;

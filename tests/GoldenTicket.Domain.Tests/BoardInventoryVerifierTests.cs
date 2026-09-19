@@ -219,6 +219,65 @@ public sealed class BoardInventoryVerifierTests
     private static BoardInventoryVerifier Inventory() => new(
         [new(BlueRoute, MarkerColor.Blue, 2), new(GreenRoute, MarkerColor.Green, 2)]);
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void Save_records_exact_stable_pending_slots_without_requiring_the_whole_route(int mask)
+    {
+        var verifier = new BoardInventoryVerifier([new(GreenRoute, MarkerColor.Green, 2)],
+            new(BlueRoute, MarkerColor.Blue, 2));
+        var trains = Complete.Where((_, index) => index >= 2 || (mask & (1 << index)) != 0).ToArray();
+        var now = DateTimeOffset.UtcNow;
+        var first = Scene(1, 1, now, trains);
+        var stable = Scene(2, 1, now.AddSeconds(1.1), trains);
+        Assert.Equal(BoardInventoryState.Stabilizing,
+            verifier.Observe(first.Frame, first.Candidates, 1, 1).State);
+        var result = verifier.Observe(stable.Frame, stable.Candidates, 1, 1);
+        Assert.True(result.Confirmed);
+        Assert.Equal(mask, result.PendingSlotMask);
+        Assert.Equal(System.Numerics.BitOperations.PopCount((uint)mask), result.ConfirmedByColor[MarkerColor.Blue]);
+        Assert.Equal(2, result.ConfirmedByColor[MarkerColor.Green]);
+    }
+
+    [Fact]
+    public void Moving_pending_train_to_another_slot_restarts_save_stability_and_fails_exact_restore()
+    {
+        var verifier = new BoardInventoryVerifier([new(GreenRoute, MarkerColor.Green, 2)],
+            new(BlueRoute, MarkerColor.Blue, 2));
+        var now = DateTimeOffset.UtcNow;
+        var first = Scene(1, 1, now, [Complete[0], .. Complete[2..]]);
+        var moved = Scene(2, 1, now.AddSeconds(1.1), [.. Complete[1..]]);
+        var stable = Scene(3, 1, now.AddSeconds(2.2), [.. Complete[1..]]);
+        verifier.Observe(first.Frame, first.Candidates, 1, 1);
+        Assert.Equal(BoardInventoryState.Stabilizing, verifier.Observe(moved.Frame, moved.Candidates, 1, 1).State);
+        Assert.Equal(2, verifier.Observe(stable.Frame, stable.Candidates, 1, 1).PendingSlotMask);
+
+        var restore = new BoardInventoryVerifier([new(GreenRoute, MarkerColor.Green, 2)],
+            new(BlueRoute, MarkerColor.Blue, 2), pendingSlotMask: 1);
+        Assert.Equal(BoardInventoryState.UnexpectedTrain,
+            restore.Observe(moved.Frame, moved.Candidates, 1, 1).State);
+    }
+
+    [Fact]
+    public void Pending_progress_does_not_allow_wrong_colors_duplicates_or_missing_committed_trains()
+    {
+        BoardInventoryVerifier Pending() => new([new(GreenRoute, MarkerColor.Green, 2)],
+            new(BlueRoute, MarkerColor.Blue, 2));
+        var now = DateTimeOffset.UtcNow;
+        var wrong = Scene(1, 1, now, [new(1586, 755, MarkerColor.Red), .. Complete[2..]]);
+        Assert.Equal(BoardInventoryState.WrongColor, Pending().Observe(wrong.Frame, wrong.Candidates, 1, 1).State);
+        var missingCommitted = Scene(1, 1, now, [Complete[0]]);
+        Assert.Equal(BoardInventoryState.MissingTrains,
+            Pending().Observe(missingCommitted.Frame, missingCommitted.Candidates, 1, 1).State);
+        var good = Scene(1, 1, now, Complete);
+        Assert.Equal(BoardInventoryState.Ambiguous,
+            Pending().Observe(good.Frame, [.. good.Candidates, good.Candidates[0]], 1, 1).State);
+        var extra = Scene(1, 1, now, [.. Complete, new(900, 400, MarkerColor.Blue)]);
+        Assert.Equal(BoardInventoryState.UnexpectedTrain, Pending().Observe(extra.Frame, extra.Candidates, 1, 1).State);
+    }
+
     private readonly record struct Train(double X, double Y, MarkerColor Color);
 
     private static (CameraFrame Frame, PieceCandidate[] Candidates) Scene(long sequence, long epoch,

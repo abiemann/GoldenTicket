@@ -60,9 +60,22 @@
             <Setter Property="Background" Value="#EC522D26" />
             <Setter Property="BorderThickness" Value="3" />
         </Style>
+        <Style x:Key="ResumeTurnOkButton" TargetType="Button" BasedOn="{StaticResource ExitMenuSaveButton}">
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        </Style>
     </Window.Resources>
 
     <Grid x:Name="Root" ClipToBounds="True">
+      <Grid x:Name="GameContent">
+        <Grid.Style>
+            <Style TargetType="Grid">
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsResumeTurnAnnouncementOpen}" Value="True">
+                        <Setter Property="IsEnabled" Value="False" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Grid.Style>
       <Grid x:Name="TechnicalLayer" IsEnabled="False">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -152,7 +165,7 @@
                     <StackPanel>
                         <TextBlock Text="Leave the game?" Foreground="#FFFFE7B0"
                                    FontSize="30" FontWeight="Bold" TextAlignment="Center" />
-                        <TextBlock Text="Save Game compares the trains and their colors with the claimed routes, takes a fresh board photo, and returns to the menu. Choosing it confirms that the camera shows only the board."
+                        <TextBlock Text="Save Game checks the completed routes and any unfinished train placement, takes a fresh board photo, and remembers whose turn it is before returning to the menu. Choosing it confirms that the camera shows only the board."
                                    Foreground="#FFF8EEDC" FontSize="16" TextWrapping="Wrap"
                                    TextAlignment="Center" Margin="0,12,0,8" />
                         <TextBlock Text="Quit to Menu discards changes since the last saved game."
@@ -177,6 +190,30 @@
                         <Button Content="Return to Game" Click="CloseGameExitMenu_Click"
                                 Style="{StaticResource ExitMenuButton}"
                                 AutomationProperties.Name="Return to Game" />
+                    </StackPanel>
+                </Border>
+            </Viewbox>
+        </Grid>
+      </Grid>
+
+        <Grid x:Name="ResumeTurnAnnouncementOverlay" Background="#C9000912"
+              Visibility="{Binding IsResumeTurnAnnouncementOpen, Converter={StaticResource BoolToVisibility}}"
+              FocusManager.IsFocusScope="True" KeyboardNavigation.TabNavigation="Cycle"
+              KeyboardNavigation.ControlTabNavigation="Cycle" KeyboardNavigation.DirectionalNavigation="Cycle">
+            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" Margin="24">
+                <Border Width="540" Padding="28" CornerRadius="12"
+                        Background="#F51A2531" BorderBrush="#FFD4AC6B" BorderThickness="2">
+                    <StackPanel>
+                        <TextBlock Text="Ready to continue" Foreground="#FFFFE7B0"
+                                   FontSize="30" FontWeight="Bold" TextAlignment="Center" />
+                        <TextBlock Text="{Binding ResumeTurnAnnouncementText}"
+                                   Foreground="#FFF8EEDC" FontSize="20" TextWrapping="Wrap"
+                                   TextAlignment="Center" Margin="0,16,0,24"
+                                   AutomationProperties.LiveSetting="Polite" />
+                        <Button x:Name="ResumeTurnOkButton" Content="OK" IsDefault="True"
+                                Command="{Binding AcknowledgeResumeTurnCommand}"
+                                Style="{StaticResource ResumeTurnOkButton}"
+                                AutomationProperties.Name="OK, continue the saved turn" />
                     </StackPanel>
                 </Border>
             </Viewbox>

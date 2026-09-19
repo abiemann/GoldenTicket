@@ -14,7 +14,8 @@ internal sealed class TestCheckpointPhotos : IDisposable
     public TestCheckpointPhotos() => Store = new CheckpointPhotoStore(_root);
     public CheckpointPhotoStore Store { get; }
 
-    public Task<CheckpointPhotoReference> AttachAsync(PackAwayCheckpoint checkpoint)
+    public Task<CheckpointPhotoReference> AttachAsync(PackAwayCheckpoint checkpoint,
+        CheckpointPendingPlacement? pendingPlacement = null)
     {
         var pixels = Enumerable.Range(0, 80 * 50 * 3).Select(index => (byte)(index % 251)).ToArray();
         var image = BitmapSource.Create(80, 50, 96, 96, PixelFormats.Rgb24, null, pixels, 80 * 3);
@@ -25,7 +26,7 @@ internal sealed class TestCheckpointPhotos : IDisposable
         encoder.Save(stream);
         return Store.SaveReferenceAsync(checkpoint, stream.ToArray(),
             new CheckpointPhotoCapture(DateTimeOffset.UtcNow, "Test board camera", 1, 1, true),
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken, pendingPlacement: pendingPlacement);
     }
 
     public void Dispose()

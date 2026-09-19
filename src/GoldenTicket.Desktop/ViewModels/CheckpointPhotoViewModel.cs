@@ -34,6 +34,7 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
 
     public CameraViewModel? Camera { get; }
     public ICommand? CameraSetupCommand { get; }
+    public CheckpointPendingPlacement? PendingPlacement { get; private set; }
     public bool HasLivePreview => !HasPhoto && Camera is { IsRunning: true, BoardPreview: not null };
 
     public bool HasPhotoFor(SessionId sessionId, CheckpointId checkpointId) =>
@@ -116,6 +117,7 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
         ReferenceUnavailable = false;
         NeedsReferenceReload = false;
         PhotoImage = null;
+        PendingPlacement = null;
         OperatorAcknowledged = false;
         CaptureDetails = "";
         CheckpointName = checkpoint?.Name ?? "No packed checkpoint selected";
@@ -223,6 +225,7 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
         using var stream = new MemoryStream(attachment.PngBytes, writable: false);
         var decoder = new PngBitmapDecoder(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
         var image = decoder.Frames[0];
+        PendingPlacement = attachment.Reference.PendingPlacement;
         image.Freeze();
         PhotoImage = image;
         HasPhoto = true;

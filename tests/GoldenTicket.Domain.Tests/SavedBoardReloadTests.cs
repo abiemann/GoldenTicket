@@ -78,6 +78,9 @@ public sealed class SavedBoardReloadTests
             Assert.Equal(Screen.Table, reloaded.Screen);
             Assert.DoesNotContain("packed away", reloaded.Game.GuidanceInstruction,
                 StringComparison.OrdinalIgnoreCase);
+            Assert.True(reloaded.IsResumeTurnAnnouncementOpen);
+            Assert.Contains(coordinator.Public.SeatOf(coordinator.Public.ActiveSeatId).DisplayName,
+                reloaded.ResumeTurnAnnouncementText);
 
             void Publish(long sequence, DateTimeOffset capturedAt,
                 IReadOnlyList<ScoreMarkerReading> readings)
@@ -184,6 +187,7 @@ public sealed class SavedBoardReloadTests
             original.Table.RebuildAcknowledged = true;
             await original.AttestRebuildAsync();
             await original.ResumePackedGameAsync();
+            await original.AcknowledgeResumeTurnCommand.ExecuteAsync(null);
             original.Table.SaveName = "Failed later save";
             await original.SaveAndPackAwayAsync();
             var incomplete = await store.RestoreAsync(session.SessionId, TestManifest.Manifest,

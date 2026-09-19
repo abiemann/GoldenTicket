@@ -191,7 +191,7 @@ public sealed partial class MainViewModel
             coordinator.Public.Lifecycle != SessionLifecycle.Active ||
             coordinator.Public.TurnPhase != TurnPhase.TurnStart ||
             coordinator.Public.SeatOf(coordinator.Public.ActiveSeatId).Kind != SeatKind.Human ||
-            _operationInProgress || IsGameExitMenuOpen || _boardFirstSubmitting || PrivateSeat is not null)
+            _operationInProgress || IsGameInputPaused || _boardFirstSubmitting || PrivateSeat is not null)
         {
             if (BoardFirstProposal is not null) ClearBoardFirstProposal("flow-inactive");
             ClearBoardFirstInvalidMove();
@@ -441,7 +441,7 @@ public sealed partial class MainViewModel
             current.CropRevision != proposal.CropRevision ||
             current.ModelRevision != proposal.ModelRevision ||
             proposal.SeatView is not { } seatView ||
-            IsGameExitMenuOpen || !_windowActive || !IsGameplayScreenActive(Screen.Table) ||
+            IsGameInputPaused || !_windowActive || !IsGameplayScreenActive(Screen.Table) ||
             _mustReload || NeedsBoardReconciliation)
             return;
 

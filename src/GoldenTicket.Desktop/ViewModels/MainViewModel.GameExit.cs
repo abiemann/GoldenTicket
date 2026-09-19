@@ -26,7 +26,7 @@ public sealed partial class MainViewModel
 
     public void OpenGameExitMenu()
     {
-        if (IsGameExitMenuOpen || !Game.IsPlaying || !_gameLayerVisible || _exitRequested ||
+        if (IsGameInputPaused || !Game.IsPlaying || !_gameLayerVisible || _exitRequested ||
             _toolsDisposed || _coordinator is null || _operationInProgress || Busy is not null) return;
         // An action must finish its durable write, computer turns and public-view refresh before
         // the menu can pause play. Otherwise PumpAsync would skip that continuation permanently.
@@ -59,7 +59,11 @@ public sealed partial class MainViewModel
             return $"{seat.DisplayName} ({seat.Color}): {onBoard} on board, " +
                    $"{seat.TrainsRemaining} remaining";
         });
-        return "Expected from confirmed routes: " + string.Join(" · ", lines);
+        var summary = "Expected from confirmed routes: " + string.Join(" · ", lines);
+        if (view.PendingClaim is { AwaitingRestore: false } pending)
+            summary += $". Any trains already placed for {_manifest.Describe(pending.RouteId)} " +
+                       "will be saved as an unfinished move.";
+        return summary;
     }
 
     private void ObserveGameExitInventory()
@@ -88,9 +92,10 @@ public sealed partial class MainViewModel
         if (!IsGameExitMenuOpen || IsGameExitSaving || _operationInProgress ||
             _exitRequested || _mustReload || _coordinator is not { StorageFaulted: false } coordinator)
             return;
-        if (Busy is not null || _scoreMarkerStep is not null || coordinator.Public.PendingClaim is not null)
+        if (Busy is not null || _scoreMarkerStep is not null ||
+            coordinator.Public.PendingClaim is { AwaitingRestore: true })
         {
-            GameExitStatus = "Finish the current train placement and scoring-marker move before saving.";
+            GameExitStatus = "Finish the scoring-marker move or restore the cancelled placement before saving.";
             return;
         }
         if (coordinator.Public.Lifecycle is not (SessionLifecycle.Active or
@@ -111,6 +116,9 @@ public sealed partial class MainViewModel
         SetOperationInProgress(true);
         GameExitStatus = "Checking every train on the board by route and color…";
         var capturedVersion = coordinator.Public.StateVersion;
+        var pending = coordinator.Public.PendingClaim;
+        var pendingRoute = pending is null ? null : new BoardInventoryRoute(pending.RouteId.Value,
+            ToMarkerColor(coordinator.Public.SeatOf(pending.SeatId).Color), pending.TrainCount);
         try
         {
             var expected = coordinator.Public.RouteOwners
@@ -118,7 +126,7 @@ public sealed partial class MainViewModel
                     ToMarkerColor(coordinator.Public.SeatOf(route.Value).Color),
                     _manifest.Route(route.Key).Length))
                 .ToArray();
-            _gameExitInventoryVerifier = new BoardInventoryVerifier(expected);
+            _gameExitInventoryVerifier = new BoardInventoryVerifier(expected, pendingRoute);
             _gameExitInventoryCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
             _lastGameExitInventoryObservation = null;
             _gameExitMinimumFrameSequence = 0;
@@ -146,6 +154,10 @@ public sealed partial class MainViewModel
             }
 
             var counts = inventory.ConfirmedByColor;
+            var pendingPlacement = pending is null ? null : new CheckpointPendingPlacement(
+                pending.OperationId, pending.RouteId, pending.SeatId,
+                coordinator.Public.SeatOf(pending.SeatId).Color, pending.TrainCount,
+                inventory.PendingSlotMask ?? throw new InvalidOperationException("The pending placement was not checked."));
             var inventoryEpoch = _gameExitInventoryCameraEpoch;
             var inventoryCrop = _gameExitInventoryCropRevision;
             var inventorySequence = _gameExitInventoryFrameSequence;
@@ -188,7 +200,8 @@ public sealed partial class MainViewModel
 
             if (checkpoint is null) throw new InvalidOperationException("The saved checkpoint is missing.");
             if (confirmedInventory.Blue + confirmedInventory.Red + confirmedInventory.Green +
-                confirmedInventory.Yellow + confirmedInventory.Black != checkpoint.TotalTrainsOnBoard)
+                confirmedInventory.Yellow + confirmedInventory.Black !=
+                    checkpoint.TotalTrainsOnBoard + (pendingPlacement?.TrainCount ?? 0))
                 throw new InvalidOperationException("The photographed board inventory does not match the saved route inventory.");
 
             GameExitStatus = "Taking and checking a fresh photo of the saved board…";
@@ -213,7 +226,8 @@ public sealed partial class MainViewModel
                 // Recheck fresh frames after its source frame so a changed board cannot be
                 // attached merely because the pre-save inventory was correct.
                 GameExitStatus = "Checking the board again after its photo…";
-                _gameExitInventoryVerifier = new BoardInventoryVerifier(expected);
+                _gameExitInventoryVerifier = new BoardInventoryVerifier(expected, pendingRoute,
+                    pendingPlacement?.OccupiedSlotMask);
                 _gameExitInventoryCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
                 _lastGameExitInventoryObservation = null;
                 _gameExitMinimumFrameSequence = photo.FrameSequence;
@@ -235,8 +249,8 @@ public sealed partial class MainViewModel
 
                 await _checkpointPhotoStore.SaveReferenceAsync(checkpoint, photo.PngBytes,
                     new CheckpointPhotoCapture(photo.CapturedAt, photo.CameraId,
-                        photo.CameraEpoch, photo.BoardCropRevision, true),
-                    CancellationToken.None, confirmedInventory);
+                    photo.CameraEpoch, photo.BoardCropRevision, true),
+                    CancellationToken.None, confirmedInventory, pendingPlacement);
             }
             finally { CryptographicOperations.ZeroMemory(photo.PngBytes); }
 

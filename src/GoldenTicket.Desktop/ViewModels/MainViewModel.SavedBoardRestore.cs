@@ -11,7 +11,7 @@ public sealed partial class MainViewModel
     private string? _savedBoardRestoreCheckpoint;
     private string? _savedBoardRestoreGuidance;
     private bool _savedBoardRestoreCompleting;
-    internal (RouteId RouteId, int TrainCount)? SavedBoardRestoreTarget { get; private set; }
+    internal (RouteId RouteId, int TrainCount, int SlotMask)? SavedBoardRestoreTarget { get; private set; }
 
     private void StartSavedBoardRestore()
     {
@@ -28,7 +28,11 @@ public sealed partial class MainViewModel
         var routes = checkpoint.PhysicalTarget.Select(route =>
             new BoardInventoryRoute(route.RouteId.Value,
                 ToMarkerColor(view.SeatOf(route.SeatId).Color), route.Length)).ToArray();
-        _savedBoardRestoreVerifier = new SavedBoardRestoreVerifier(markers, routes);
+        var pending = CheckpointPhoto.PendingPlacement;
+        var pendingRoute = pending is null ? null : new BoardInventoryRoute(pending.RouteId.Value,
+            ToMarkerColor(pending.Color), pending.RouteLength);
+        _savedBoardRestoreVerifier = new SavedBoardRestoreVerifier(markers, routes,
+            pendingRoute, pending?.OccupiedSlotMask);
         _savedBoardRestoreCheckpoint = checkpoint.CheckpointId.Value;
         _savedBoardRestoreCompleting = false;
         _savedBoardRestoreGuidance = null;
@@ -92,7 +96,10 @@ public sealed partial class MainViewModel
                         .FirstOrDefault(target => target.RouteId.Value == routeId)
                     : null;
                 if (route is not null)
-                    SetSavedBoardRestoreTarget((route.RouteId, route.Length));
+                    SetSavedBoardRestoreTarget((route.RouteId, route.Length, (1 << route.Length) - 1));
+                else if (CheckpointPhoto.PendingPlacement is { } pending &&
+                    result.Inventory?.RouteId == pending.RouteId.Value)
+                    SetSavedBoardRestoreTarget((pending.RouteId, pending.RouteLength, pending.OccupiedSlotMask));
                 else if (result.Inventory?.State is not (BoardInventoryState.Stabilizing or
                     BoardInventoryState.WaitingForFreshFrame))
                     SetSavedBoardRestoreTarget(null);
@@ -101,7 +108,7 @@ public sealed partial class MainViewModel
             case SavedBoardRestoreStage.Confirmed:
                 SetSavedBoardRestoreTarget(null);
                 _savedBoardRestoreCompleting = true;
-                ShowSavedBoardRestoreGuidance("Saved scoring markers and trains verified. Resuming the game…");
+                ShowSavedBoardRestoreGuidance("Saved scoring markers and trains verified.");
                 _ = CompleteSavedBoardRestoreAsync(coordinator, _savedBoardRestoreCheckpoint!);
                 return;
         }
@@ -114,6 +121,10 @@ public sealed partial class MainViewModel
             return "Scoring markers match. Checking every saved train on the board…";
         if (observation.State == BoardInventoryState.Unsupported)
             return "The camera cannot verify this saved route automatically. Play stays paused until the saved board can be checked.";
+        if (observation.RouteId is { } pendingRouteId && CheckpointPhoto.PendingPlacement is { } pending &&
+            pending.RouteId.Value == pendingRouteId)
+            return $"Restore the unfinished {pending.Color} placement on {_manifest.Describe(pending.RouteId)} " +
+                $"to match the saved photo ({pending.TrainCount} trains placed).";
         if (observation.State == BoardInventoryState.UnexpectedTrain)
             return "Remove trains that were not on the board when you saved the game.";
         if (observation.RouteId is { } routeId)
@@ -139,7 +150,7 @@ public sealed partial class MainViewModel
         Game.ShowGuidance(Table.TurnText, Table.ActiveSeatName, instruction);
     }
 
-    private void SetSavedBoardRestoreTarget((RouteId RouteId, int TrainCount)? target)
+    private void SetSavedBoardRestoreTarget((RouteId RouteId, int TrainCount, int SlotMask)? target)
     {
         if (SavedBoardRestoreTarget == target) return;
         SavedBoardRestoreTarget = target;
@@ -192,7 +203,7 @@ public sealed partial class MainViewModel
             Game.ClearGuidance();
             Status = null;
             ShowGameplayScreen(Screen.Table);
-            await PumpAsync();
+            await AnnounceResumedTurnAsync();
         }
         catch (Exception)
         {

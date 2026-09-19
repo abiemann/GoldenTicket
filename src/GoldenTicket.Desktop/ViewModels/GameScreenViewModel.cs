@@ -313,8 +313,9 @@ public sealed partial class GameScreenViewModel : ObservableObject
             return;
         }
 
-        SetPlacementTargets(targets.Select((point, index) =>
-            new PlacementTargetRow(point.X, point.Y, index + 1)).ToArray());
+        SetPlacementTargets(targets.Select((point, index) => (point, index))
+            .Where(item => savedTarget is null || (savedTarget.Value.SlotMask & (1 << item.index)) != 0)
+            .Select(item => new PlacementTargetRow(item.point.X, item.point.Y, item.index + 1)).ToArray());
     }
 
     private void SetPlacementTargets(IReadOnlyList<PlacementTargetRow> targets)

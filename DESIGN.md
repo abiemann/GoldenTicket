@@ -409,16 +409,23 @@ rosters are allowed; an operator still places and verifies any computer player's
 
 Shift+Escape slides the game screen to the right to reveal the technical interface. Plain
 Escape opens a modal dialog with **Save Game** and **Quit to Menu** while a game is in progress
-and no foreground action or computer work is running. Do not open the dialog during a write or
-computer turn continuation; closing it must not leave that continuation stranded.
+and no foreground action or computer work is running. Waiting for a computer's authorized train
+placement is a save point. Do not open the dialog during a write or computer turn continuation;
+closing it must not leave that continuation stranded. Saving remains blocked while a scoring-marker
+move or cancelled-placement restoration is unfinished.
 Save Game requires a fresh accepted board crop, checks train positions and player colors against
-the committed routes, reads back the digital checkpoint and an unprocessed board photo with
-observed color totals, then returns to the main menu. A failed check leaves the game open.
+the committed routes plus any subset of an authorized pending placement, reads back the digital
+checkpoint and an unprocessed board photo with observed color totals and the pending slot mask,
+then returns to the main menu. The exact mask must remain stable and match after photo capture.
+A failed check leaves the game open.
 Completion requires the matching durable photo attachment as well as logical checkpoint validation;
 an in-memory failure marker alone is insufficient across restart. Quit to Menu discards later
 auto-journaled play while retaining the latest earlier completed save with a validated photo,
 or removes a match with no completed save. Dismissing the dialog preserves an unresolved solo opening
 destination choice. Held-key repeats do not reopen the dialog or repeat the reveal.
+On reload, verify saved scoring markers, confirmed routes, and the saved pending slots before
+showing a game-themed dialog naming the player whose saved turn resumes. Its styled **OK** button
+releases AI work and human input; restoring the board alone does not advance play.
 
 A **Return to game** button at the top of the technical interface reverses the transition and
 brings the game layer back over the entire content area. Both layers bind to the same game
@@ -1650,6 +1657,18 @@ The saved physical target is the committed board plus any verified `pendingPlace
 
 The low-level logical checkpoint and automatic journal retain the exact digital continuation even if a board-photo operation fails. Keep `targetProvenance` as `LogicalStateOnly` for operator-attested reference attachments: a valid image checksum and checkpoint association do not automatically prove its physical contents. Missing or invalid required images prevent completed user-save status and checkpoint reload until recovery; they do not erase valid digital state.
 
+**Implemented desktop continuation.** The journal already retains the active seat, turn number,
+phase, pending operation and reserved payment. The checkpoint's authoritative `PhysicalTarget`
+continues to contain confirmed routes only. Its required photo sidecar can additionally carry
+`PendingPlacement`: operation, route, seat, player color, route length and occupied-slot mask,
+including an explicit zero mask. Photo readback validates that metadata against the checkpoint;
+reload also checks it against the restored public pending operation. Older attachments without
+this field have no saved pending physical progress. The photographed inventory is confirmed-route
+trains plus the saved pending slots; these extra trains spend no stock or cards and score no points.
+The desktop supports saving a forward placement, but still requires scoring-marker moves and
+cancelled-placement restoration to finish first. The broader protocol above remains the target
+for photographed cancellation recovery and the complete evidence lifecycle.
+
 For recovery of an active journal without a user checkpoint, use committed routes as the physical target. Pending claim authorization and payment reservations survive, but unverified physical progress is omitted. A forward claim needs its trains placed again; a cancellation verifies the restored before-state and finishes its removal/reconciliation workflow. An unresolved board-first proposal remains non-authoritative and may be initiated again after reconciliation. Preserve revealed draws, ticket choices, and completed digital actions. This recovery path is not a substitute for the required photograph in Save Game and cannot produce permission to clear the board.
 
 #### Guided reconstruction
@@ -1659,6 +1678,11 @@ Selecting **Rebuild the board** loads the immutable checkpoint and durably enter
 Validate and display the required saved photograph beside the canonical target diagram. List routes by seat/color, endpoint cities, lane, train count, and completion status. Show committed and pending placements with distinct labels and patterns, and provide remaining stock guidance. The camera computes missing, extra, wrong-color, and wrong-lane cells against the full immutable target. Players can reconstruct in any order; temporary discrepancies update guidance without producing move proposals, ownership changes, scoring, or repeated congratulations. Keep private hands and tickets covered throughout.
 
 Enable **Resume game** only after fresh stable full-board agreement with that target, or a deliberate laptop manual-mode selection and whole-target attestation under the existing manual-verification policy. Clicking Resume runs the same current-evidence/version checks again. A moved train or jog after the button was enabled must block stale confirmation. Persist `PackedGameResumed` and return to the saved operation exactly once, with a new state version and private grants obtained only on a subsequent reveal.
+
+The implemented game table verifies scoring markers, confirmed routes and the exact pending-slot
+mask, then announces the saved active player and turn. Keep AI computation, automatic placement
+completion and human actions paused until the player presses the styled **OK** button. The manual
+resume and active-journal reconciliation paths use the same acknowledgment before continuing.
 
 Resume does not itself commit a pending route. Restore its existing operation and exact subphase, invalidate old claim evidence, and run the appropriate ordinary protocol against a new observation. For a forward placement, a completely restored authorized route may then commit once; a partially restored placement continues with the missing trains. For an operation already being canceled or restored to its before-state, resume removal/reconciliation and release reservations only at the normal cancellation boundary; it must never become a forward claim. Active-journal recovery likewise returns to the saved placement or cancellation instructions. Resume a partial card draw or ticket offer with the original outcomes and remaining choices, and restart interrupted AI computation only from its permitted current view.
 

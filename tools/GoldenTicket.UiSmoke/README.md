@@ -50,3 +50,8 @@ the reference must remove candidates. These rendered outlines use synthetic geom
 tests and the explicit two-photo `GoldenTicket.PieceDetectionSmoke` tool test recognition separately.
 
 Inspect the rendered screenshots for visual issues that bounds assertions cannot judge. Game fixtures are local synthetic play using the in-memory store; route choices may vary. Camera screenshots include an inactive state and an explicitly labeled synthetic pattern with four editable corner handles. Connection screenshots show the inactive state. These checks establish layout, coordinate mapping, binding and routed-key handler evidence, not live-window mouse capture, keyboard focus, DPI, screen-reader, camera, firewall, certificate-trust or real-phone acceptance.
+
+The reload-turn announcement fixture renders the production window's modal at both viewport sizes,
+checks the turn-message binding, brown/gold OK button without dotted focus marks, disabled underlying
+content, and Escape containment. Its display state is synthetic; save/reload integration tests cover
+turn persistence and acknowledgment. Results are written to `resume-turn-announcement.json`.

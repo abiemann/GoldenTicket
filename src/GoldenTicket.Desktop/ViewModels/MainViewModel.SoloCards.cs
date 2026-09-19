@@ -73,7 +73,7 @@ public sealed partial class MainViewModel
     {
         if (_coordinator is not { StorageFaulted: false } coordinator || tile is null ||
             !IsSoloHumanTurn || !IsGameplayScreenActive(Screen.Table) ||
-            ShowSoloOpeningTicketsOnBoard || _operationInProgress || _exitRequested ||
+            ShowSoloOpeningTicketsOnBoard || _operationInProgress || IsGameInputPaused || _exitRequested ||
             _mustReload || NeedsBoardReconciliation || !_windowActive || !_systemAvailable ||
             coordinator.Public.ActiveSeatId != tile.Seat.SeatId ||
             !Table.Seats.Any(seat => seat.SeatId == tile.Seat.SeatId && seat.Operator == "human")) return;

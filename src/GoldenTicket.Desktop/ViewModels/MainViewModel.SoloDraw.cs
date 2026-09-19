@@ -27,7 +27,7 @@ public sealed partial class MainViewModel
     public bool ShowSoloTicketOffer => _soloTicketOffer.Count > 0;
     public int SoloTicketMinimumKeep => _soloTicketMinimumKeep;
     public bool CanKeepSoloTickets => ShowSoloTicketOffer && !_operationInProgress &&
-        _windowActive && !IsGameExitMenuOpen && !NeedsBoardReconciliation &&
+        _windowActive && !IsGameInputPaused && !NeedsBoardReconciliation &&
         _soloTicketOffer.Count(choice => choice.Keep) >= _soloTicketMinimumKeep;
     public string? SoloTicketOfferMessage
     {
@@ -40,7 +40,7 @@ public sealed partial class MainViewModel
         coordinator.Public.TurnPhase is TurnPhase.TurnStart or TurnPhase.AwaitingSecondTrainCard &&
         !_operationInProgress && !_exitRequested && !_mustReload && !_toolsDisposed &&
         _windowActive && _systemAvailable && !NeedsBoardReconciliation &&
-        !IsGameExitMenuOpen && _scoreMarkerStep is null &&
+        !IsGameInputPaused && _scoreMarkerStep is null &&
         PrivateSeat is null && BoardFirstProposal is null && !ShowSoloTicketOffer &&
         _soloDrawActionsVersion == coordinator.Public.StateVersion;
 
@@ -182,7 +182,7 @@ public sealed partial class MainViewModel
         if (!CanKeepSoloTickets || _coordinator is not { } coordinator ||
             coordinator.Public.TurnPhase != TurnPhase.AwaitingTicketKeep ||
             !IsGameplayScreenActive(Screen.Table) || !_windowActive || _operationInProgress ||
-            IsGameExitMenuOpen || NeedsBoardReconciliation) return;
+            IsGameInputPaused || NeedsBoardReconciliation) return;
 
         var version = _soloTicketOfferVersion;
         var kept = _soloTicketOffer.Where(choice => choice.Keep)

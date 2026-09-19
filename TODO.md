@@ -90,9 +90,10 @@ validation requirements; mark each feature complete only after those checks pass
   route-list guided reconstruction and exactly-once resume. Required operator-attested
   reference photos use plaintext format v2 with a SHA-256 checksum, immutable checkpoint binding
   and readback verification. Still missing:
-  the board diagram, machine-verified photograph, pending-placement mask and full evidence lifecycle.
+  the board diagram, machine-verified photograph and full evidence lifecycle.
   The in-game Escape save now checks route positions and player colors from live frames, stores an
-  observed color inventory beside a fresh board reference photo, and returns to the main menu
+  observed color inventory and any authorized pending placement's per-slot mask beside a fresh
+  board reference photo, and returns to the main menu
   only after both the digital checkpoint and matching photo validate. This does not yet make the
   photograph itself a machine-verified checkpoint. Missing or invalid required photos block reload
   with an error; automatic journal recovery without a user checkpoint remains a separate path.
@@ -425,9 +426,17 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   before rollback; Quit to Menu retains the latest completed earlier save instead of promoting
   a failed photo capture. Reload reports missing or corrupt required images before gameplay.
   Escape cannot open the save/quit dialog while an action or computer work is running.
+- [x] **Save and resume a computer's unfinished placement.** Save while waiting for trains, with
+  zero, some, or all pending slots occupied. Keep the active seat, turn, phase, pending operation,
+  and reserved cards in the existing journal; store physical progress separately from confirmed
+  routes in the required photo sidecar. Check the exact pending mask before and after capture and
+  during rebuild. After board verification, announce whose turn resumes and wait for the themed
+  **OK** button before computer work or player actions. Saving still waits for active writes/work,
+  scoring-marker moves, and cancelled-placement restoration. Persistence/photo regressions cover
+  metadata validation and a computer turn resumed from SQLite without spending its payment twice.
 - [ ] **M2/M4: persistence and pack away, remaining.** Add the geometry-based rebuild diagram, complete snapshots,
   full evidence pinning and machine-verified board photographs,
-  partial-operation (pending placement) targets, and current-checkpoint success receipts for the
+  photographed cancellation/restoration progress and current-checkpoint success receipts for the
   companion. Add correction branches and optional encrypted portable export/import.
 - [ ] Complete non-audio theme/high-contrast/screen-reader/keyboard work and adjustable privacy timing
   before the final narrative feature pass.
