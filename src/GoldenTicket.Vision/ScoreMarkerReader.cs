@@ -90,7 +90,50 @@ public static class ScoreMarkerReader
                 ? new(marker.Index, null, null, ScoreMarkerReadingStatus.UnknownColor, "The marker color is unclear.")
                 : new(marker.Index, color, best.Score, ScoreMarkerReadingStatus.Read, "Printed score track position read."));
         }
-        return readings.AsReadOnly();
+        return CollapseDuplicateDetections(readings, markers, candidates);
+    }
+
+    private static IReadOnlyList<ScoreMarkerReading> CollapseDuplicateDetections(
+        IReadOnlyList<ScoreMarkerReading> readings, IReadOnlyList<Marker> markers,
+        IReadOnlyList<PieceCandidate> candidates)
+    {
+        // The tiled model can outline one glossy scoring marker twice. If both
+        // outlines overlap and yield the same color and printed score, keep the
+        // stronger detection. Separate markers, different colors, and uncertain
+        // readings remain visible to the verifier as separate evidence.
+        var boxes = markers.Where(marker => marker.Box is not null)
+            .ToDictionary(marker => marker.Index, marker => marker.Box!.Value);
+        var kept = new List<ScoreMarkerReading>(readings.Count);
+        foreach (var reading in readings.OrderByDescending(reading =>
+                     candidates[reading.CandidateIndex].Confidence))
+        {
+            if (reading.Status == ScoreMarkerReadingStatus.Read &&
+                boxes.TryGetValue(reading.CandidateIndex, out var box) &&
+                kept.Any(previous => previous.Status == ScoreMarkerReadingStatus.Read &&
+                    previous.Color == reading.Color && previous.Score == reading.Score &&
+                    boxes.TryGetValue(previous.CandidateIndex, out var other) &&
+                    IsSamePhysicalMarker(box, other)))
+                continue;
+            kept.Add(reading);
+        }
+        return kept.OrderBy(reading => reading.CandidateIndex).ToArray();
+    }
+
+    private static bool IsSamePhysicalMarker(Box first, Box second)
+    {
+        var overlapX = Math.Min(first.Right, second.Right) - Math.Max(first.Left, second.Left);
+        var overlapY = Math.Min(first.Bottom, second.Bottom) - Math.Max(first.Top, second.Top);
+        if (overlapX <= 0 || overlapY <= 0) return false;
+        // Use board-pixel distances so horizontal and vertical offsets carry the
+        // same meaning on the 8:5 crop. Nearby but distinct marker bodies should
+        // not be merged merely because they share a score row.
+        var dx = (first.CenterX - second.CenterX) * 1996;
+        var dy = (first.CenterY - second.CenterY) * 1248;
+        var firstSize = Math.Max((first.Right - first.Left) * 1996,
+            (first.Bottom - first.Top) * 1248);
+        var secondSize = Math.Max((second.Right - second.Left) * 1996,
+            (second.Bottom - second.Top) * 1248);
+        return dx * dx + dy * dy <= Math.Pow(Math.Max(firstSize, secondSize) * .8, 2);
     }
 
     private static Box? Bounds(IReadOnlyList<NormalizedPoint>? points)

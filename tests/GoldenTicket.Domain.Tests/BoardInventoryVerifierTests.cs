@@ -69,6 +69,23 @@ public sealed class BoardInventoryVerifierTests
     }
 
     [Fact]
+    public void Claimed_duluth_omaha_trains_remain_in_inventory_after_small_center_drift()
+    {
+        var verifier = new BoardInventoryVerifier([
+            new("duluth--omaha--a", MarkerColor.Blue, 2)
+        ]);
+        var now = DateTimeOffset.UtcNow;
+        var first = SceneAtResolution(1996, 1248, 1, 1, now,
+            [new(1094.2, 444.6, MarkerColor.Blue), new(1069.9, 505.4, MarkerColor.Blue)]);
+        var second = SceneAtResolution(1996, 1248, 2, 1, now.AddSeconds(1.1),
+            [new(1093.7, 445.1, MarkerColor.Blue), new(1069.2, 505.4, MarkerColor.Blue)]);
+
+        Assert.Equal(BoardInventoryState.Stabilizing,
+            verifier.Observe(first.Frame, first.Candidates, 1, 1).State);
+        Assert.True(verifier.Observe(second.Frame, second.Candidates, 1, 1).Confirmed);
+    }
+
+    [Fact]
     public void Missing_wrong_color_or_ambiguous_route_never_confirms()
     {
         var now = DateTimeOffset.UtcNow;
@@ -206,9 +223,11 @@ public sealed class BoardInventoryVerifierTests
 
     private static (CameraFrame Frame, PieceCandidate[] Candidates) Scene(long sequence, long epoch,
         DateTimeOffset capturedAt, Train[] trains)
+        => SceneAtResolution(960, 600, sequence, epoch, capturedAt, trains);
+
+    private static (CameraFrame Frame, PieceCandidate[] Candidates) SceneAtResolution(int width, int height,
+        long sequence, long epoch, DateTimeOffset capturedAt, Train[] trains)
     {
-        const int width = 960;
-        const int height = 600;
         var pixels = new byte[width * height * 4];
         for (var offset = 0; offset < pixels.Length; offset += 4)
             pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = pixels[offset + 3] = 180;

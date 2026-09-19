@@ -19,7 +19,7 @@ public readonly record struct BoardSlotPoint(double X, double Y, double TangentX
 public static class ClassicUsRouteGeometry
 {
     public const string ProfileId = "ttr-us-classic-en-v1";
-    public const string GeometryVersion = "classic-us-slots-2026-09-16-v1";
+    public const string GeometryVersion = "classic-us-slots-2026-09-18-v2";
     // The original 3456 × 2160 empty-board photo, before scaling to the 1996 × 1248
     // reference used below. Kept as provenance; the photo is user-supplied, not shipped.
     public const string ReferencePhotoSha256 =
@@ -70,7 +70,10 @@ public static class ClassicUsRouteGeometry
             ["denver--salt-lake-city--b"] = Lane((572, 637), (640, 643), (705, 663)),
             ["denver--santa-fe"] = Lane((763, 745), (760, 808)),
             ["duluth--helena"] = Lane((725, 402), (798, 401), (870, 401), (943, 399), (1015, 398), (1085, 396)),
-            ["duluth--omaha--a"] = Lane((1082, 443), (1067, 510)),
+            // Live camera audit: lane A's upper blue train repeatedly landed near
+            // lane B's tie margin. This small reference adjustment lets both
+            // occupied lane-A spaces pass without weakening parallel-lane checks.
+            ["duluth--omaha--a"] = Lane((1084, 443), (1069, 510)),
             ["duluth--omaha--b"] = Lane((1107, 447), (1091, 514)),
             ["duluth--sault-st-marie"] = Lane((1184, 371), (1253, 340), (1316, 307)),
             ["duluth--toronto"] = Lane((1182, 385), (1254, 370), (1328, 356), (1401, 341), (1475, 327), (1546, 318)),

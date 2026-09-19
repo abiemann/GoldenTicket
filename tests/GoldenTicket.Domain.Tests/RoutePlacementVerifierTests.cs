@@ -86,6 +86,32 @@ public sealed class RoutePlacementVerifierTests
     }
 
     [Fact]
+    public void Observed_duluth_omaha_lane_a_trains_survive_small_model_center_drift()
+    {
+        const string claimed = "duluth--omaha--a";
+        const string parallel = "duluth--omaha--b";
+        var now = DateTimeOffset.UtcNow;
+        // The live audit saw these two blue pieces at high confidence. The upper
+        // detection moved from x=1092.6 at claim time to x=1094.2 later, while
+        // remaining closer to lane A than lane B.
+        var first = SceneAtResolution(1996, 1248, 1, 1, now,
+            (1094.2, 444.6, MarkerColor.Blue, .96),
+            (1069.9, 505.4, MarkerColor.Blue, .96));
+        var second = SceneAtResolution(1996, 1248, 2, 1, now.AddSeconds(1.1),
+            (1093.7, 445.1, MarkerColor.Blue, .96),
+            (1069.2, 505.4, MarkerColor.Blue, .96));
+        var claimedVerifier = new RoutePlacementVerifier();
+
+        Assert.Equal(RoutePlacementState.Stabilizing,
+            claimedVerifier.Observe(first.Frame, first.Candidates, claimed,
+                MarkerColor.Blue, 2, "later-claim", 1, 1).State);
+        Assert.True(claimedVerifier.Observe(second.Frame, second.Candidates, claimed,
+            MarkerColor.Blue, 2, "later-claim", 1, 1).Confirmed);
+        Assert.False(new RoutePlacementVerifier().Observe(first.Frame, first.Candidates,
+            parallel, MarkerColor.Blue, 2, "later-claim", 1, 1).Confirmed);
+    }
+
+    [Fact]
     public void Yellow_trains_on_kansas_city_oklahoma_city_lane_b_do_not_confirm_blue_lane_a()
     {
         const string requested = "kansas-city--oklahoma-city--a";
@@ -345,9 +371,12 @@ public sealed class RoutePlacementVerifierTests
 
     private static (CameraFrame Frame, PieceCandidate[] Candidates) Scene(long sequence, long epoch,
         DateTimeOffset capturedAt, params (double X, double Y, MarkerColor Color, double Confidence)[] trains)
+        => SceneAtResolution(960, 600, sequence, epoch, capturedAt, trains);
+
+    private static (CameraFrame Frame, PieceCandidate[] Candidates) SceneAtResolution(int width, int height,
+        long sequence, long epoch, DateTimeOffset capturedAt,
+        params (double X, double Y, MarkerColor Color, double Confidence)[] trains)
     {
-        const int width = 960;
-        const int height = 600;
         var pixels = new byte[width * height * 4];
         for (var offset = 0; offset < pixels.Length; offset += 4)
             pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = pixels[offset + 3] = 180;

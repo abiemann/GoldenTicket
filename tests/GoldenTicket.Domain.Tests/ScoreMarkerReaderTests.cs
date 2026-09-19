@@ -97,6 +97,45 @@ public sealed class ScoreMarkerReaderTests
     }
 
     [Fact]
+    public void Overlapping_duplicate_of_one_blue_marker_does_not_block_its_score()
+    {
+        var scoreSevenY = .974 - 7 * (.974 - .026) / 20;
+        var (frame, candidates) = Scene((.017, scoreSevenY, MarkerColor.Blue),
+            (.052, scoreSevenY, MarkerColor.Yellow));
+        var duplicate = candidates[0] with
+        {
+            Confidence = .7,
+            Outline = candidates[0].Outline.Select(point =>
+                new NormalizedPoint(point.X + .004, point.Y)).ToArray()
+        };
+
+        var readings = ScoreMarkerReader.Read(frame, [.. candidates, duplicate]);
+
+        Assert.Equal(2, readings.Count);
+        Assert.Equal(new[] { 0, 1 }, readings.Select(reading => reading.CandidateIndex));
+        Assert.Equal(new MarkerColor?[] { MarkerColor.Blue, MarkerColor.Yellow },
+            readings.Select(reading => reading.Color));
+        Assert.All(readings, reading => Assert.Equal(7, reading.Score));
+    }
+
+    [Fact]
+    public void Separate_same_color_markers_on_one_score_remain_ambiguous()
+    {
+        var scoreSevenY = .974 - 7 * (.974 - .026) / 20;
+        var (frame, candidates) = Scene((.017, scoreSevenY, MarkerColor.Blue),
+            (.09, scoreSevenY, MarkerColor.Blue));
+
+        var readings = ScoreMarkerReader.Read(frame, candidates);
+
+        Assert.Equal(2, readings.Count);
+        Assert.All(readings, reading =>
+        {
+            Assert.Equal(MarkerColor.Blue, reading.Color);
+            Assert.Equal(7, reading.Score);
+        });
+    }
+
+    [Fact]
     public void Marker_in_the_middle_of_the_map_is_off_track()
     {
         var (frame, candidates) = Scene((.5, .5, MarkerColor.Green));

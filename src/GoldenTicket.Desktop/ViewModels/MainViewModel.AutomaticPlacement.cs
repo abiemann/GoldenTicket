@@ -88,7 +88,27 @@ public sealed partial class MainViewModel
                 {
                     color = reading.Color?.ToString(), reading.Score,
                     status = reading.Status.ToString()
-                }).ToArray()
+                }).ToArray(),
+                rawMarkerDetections = scoreObservation.State == ScoreMarkerMoveState.Ambiguous
+                    ? analysis.Candidates.Select((candidate, index) => new { candidate, index })
+                        .Where(item => item.candidate.Kind == PieceCandidateKind.PlayerMarker &&
+                            item.candidate.Outline.Count >= 4)
+                        .Select(item => new
+                        {
+                            item.index,
+                            confidence = Math.Round(item.candidate.Confidence, 3),
+                            x = Math.Round(item.candidate.Outline.Average(point => point.X) *
+                                ClassicUsRouteGeometry.ReferenceWidth, 1),
+                            y = Math.Round(item.candidate.Outline.Average(point => point.Y) *
+                                ClassicUsRouteGeometry.ReferenceHeight, 1),
+                            width = Math.Round((item.candidate.Outline.Max(point => point.X) -
+                                item.candidate.Outline.Min(point => point.X)) *
+                                ClassicUsRouteGeometry.ReferenceWidth, 1),
+                            height = Math.Round((item.candidate.Outline.Max(point => point.Y) -
+                                item.candidate.Outline.Min(point => point.Y)) *
+                                ClassicUsRouteGeometry.ReferenceHeight, 1)
+                        }).ToArray()
+                    : null
             });
             if (scoreObservation.Confirmed)
                 _ = FinishScoreMarkerStepAsync(scoreStep);
@@ -175,18 +195,32 @@ public sealed partial class MainViewModel
     private void UpdatePlacementInventoryGuidance(PlacementInstruction placement,
         BoardInventoryObservation inventory)
     {
-        string? correction = inventory.RouteId is { } routeId &&
-            routeId != placement.RouteId.Value &&
-            inventory.State is BoardInventoryState.MissingTrains or BoardInventoryState.WrongColor or
-                BoardInventoryState.Ambiguous
-            ? $"Put the trains back on {_manifest.Describe(new RouteId(routeId))}. " +
-              "Previously claimed routes must stay occupied before this claim can continue."
-            : inventory.State == BoardInventoryState.UnexpectedTrain
-                ? "Check for train pieces outside the claimed routes and the new route. " +
-                  "The whole board must match before this claim can continue."
-                : inventory.State == BoardInventoryState.Unsupported
-                    ? "The camera cannot verify every claimed route. Check the board before continuing."
-                    : null;
+        string? correction = null;
+        if (inventory.RouteId is { } routeId && routeId != placement.RouteId.Value)
+        {
+            var route = _manifest.Describe(new RouteId(routeId));
+            correction = inventory.State switch
+            {
+                BoardInventoryState.MissingTrains =>
+                    $"The camera cannot verify every train on {route}. Check that each train is " +
+                    "visible and centered in its space. Previously claimed routes must stay occupied.",
+                BoardInventoryState.WrongColor =>
+                    $"The camera sees a train of the wrong color on {route}. Check the pieces there.",
+                BoardInventoryState.Ambiguous =>
+                    $"The camera cannot tell which spaces the trains occupy on {route}. " +
+                    "Center them in the printed spaces.",
+                _ => null
+            };
+        }
+        correction ??= inventory.State switch
+        {
+            BoardInventoryState.UnexpectedTrain =>
+                "Check for train pieces outside the claimed routes and the new route. " +
+                "The whole board must match before this claim can continue.",
+            BoardInventoryState.Unsupported =>
+                "The camera cannot verify every claimed route. Check the board before continuing.",
+            _ => null
+        };
         if (correction is not null)
         {
             if (_showingPlacementInventoryCorrection && Game.GuidanceInstruction == correction) return;
