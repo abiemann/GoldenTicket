@@ -226,6 +226,13 @@ public sealed partial class CameraViewModel
                     CornerDetectionStatus = "The camera image changed or became stale. Use Detect board corners to try again.";
                 return;
             }
+            if (forGameBoard)
+                BoardInteractionLog.Write("camera.board.framing", new
+                {
+                    frame.Sequence, frame.Epoch, frame.Width, frame.Height,
+                    result.Accepted, result.Confidences, result.Corners, result.RejectionReason,
+                    result.UsedFocusedRetry, elapsedMs = result.Elapsed.TotalMilliseconds
+                });
             if (!result.Accepted)
             {
                 if (forGameBoard && _gameBoardFramingActive && gameBoardRevision == _gameBoardFramingRevision)

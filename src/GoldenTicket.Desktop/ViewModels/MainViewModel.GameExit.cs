@@ -77,6 +77,14 @@ public sealed partial class MainViewModel
         var observation = verifier.Observe(analysis.Board, analysis.Candidates,
             analysis.CropRevision, analysis.ModelRevision);
         _lastGameExitInventoryObservation = observation;
+        BoardInteractionLog.Write("save.board-check.frame", new
+        {
+            analysis.Board.Sequence, analysis.Board.Epoch,
+            analysis.CropRevision, analysis.ModelRevision,
+            state = observation.State.ToString(),
+            observation.RouteId, observation.UnexpectedTrains,
+            afterPhoto = _gameExitMinimumFrameSequence > 0
+        });
         if (observation.Confirmed)
         {
             _gameExitInventoryFrameSequence = analysis.Board.Sequence;
@@ -84,6 +92,52 @@ public sealed partial class MainViewModel
             _gameExitInventoryCropRevision = analysis.CropRevision;
             completion.TrySetResult(observation);
         }
+        else
+        {
+            GameExitStatus = observation.State == BoardInventoryState.Stabilizing
+                ? "Keep the board still while the camera confirms the train positions and colors…"
+                : DescribeGameExitInventoryIssue(observation) + " Checking again…";
+        }
+    }
+
+    private string DescribeGameExitInventoryIssue(BoardInventoryObservation? observation)
+    {
+        if (observation is { State: BoardInventoryState.UnexpectedTrain, UnexpectedTrains: { } extra })
+        {
+            var color = extra.Color is { } detected ? " " + detected.ToString().ToLowerInvariant() : "";
+            return $"The camera sees {extra.Count}{color} train{(extra.Count == 1 ? "" : "s")} on " +
+                $"{_manifest.Describe(new RouteId(extra.RouteId))}, an unclaimed route. " +
+                "Return to the game to resolve the placement, or remove " +
+                $"{(extra.Count == 1 ? "it" : "them")} before saving.";
+        }
+
+        var route = observation?.RouteId is { } routeId
+            ? _manifest.Describe(new RouteId(routeId)) : null;
+        return observation?.State switch
+        {
+            BoardInventoryState.MissingTrains when route is not null =>
+                $"The camera cannot verify every train on {route}. Check that each train is visible and in its space.",
+            BoardInventoryState.WrongColor when route is not null =>
+                $"The camera sees a train of the wrong color on {route}. Check the pieces there.",
+            BoardInventoryState.Ambiguous when route is not null =>
+                $"The camera cannot clearly identify the trains or their colors on {route}. Check their positions and lighting.",
+            BoardInventoryState.UnexpectedTrain when route is not null =>
+                $"The camera sees extra trains on {route}. Keep this route's placement unchanged while saving.",
+            BoardInventoryState.UnexpectedTrain =>
+                "The camera sees an extra or misplaced train but cannot identify its route confidently. " +
+                "Check for pieces outside the claimed routes and any unfinished placement.",
+            BoardInventoryState.MissingTrains =>
+                "The camera cannot verify all the expected trains. Check that every claimed route is still occupied.",
+            BoardInventoryState.WrongColor =>
+                "The camera sees a train of the wrong color. Check the pieces on the claimed routes.",
+            BoardInventoryState.Ambiguous =>
+                "The camera cannot clearly identify every train. Check the positions, crop and lighting.",
+            BoardInventoryState.Unsupported =>
+                "The camera cannot verify one of this game's routes. Return to the game to check the board.",
+            BoardInventoryState.Stabilizing or BoardInventoryState.Confirmed =>
+                "Keep the board still until the camera confirms the same train positions and colors in fresh views.",
+            _ => "The camera needs a fresh, upright view of the whole board. Check the crop and lighting."
+        };
     }
 
     [RelayCommand]
@@ -138,12 +192,8 @@ public sealed partial class MainViewModel
             }
             catch (TimeoutException)
             {
-                var issue = _lastGameExitInventoryObservation is { } last
-                    ? $" Last reading: {last.State}" +
-                      (last.RouteId is null ? "." : $" on {_manifest.Describe(new RouteId(last.RouteId))}.")
-                    : "";
-                GameExitStatus = "The camera could not verify every train and color on the board. " +
-                    "Keep the board still, check the crop and lighting, then try Save Game again." + issue;
+                GameExitStatus = DescribeGameExitInventoryIssue(_lastGameExitInventoryObservation) +
+                    " Then try Save Game again.";
                 return;
             }
             if (!ReferenceEquals(coordinator, _coordinator) ||
@@ -239,7 +289,8 @@ public sealed partial class MainViewModel
                 catch (TimeoutException)
                 {
                     throw new InvalidOperationException(
-                        "The camera could not confirm that the board still matches the photo.");
+                        "The camera could not confirm that the board still matches the photo. " +
+                        DescribeGameExitInventoryIssue(_lastGameExitInventoryObservation));
                 }
                 if (_gameExitInventoryCameraEpoch != photo.CameraEpoch ||
                     _gameExitInventoryCropRevision != photo.BoardCropRevision ||

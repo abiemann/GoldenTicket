@@ -431,7 +431,10 @@ Save Game requires a fresh accepted board crop, checks train positions and playe
 the committed routes plus any subset of an authorized pending placement, reads back the digital
 checkpoint and an unprocessed board photo with observed color totals and the pending slot mask,
 then returns to the main menu. The exact mask must remain stable and match after photo capture.
-A failed check leaves the game open.
+A failed check leaves the game open. The save dialog shows an unexpected train's detected route,
+color and count when available, during checking and after either verification timeout. Uncertain
+locations remain explicit rather than guessed. Save observations join the local board-decision
+log without camera images or private-card data.
 Completion requires the matching durable photo attachment as well as logical checkpoint validation;
 an in-memory failure marker alone is insufficient across restart. Quit to Menu discards later
 auto-journaled play while retaining the latest earlier completed save with a validated photo,
@@ -1283,6 +1286,15 @@ and through an explicit **Detect board corners** retry. It does not run continuo
 manual adjustments after they begin. The fixed contract is RGB 0–1, centered 384-pixel letterbox,
 four 192-pixel sigmoid heatmaps, and local peak-centroid decoding. Confidence and quadrilateral
 validation precede crop replacement; rejected proposals leave the existing crop untouched.
+One weak corner can trigger a single learned retry on a 3%-padded bounding box in the same
+camera frame. Three original corners must pass the normal confidence threshold; the fourth must
+be at least 0.30 for the shipped model. The retry requires four normally confident corners,
+agreement within 2% of the original board spans, full-sensor geometry validation, and classic-US
+artwork agreement in one orientation. It preserves frame age and never accepts the weak proposal
+itself. Spare-piece clutter can therefore receive a closer inspection without reducing the final
+confidence threshold. Each check uses the current frame; it does not retain stale corners or
+extend readiness expiry. [Retry evidence](docs/evidence/board-corner-retry-2026-09-19/validation.md)
+records the live confidence drop, screenshot comparison and remaining occlusion limitation.
 The UI checks cancellation, camera identity, source age and crop-edit revisions before publishing.
 Before setting the crop handles, the accepted quadrilateral expands by 0.5% about its center
 (0.25% per side for a rectangle), leaving a thin border outside the board edge.

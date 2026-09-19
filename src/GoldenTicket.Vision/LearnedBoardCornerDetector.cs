@@ -20,6 +20,7 @@ public sealed record LearnedBoardCornerDetection(IReadOnlyList<NormalizedPoint> 
     string? RejectionReason = null)
 {
     public string ModelSha256 { get; init; } = "";
+    public bool UsedFocusedRetry { get; init; }
     public bool Accepted => RejectionReason is null && Corners.Count == 4;
 }
 
@@ -111,19 +112,60 @@ public sealed class LearnedBoardCornerDetector : IBoardCornerDetector
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             var timer = Stopwatch.StartNew();
-            var transform = BoardCornerModelGeometry.FillInput(frame, _input, token);
-            try { Run(token); }
-            catch (Exception error) when (_gpu && IsProviderFailure(error) && !token.IsCancellationRequested)
+            var decoded = InferCorners(frame, token);
+            var usedFocusedRetry = false;
+            if (decoded.RejectionReason is not null)
             {
-                UseCpu($"DirectML failed during corner inference: {Brief(error)}");
-                Run(token);
+                // A weaker peak may only propose where to look again, never an accepted corner.
+                // Spare pieces beside the board can weaken a corner in the full-camera pass.
+                var proposal = BoardCornerModelGeometry.Decode(_output,
+                    BoardCornerModelGeometry.Letterbox(frame.Width, frame.Height),
+                    BoardCornerRetryRegion.ProposalConfidenceThreshold(_manifest.ConfidenceThreshold), frame);
+                var region = BoardCornerRetryRegion.TryCreate(frame, proposal, _manifest.ConfidenceThreshold);
+                if (region is not null)
+                {
+                    var retry = InferCorners(region.Crop(frame, token), token);
+                    var mapped = region.MapAndValidate(frame, retry, _manifest.ConfidenceThreshold);
+                    if (mapped is not null && MatchesBoardArtwork(frame, mapped.Corners, token))
+                    {
+                        decoded = mapped;
+                        usedFocusedRetry = true;
+                    }
+                }
             }
             token.ThrowIfCancellationRequested();
-            var decoded = BoardCornerModelGeometry.Decode(_output, transform, _manifest.ConfidenceThreshold, frame);
-            token.ThrowIfCancellationRequested();
             return new(decoded.Corners, decoded.Confidences, ModelId, Backend, timer.Elapsed, decoded.RejectionReason)
-            { ModelSha256 = ModelSha256 };
+            { ModelSha256 = ModelSha256, UsedFocusedRetry = usedFocusedRetry };
         }
+    }
+
+    private BoardCornerGeometryResult InferCorners(CameraFrame frame, CancellationToken token)
+    {
+        var transform = BoardCornerModelGeometry.FillInput(frame, _input, token);
+        try { Run(token); }
+        catch (Exception error) when (_gpu && IsProviderFailure(error) && !token.IsCancellationRequested)
+        {
+            UseCpu($"DirectML failed during corner inference: {Brief(error)}");
+            Run(token);
+        }
+        token.ThrowIfCancellationRequested();
+        return BoardCornerModelGeometry.Decode(_output, transform, _manifest.ConfidenceThreshold, frame);
+    }
+
+    private static bool MatchesBoardArtwork(CameraFrame frame,
+        IReadOnlyList<NormalizedPoint> corners, CancellationToken token)
+    {
+        // The second learned pass must also agree with the known board artwork. Neither a
+        // missing corner nor an unrelated rectangle can be accepted from a weak proposal alone.
+        for (var rotation = 0; rotation < 4; rotation++)
+        {
+            token.ThrowIfCancellationRequested();
+            var orientation = Enumerable.Range(0, 4).Select(index => corners[(index + rotation) % 4]).ToArray();
+            var registration = BoardRegistration.Create(frame, orientation);
+            if (ClassicUsBoardAlignment.Reference.TryRefine(frame, registration, token) is not null)
+                return true;
+        }
+        return false;
     }
 
     private void Run(CancellationToken token)

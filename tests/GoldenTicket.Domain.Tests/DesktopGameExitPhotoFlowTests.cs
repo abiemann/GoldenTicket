@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using GoldenTicket.Application;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain;
+using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Domain.Model;
 using GoldenTicket.Persistence;
@@ -125,6 +126,88 @@ public sealed class DesktopGameExitPhotoFlowTests
                 Assert.Equal(0, attachment.Reference.ObservedTrainInventory?.Total);
                 Assert.True(attachment.PngBytes.Length > 100);
             }
+            finally { CryptographicOperations.ZeroMemory(attachment.PngBytes); }
+        }
+        finally
+        {
+            await model.DisposeToolsAsync();
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Save_names_unclaimed_black_trains_and_waits_for_their_removal_without_claiming_them()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "GoldenTicket.Tests", Guid.NewGuid().ToString("N"));
+        var store = new SqliteSessionStore(root);
+        var manifest = ManifestLoader.LoadClassicUs();
+        var model = new MainViewModel(manifest, store);
+        model.Setup.ManualVerificationAccepted = true;
+        model.SetGameLayerVisible(true);
+        try
+        {
+            await model.StartMatchAsync();
+            await model.CommitTicketsAsync();
+            var coordinator = (GameCoordinator)typeof(MainViewModel).GetField("_coordinator",
+                BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(model)!;
+            var beforeHash = await coordinator.ComputeStateHashAsync();
+            var beforeVersion = coordinator.Public.StateVersion;
+            var beforeTurn = coordinator.Public.TurnNumber;
+            var beforeSeat = coordinator.Public.ActiveSeatId;
+            Assert.Empty(coordinator.Public.RouteOwners);
+            model.OpenGameExitMenu();
+            Assert.True(model.IsGameExitMenuOpen);
+            using var camera = new SyntheticCamera(model.Camera);
+            camera.Publish("little-rock--saint-louis", MarkerColor.Black, 0b11);
+            Assert.True(model.Camera.CanCaptureGameTablePhoto);
+
+            var save = model.SaveGameToMenuCommand.ExecuteAsync(null);
+            await Task.Delay(250, TestContext.Current.CancellationToken);
+            camera.Publish("little-rock--saint-louis", MarkerColor.Black, 0b11);
+
+            Assert.True(model.IsGameExitSaving);
+            Assert.False(save.IsCompleted);
+            Assert.Contains("2 black trains", model.GameExitStatus);
+            Assert.Contains("Little Rock", model.GameExitStatus);
+            Assert.Contains("Saint Louis", model.GameExitStatus);
+            Assert.Contains("remove", model.GameExitStatus, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("UnexpectedTrain", model.GameExitStatus);
+            Assert.Equal(beforeVersion, coordinator.Public.StateVersion);
+            Assert.Equal(beforeTurn, coordinator.Public.TurnNumber);
+            Assert.Equal(beforeSeat, coordinator.Public.ActiveSeatId);
+            Assert.Empty(coordinator.Public.RouteOwners);
+            Assert.Equal(beforeHash, await coordinator.ComputeStateHashAsync());
+            var blocked = await store.RestoreAsync(coordinator.SessionId, manifest,
+                CardCatalog.FromManifest(manifest), TestContext.Current.CancellationToken);
+            Assert.Equal(beforeHash, StateHash.Compute(blocked.State));
+            Assert.Null(blocked.State.Checkpoint);
+            Assert.Empty(blocked.State.RouteOwners);
+
+            // One empty observation is not enough; the existing save must wait for stability.
+            camera.Publish();
+            Assert.False(save.IsCompleted);
+            Assert.True(model.IsGameExitMenuOpen);
+            for (var attempt = 0; !save.IsCompleted && attempt < 55; attempt++)
+            {
+                await Task.Delay(250, TestContext.Current.CancellationToken);
+                camera.Publish();
+            }
+            await save.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+
+            Assert.False(model.IsGameExitMenuOpen, model.GameExitStatus);
+            Assert.Equal(GameScreenStage.Welcome, model.Game.Stage);
+            var restored = await store.RestoreAsync(coordinator.SessionId, manifest,
+                CardCatalog.FromManifest(manifest), TestContext.Current.CancellationToken);
+            Assert.Equal(beforeTurn, restored.State.TurnNumber);
+            Assert.Equal(beforeSeat, restored.State.ActiveSeatId);
+            Assert.Empty(restored.State.RouteOwners);
+            var checkpoint = Assert.IsType<PackAwayCheckpoint>(restored.State.Checkpoint);
+            Assert.True(checkpoint.IsSafeToPackAway);
+            var attachment = await new CheckpointPhotoStore(root).ReadReferenceAsync(checkpoint,
+                TestContext.Current.CancellationToken);
+            Assert.NotNull(attachment);
+            try { Assert.Equal(0, attachment.Reference.ObservedTrainInventory?.Total); }
             finally { CryptographicOperations.ZeroMemory(attachment.PngBytes); }
         }
         finally

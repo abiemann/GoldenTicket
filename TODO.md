@@ -53,6 +53,9 @@ See the
   and 1920×1200, including player navigation and full route-text scrolling.
 - [x] Name identifiable unexpected trains by route, color and count. Block solo card draws while
   a placement warning is unresolved; require fresh whole-board verification after removal.
+- [x] Show those train details in the Save Game dialog during checking and after a timeout,
+  including the post-photo check. Record save observations in the local board-decision log;
+  explicitly say when an extra train's route cannot be identified.
 - [x] Require post-click whole-board verification for local human card actions, including the
   second train card and destination selection. Preserve the human's turn and offer payment for
   a payable board-first route instead of consuming a draw; reject stale/in-flight camera results.
@@ -75,6 +78,10 @@ See the
   open. See the [canonical alignment check](docs/evidence/canonical-alignment-2026-09-19/validation.md).
 - [x] Recover shifted corner estimates after refocusing within the existing correction bounds,
   and retain the earlier registration when fresh artwork confirms it fits better.
+- [x] Retry a single weak corner on a padded board region to reduce interference from
+  spare pieces beside the board. Require four confident, consistent corners and classic-US artwork
+  agreement; retain frame freshness and full-camera geometry checks. The proposal floor covers
+  the observed 0.31–0.40 bottom-left readings without lowering the final acceptance threshold.
 - [x] Treat neutral train highlights as reduced color support, rather than a competing player
   color. The supplied Calgary–Helena screenshot reproduces one rejected black train despite
   all four detections being within their spaces. Preserve the total-support and competing-color

@@ -82,6 +82,23 @@ the piece model, with an actual warm-up and CPU fallback. Inference runs off the
 Camera epoch/format, crop-edit revision, cancellation and source age are rechecked before the
 four handles replace the crop. Model loading happens before taking the frame used for inference.
 
+When exactly one corner misses the confidence threshold, the detector can make one
+focused retry on the same captured frame. The first pass must still propose a valid full-board
+quadrilateral, with three confident corners and the fourth at least 0.30 for the shipped model.
+This lower proposal floor only chooses where to look again; it cannot authorize a board crop.
+The retry crops the proposed bounding box with 3% padding to reduce surrounding clutter such as
+spare trains. All four corners must then pass the original 0.55 threshold, stay inside the retry
+image, and agree with the original locations within 2% of the proposed board spans. The remapped
+full-camera quadrilateral must pass the original geometry checks and match the classic-US artwork
+in one of its four orientations. A failed retry leaves the board rejected. Cropping preserves the
+source frame's age and camera identity; accepted full-frame results are unchanged. Every check
+uses fresh image evidence rather than keeping old corners when confidence drops. The existing
+miss grace period and readiness expiry remain unchanged.
+Setup and reconnect diagnostics record corner confidence, rejection reasons and whether a focused
+retry succeeded in the local board-decision log. The retry does not change the trained weights.
+The [September 19 replay](evidence/board-corner-retry-2026-09-19/validation.md) records the bounded
+comparison, timing, regression checks and remaining occlusion limitation.
+
 Synthetic held-out examples and supplied screenshot camera regions are development diagnostics.
 They do not establish independent real-camera accuracy. The source photographs were manually
 cropped, and the model can inherit their boundary error. Severe glare, cut-off corners, hands,

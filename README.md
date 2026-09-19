@@ -121,7 +121,9 @@ This build implements the core game plus initial phone, camera and photo workflo
   the observed color totals and pending slot mask, checks fresh frames again, and returns to the main menu.
   The saved active player, turn, phase, and reserved payment remain unchanged. Finish any scoring-marker
   move or cancelled-placement restoration before saving. If any check
-  fails, the game stays open so the board and camera can be corrected. A checkpoint without a valid
+  fails, the game stays open so the board and camera can be corrected. Save warnings name the
+  detected extra trains' route, color and count when available, both during checking and after a
+  timeout; uncertain locations are stated explicitly. A checkpoint without a valid
   matching photo is incomplete, including after an app restart. Quit to Menu discards current unsaved
   progress and returns to the latest completed save with a validated photo, when one exists.
 - Save paths are confined to valid session directories; concurrent writers, inconsistent journal
@@ -327,7 +329,11 @@ date, turn, status and players; **Packed away** is a status, not the save's name
 If a webcam is missing, the camera setup screen asks you to connect it and keeps looking.
 Its webcam list lets you switch cameras when more than one is connected. This reload check
 only requires a clear view of all four board corners: existing trains and scoring markers
-stay in place. Reloading a user save validates its required checkpoint photo before entering gameplay; a missing,
+stay in place. A guarded closer look at the same image helps recover a weak corner detection
+when spare pieces surround the board; all four corners and the printed artwork must still agree.
+Repeated checks use fresh images so a weaker initial reading can recover without relying on an
+old board position.
+Reloading a user save validates its required checkpoint photo before entering gameplay; a missing,
 corrupt, or mismatched attachment produces an error instead of waiting indefinitely for the board.
 If an earlier completed save has a valid matching photo, the error offers
 **Restore earlier completed save (discard newer actions)** and warns that all actions after that
