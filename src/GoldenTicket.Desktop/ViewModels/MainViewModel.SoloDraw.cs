@@ -41,7 +41,8 @@ public sealed partial class MainViewModel
         !_operationInProgress && !_exitRequested && !_mustReload && !_toolsDisposed &&
         _windowActive && _systemAvailable && !NeedsBoardReconciliation &&
         !IsGameInputPaused && _scoreMarkerStep is null &&
-        PrivateSeat is null && BoardFirstProposal is null && !ShowSoloTicketOffer &&
+        PrivateSeat is null && BoardFirstProposal is null && _boardFirstInvalidMoveMessage is null &&
+        !ShowSoloTicketOffer &&
         _soloDrawActionsVersion == coordinator.Public.StateVersion;
 
     private bool CanDrawSoloBlind() => CanUseSoloDrawPiles && _soloCanDrawBlind;

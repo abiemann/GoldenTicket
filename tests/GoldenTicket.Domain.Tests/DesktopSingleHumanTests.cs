@@ -619,6 +619,113 @@ public sealed class DesktopSingleHumanTests
         return model;
     }
 
+    [Fact]
+    public async Task Invalid_physical_route_blocks_draws_until_fresh_frames_verify_its_removal()
+    {
+        var model = NewSingleHumanMatch();
+        try
+        {
+            await model.StartMatchAsync();
+            await model.CommitTicketsAsync();
+            var coordinator = (GameCoordinator)typeof(MainViewModel)
+                .GetField("_coordinator", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(model)!;
+            var seat = coordinator.Public.ActiveSeatId;
+            await (Task)typeof(MainViewModel).GetMethod("LoadBoardFirstClaimsAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(model, [coordinator, seat])!;
+            var observe = typeof(MainViewModel).GetMethod("ObserveBoardFirstClaim", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            ClassicUsRouteGeometry.TryGetSlots("calgary--winnipeg", out var slots);
+            var color = Enum.Parse<MarkerColor>(coordinator.Public.SeatOf(seat).Color.ToString());
+            var at = DateTimeOffset.UtcNow;
+            GameTableAnalysis Analysis(long sequence, double seconds, bool occupied)
+            {
+                const int width = 960, height = 600;
+                var pixels = Enumerable.Repeat((byte)180, width * height * 4).ToArray();
+                var candidates = new List<PieceCandidate>();
+                foreach (var slot in occupied ? slots : [])
+                {
+                    var x = (int)Math.Round(slot.X * width); var y = (int)Math.Round(slot.Y * height);
+                    var rgb = color switch { MarkerColor.Blue => (20, 75, 195), MarkerColor.Yellow => (225, 180, 20), _ => throw new InvalidOperationException("Unexpected fixture color") };
+                    for (var py = y - 7; py <= y + 7; py++)
+                    for (var px = x - 11; px <= x + 11; px++)
+                    {
+                        var offset = (py * width + px) * 4;
+                        pixels[offset] = (byte)rgb.Item3; pixels[offset + 1] = (byte)rgb.Item2; pixels[offset + 2] = (byte)rgb.Item1;
+                    }
+                    candidates.Add(new(PieceCandidateKind.Train,
+                        [new((x - 11d) / width, (y - 7d) / height), new((x + 11d) / width, (y - 7d) / height),
+                         new((x + 11d) / width, (y + 7d) / height), new((x - 11d) / width, (y + 7d) / height)], .9));
+                }
+                var clock = new ManualFrameTimeProvider();
+                var frame = CameraFrame.CopyFromBgra32(width, height, pixels, sequence, 1, at.AddSeconds(seconds), clock);
+                if (seconds < 0) clock.Advance(TimeSpan.FromSeconds(3));
+                return new(frame, candidates, [], 1, 1, "test");
+            }
+            void Observe(long seq, double seconds, bool occupied) => observe.Invoke(model, [Analysis(seq, seconds, occupied)]);
+            Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
+            Observe(1, 0, true);
+            Observe(2, 1.1, true);
+            Assert.Contains("Calgary", model.Game.GuidanceInstruction);
+            Assert.Contains("Remove the trains before drawing cards", model.Game.GuidanceInstruction);
+            Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+            Assert.False(model.DrawSoloTicketsCommand.CanExecute(null));
+            Assert.All(model.Table.Market, card => Assert.False(model.DrawSoloFaceUpCommand.CanExecute(card)));
+            var before = await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken);
+            await model.DrawSoloBlindCommand.ExecuteAsync(null);
+            await model.DrawSoloTicketsCommand.ExecuteAsync(null);
+            await model.DrawSoloFaceUpCommand.ExecuteAsync(model.Table.Market[0]);
+            Assert.Equal(before, await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken));
+
+            model.IsGameExitMenuOpen = true;
+            Observe(3, 2.2, true);
+            model.IsGameExitMenuOpen = false;
+            Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+
+            // Viewing a hand must not erase the physical warning or permit technical draws.
+            await model.RevealPrivateSeatAsync();
+            Assert.NotNull(model.PrivateSeat);
+            Observe(3, 2.2, true);
+            await model.DrawBlindCardAsync();
+            Assert.Equal(before, await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken));
+            model.HidePrivateSeat();
+            Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+
+            // An old empty camera result is not evidence that the pieces were removed.
+            Observe(4, -20, false);
+            Observe(5, -18, false);
+            Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+            Observe(6, 4, false);
+            Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+            Observe(7, 5.1, false);
+            Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
+            await model.DrawSoloBlindCommand.ExecuteAsync(null);
+            Assert.Equal("Taking a second train card", model.Table.PhaseText);
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Fact]
+    public async Task Extra_train_guidance_names_the_route_count_and_color()
+    {
+        var model = NewSingleHumanMatch();
+        try
+        {
+            var placement = new PlacementInstruction(OperationId.New(), 1, new SeatId(1),
+                "Computer 1", PlayerColor.Blue, "", new RouteId("los-angeles--phoenix"),
+                "Los Angeles - Phoenix", null, 3, false);
+            var observation = new BoardInventoryObservation(BoardInventoryState.UnexpectedTrain,
+                new Dictionary<MarkerColor, int>(), UnexpectedTrains:
+                    new UnexpectedTrainLocation("calgary--winnipeg", MarkerColor.Yellow, 6));
+            var update = typeof(MainViewModel).GetMethod("UpdatePlacementInventoryGuidance",
+                BindingFlags.Instance | BindingFlags.NonPublic)!;
+            update.Invoke(model, [placement, observation]);
+            Assert.Equal("The camera sees 6 yellow trains on Calgary - Winnipeg, an unclaimed route. Remove them to continue.",
+                model.Game.GuidanceInstruction);
+            update.Invoke(model, [placement, observation with { UnexpectedTrains = null }]);
+            Assert.StartsWith("Check for train pieces outside", model.Game.GuidanceInstruction);
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
     private static async Task<MainViewModel> StartedSingleHumanMatchAsync(ISessionStore store,
         TestCheckpointPhotos? photos = null)
     {

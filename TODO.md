@@ -42,6 +42,8 @@ See the
   phase, acting seat and next instruction throughout the game.
 - [x] Group the solo train-card preview by color, including locomotives, with a top-left quantity
   badge for duplicates so large hands remain easy to count.
+- [x] Name identifiable unexpected trains by route, color and count. Block solo card draws while
+  a placement warning is unresolved; require fresh whole-board verification after removal.
 - [ ] Re-register the live board crop automatically after a saved game is reloaded or the camera
   restarts; for now, use the technical Camera screen to register it again.
 - [x] Measure all 309 printed train spaces on the 100 classic-US routes and show one pulsing

@@ -219,6 +219,45 @@ public sealed class BoardInventoryVerifierTests
     private static BoardInventoryVerifier Inventory() => new(
         [new(BlueRoute, MarkerColor.Blue, 2), new(GreenRoute, MarkerColor.Green, 2)]);
 
+    [Fact]
+    public void Unexpected_trains_report_the_unclaimed_route_color_and_count_without_confirming_it()
+    {
+        const string pending = "los-angeles--phoenix";
+        const string unexpected = "calgary--winnipeg";
+        ClassicUsRouteGeometry.TryGetSlots(pending, out var blueSlots);
+        ClassicUsRouteGeometry.TryGetSlots(unexpected, out var yellowSlots);
+        var blue = blueSlots.Select(slot => new Train(slot.ReferenceX, slot.ReferenceY, MarkerColor.Blue)).ToArray();
+        var yellow = yellowSlots.Select(slot => new Train(slot.ReferenceX, slot.ReferenceY, MarkerColor.Yellow)).ToArray();
+        var verifier = new BoardInventoryVerifier([new(pending, MarkerColor.Blue, 3)]);
+        var at = DateTimeOffset.UtcNow;
+        for (var sequence = 1; sequence <= 2; sequence++)
+        {
+            var extra = Scene(sequence, 1, at.AddSeconds(sequence), [.. blue, .. yellow]);
+            var result = verifier.Observe(extra.Frame, extra.Candidates, 1, 1);
+            Assert.Equal(BoardInventoryState.UnexpectedTrain, result.State);
+            Assert.Equal(new UnexpectedTrainLocation(unexpected, MarkerColor.Yellow, 6), result.UnexpectedTrains);
+            Assert.Empty(result.ConfirmedByColor);
+        }
+        var removed = Scene(3, 1, at.AddSeconds(3.1), blue);
+        Assert.Equal(BoardInventoryState.Stabilizing, verifier.Observe(removed.Frame, removed.Candidates, 1, 1).State);
+        var stable = Scene(4, 1, at.AddSeconds(4.2), blue);
+        var confirmed = verifier.Observe(stable.Frame, stable.Candidates, 1, 1);
+        Assert.True(confirmed.Confirmed);
+        Assert.Null(confirmed.UnexpectedTrains);
+    }
+
+    [Theory]
+    [InlineData(950, 1140)] // Off the printed routes: do not invent a location.
+    [InlineData(1596, 762)] // Between Atlanta-Raleigh lanes: do not guess a lane.
+    public void Unexpected_trains_with_no_unique_route_keep_the_generic_warning(double x, double y)
+    {
+        var scene = SceneAtResolution(1996, 1248, 1, 1, DateTimeOffset.UtcNow,
+            [new(x, y, MarkerColor.Blue)]);
+        var result = new BoardInventoryVerifier([]).Observe(scene.Frame, scene.Candidates, 1, 1);
+        Assert.Equal(BoardInventoryState.UnexpectedTrain, result.State);
+        Assert.Null(result.UnexpectedTrains);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]

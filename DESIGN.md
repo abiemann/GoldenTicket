@@ -2005,6 +2005,11 @@ Clicking the solo human's T or D stack opens a compact read-only card panel in a
 tile's side column; technical private controls for taking a turn are available after **Shift+Escape**.
 The train-card preview groups the hand by card kind, including locomotives, and displays quantities
 above one in a top-left badge. This read-only grouping leaves individual cards available for payment.
+Unexpected-train guidance names a uniquely identifiable unclaimed route and the observed color/count;
+uncertain locations retain generic guidance. These diagnostics do not relax inventory checks or claim
+routes. A recognized incomplete or invalid solo placement blocks card draws, including technical
+private actions. Keep that warning through menus and private viewing; clear it after a legal placement
+proposal or fresh, stable verification that the committed board has been restored.
 On a confirmed opening drop, the rejected card and board highlight vanish together, then the
 remaining cards panel slides down. Either opening choice returns to the public table. The draw
 panels animate to the centered bottom layout for two to five players.

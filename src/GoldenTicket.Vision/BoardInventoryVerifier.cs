@@ -1,6 +1,7 @@
 namespace GoldenTicket.Vision;
 
 public sealed record BoardInventoryRoute(string RouteId, MarkerColor Color, int TrainCount);
+public sealed record UnexpectedTrainLocation(string RouteId, MarkerColor? Color, int Count);
 
 public enum BoardInventoryState
 {
@@ -16,7 +17,7 @@ public enum BoardInventoryState
 
 public sealed record BoardInventoryObservation(BoardInventoryState State,
     IReadOnlyDictionary<MarkerColor, int> ConfirmedByColor, string? RouteId = null,
-    int? PendingSlotMask = null)
+    int? PendingSlotMask = null, UnexpectedTrainLocation? UnexpectedTrains = null)
 {
     public bool Confirmed => State == BoardInventoryState.Confirmed;
 }
@@ -34,6 +35,9 @@ public sealed class BoardInventoryVerifier
     private static readonly TimeSpan MinimumStableInterval = TimeSpan.FromSeconds(1);
     private readonly record struct ExpectedSlot(double X, double Y, double TangentX, double TangentY,
         double AlongTolerance);
+    private static readonly (string RouteId, ExpectedSlot Slot)[] AllMeasuredSlots =
+        ClassicUsRouteGeometry.RouteIds.SelectMany(routeId =>
+            ExpectedSlots(routeId).Select(slot => (routeId, slot))).ToArray();
 
     private readonly BoardInventoryRoute[] _routes;
     private readonly ExpectedSlot[] _slots;
@@ -146,10 +150,12 @@ public sealed class BoardInventoryVerifier
         }
 
         if (plausible.Length > slots.Length)
-            return Fail(BoardInventoryState.UnexpectedTrain);
+            return Unexpected(board, plausible, slots);
         if (plausible.Length < slots.Length)
             return Fail(BoardInventoryState.MissingTrains);
         var assignment = CheckAssignments(plausible, slots);
+        if (assignment == BoardInventoryState.UnexpectedTrain)
+            return Unexpected(board, plausible, slots);
         if (assignment is { } badAssignment)
             return Fail(badAssignment);
 
@@ -193,11 +199,7 @@ public sealed class BoardInventoryVerifier
                 var slot = slots[index];
                 var dx = x - slot.X;
                 var dy = y - slot.Y;
-                var along = dx * slot.TangentX + dy * slot.TangentY;
-                var across = -dx * slot.TangentY + dy * slot.TangentX;
-                if (Math.Abs(along) > slot.AlongTolerance ||
-                    Math.Abs(across) > RoutePlacementVerifier.AcrossTolerance)
-                    continue;
+                if (!Fits(x, y, slot)) continue;
                 var distance = Math.Sqrt(dx * dx + dy * dy);
                 if (distance < bestDistance)
                 {
@@ -213,6 +215,47 @@ public sealed class BoardInventoryVerifier
             if (++assigned[bestIndex] > 1) return BoardInventoryState.Ambiguous;
         }
         return assigned.Any(count => count != 1) ? BoardInventoryState.MissingTrains : null;
+    }
+
+    private BoardInventoryObservation Unexpected(CameraFrame board,
+        IReadOnlyList<PieceCandidate> candidates, IReadOnlyList<ExpectedSlot> expectedSlots)
+    {
+        // Location is guidance only: it never changes which trains can verify the board.
+        // Name a route only when the detection fits its measured spaces without a lane tie.
+        var located = new List<(string RouteId, MarkerColor? Color)>();
+        foreach (var candidate in candidates)
+        {
+            if (candidate.Outline.Any(point => !double.IsFinite(point.X) ||
+                !double.IsFinite(point.Y) || point.X is < 0 or > 1 || point.Y is < 0 or > 1)) continue;
+            var x = candidate.Outline.Average(point => point.X) * ClassicUsRouteGeometry.ReferenceWidth;
+            var y = candidate.Outline.Average(point => point.Y) * ClassicUsRouteGeometry.ReferenceHeight;
+            if (expectedSlots.Any(slot => Fits(x, y, slot))) continue;
+            var nearest = AllMeasuredSlots.Where(item => Fits(x, y, item.Slot))
+                .Select(item => (item.RouteId, Distance: Math.Sqrt(
+                    Math.Pow(x - item.Slot.X, 2) + Math.Pow(y - item.Slot.Y, 2))))
+                .OrderBy(item => item.Distance).Take(2).ToArray();
+            if (nearest.Length == 0 || nearest.Length > 1 &&
+                nearest[1].Distance <= nearest[0].Distance + 2) continue;
+            var routeId = nearest[0].RouteId;
+            if (_routes.Any(route => route.RouteId == routeId) || _pendingRoute?.RouteId == routeId)
+                continue;
+            located.Add((routeId, RoutePlacementVerifier.ReadCandidateColor(board, candidate)));
+        }
+        var issue = located.GroupBy(item => item)
+            .Select(group => new UnexpectedTrainLocation(group.Key.RouteId, group.Key.Color, group.Count()))
+            .OrderByDescending(group => group.Count).ThenBy(group => group.RouteId, StringComparer.Ordinal)
+            .ThenBy(group => group.Color).FirstOrDefault();
+        _firstMatchingAt = null;
+        return new(BoardInventoryState.UnexpectedTrain, new Dictionary<MarkerColor, int>(),
+            UnexpectedTrains: issue);
+    }
+
+    private static bool Fits(double x, double y, ExpectedSlot slot)
+    {
+        var dx = x - slot.X;
+        var dy = y - slot.Y;
+        return Math.Abs(dx * slot.TangentX + dy * slot.TangentY) <= slot.AlongTolerance &&
+            Math.Abs(-dx * slot.TangentY + dy * slot.TangentX) <= RoutePlacementVerifier.AcrossTolerance;
     }
 
     private static IEnumerable<ExpectedSlot> ExpectedSlots(string routeId)

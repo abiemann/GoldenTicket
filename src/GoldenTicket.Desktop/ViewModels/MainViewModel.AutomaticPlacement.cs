@@ -177,6 +177,7 @@ public sealed partial class MainViewModel
             matched = placementObservation.MatchedCount,
             inventoryState = inventory.State.ToString(),
             inventoryRoute = inventory.RouteId,
+            inventory.UnexpectedTrains,
             nearbyCandidates = DescribeNearbyPlacementCandidates(analysis, placement.RouteId.Value)
         });
         // A requested route alone is insufficient: pieces from any earlier claim may have
@@ -216,6 +217,10 @@ public sealed partial class MainViewModel
         }
         correction ??= inventory.State switch
         {
+            BoardInventoryState.UnexpectedTrain when inventory.UnexpectedTrains is { } extra =>
+                $"The camera sees {extra.Count}{(extra.Color is { } color ? " " + color.ToString().ToLowerInvariant() : "")} " +
+                $"train{(extra.Count == 1 ? "" : "s")} on {_manifest.Describe(new RouteId(extra.RouteId))}, " +
+                $"an unclaimed route. Remove {(extra.Count == 1 ? "it" : "them")} to continue.",
             BoardInventoryState.UnexpectedTrain =>
                 "Check for train pieces outside the claimed routes and the new route. " +
                 "The whole board must match before this claim can continue.",

@@ -503,6 +503,11 @@ public sealed partial class MainViewModel : ObservableObject
             coordinator.SessionId, CommandId.New(), seat.StateVersion, seat.SeatId);
 
         if (build(envelope, seat) is not { } command) return;
+        if (_boardFirstInvalidMoveMessage is not null && command is SelectTrainCard or RequestTicketOffer)
+        {
+            seat.Message = "Correct or remove the trains from the unclaimed route before drawing cards.";
+            return;
+        }
 
         SetOperationInProgress(true);
         HidePrivateSeat();

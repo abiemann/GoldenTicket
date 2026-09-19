@@ -423,9 +423,14 @@ not a completed Save Game and does not grant permission to clear the physical bo
    trains and
    every previously claimed route in fresh frames before committing the claim. If trains have been
    moved off an older route, return them to that route; the new claim waits until the board matches.
+   If extra trains are detected on an unclaimed route, the warning names that route and the observed
+   color and count when the camera can identify them. Remove those trains before continuing.
    A stable, recognizable partial or unpayable solo placement shows **Invalid Move** with the route,
    detected train count, and any missing card-payment requirement. Uncertain camera readings do not
-   produce an invalid-move warning or change the game state.
+   produce a new invalid-move warning or change the game state. An unresolved placement warning
+   blocks train-card and destination draws, including through the technical private view. Opening
+   a menu or hand does not dismiss it; correct the placement or remove the trains and let the
+   camera verify the recorded board again.
    With multiple humans, the shared phone is the intended private controller; actions do
    not automatically reveal a private screen on the laptop.
 

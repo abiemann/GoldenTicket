@@ -142,7 +142,7 @@ public sealed partial class MainViewModel
     private DateTimeOffset? _boardFirstRecheckSince;
     private string? _boardFirstInvalidMoveMessage;
     private int _boardFirstInvalidMoveMask;
-    private DateTimeOffset? _boardFirstInvalidMoveAbsentSince;
+    private BoardInventoryVerifier? _boardFirstCorrectionVerifier;
 
     public BoardFirstClaimProposal? BoardFirstProposal
     {
@@ -169,8 +169,9 @@ public sealed partial class MainViewModel
         _boardFirstRecheckSince = null;
         _boardFirstInvalidMoveMessage = null;
         _boardFirstInvalidMoveMask = 0;
-        _boardFirstInvalidMoveAbsentSince = null;
+        _boardFirstCorrectionVerifier = null;
         Game.ClearUnverifiedTrainSpaces();
+        NotifySoloDrawCommands();
     }
 
     private void ReconcileBoardFirstClaimFlow(PublicView view)
@@ -190,13 +191,17 @@ public sealed partial class MainViewModel
         if (_coordinator is not { } coordinator || !IsSingleHumanGame ||
             coordinator.Public.Lifecycle != SessionLifecycle.Active ||
             coordinator.Public.TurnPhase != TurnPhase.TurnStart ||
-            coordinator.Public.SeatOf(coordinator.Public.ActiveSeatId).Kind != SeatKind.Human ||
-            _operationInProgress || IsGameInputPaused || _boardFirstSubmitting || PrivateSeat is not null)
+            coordinator.Public.SeatOf(coordinator.Public.ActiveSeatId).Kind != SeatKind.Human)
         {
             if (BoardFirstProposal is not null) ClearBoardFirstProposal("flow-inactive");
             ClearBoardFirstInvalidMove();
             return;
         }
+
+        // Opening a hand or menu does not remove physical trains. Keep an existing warning
+        // until fresh board observations clear it, rather than enabling draws while paused.
+        if (_operationInProgress || IsGameInputPaused || _boardFirstSubmitting || PrivateSeat is not null)
+            return;
 
         var active = coordinator.Public.SeatOf(coordinator.Public.ActiveSeatId);
         if (BoardFirstProposal is { } proposal)
@@ -324,13 +329,19 @@ public sealed partial class MainViewModel
         if (feedback is null)
         {
             if (_boardFirstInvalidMoveMessage is null) return;
-            _boardFirstInvalidMoveAbsentSince ??= analysis.Board.CapturedAt;
-            if (analysis.Board.CapturedAt - _boardFirstInvalidMoveAbsentSince >= TimeSpan.FromSeconds(1))
+            _boardFirstCorrectionVerifier ??= new BoardInventoryVerifier(coordinator.Public.RouteOwners
+                .Select(route => new BoardInventoryRoute(route.Key.Value,
+                    ToMarkerColor(coordinator.Public.SeatOf(route.Value).Color),
+                    _manifest.Route(route.Key).Length)).ToArray());
+            // Losing an invalid-route suggestion (blur, ambiguous pieces, or a pause) does
+            // not prove the pieces were removed. Require the committed board to match again.
+            if (_boardFirstCorrectionVerifier.Observe(analysis.Board, analysis.Candidates,
+                analysis.CropRevision, analysis.ModelRevision).Confirmed)
                 ClearBoardFirstInvalidMove();
             return;
         }
 
-        _boardFirstInvalidMoveAbsentSince = null;
+        _boardFirstCorrectionVerifier = null;
         var route = _manifest.Route(new RouteId(feedback.RouteId));
         var routeText = _manifest.Describe(route.RouteId);
         var unverifiedCount = feedback.RequiredTrains - feedback.DetectedTrains;
@@ -350,11 +361,14 @@ public sealed partial class MainViewModel
                     : $" Need {route.Length} same-color train cards (locomotives count).";
             else
                 explanation += " This parallel lane is unavailable.";
+            if (feedback.DetectedTrains == feedback.RequiredTrains)
+                explanation += " Remove the trains before drawing cards.";
         }
         var messageChanged = _boardFirstInvalidMoveMessage != explanation;
         if (!messageChanged && _boardFirstInvalidMoveMask == feedback.UnverifiedSlotMask) return;
         _boardFirstInvalidMoveMessage = explanation;
         _boardFirstInvalidMoveMask = feedback.UnverifiedSlotMask;
+        NotifySoloDrawCommands();
         Game.ShowUnverifiedTrainSpaces(route.RouteId, feedback.RequiredTrains,
             feedback.UnverifiedSlotMask);
         BoardInteractionLog.Write("board-first.invalid-move", new
@@ -375,7 +389,7 @@ public sealed partial class MainViewModel
     private void ClearBoardFirstInvalidMove()
     {
         _boardFirstMoveFeedbackDetector.Reset();
-        _boardFirstInvalidMoveAbsentSince = null;
+        _boardFirstCorrectionVerifier = null;
         Game.ClearUnverifiedTrainSpaces();
         if (_boardFirstInvalidMoveMessage is null) return;
         BoardInteractionLog.Write("board-first.invalid-move-cleared", new
@@ -384,6 +398,7 @@ public sealed partial class MainViewModel
         });
         _boardFirstInvalidMoveMessage = null;
         _boardFirstInvalidMoveMask = 0;
+        NotifySoloDrawCommands();
         Game.ClearGuidance();
     }
 
