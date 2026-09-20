@@ -91,6 +91,7 @@ internal static partial class Program
                 await RenderSizes("rebuild", () => new RebuildView { DataContext = model });
                 await RenderSizes("camera-no-device", () => new CameraView { DataContext = model.Camera });
                 await VerifyKeyboardCornerHandler();
+                await VerifyCameraCompatibilityPresentation();
                 await VerifyProcessingPresentation();
                 await VerifyPreviewZoom();
                 await VerifyPreviewPanGestures();
@@ -559,8 +560,9 @@ internal static partial class Program
             });
             var settingsView = new GameScreenView { DataContext = model };
             await Arrange(settingsView, 1000, 620);
-            ((Button)settingsView.FindName("SettingsButton"))
-                .RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            // A real Settings click refreshes Windows devices. This render-only fixture must
+            // not probe the user's camera or interrupt a running game.
+            model.Game.OpenSettings();
             if (!model.Game.IsSettings || model.Game.IsWelcome)
                 throw new InvalidOperationException("The Settings button must open the shared settings panel.");
             await RenderSizes("game-settings", () => new GameScreenView { DataContext = model }, view =>
@@ -570,6 +572,7 @@ internal static partial class Program
                     AutomationProperties.GetName(combo) == "Display mode");
                 var quality = Descendants<ComboBox>(dialog).Single(combo =>
                     AutomationProperties.GetName(combo) == "Camera quality preference");
+                var webcam = (ComboBox)view.FindName("SettingsCameraPicker");
                 var processor = Descendants<ComboBox>(dialog).Single(combo =>
                     AutomationProperties.GetName(combo) == "Image processor preference");
                 var destinationsWithTrainCards = Descendants<CheckBox>(dialog).Single(box =>
@@ -577,12 +580,26 @@ internal static partial class Program
                 var ok = Descendants<Button>(dialog).Single(button => button.Content as string == "OK");
                 if (!IsElementShown(dialog) || displayMode.SelectedValue is not DisplayMode.Resizable ||
                     !ReferenceEquals(quality.SelectedItem, model.Camera.SelectedPreference) ||
+                    !ReferenceEquals(webcam.ItemsSource, model.Camera.Devices) ||
+                    !ReferenceEquals(webcam.SelectedItem, model.Camera.SelectedDevice) ||
                     !ReferenceEquals(processor.SelectedItem, model.Camera.SelectedProcessor) ||
+                    Descendants<CheckBox>(dialog).Any(box => IsElementShown(box) &&
+                        box.Content as string is "Enhanced 4K preview" or "Show piece outlines") ||
                     destinationsWithTrainCards.IsChecked != true || ok.ActualHeight < 48 ||
                     ok.HorizontalAlignment != HorizontalAlignment.Right ||
                     Descendants<Button>(dialog).Any(button => Equals(button.Tag, "NavigationBack")))
                     throw new InvalidOperationException("Settings must use the same live camera preferences as the utility screens.");
             });
+            model.Camera.CameraCompatibilityMessage = "Using 1280 × 720. A 1080p webcam is recommended. Gameplay and train detection may be less reliable in poor lighting.";
+            await RenderSizes("game-settings-720p-warning", () => new GameScreenView { DataContext = model }, view =>
+            {
+                var warning = (TextBlock)view.FindName("SettingsCameraCompatibilityMessage");
+                if (!IsElementShown(warning) || warning.Text != model.Camera.CameraCompatibilityMessage ||
+                    AutomationProperties.GetLiveSetting(warning) != AutomationLiveSetting.Polite ||
+                    warning.TextWrapping != TextWrapping.Wrap)
+                    throw new InvalidOperationException("The 720p Settings warning must be visible, wrapped, and announced politely.");
+            }, [(1000, 620), (1280, 800)]);
+            model.Camera.CameraCompatibilityMessage = "";
             ((Button)settingsView.FindName("SettingsOkButton"))
                 .RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
             if (!model.Game.IsWelcome)
@@ -630,6 +647,17 @@ internal static partial class Program
                         .ParentBinding.Path.Path != "Camera.Preview")
                     throw new InvalidOperationException("Camera setup must hide the roster, share the preview, and hold PLAY until ML finds all four corners.");
             }, [(875, 680), (1280, 800)]);
+            model.Camera.CameraCompatibilityMessage = "Using 1280 × 720. A 1080p webcam is recommended. Gameplay and train detection may be less reliable in poor lighting.";
+            await RenderSizes("game-camera-setup-720p-warning", () => new GameScreenView { DataContext = model }, view =>
+            {
+                var warning = (TextBlock)view.FindName("CameraSetupCompatibilityMessage");
+                var frame = (Border)view.FindName("CameraSetupPreviewFrame");
+                if (!IsElementShown(warning) || warning.Text != model.Camera.CameraCompatibilityMessage ||
+                    warning.TransformToAncestor(view).TransformBounds(new Rect(warning.RenderSize)).Bottom >=
+                    frame.TransformToAncestor(view).TransformBounds(new Rect(frame.RenderSize)).Top)
+                    throw new InvalidOperationException("The camera warning must sit above the setup preview without covering the board.");
+            }, [(1280, 800)]);
+            model.Camera.CameraCompatibilityMessage = "";
             var camera = model.Camera;
             var capture = camera.Capture;
             var captureType = typeof(CameraCaptureService);
@@ -1040,6 +1068,22 @@ internal static partial class Program
 
             await RenderSizes("game-table-two", () => new GameScreenView { DataContext = model }, Verify,
                 [(1000, 620), (1280, 800)]);
+            model.Camera.CameraCompatibilityMessage = "Using 1280 × 720. A 1080p webcam is recommended. Gameplay and train detection may be less reliable in poor lighting.";
+            await RenderSizes("game-table-720p-warning", () => new GameScreenView { DataContext = model }, view =>
+            {
+                Verify(view);
+                var table = Descendants<GameTableView>(view).Single();
+                var warning = (TextBlock)table.FindName("GameCameraCompatibilityMessage");
+                var guidance = (Border)table.FindName("HumanGuidancePanel");
+                var board = (Border)table.FindName("GameBoardFrame");
+                Rect Bounds(FrameworkElement element) => element.TransformToAncestor(view)
+                    .TransformBounds(new Rect(element.RenderSize));
+                if (!IsElementShown(warning) || warning.Text != model.Camera.CameraCompatibilityMessage ||
+                    Bounds(warning).IntersectsWith(Bounds(guidance)) ||
+                    Bounds(warning).IntersectsWith(Bounds(board)))
+                    throw new InvalidOperationException("The game camera warning must remain visible without covering the board or turn guidance.");
+            }, [(1280, 800)]);
+            model.Camera.CameraCompatibilityMessage = "";
             AddSeat(2);
             await RenderSizes("game-table-three", () => new GameScreenView { DataContext = model }, Verify,
                 [(1000, 620), (1280, 800)]);
@@ -1812,9 +1856,9 @@ internal static partial class Program
     {
         await using var camera = new CameraViewModel();
         if (camera.SelectedPreference.Value != CameraCapturePreference.Balanced1080p ||
-            !camera.Preferences.Any(option => option.Value == CameraCapturePreference.HighDetail2160p) ||
+            camera.Preferences.Any(option => option.Value == CameraCapturePreference.HighDetail2160p) ||
             camera.SelectedProcessor.Value != FrameComputeMode.Auto)
-            throw new InvalidOperationException("Camera defaults must request the best native 1080p mode, retain the 4K option, and use automatic hardware processing.");
+            throw new InvalidOperationException("Camera defaults must request native 1080p, hide unverified 4K support, and use automatic hardware processing.");
         camera.Preview = SyntheticCropFixture();
         camera.IsRunning = true;
         camera.FormatText = "Camera delivered 1920 × 1080 · synthetic presentation fixture";
@@ -1849,7 +1893,7 @@ internal static partial class Program
         camera.ClearPieceReferenceCommand.Execute(null);
         if (camera.PieceOutlines.Count != 0 || camera.HasPieceReference)
             throw new InvalidOperationException("Clearing the piece reference must immediately remove all outlines.");
-        Console.WriteLine("Processing presentation:1080p/Auto defaults with a 4K option, white train/player geometry, square marker, toggle and reference clearing passed.");
+        Console.WriteLine("Processing presentation:1080p/Auto defaults with unverified 4K hidden, white train/player geometry, square marker, toggle and reference clearing passed.");
     }
 
     private static async Task VerifyKeyboardCornerHandler()

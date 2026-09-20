@@ -191,10 +191,16 @@ This build implements the core game plus initial phone, camera and photo workflo
   become finer when zoomed. Zooming leaves the crop, camera references and exported image unchanged.
 - **1080p preferred · best available** is the default capture profile. It selects exact
   1920 × 1080 at the native frame rate closest to 30 fps when advertised, then falls back through
-  smaller usable native modes. **4K preferred · best available** remains selectable in the Camera
-  utility and permits advertised modes up to 3840 × 2160. The UI distinguishes delivered camera
+  usable native modes of at least 1280 × 720. Settings checks the selected webcam's advertised
+  formats and shows **4K · best available** only when it supports native 3840 × 2160 capture.
+  A 720p webcam is allowed with a visible warning that gameplay and train detection can be less
+  reliable in poor lighting; cameras and delivered frames below 720p are not compatible.
+  The same warning appears during board setup, reconnect, and gameplay. The UI distinguishes delivered camera
   resolution from the enhanced processing size. The connected Pixel's USB webcam currently
-  advertises a maximum of 1920 × 1080; a 4K preview from it is explicitly labeled upscaled.
+  advertises a maximum of 1920 × 1080, so its capture options do not include 4K. The technical
+  Camera screen's **Enhanced preview** remains available for comparing the raw image with ordinary
+  bounded filtering and bicubic upscaling. It is not a gameplay display setting, and the app does
+  not integrate NVIDIA RTX Video Super Resolution.
 - **Auto · prefer GPU**, **CPU only**, and **GPU · CPU fallback** processing, with a remembered
   preference and the actual backend/adapter shown. A hardware Direct3D 11 compute path validates
   its output before activation and falls back to CPU on failure. It performs bounded image
@@ -515,7 +521,7 @@ Exports preserve the board's 8:5 shape at 3456 × 2160 and use the selected imag
 Checkpoint-reference photos use the same output shape but retain unsharpened camera evidence.
 For a live outline experiment, first remove all trains and score markers and choose **Capture
 empty board**, or load a matching previously exported empty-board crop. Return pieces and clear
-hands to inspect candidates. Uncheck **Enhanced 4K preview** to compare the raw camera image;
+hands to inspect candidates. In the technical Camera screen, uncheck **Enhanced preview** to compare the raw camera image;
 piece analysis continues on the enhanced path. See [camera setup and limits](docs/camera-processing.md).
 Before clearing trains, use **Escape → Save Game** and wait for both the digital checkpoint and
 its board photo to finish validation. The technical **Add or view board photo** page can inspect

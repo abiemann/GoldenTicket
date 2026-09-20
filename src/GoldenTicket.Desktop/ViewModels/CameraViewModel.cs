@@ -48,7 +48,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         string? boardCornerModelDirectory = null,
         Func<string, bool, IBoardCornerDetector>? boardCornerModelFactory = null,
         Func<CancellationToken, Task<IReadOnlyList<CameraDevice>>>? enumerateDevices = null,
-        Func<CameraDevice, CameraCapturePreference, CancellationToken, Task>? startCapture = null)
+        Func<CameraDevice, CameraCapturePreference, CancellationToken, Task>? startCapture = null,
+        Func<CameraDevice, CancellationToken, Task<IReadOnlyList<CameraFormat>>>? getCameraFormats = null)
     {
         _processingSettingsPath = processingSettingsPath;
         _pieceModelDirectory = pieceModelDirectory ?? Path.Combine(AppContext.BaseDirectory, "models", "pieces");
@@ -58,6 +59,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         Capture = new CameraCaptureService();
         _enumerateDevices = enumerateDevices ?? CameraCaptureService.EnumerateAsync;
         _startCapture = startCapture ?? Capture.StartAsync;
+        _getCameraFormats = getCameraFormats ?? CameraCaptureService.GetAvailableFormatsAsync;
+        _cameraCapabilitiesEnabled = getCameraFormats is not null;
         _previewTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
             Interval = TimeSpan.FromMilliseconds(200)
@@ -77,10 +80,9 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<CameraDevice> Devices { get; } = [];
     public ObservableCollection<string> AvailableFormats { get; } = [];
     public ObservableCollection<NormalizedPoint> SelectedCorners { get; } = [];
-    public IReadOnlyList<CameraPreferenceOption> Preferences { get; } =
+    public IReadOnlyList<CameraPreferenceOption> Preferences { get; private set; } =
     [
         new(CameraCapturePreference.Balanced1080p, "1080p preferred · best available"),
-        new(CameraCapturePreference.HighDetail2160p, "4K preferred · best available"),
         new(CameraCapturePreference.SharedCurrent, "Shared · current Windows format")
     ];
 
@@ -146,9 +148,25 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             timeout.CancelAfter(TimeSpan.FromSeconds(10));
             var selectedId = SelectedDevice?.Id;
             var devices = await _enumerateDevices(timeout.Token);
-            Devices.Clear();
-            foreach (var device in devices) Devices.Add(device);
-            SelectedDevice = Devices.FirstOrDefault(d => d.Id == selectedId) ?? Devices.FirstOrDefault();
+            _cameraCapabilitiesEnabled = true;
+            // Retain existing items so a bound picker does not transiently deselect the
+            // current camera and discard its quality preference during a refresh.
+            var connectedIds = devices.Select(device => device.Id).ToHashSet(StringComparer.Ordinal);
+            foreach (var removed in Devices.Where(device => !connectedIds.Contains(device.Id)).ToArray())
+                Devices.Remove(removed);
+            for (var index = 0; index < devices.Count; index++)
+            {
+                var existing = Devices.FirstOrDefault(device => device.Id == devices[index].Id);
+                if (existing is null) Devices.Insert(index, devices[index]);
+                else if (Devices.IndexOf(existing) != index) Devices.Move(Devices.IndexOf(existing), index);
+            }
+            var selected = Devices.FirstOrDefault(d => d.Id == selectedId) ?? Devices.FirstOrDefault();
+            if (SelectedDevice == selected) await RefreshSelectedCameraCapabilitiesAsync();
+            else
+            {
+                SelectedDevice = selected;
+                await _cameraCapabilitiesWork;
+            }
             Status = Devices.Count == 0
                 ? "No camera found. Set the Pixel USB connection to Webcam, or connect a UVC camera, then refresh."
                 : $"{Devices.Count} camera(s) found. Choose the overhead camera and start preview.";
@@ -172,12 +190,33 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         Status = "Starting camera… Windows may request camera permission.";
         try
         {
+            var selected = SelectedDevice;
+            if (_selectedCameraFormats is null || IsCheckingCameraCapabilities)
+                await RefreshSelectedCameraCapabilitiesAsync();
+            if (_disposed || selected != SelectedDevice) return;
             InvalidateGameTablePreview();
             if (_gameTableCameraRetryBusy)
                 GameTablePreviewStatus = "Webcam found. Starting the live board view…";
             ClearRegistration();
+            if (_selectedCameraFormats is { } formats && !formats.Any(CameraFormatPolicy.IsUsableFormat))
+            {
+                await Capture.StopAsync();
+                throw new InvalidOperationException(CameraCompatibilityMessage);
+            }
             await InitializeProcessingAsync();
-            await _startCapture(SelectedDevice, SelectedPreference.Value, _lifetime.Token);
+            await _startCapture(selected, SelectedPreference.Value, _lifetime.Token);
+            if (_disposed) return;
+            if (selected != SelectedDevice)
+            {
+                await Capture.StopAsync();
+                IsRunning = false;
+                return;
+            }
+            if (Capture.ActiveDevice?.Id == SelectedDevice?.Id)
+            {
+                ApplyCameraCapabilities(Capture.AvailableFormats);
+                UpdateDeliveredCameraQuality();
+            }
             IsRunning = true;
             _gameTableCameraNoFrameSince = DateTimeOffset.MinValue;
             FormatText = Capture.NegotiatedFormat?.ToString() ?? "Waiting for first frame";
@@ -198,7 +237,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             Problem = ex.Message;
             Status = "Camera could not start. The game state has not changed.";
             if (_gameTablePreviewRequested)
-                GameTablePreviewStatus = "Could not start the webcam. Check its connection; the game will keep trying.";
+                GameTablePreviewStatus = Problem;
         }
         finally { IsBusy = false; }
     }
@@ -230,6 +269,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     private void PreviewTick(object? sender, EventArgs args)
     {
         if (_disposed) return;
+        UpdateDeliveredCameraQuality();
         if (GameTableAnalysis is { } analysis && analysis.Board.Age > TimeSpan.FromSeconds(2))
             ClearGameTableAnalysis();
         if (_outlinedFrame is { } outlined && outlined.Age > TimeSpan.FromSeconds(2))
@@ -248,7 +288,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             if (_gameTablePreviewRequested)
                 GameTablePreviewStatus = Capture.IsRunning
                     ? "Waiting for the webcam image…"
-                    : GameTableCameraConnectionMessage;
+                    : Capture.LastError ?? GameTableCameraConnectionMessage;
             ExpireGameBoardFraming(null);
             ClearDetectionPreview();
             _monitor.MarkStale();
@@ -259,6 +299,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
                 IsRunning = false;
                 Preview = null;
                 BoardPreview = null;
+                if (Capture.LastError is { } error) Problem = error;
                 Status = Capture.LastError ?? "The camera stopped. Reconnect it and start again.";
             }
             return;
@@ -819,6 +860,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _cameraCapabilitiesRevision++;
+        _cameraCapabilitiesCancellation?.Cancel();
         ClearDetectionPreview();
         NotifyPhotoAvailability();
         _lifetime.Cancel();
@@ -831,6 +874,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         {
             try
             {
+                await _cameraCapabilitiesWork;
                 await _gameTableAnalysisWork;
                 await _liveBoardCheckWork;
                 await _gameTableAlignmentWork;

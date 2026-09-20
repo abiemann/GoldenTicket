@@ -444,6 +444,15 @@
                     </Grid>
                 </Border>
 
+                <Border Canvas.Left="1180" Canvas.Top="22" Width="240" CornerRadius="8" Padding="10"
+                        Background="#F21A2531" BorderBrush="#FFB18C52" BorderThickness="1"
+                        Visibility="{Binding Camera.HasCameraCompatibilityMessage, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock x:Name="GameCameraCompatibilityMessage"
+                               Text="{Binding Camera.CameraCompatibilityMessage}"
+                               Foreground="#FFFFD576" FontSize="12" TextWrapping="Wrap"
+                               AutomationProperties.LiveSetting="Polite" />
+                </Border>
+
                 <Border x:Name="HumanGuidancePanel" Canvas.Left="555" Canvas.Top="22" Width="330" Height="150" CornerRadius="10"
                         Background="#F21A2531" BorderBrush="#FFB18C52" BorderThickness="1.5"
                         Padding="16,10" AutomationProperties.LiveSetting="Polite"

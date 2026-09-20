@@ -325,6 +325,23 @@
                         <ComboBoxItem Content="Resizable" Tag="{x:Static vm:DisplayMode.Resizable}" />
                         <ComboBoxItem Content="Full screen" Tag="{x:Static vm:DisplayMode.FullScreen}" />
                     </ComboBox>
+                    <TextBlock Text="Webcam" Foreground="#FFFFE7B0" FontSize="18"
+                               FontWeight="SemiBold" Margin="0,14,0,6" />
+                    <DockPanel LastChildFill="False">
+                        <ComboBox x:Name="SettingsCameraPicker" Width="400" Height="38"
+                                  ItemsSource="{Binding Camera.Devices}"
+                                  SelectedItem="{Binding Camera.SelectedDevice, Mode=TwoWay}"
+                                  DisplayMemberPath="Name" AutomationProperties.Name="Settings webcam" />
+                        <Button Content="Refresh" Command="{Binding Camera.RefreshDevicesCommand}"
+                                Style="{StaticResource GameSetupActionButton}"
+                                Width="95" Height="38" Padding="4" FontSize="15" Margin="10,0,0,0"
+                                AutomationProperties.Name="Refresh settings webcams" />
+                    </DockPanel>
+                    <TextBlock x:Name="SettingsCameraCompatibilityMessage"
+                               Text="{Binding Camera.CameraCompatibilityMessage}"
+                               Foreground="#FFFFD576" FontSize="13" TextWrapping="Wrap" Margin="0,8,0,0"
+                               Visibility="{Binding Camera.HasCameraCompatibilityMessage, Converter={StaticResource BoolToVisibility}}"
+                               AutomationProperties.LiveSetting="Polite" />
                     <TextBlock Text="Camera quality" Foreground="#FFFFE7B0" FontSize="18"
                                FontWeight="SemiBold" Margin="0,14,0,6" />
                     <ComboBox Width="400" Height="38" HorizontalAlignment="Left"
@@ -341,10 +358,6 @@
                               SelectedItem="{Binding Camera.SelectedProcessor}"
                               DisplayMemberPath="Label"
                               AutomationProperties.Name="Image processor preference" />
-                    <CheckBox Content="Enhanced 4K preview" IsChecked="{Binding Camera.UseEnhancedPreview}"
-                              Foreground="#FFF8EEDC" Margin="0,20,0,0" />
-                    <CheckBox Content="Show piece outlines" IsChecked="{Binding Camera.ShowPieceOutlines}"
-                              Foreground="#FFF8EEDC" Margin="0,10,0,0" />
                     <CheckBox Content="Show Destinations when viewing Train cards"
                               IsChecked="{Binding ShowDestinationsWhenViewingTrainCards, Mode=TwoWay}"
                               Foreground="#FFF8EEDC" Margin="0,10,0,0"
@@ -446,6 +459,12 @@
                                 Width="105" Height="38" Padding="4" FontSize="15" Margin="10,0,0,0"
                                 Click="RetryCamera_Click" AutomationProperties.Name="Refresh webcams" />
                     </StackPanel>
+                    <TextBlock x:Name="CameraSetupCompatibilityMessage"
+                               Text="{Binding Camera.CameraCompatibilityMessage}"
+                               Foreground="#FFFFD576" FontSize="14" TextWrapping="Wrap" TextAlignment="Center"
+                               Width="800" Margin="0,0,0,10"
+                               Visibility="{Binding Camera.HasCameraCompatibilityMessage, Converter={StaticResource BoolToVisibility}}"
+                               AutomationProperties.LiveSetting="Polite" />
                     <Border x:Name="CameraSetupPreviewFrame" Width="800" Height="440" CornerRadius="8"
                             Background="#0E141B" BorderBrush="#99DFB75C" BorderThickness="2"
                             ClipToBounds="True">

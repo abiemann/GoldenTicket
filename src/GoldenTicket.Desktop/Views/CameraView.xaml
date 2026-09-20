@@ -35,6 +35,11 @@
                         <ComboBox Width="265" MinHeight="34" ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" DisplayMemberPath="Name" AutomationProperties.Name="Overhead camera" />
                         <Button Content="Refresh cameras" Command="{Binding RefreshDevicesCommand}" Style="{StaticResource SecondaryButton}" />
                     </WrapPanel>
+                    <TextBlock x:Name="CameraCompatibilityMessage" Text="{Binding CameraCompatibilityMessage}"
+                               Margin="0,8,0,0" Foreground="{StaticResource Action.Primary}"
+                               TextWrapping="Wrap" FontWeight="SemiBold"
+                               Visibility="{Binding HasCameraCompatibilityMessage, Converter={StaticResource BoolToVisibility}}"
+                               AutomationProperties.LiveSetting="Polite" />
                     <WrapPanel Margin="0,8,0,0">
                         <ComboBox Width="265" MinHeight="34" ItemsSource="{Binding Preferences}" SelectedItem="{Binding SelectedPreference}" DisplayMemberPath="Label" AutomationProperties.Name="Camera resolution preference" />
                         <Button Content="Start preview" Command="{Binding StartCommand}" Style="{StaticResource PrimaryButton}" />
@@ -54,7 +59,7 @@
                     </WrapPanel>
                     <TextBlock Text="{Binding ProcessingText}" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,6,0,0" />
                     <WrapPanel Margin="0,8,0,0">
-                        <CheckBox Content="Enhanced 4K preview" IsChecked="{Binding UseEnhancedPreview}" Margin="0,0,22,0"
+                        <CheckBox Content="Enhanced preview" IsChecked="{Binding UseEnhancedPreview}" Margin="0,0,22,0"
                                   ToolTip="Uncheck to compare the original camera frame. Analysis continues on the enhanced image." />
                         <CheckBox Content="Show piece outlines" IsChecked="{Binding ShowPieceOutlines}" />
                     </WrapPanel>

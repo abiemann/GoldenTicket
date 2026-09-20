@@ -10,6 +10,7 @@ namespace GoldenTicket.Vision;
 
 public sealed record CameraDevice(string Id, string Name);
 public enum CameraCapturePreference { Balanced1080p, HighDetail2160p, SharedCurrent }
+public enum CameraResolutionTier { Incompatible, Hd720p, FullHd1080p, UltraHd4K }
 public sealed record CameraFormat(int Width, int Height, double FramesPerSecond, string Subtype)
 {
     public override string ToString() => $"{Width} × {Height} · {FramesPerSecond:0.#} fps · {Subtype}";
@@ -19,6 +20,36 @@ public sealed record CameraFrameDimensions(int Width, int Height);
 /// <summary>Ranks only native formats advertised by a camera; never requests an upscaled size.</summary>
 public static class CameraFormatPolicy
 {
+    public const string MinimumResolutionMessage =
+        "This webcam is not compatible with gameplay. At least 1280 × 720 (720p) is required; 1920 × 1080 (1080p) is recommended.";
+
+    public static CameraResolutionTier GetResolutionTier(int width, int height)
+    {
+        if (width < 1280 || height < 720 || width > CameraFrame.MaximumWidth || height > CameraFrame.MaximumHeight)
+            return CameraResolutionTier.Incompatible;
+        if (width == 3840 && height == 2160) return CameraResolutionTier.UltraHd4K;
+        return width >= 1920 && height >= 1080 ? CameraResolutionTier.FullHd1080p : CameraResolutionTier.Hd720p;
+    }
+
+    public static bool IsUsableFormat(CameraFormat format)
+    {
+        ArgumentNullException.ThrowIfNull(format);
+        return GetResolutionTier(format.Width, format.Height) != CameraResolutionTier.Incompatible &&
+            double.IsFinite(format.FramesPerSecond) && format.FramesPerSecond is >= 5 and <= 60;
+    }
+
+    public static bool Supports4K(IEnumerable<CameraFormat> formats)
+    {
+        ArgumentNullException.ThrowIfNull(formats);
+        return formats.Any(f => IsUsableFormat(f) && GetResolutionTier(f.Width, f.Height) == CameraResolutionTier.UltraHd4K);
+    }
+
+    public static bool Supports1080p(IEnumerable<CameraFormat> formats)
+    {
+        ArgumentNullException.ThrowIfNull(formats);
+        return formats.Any(f => IsUsableFormat(f) && GetResolutionTier(f.Width, f.Height) >= CameraResolutionTier.FullHd1080p);
+    }
+
     public static IReadOnlyList<CameraFormat> RankFormats(IEnumerable<CameraFormat> formats,
         CameraCapturePreference preference)
     {
@@ -27,8 +58,7 @@ public static class CameraFormatPolicy
             throw new ArgumentOutOfRangeException(nameof(preference), "Shared capture keeps the camera's current format.");
         var maxPixels = preference == CameraCapturePreference.HighDetail2160p ? 3840L * 2160 : 1920L * 1080;
         var preferredFramesPerSecond = preference == CameraCapturePreference.Balanced1080p ? 30 : 15;
-        return formats.Where(f => FitsFrameBounds(f) && (long)f.Width * f.Height <= maxPixels &&
-                double.IsFinite(f.FramesPerSecond) && f.FramesPerSecond is >= 5 and <= 60)
+        return formats.Where(f => IsUsableFormat(f) && (long)f.Width * f.Height <= maxPixels)
             .Distinct()
             .OrderByDescending(f => preference == CameraCapturePreference.Balanced1080p &&
                 f.Width == 1920 && f.Height == 1080)
@@ -38,8 +68,13 @@ public static class CameraFormatPolicy
             .ToArray();
     }
 
-    internal static bool FitsFrameBounds(CameraFormat format) => format.Width > 0 && format.Height > 0 &&
-        format.Width <= CameraFrame.MaximumWidth && format.Height <= CameraFrame.MaximumHeight;
+    internal static void ValidateCapturedResolution(int width, int height)
+    {
+        if (GetResolutionTier(width, height) == CameraResolutionTier.Incompatible)
+            throw new InvalidOperationException(width > CameraFrame.MaximumWidth || height > CameraFrame.MaximumHeight
+                ? "The camera delivered a format outside the supported 3840 × 2160 bounds. Select a lower camera quality."
+                : MinimumResolutionMessage);
+    }
 }
 
 /// <summary>
@@ -78,6 +113,35 @@ public sealed class CameraCaptureService : IAsyncDisposable
             .Select(g => new CameraDevice(g.Id, g.DisplayName)).OrderBy(g => g.Name).ToArray();
     }
 
+    /// <summary>Reads advertised color formats without changing the camera format or starting a frame reader.</summary>
+    public static async Task<IReadOnlyList<CameraFormat>> GetAvailableFormatsAsync(CameraDevice device,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(20));
+        var token = timeout.Token;
+        try
+        {
+            var groups = await MediaFrameSourceGroup.FindAllAsync().AsTask(token);
+            var group = groups.FirstOrDefault(g => g.Id == device.Id)
+                ?? throw new InvalidOperationException("This camera is no longer connected. Refresh the camera list and reconnect it.");
+            using var capture = new MediaCapture();
+            await capture.InitializeAsync(new MediaCaptureInitializationSettings
+            {
+                SourceGroup = group,
+                StreamingCaptureMode = StreamingCaptureMode.Video,
+                MemoryPreference = MediaCaptureMemoryPreference.Cpu,
+                SharingMode = MediaCaptureSharingMode.SharedReadOnly
+            }).AsTask(token);
+            return ReadAvailableFormats(capture.FrameSources.Values.Where(s => IsColorVideo(s.Info)));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            throw new CameraCaptureException(ExplainError(ex), ex);
+        }
+    }
+
     public async Task StartAsync(CameraDevice device,
         CameraCapturePreference preference = CameraCapturePreference.Balanced1080p,
         CancellationToken cancellationToken = default)
@@ -113,18 +177,21 @@ public sealed class CameraCaptureService : IAsyncDisposable
                 .OrderByDescending(s => s.Info.MediaStreamType == MediaStreamType.VideoRecord)
                 .ToArray();
             if (sources.Length == 0) throw new InvalidOperationException("This camera does not expose a usable color video stream.");
-            AvailableFormats = sources.SelectMany(s => s.SupportedFormats).Select(ToFormat).Distinct()
-                .OrderByDescending(f => (long)f.Width * f.Height).ThenByDescending(f => f.FramesPerSecond).ToArray();
+            AvailableFormats = ReadAvailableFormats(sources);
             var candidates = preference == CameraCapturePreference.SharedCurrent
                 ? sources.Select(s => (Source: s, Format: s.CurrentFormat))
-                    .Where(c => CameraFormatPolicy.FitsFrameBounds(ToFormat(c.Format)))
+                    .Where(c => CameraFormatPolicy.IsUsableFormat(ToFormat(c.Format)))
                     .OrderByDescending(c => (long)c.Format.VideoFormat.Width * c.Format.VideoFormat.Height).ToArray()
                 : CameraFormatPolicy.RankFormats(AvailableFormats, preference)
                     .SelectMany(f => sources.SelectMany(s => s.SupportedFormats
                         .Where(native => ToFormat(native) == f).Select(native => (Source: s, Format: native))))
                     .ToArray();
             if (candidates.Length == 0)
-                throw new InvalidOperationException("No advertised camera format fits the selected resolution. Try High detail or Shared current format.");
+                throw new InvalidOperationException(preference == CameraCapturePreference.SharedCurrent
+                    ? "The current shared camera format is not compatible. Select 1080p camera quality or change the webcam's current format to at least 1280 × 720 (720p), at 5–60 fps."
+                    : !AvailableFormats.Any(CameraFormatPolicy.IsUsableFormat)
+                        ? CameraFormatPolicy.MinimumResolutionMessage + " A native format at 5–60 fps is needed."
+                        : "No advertised camera format fits the selected quality. Choose a supported camera quality of at least 720p.");
 
             Exception? lastFormatError = null;
             foreach (var (source, format) in candidates)
@@ -135,8 +202,9 @@ public sealed class CameraCaptureService : IAsyncDisposable
                     if (preference != CameraCapturePreference.SharedCurrent)
                         await source.SetFormatAsync(format).AsTask(token);
                     var negotiated = ToFormat(source.CurrentFormat);
-                    if (!CameraFormatPolicy.FitsFrameBounds(negotiated))
-                        throw new InvalidOperationException("The camera delivered a format outside the supported 3840×2160 bounds.");
+                    CameraFormatPolicy.ValidateCapturedResolution(negotiated.Width, negotiated.Height);
+                    if (!CameraFormatPolicy.IsUsableFormat(negotiated))
+                        throw new InvalidOperationException("The camera did not provide a supported frame rate (5–60 fps).");
                     if (preference != CameraCapturePreference.SharedCurrent &&
                         CameraFormatPolicy.RankFormats([negotiated], preference).Count == 0)
                         throw new InvalidOperationException("The camera did not honor the requested resolution and frame-rate limits.");
@@ -163,7 +231,8 @@ public sealed class CameraCaptureService : IAsyncDisposable
                     await StopReaderAsync();
                 }
             }
-            throw new InvalidOperationException("Windows could not start any usable camera format. Close other camera apps or try Shared current format.", lastFormatError);
+            throw new InvalidOperationException("Windows could not start any usable camera format. Close other camera apps or try Shared current format." +
+                (lastFormatError is null ? "" : " " + lastFormatError.Message), lastFormatError);
         }
         catch (Exception ex)
         {
@@ -199,6 +268,7 @@ public sealed class CameraCaptureService : IAsyncDisposable
             if (original is null) return;
             var width = original.PixelWidth;
             var height = original.PixelHeight;
+            CameraFormatPolicy.ValidateCapturedResolution(width, height);
             CameraFrame.ValidateSize(width, height, checked(width * height * 4));
             using var converted = SoftwareBitmap.Convert(original, BitmapPixelFormat.Bgra8, BitmapAlphaMode.Ignore);
             var buffer = new Windows.Storage.Streams.Buffer((uint)(width * height * 4));
@@ -290,6 +360,9 @@ public sealed class CameraCaptureService : IAsyncDisposable
         (double)format.FrameRate.Numerator / format.FrameRate.Denominator;
     private static CameraFormat ToFormat(MediaFrameFormat format) => new((int)format.VideoFormat.Width,
         (int)format.VideoFormat.Height, FrameRate(format), format.Subtype);
+    private static IReadOnlyList<CameraFormat> ReadAvailableFormats(IEnumerable<MediaFrameSource> sources) =>
+        sources.SelectMany(s => s.SupportedFormats).Select(ToFormat).Distinct()
+            .OrderByDescending(f => (long)f.Width * f.Height).ThenByDescending(f => f.FramesPerSecond).ToArray();
     private static string ExplainError(Exception ex) => ex switch
     {
         UnauthorizedAccessException => "Windows blocked camera access. In Settings → Privacy & security → Camera, enable camera access for desktop apps.",

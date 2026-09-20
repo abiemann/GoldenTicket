@@ -20,6 +20,7 @@ public sealed class CameraFormatPolicyTests
         CameraFormat[] formats = [new(640, 480, 30, "YUY2"), new(1920, 1080, 30, "MJPG"), new(1280, 720, 30, "MJPG")];
         var ranked = CameraFormatPolicy.RankFormats(formats, CameraCapturePreference.HighDetail2160p);
         Assert.Equal(formats[1], ranked[0]);
+        Assert.DoesNotContain(formats[0], ranked);
         Assert.All(ranked, format => Assert.Contains(format, formats));
     }
 
@@ -81,4 +82,100 @@ public sealed class CameraFormatPolicyTests
     [Fact]
     public void Five_fps_native_mode_remains_available_for_board_capture() =>
         Assert.Single(CameraFormatPolicy.RankFormats([new(3840, 2160, 5, "MJPG")], CameraCapturePreference.HighDetail2160p));
+
+    [Theory]
+    [InlineData(CameraCapturePreference.Balanced1080p)]
+    [InlineData(CameraCapturePreference.HighDetail2160p)]
+    public void A_720p_only_webcam_is_usable_but_cannot_fall_back_to_sub_hd(CameraCapturePreference preference)
+    {
+        CameraFormat[] formats = [new(640, 480, 30, "MJPG"), new(1280, 720, 30, "MJPG"), new(1024, 768, 30, "MJPG")];
+
+        Assert.Equal(formats[1], Assert.Single(CameraFormatPolicy.RankFormats(formats, preference)));
+        Assert.False(CameraFormatPolicy.Supports1080p(formats));
+        Assert.False(CameraFormatPolicy.Supports4K(formats));
+    }
+
+    [Theory]
+    [InlineData(640, 480)]
+    [InlineData(1279, 1080)]
+    [InlineData(1920, 719)]
+    [InlineData(3840, 360)]
+    [InlineData(720, 1280)]
+    [InlineData(4096, 2160)]
+    [InlineData(3840, 2161)]
+    public void Both_native_dimensions_must_fit_supported_gameplay_limits(int width, int height)
+    {
+        var format = new CameraFormat(width, height, 30, "MJPG");
+
+        Assert.Equal(CameraResolutionTier.Incompatible, CameraFormatPolicy.GetResolutionTier(width, height));
+        Assert.False(CameraFormatPolicy.IsUsableFormat(format));
+        Assert.Empty(CameraFormatPolicy.RankFormats([format], CameraCapturePreference.HighDetail2160p));
+    }
+
+    [Theory]
+    [InlineData(1280, 720, CameraResolutionTier.Hd720p)]
+    [InlineData(1600, 1200, CameraResolutionTier.Hd720p)]
+    [InlineData(1920, 1079, CameraResolutionTier.Hd720p)]
+    [InlineData(1919, 1080, CameraResolutionTier.Hd720p)]
+    [InlineData(1920, 1080, CameraResolutionTier.FullHd1080p)]
+    [InlineData(2560, 1440, CameraResolutionTier.FullHd1080p)]
+    [InlineData(3840, 2159, CameraResolutionTier.FullHd1080p)]
+    [InlineData(3840, 2160, CameraResolutionTier.UltraHd4K)]
+    public void Resolution_tiers_require_width_and_height_instead_of_total_pixels(int width, int height,
+        CameraResolutionTier expected)
+    {
+        Assert.Equal(expected, CameraFormatPolicy.GetResolutionTier(width, height));
+        CameraFormatPolicy.ValidateCapturedResolution(width, height);
+    }
+
+    [Fact]
+    public void Only_usable_native_4k_formats_enable_the_4k_option()
+    {
+        CameraFormat[] lowerResolution = [new(1920, 1080, 30, "MJPG"), new(2560, 1440, 30, "NV12")];
+        Assert.False(CameraFormatPolicy.Supports4K(lowerResolution));
+        Assert.True(CameraFormatPolicy.Supports1080p(lowerResolution));
+        Assert.False(CameraFormatPolicy.Supports4K([.. lowerResolution, new(3840, 2160, 4, "MJPG")]));
+        Assert.False(CameraFormatPolicy.Supports4K([.. lowerResolution, new(3840, 2160, 120, "MJPG")]));
+        Assert.False(CameraFormatPolicy.Supports4K([.. lowerResolution, new(3840, 2160, double.NaN, "MJPG")]));
+        Assert.True(CameraFormatPolicy.Supports4K([.. lowerResolution, new(3840, 2160, 5, "MJPG")]));
+        Assert.True(CameraFormatPolicy.Supports4K([.. lowerResolution, new(3840, 2160, 60, "MJPG")]));
+    }
+
+    [Fact]
+    public void An_advertised_but_unusable_full_hd_format_does_not_hide_the_720p_warning()
+    {
+        CameraFormat[] formats = [new(1280, 720, 30, "MJPG"), new(1920, 1080, 0, "NV12")];
+
+        Assert.False(CameraFormatPolicy.Supports1080p(formats));
+        Assert.False(CameraFormatPolicy.Supports1080p([]));
+        Assert.True(CameraFormatPolicy.Supports1080p([new(3840, 2160, 30, "MJPG")]));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(4)]
+    [InlineData(61)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NaN)]
+    public void Shared_current_format_must_also_have_a_usable_frame_rate(double framesPerSecond) =>
+        Assert.False(CameraFormatPolicy.IsUsableFormat(new(1920, 1080, framesPerSecond, "NV12")));
+
+    [Fact]
+    public void Unexpected_sub_hd_delivered_frames_are_rejected_with_a_compatibility_message()
+    {
+        var error = Assert.Throws<InvalidOperationException>(() => CameraFormatPolicy.ValidateCapturedResolution(640, 480));
+
+        Assert.Equal(CameraFormatPolicy.MinimumResolutionMessage, error.Message);
+        Assert.Contains("720p", error.Message);
+        Assert.Contains("1080p", error.Message);
+    }
+
+    [Fact]
+    public void Delivered_frames_larger_than_4k_are_rejected_before_allocating_the_copy()
+    {
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            CameraFormatPolicy.ValidateCapturedResolution(int.MaxValue, int.MaxValue));
+
+        Assert.Contains("3840 × 2160", error.Message);
+    }
 }

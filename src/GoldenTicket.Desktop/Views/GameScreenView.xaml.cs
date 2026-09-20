@@ -177,11 +177,13 @@ public partial class GameScreenView : UserControl
     private void Start_MouseEnter(object sender, MouseEventArgs e) => Game?.SelectWelcome(0);
     private void Reload_MouseEnter(object sender, MouseEventArgs e) => Game?.SelectWelcome(1);
 
-    private void Settings_Click(object sender, RoutedEventArgs e)
+    private async void Settings_Click(object sender, RoutedEventArgs e)
     {
-        _settingsProcessorAtOpen = (DataContext as MainViewModel)?.Camera.SelectedProcessor.Value;
-        Game?.OpenSettings();
+        if (DataContext is not MainViewModel model) return;
+        _settingsProcessorAtOpen = model.Camera.SelectedProcessor.Value;
+        model.Game.OpenSettings();
         FocusCurrentChoice();
+        await model.Camera.RefreshDevicesCommand.ExecuteAsync(null);
     }
 
     private async void SettingsOk_Click(object sender, RoutedEventArgs e)

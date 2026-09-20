@@ -1230,16 +1230,27 @@ Use the camera's negotiated orientation and mirror metadata consistently. Device
 
 OpenCvSharp supplies image analysis, not capture. Its [slim runtime](https://www.nuget.org/packages/OpenCvSharp4.runtime.win.slim) excludes several modules, so the initial native smoke test must explicitly exercise marker detection, homography, warping, image conversion, and image saving. If a required export is absent, use a verified fuller runtime and audit its dependencies. Do not call `VideoCapture` while assuming a slim package provides it.
 
-#### Implemented capture and output policy, September 12, 2026
+#### Implemented capture and output policy, September 19, 2026
 
 The current direct WinRT implementation defaults to **1080p preferred · best available**. It
 prefers an exact native 1920 × 1080 mode and proximity to 30 fps, then falls back through native
-modes up to that pixel budget. **4K preferred · best available** remains a Camera utility option;
+modes up to that pixel budget, with a minimum of 1280 × 720. Selected-device discovery checks
+advertised formats without starting a frame reader. **4K · best available** appears only when
+the selected webcam advertises a usable native 3840 × 2160 format;
 it ranks native modes by pixel area up to 3840 × 2160, then proximity to 15 fps within the
 supported 5–60 fps range. A rejected mode or reader startup falls through to another advertised
 candidate within the startup budget. Shared current mode never changes another camera owner's format. The reader
 does not request an artificial output size. Its actual delivered bitmap dimensions are reported
 separately from negotiated source metadata and subsequent enhancement dimensions.
+
+1080p is recommended for gameplay. A usable 720p camera is permitted with a persistent warning
+that gameplay and train detection may be less reliable in poor lighting, visible in Settings,
+board setup/reconnect, the Camera utility, and the game table. Below-720p cameras are rejected;
+the same minimum applies to the current shared mode and actual delivered frame dimensions.
+An unsuccessful capability query does not assume 4K support: the option stays hidden and the
+user is told to start preview to check the current format. Preview enhancement is not offered in
+main Settings. The technical Camera screen retains **Enhanced preview** for raw-versus-filtered
+comparison; this does not imply native capture resolution or alter the gameplay board display.
 
 The processing target preserves aspect ratio inside 3840 × 2160. It does not stretch the 8:5 board:
 an exported board crop is 3456 × 2160. A lower-resolution source is explicitly identified as
@@ -1276,8 +1287,10 @@ therefore means real image-processing shader execution; it does not claim learne
 
 The enhancement is deterministic and nongenerative: a small luminance adjustment smooths weak
 noise and sharpens stronger edges with a bounded correction, followed by bicubic resizing clamped
-to local source-channel limits to avoid ringing. Raw and enhanced previews can be compared through
-**Enhanced 4K preview**; analysis continues on the enhanced path. Frame work is serialized and
+to local source-channel limits to avoid ringing. This is ordinary image filtering and interpolation;
+the app does not integrate NVIDIA RTX Video Super Resolution or the RTX Video SDK. Raw and enhanced
+previews can be compared through **Enhanced preview** in the technical Camera screen; analysis
+continues on the enhanced path. Frame work is serialized and
 superseded work is dropped. Camera epoch, crop, processor and reference revisions reject stale
 results; changes of crop/camera/processor clear the empty-board reference and candidate overlays.
 

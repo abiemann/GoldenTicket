@@ -216,10 +216,17 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   reference, including while the scene has changed. Fresh-frame and crop/camera identity checks
   remain; checkpoint-photo capture retains its separate reference checks.
 - [x] **Native-resolution preference and truthful 4K processing.** Default to exact native
-  1920 × 1080 near 30 fps, try smaller usable modes when necessary, and retain selectable native
-  4K capture up to 3840 × 2160. Display the actual delivered
+  1920 × 1080 near 30 fps, allow 720p fallback with a poor-lighting warning, and reject modes
+  below 1280 × 720. Show native 4K capture only when the selected webcam advertises a usable
+  3840 × 2160 format. Display the actual delivered
   dimensions separately from processing output. Shared-read-only inspection confirms the current
   Pixel UVC connection advertises 1080p at most. Physical native-4K camera acceptance remains open.
+- [ ] **720p webcam performance and gameplay acceptance.** Test a real webcam delivering
+  1280 × 720 with the whole board visible, under good and poor lighting. Measure board-corner,
+  train/color and scoring-marker detection accuracy, missed/false detections, response time and
+  preview responsiveness; compare with 1080p under the same conditions. Exercise route claims,
+  card draws, save/reload and camera reconnect, and verify the 720p warning stays visible.
+  Record results and practical limits before claiming reliable 720p gameplay.
 - [x] **CPU/GPU preprocessing implementation.** Real Direct3D 11 compute performs bounded
   enhancement and aspect-preserving resizing, with Auto/CPU/GPU choices, local preference
   persistence, validated hardware activation, effective status and CPU fallback. No recognition

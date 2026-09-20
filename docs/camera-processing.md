@@ -1,6 +1,6 @@
 # Camera processing and experimental piece outlines
 
-Updated September 13, 2026. This describes the current implementation, its measured hardware
+Updated September 19, 2026. This describes the current implementation, its measured hardware
 observations and the acceptance work still needed. It supplements [DESIGN §17.3–17.4](../DESIGN.md)
 and [TODO](../TODO.md); it does not replace the full automatic-verification requirements.
 
@@ -27,12 +27,18 @@ backend. Rules and game AI remain on the CPU.
    On Pixel, choose **Webcam** in USB preferences. Use the phone's webcam
    preview to select the intended camera, framing and focus. Google documents the
    [Pixel USB webcam workflow](https://support.google.com/pixelcamera/answer/14274129?hl=en).
-2. In **Camera**, select the device and keep **1080p preferred · best available**, then
+2. Choose the webcam in **Settings** or **Camera**. **Refresh** checks its available native
+   formats. Keep **1080p preferred · best available**, then in **Camera** select
    **Start preview**. The app first requests exact 1920 × 1080 at the native frame rate closest
-   to 30 fps, then falls back through smaller usable native modes. Select **4K preferred · best
-   available** when the overhead camera advertises a useful native 4K mode; it permits modes up
-   to 3840 × 2160 and falls back when necessary.
+   to 30 fps, then falls back through usable native modes of at least 1280 × 720. **4K · best
+   available** appears only when the webcam advertises a usable native 3840 × 2160 mode;
+   it permits modes up to that size and falls back when necessary.
+   A 720p camera is allowed, with a warning that gameplay and train detection may be less reliable
+   in poor lighting. That warning remains visible during setup, reconnect, and gameplay.
+   Below-720p cameras and delivered frames are not compatible. If the format check fails, 4K
+   stays hidden until support can be verified; start preview to check the camera's current format.
    **Shared current format** reads the camera's existing mode without changing its owner's format.
+   It enforces the same 720p minimum.
 3. Check the reported camera dimensions and processing dimensions separately. A 1920 × 1080
    source enhanced to 3840 × 2160 is explicitly identified as upscaled. Larger output pixels do
    not add captured detail or make that source native 4K.
@@ -50,8 +56,13 @@ backend. Rules and game AI remain on the CPU.
    change the processor. The setting is saved locally for the next launch. The status and tooltip
    report the active adapter and any fallback, separately from the selected preference.
 
-**Enhanced 4K preview** is enabled by default. Uncheck it to compare the original camera image;
-analysis continues on the enhanced path. **Show piece outlines** enables ML inference and its
+**Enhanced preview** in the technical Camera screen is enabled by default. Uncheck it to compare
+the original camera image; analysis continues on the enhanced path. This comparison uses ordinary
+bounded filtering and bicubic upscaling, not NVIDIA RTX Video Super Resolution; the app does not
+integrate the RTX Video SDK. It does not affect the gameplay board display, and there is no
+enhancement checkbox in main Settings. The conditional **4K · best available** capture option
+still selects a native camera format when the webcam supports it.
+**Show piece outlines** is available only in the technical Camera screen and enables ML inference and its
 overlay. Turning it off clears the current result; turning it on waits for a fresh result.
 
 ### Zoom and position the preview

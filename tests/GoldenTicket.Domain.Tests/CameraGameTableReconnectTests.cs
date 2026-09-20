@@ -27,7 +27,9 @@ public sealed class CameraGameTableReconnectTests
                 starts++;
                 SetField(instance!.Capture, "_running", true);
                 return Task.CompletedTask;
-            });
+            },
+            getCameraFormats: (_, _) => Task.FromResult<IReadOnlyList<CameraFormat>>(
+                [new(1920, 1080, 30, "MJPG")]));
         // The test only checks hotplug control flow; image processing and board registration
         // are covered by the camera corner tests and do not need real hardware here.
         SetField(camera, "_processorReady", true);
