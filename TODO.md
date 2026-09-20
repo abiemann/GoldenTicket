@@ -32,6 +32,8 @@ See the
   the notice disappears when the camera, train, and marker checks are ready.
   Camera confirmation uses measured train-space centers for all 100 classic-US routes; each
   requested space receives its own pulsing yellow cue. Live overhead-camera acceptance remains open.
+- [x] Remember window size, maximized state and full-screen preference across launches, preserving
+  normal dimensions through maximize, minimize and full-screen transitions.
 - [x] After PLAY, show the accepted live board crop in a uniformly scaled game table. Position
   2–5 player portraits and their public train/card/destination counts on its left and right sides,
   with face-down stacks and a latest-public-action line per seat. Alternate seats left and right;

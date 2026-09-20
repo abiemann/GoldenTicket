@@ -70,6 +70,8 @@ public sealed partial class MainViewModel : ObservableObject
             ? Path.Combine(localStore.RootDirectory, "presentation-settings.json") : null;
         _showDestinationsWhenViewingTrainCards = Services.PresentationPreferences
             .LoadShowDestinationsWithTrainCards(_presentationSettingsPath);
+        _displayMode = Services.PresentationPreferences.LoadDisplayMode(_presentationSettingsPath);
+        SavedWindowPresentation = Services.PresentationPreferences.LoadWindowPresentation(_presentationSettingsPath);
 
         Setup = new SetupViewModel(manifest);
         Table = new TableViewModel(manifest);

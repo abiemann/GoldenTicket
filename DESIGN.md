@@ -403,8 +403,12 @@ workflow underneath. The game layer covers 100% of the application content area,
 technical header and navigation. The welcome screen's text-only Settings button opens display and
 camera preferences; a bottom-right OK applies a changed processor choice and returns to the menu.
 Settings offers a resizable window by default or borderless full screen, with the original window
-size and position restored when switching back. Exclusive
-operating-system fullscreen is not required.
+size and position restored when switching back. The normal window dimensions in WPF logical units,
+last non-minimized windowed state and display-mode choice persist in local presentation settings.
+Launch applies the saved size and maximized state before showing the window; a saved full-screen
+choice takes precedence while preserving that underlying windowed state. Saved dimensions are
+clamped to the current work area and app minimum size. Resize writes are debounced and an approved
+close flushes the latest values. Exclusive operating-system fullscreen is not required.
 
 With no saved match, the opening choice is **Start a new game**. When at least one match exists,
 **Reload the previous game** resumes the most recently updated save, preserving its verification
@@ -478,7 +482,7 @@ turns. Menus, reload/rebuild verification, technical tools, window inactivity, s
 continue to pause these player statistics. An interrupted active turn or a turn first observed in an
 older save is partial and excluded from the average; the UI identifies partial timing coverage.
 
-The game-table header instead shows `Turn N · Game m:ss`, switching to `h:mm:ss` after an hour.
+The game-table header instead shows `Turn N · h:mm:ss`, starting at `0:00:00`.
 This separate total game counter runs continuously while a match is open, including menus, focus
 loss, technical screens, saved-board reconciliation and the final scoring-marker move. Those
 conditions do not pause the total. It stops when the match is completed, the player actually leaves

@@ -107,7 +107,7 @@ This build implements the core game plus initial phone, camera and photo workflo
 - Exact final scoring, including the longest continuous route as a true maximum edge-simple trail
   with the witness trail shown. Final standings appear over the board as horizontally scrolling
   portrait panels, with the full points breakdown, destination totals and a scrollable route trail.
-- The live header shows `Turn N · Game m:ss` (or `h:mm:ss` after an hour). This total game timer
+- The live header shows `Turn N · h:mm:ss`, starting at `0:00:00`. This total game timer
   keeps running while the match is open, including menus, focus loss, technical screens, saved-board
   reconciliation and the final scoring-marker move. It stops when the match finishes, is left or the
   app closes, and resumes from its saved total without counting time while the app was closed.
@@ -337,9 +337,11 @@ setup screen. Choose the webcam that shows the physical board and keep all four 
 visible, then choose **RELOAD GAME** to restore the most recently updated match.
 The **Settings** button beneath these choices opens display mode, camera quality, processor,
 and preview options. **OK** applies a changed processor choice and returns to the game menu.
-Display mode defaults to a resizable window; **Full screen** hides the title bar,
-and switching back restores the window's size and position. Camera controls use the same configuration
-as the utility screens.
+Display mode defaults to a resizable window. Later launches restore the previous window size and
+maximized state; a saved **Full screen** choice opens directly without a title bar. Switching back
+restores the underlying window size and maximized state, including after restarting the app.
+Minimizing does not replace that remembered state. Camera controls use the same configuration as
+the utility screens.
 The main screen currently reloads the most recent save. Selecting a different save is available
 only on the engineering-only **Saved matches** screen. A single saved match is checked
 automatically there. Check the physical board before play resumes. Named saves show their name,

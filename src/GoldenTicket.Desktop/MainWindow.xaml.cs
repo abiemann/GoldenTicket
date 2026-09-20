@@ -44,6 +44,7 @@ public partial class MainWindow : Window
             DataContext = _model;
             _model.PropertyChanged += OnDisplayModeChanged;
             _model.SetGameLayerVisible(true);
+            InitializeWindowPresentation();
             Loaded += async (_, _) =>
             {
                 FocusGameOrResumeAnnouncement();
@@ -109,6 +110,8 @@ public partial class MainWindow : Window
                 if (!_cleanupStarted) _model.CancelExitRequest();
             }
             _privacyTimer.Stop();
+            _windowPresentationTimer.Stop();
+            SaveWindowPresentation(force: true);
             IsEnabled = false;
             try { await _model.DisposeToolsAsync(); }
             catch (Exception exception) { DiagnosticLog.Write(exception, App.DiagnosticsDirectory, DateTimeOffset.UtcNow); }
@@ -127,6 +130,7 @@ public partial class MainWindow : Window
         Closed += (_, _) =>
         {
             _privacyTimer.Stop();
+            _windowPresentationTimer.Stop();
             if (_model is not null) _model.PropertyChanged -= OnDisplayModeChanged;
             SystemEvents.SessionSwitch -= OnSessionSwitch;
             SystemEvents.PowerModeChanged -= OnPowerModeChanged;
@@ -141,33 +145,8 @@ public partial class MainWindow : Window
             return;
         }
         if (args.PropertyName != nameof(MainViewModel.DisplayMode) || _model is null) return;
-
-        if (_model.DisplayMode == DisplayMode.FullScreen)
-        {
-            if (WindowStyle == WindowStyle.None) return;
-            _windowedState = WindowState;
-            _windowedBounds = WindowState == WindowState.Maximized
-                ? RestoreBounds : new Rect(Left, Top, Width, Height);
-            WindowState = WindowState.Normal;
-            WindowStyle = WindowStyle.None;
-            ResizeMode = ResizeMode.NoResize;
-            WindowState = WindowState.Maximized;
-        }
-        else
-        {
-            if (WindowStyle != WindowStyle.None) return;
-            WindowState = WindowState.Normal;
-            WindowStyle = WindowStyle.SingleBorderWindow;
-            ResizeMode = ResizeMode.CanResize;
-            if (_windowedBounds is { } bounds)
-            {
-                Left = bounds.Left;
-                Top = bounds.Top;
-                Width = bounds.Width;
-                Height = bounds.Height;
-            }
-            if (_windowedState == WindowState.Maximized) WindowState = WindowState.Maximized;
-        }
+        ApplyDisplayMode();
+        SaveWindowPresentation();
     }
 
     private bool ConfirmExit(ExitPrompt prompt)

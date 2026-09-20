@@ -38,8 +38,9 @@ public sealed partial class MainViewModel
             NeedsBoardReconciliation || ShowMultiHumanPhoneSetup || _mustReload || _exitRequested ||
             _toolsDisposed || !_systemAvailable || !_windowActive || !IsGameplayScreenActive(Screen.Table));
         var timing = coordinator.TurnTiming;
+        var gameElapsed = TimeSpan.FromTicks(timing.GameElapsedTicks ?? 0);
         GameClockSuffix = coordinator.Public.Lifecycle == SessionLifecycle.Setup ? "" :
-            "  ·  Game " + FormatTurnTime(TimeSpan.FromTicks(timing.GameElapsedTicks ?? 0));
+            $"  ·  {(long)gameElapsed.TotalHours}:{gameElapsed.Minutes:00}:{gameElapsed.Seconds:00}";
     }
 
     private async Task PersistTurnClockAsync()
