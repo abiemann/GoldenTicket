@@ -1,8 +1,9 @@
 namespace GoldenTicket.Vision;
 
 /// <summary>
-/// Fits display geometry to visible foreground within an ML detection. This does not detect pieces,
-/// change ML confidence, or infer direction from a printed route. Uncertain fits keep the ML box.
+/// Fits visible foreground within an ML detection for display and guarded interior color sampling.
+/// This does not detect pieces, change ML confidence, or infer direction from a printed route.
+/// Uncertain fits keep the ML box.
 /// </summary>
 internal static class TrainOutlineFitter
 {

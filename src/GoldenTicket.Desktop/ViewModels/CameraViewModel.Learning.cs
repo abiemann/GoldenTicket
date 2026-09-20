@@ -145,6 +145,8 @@ public sealed partial class CameraViewModel
             inferenceMilliseconds = (review.Detection.Elapsed - review.Detection.OutlineFittingElapsed).TotalMilliseconds,
             detectionMilliseconds = review.Detection.Elapsed.TotalMilliseconds,
             outlineFittingMilliseconds = review.Detection.OutlineFittingElapsed.TotalMilliseconds,
+            weakTrainRetryCount = review.Detection.WeakTrainRetryCount,
+            recoveredTrainCount = review.Detection.RecoveredTrainCount,
             outlineCoordinateSpace = "normalized-board", boxCoordinateSpace = "board-pixels",
             predictions = review.Detection.Candidates.Select(candidate => new
             {

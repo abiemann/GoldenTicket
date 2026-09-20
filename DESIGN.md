@@ -2170,15 +2170,33 @@ process-local and each page reload requires fresh laptop-approved pairing. The d
 sidecars with SHA-256 checksums for `LogicalStateOnly` checkpoints, not `VerifiedBoardPhoto` evidence.
 The local learned piece model supplies train candidates to a measured automatic claim check for
 all 100 classic-US routes and 309 printed train spaces. One pulsing cue marks each requested space.
+Raleigh–Charleston's two spaces use separately measured centers and directions because the printed
+route turns sharply between them. This corrects route assignment while retaining the shared
+16-reference-pixel sideways tolerance, independent piece detections, colors and fresh-frame checks.
+The runtime may retry at most two weak train proposals in centered, same-frame model tiles.
+Only strong, spatially agreeing predictions replace weak proposals; a missing proposal or failed
+retry supplies no occupancy evidence. Original tile ownership, final duplicate suppression,
+capture identity and freshness remain in force. Model retries do not use the expected route list.
 Two fresh upright observations must identify a separate train of the requested player color in
 every space of the correct lane. Train-color sampling requires at least 55% of all samples to
 support one physical color and a 35% sample-count lead over the next physical color. Neutral
 samples count against total support but do not compete as a sixth player color, allowing modest
 highlights on black trains such as those in the Calgary–Helena screenshot replay.
+For angled pieces, the original ML-box samples may include neutral board beside the train.
+If those samples fail only total support while retaining the required physical-color lead,
+the verifier may retry inside the same frame's fitted train rectangle. The retry must agree
+with the original leading color and meet both unchanged thresholds. The rectangle must cover
+a substantial train-shaped body, and every sampled pixel must remain inside the original ML
+box. This does not move candidate centers, relax slot tolerances, or infer color from a route
+or player. Missing or uncertain fits retain the original conservative reading.
 A durable camera-evidence event precedes the claim commit. The
 table then shows “Thank you” for three seconds and asks for the scoring marker to move; two fresh
-readings of its new printed position release the next turn. The slot map has visual and synthetic
-test coverage, but live-camera accuracy across routes and rotations remains unmeasured. Full-board
+readings of its new printed position release the next turn. Diagonally crowded score markers
+can share a corner when a separate known-color
+marker independently reads that corner from both adjoining edges. The fallback is limited to
+0.2–0.55 score steps inward on each axis, cannot override a direct different-cell reading, and
+cannot chain inferred positions. The target score never supplies position evidence. The slot map has
+visual and synthetic test coverage, but live-camera accuracy across routes and rotations remains unmeasured. Full-board
 comparison, automatic camera recovery, gesture recognition, and a durable post-claim score-marker
 gate remain unfinished. The rebuild target remains a route list rather than a geometry-based diagram.
 Snapshot rows hold validation metadata and state hashes rather than complete state snapshots.

@@ -113,6 +113,7 @@ public sealed partial class CameraViewModel
                     board.Sequence, board.Epoch,
                     detection.ModelId, detection.Backend,
                     inferenceMs = detection.Elapsed.TotalMilliseconds,
+                    detection.WeakTrainRetryCount, detection.RecoveredTrainCount,
                     boardAgeMs = board.Age.TotalMilliseconds,
                     trains = detection.Candidates.Count(candidate => candidate.Kind == PieceCandidateKind.Train),
                     markers = detection.Candidates.Count(candidate => candidate.Kind == PieceCandidateKind.PlayerMarker)

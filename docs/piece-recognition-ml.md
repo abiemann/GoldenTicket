@@ -1,8 +1,8 @@
 # Learning to recognize physical pieces
 
-Updated September 14, 2026. **Piece outlines uses a locally trained ML detector**, whose accepted
+Updated September 19, 2026. **Piece outlines uses a locally trained ML detector**, whose accepted
 runtime weights are included in the source checkout. This replaces empty-board differencing in the camera preview.
-The model supplies visual observations only: manual game verification remains in force.
+The model supplies visual observations; separate position, color and freshness checks verify game actions.
 
 ## Try it in the camera preview
 
@@ -38,6 +38,28 @@ ignored local artifacts. After a future candidate passes validation, promote onl
 ONNX file and matching manifest together into `assets/models/pieces/`; these are the source
 build's deployment inputs. See the [tracked model inventory](../assets/models/README.md).
 
+### Weak train detections
+
+After the standard tiled pass, at most two train proposals below the gameplay confidence floor
+receive a centered 640×640 retry using the same unmodified board frame. A retry must independently
+detect a strong train matching the proposal's position and size, entirely inside its tile and
+separate from already strong detections. Unrelated or ambiguous retry outputs are ignored.
+The usual merge, route geometry, colors and fresh-frame checks still apply; no game-state or
+historical occupancy is substituted for missing detections. Retry and recovery counts appear in
+the board-interaction diagnostics. A frame with no usable proposal remains conservative.
+
+Chicago–Duluth live logs contain intermittent weak/missing middle-train predictions. The supplied
+screenshot detects all three after resampling, so it cannot establish a live recovery rate. Existing
+training/evaluation metrics describe the original tiled detector; broader retry accuracy still needs
+live-camera validation and exact-frame examples.
+
+Validation on September 19: 120 focused detector, camera-flow and board-verification tests passed.
+Both screenshot crops retained the same 92 train and three marker detections. In a diagnostic
+test with an injected weak proposal at the logged middle-train location, the retry independently
+detected the train at approximately 0.95 confidence. The same proposal on the empty-board reference
+was rejected, and that reference retained zero detections. This injected-proposal check does not
+reproduce the original raw-camera dropout.
+
 ### Score markers by color
 
 The **Score track** cards under Piece outlines show blue, red, green, yellow and black marker
@@ -49,6 +71,10 @@ ownership remain unread, and no score reading changes game state.
 
 Keep the crop close to all four outer board edges. Side-by-side markers aligned with the
 same score-track row or column can share a value; readings are not assigned distinct scores.
+A marker diagonally inward beside a clearly read corner marker may share 20, 50, 70 or 100.
+This requires a known-color anchor independently agreeing on both adjoining edges, a small
+bounded inward displacement, and no direct reading of a different cell. It does not widen
+ordinary score-cell boundaries or infer a score from the game's requested target.
 Unknown color, off-track or ambiguous positions do not produce a numeric value. Missing colors
 show **Not detected**, and multiple detections of one color show **Multiple markers** rather
 than choosing one. Turning outlines off, changing camera/crop/model, stopping capture or

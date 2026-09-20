@@ -30,10 +30,14 @@ public static class ScoreMarkerReader
         ArgumentNullException.ThrowIfNull(candidates);
         var markers = candidates.Select((candidate, index) => (Candidate: candidate, Index: index))
             .Where(item => item.Candidate.Kind == PieceCandidateKind.PlayerMarker)
-            .Select(item => new Marker(item.Index, Bounds(item.Candidate.Outline))).ToArray();
+            .Select(item =>
+            {
+                var box = Bounds(item.Candidate.Outline);
+                return new Marker(item.Index, box, box is { } valid ? ReadColor(board, valid) : null);
+            }).ToArray();
         var anchors = markers.Where(marker => marker.Box is not null)
             .SelectMany(marker => DirectOffers(marker.Box!.Value)
-                .Select(offer => new Anchor(marker.Index, marker.Box.Value, offer))).ToArray();
+                .Select(offer => new Anchor(marker.Index, marker.Box.Value, marker.Color, offer))).ToArray();
         var readings = new List<ScoreMarkerReading>(markers.Length);
         foreach (var marker in markers)
         {
@@ -43,7 +47,7 @@ public static class ScoreMarkerReader
                     "The marker outline is invalid."));
                 continue;
             }
-            var color = ReadColor(board, box);
+            var color = marker.Color;
             var offers = DirectOffers(box).ToList();
             var direct = offers.OrderBy(offer => offer.Distance).FirstOrDefault();
             // A marker centered on its own perimeter edge must keep that reading. In particular,
@@ -51,6 +55,11 @@ public static class ScoreMarkerReader
             // an inward neighbor of the corner. Still allow propagation for markers farther inward.
             var clearDirect = direct is not null && direct.Distance <= .25 &&
                 !offers.Any(offer => offer.Score != direct.Score && offer.Distance < direct.Distance + .2);
+            // Two markers can share a corner diagonally, rather than an exact row or column.
+            // Only a clearly read corner marker can support this small inward region.
+            var directScores = offers.Select(offer => offer.Score).ToHashSet();
+            if (!clearDirect)
+                offers.AddRange(SharedCornerOffers(marker, anchors, directScores));
             // Nearby markers may sit inward beside a perimeter marker. Their shared row/column
             // takes precedence over proximity to an unrelated edge near a corner. No unique-score
             // assignment is performed: every marker keeps its own evidence and can share a score.
@@ -91,6 +100,39 @@ public static class ScoreMarkerReader
                 : new(marker.Index, color, best.Score, ScoreMarkerReadingStatus.Read, "Printed score track position read."));
         }
         return CollapseDuplicateDetections(readings, markers, candidates);
+    }
+
+    private static IEnumerable<Offer> SharedCornerOffers(Marker marker,
+        IReadOnlyList<Anchor> anchors, IReadOnlySet<int> directScores)
+    {
+        if (marker.Box is not { } box) yield break;
+        foreach (var anchor in anchors)
+        {
+            var score = anchor.Offer.Score;
+            if (anchor.Index == marker.Index || anchor.Color is null || anchor.Offer.Distance > .25 ||
+                score is not (20 or 50 or 70 or 100) || directScores.Any(value => value != score)) continue;
+            // Both adjoining edges must independently agree. Never chain another marker's
+            // inferred position or turn a valid neighboring cell into a shared corner.
+            if (!anchors.Any(other => other.Index == anchor.Index && other.Offer.Score == score &&
+                    other.Offer.Side != anchor.Offer.Side && other.Offer.Distance <= .25)) continue;
+            var leftCorner = score is 20 or 100;
+            var topCorner = score is 20 or 50;
+            var cornerX = leftCorner ? Left : Right;
+            var cornerY = topCorner ? Top : Bottom;
+            var directionX = leftCorner ? 1 : -1;
+            var directionY = topCorner ? 1 : -1;
+            var inwardX = (box.CenterX - cornerX) * directionX / HorizontalStep;
+            var inwardY = (box.CenterY - cornerY) * directionY / VerticalStep;
+            // Half a corner cell, with a small allowance for detection jitter. Requiring
+            // an inward displacement on both axes excludes ordinary along-track boundaries.
+            if (inwardX is < .2 or > .55 || inwardY is < .2 or > .55 ||
+                (box.CenterX - anchor.Box.CenterX) * directionX <= 0 ||
+                (box.CenterY - anchor.Box.CenterY) * directionY <= 0) continue;
+            yield return anchor.Offer with
+            {
+                Distance = anchor.Offer.Distance + .1 + Math.Max(inwardX, inwardY) * .5
+            };
+        }
     }
 
     private static IReadOnlyList<ScoreMarkerReading> CollapseDuplicateDetections(
@@ -241,7 +283,7 @@ public static class ScoreMarkerReader
         public double CenterX => (Left + Right) / 2;
         public double CenterY => (Top + Bottom) / 2;
     }
-    private sealed record Marker(int Index, Box? Box);
+    private sealed record Marker(int Index, Box? Box, MarkerColor? Color);
     private sealed record Offer(Edge Side, int Score, double Distance);
-    private sealed record Anchor(int Index, Box Box, Offer Offer);
+    private sealed record Anchor(int Index, Box Box, MarkerColor? Color, Offer Offer);
 }

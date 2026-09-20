@@ -19,6 +19,8 @@ public sealed record LearnedPieceDetection(IReadOnlyList<PieceCandidate> Candida
 {
     public string ModelSha256 { get; init; } = "";
     public TimeSpan OutlineFittingElapsed { get; init; }
+    public int WeakTrainRetryCount { get; init; }
+    public int RecoveredTrainCount { get; init; }
 }
 
 /// <summary>
@@ -115,29 +117,36 @@ public sealed class LearnedPieceDetector : IPieceModelDetector
             ObjectDisposedException.ThrowIf(_disposed, this);
             var timer = Stopwatch.StartNew();
             var resized = PieceModelGeometry.Resize(board, BoardWidth, BoardHeight, token);
-            IReadOnlyList<PieceCandidate> candidates;
-            try { candidates = DetectCore(resized, token); }
+            CoreDetection detection;
+            try { detection = DetectCore(resized, token); }
             catch (OnnxRuntimeException error) when (token.IsCancellationRequested)
             { throw new OperationCanceledException("Piece inference was cancelled.", error, token); }
             catch (Exception error) when (_gpu && IsProviderFailure(error) && !token.IsCancellationRequested)
             {
                 // A device failure invalidates every partial tile result. Restart the whole board on CPU.
                 UseCpu($"DirectML failed during inference: {Brief(error)}");
-                candidates = DetectCore(resized, token);
+                detection = DetectCore(resized, token);
             }
             token.ThrowIfCancellationRequested();
             // Preserve model boxes/confidences for NMS, evaluation and review. The optional
-            // display geometry comes from the same frame, without an empty-board reference.
+            // image fit comes from the same frame for display and guarded color sampling,
+            // without an empty-board reference. Route positions still use the model boxes.
             var fittingStarted = Stopwatch.GetTimestamp();
-            candidates = TrainOutlineFitter.Refine(resized, candidates, token);
+            var candidates = TrainOutlineFitter.Refine(resized, detection.Candidates, token);
             var fittingElapsed = Stopwatch.GetElapsedTime(fittingStarted);
             token.ThrowIfCancellationRequested();
             return new(candidates, ModelId, Backend, timer.Elapsed)
-            { ModelSha256 = ModelSha256, OutlineFittingElapsed = fittingElapsed };
+            {
+                ModelSha256 = ModelSha256, OutlineFittingElapsed = fittingElapsed,
+                WeakTrainRetryCount = detection.RetryCount, RecoveredTrainCount = detection.RecoveredCount
+            };
         }
     }
 
-    private IReadOnlyList<PieceCandidate> DetectCore(CameraFrame board, CancellationToken token)
+    private sealed record CoreDetection(IReadOnlyList<PieceCandidate> Candidates,
+        int RetryCount, int RecoveredCount);
+
+    private CoreDetection DetectCore(CameraFrame board, CancellationToken token)
     {
         var boxes = new List<PieceModelBox>();
         using var input = OrtValue.CreateTensorValueFromMemory(_input, [1, 3, 640, 640]);
@@ -149,6 +158,31 @@ public sealed class LearnedPieceDetector : IPieceModelDetector
         foreach (var y in yStarts)
         foreach (var x in xStarts)
         {
+            var tileBoxes = DetectTile(x, y);
+            // Overlapping views see complete pieces that a neighboring tile cuts in half. Assign each
+            // center to the middle of its overlap before NMS, so fragments do not become extra trains.
+            boxes.AddRange(tileBoxes.Where(box => PieceModelGeometry.OwnsCenter(box, x, y, xStarts, yStarts)));
+        }
+
+        // Weak proposals only choose where to look again in this same frame. A shifted tile
+        // must independently produce a strong matching train; neither a route nor history
+        // supplies occupancy. Keep the extra inference bounded and final NMS unchanged.
+        var retries = WeakTrainRecovery.Select(boxes, _manifest.ConfidenceThreshold);
+        var recovered = 0;
+        foreach (var retry in retries)
+        {
+            var retryBoxes = DetectTile(retry.X, retry.Y);
+            if (WeakTrainRecovery.Accept(retry, retryBoxes, boxes, _manifest.ConfidenceThreshold) is { } train)
+            {
+                boxes.Add(train);
+                recovered++;
+            }
+        }
+        return new(PieceModelGeometry.Merge(boxes, BoardWidth, BoardHeight, _manifest.NmsThreshold),
+            retries.Count, recovered);
+
+        List<PieceModelBox> DetectTile(int x, int y)
+        {
             token.ThrowIfCancellationRequested();
             PieceModelGeometry.FillInput(board, x, y, _input, token);
             try { _session!.Run(options, [_manifest.InputName], [input], [_manifest.OutputName], [output]); }
@@ -159,11 +193,8 @@ public sealed class LearnedPieceDetector : IPieceModelDetector
                 throw new InvalidDataException("The piece model produced non-finite detection values.");
             var tileBoxes = new List<PieceModelBox>();
             PieceModelGeometry.Decode(_output, x, y, _manifest.ConfidenceThreshold, tileBoxes);
-            // Overlapping views see complete pieces that a neighboring tile cuts in half. Assign each
-            // center to the middle of its overlap before NMS, so fragments do not become extra trains.
-            boxes.AddRange(tileBoxes.Where(box => PieceModelGeometry.OwnsCenter(box, x, y, xStarts, yStarts)));
+            return tileBoxes;
         }
-        return PieceModelGeometry.Merge(boxes, BoardWidth, BoardHeight, _manifest.NmsThreshold);
     }
 
     private void Warmup()

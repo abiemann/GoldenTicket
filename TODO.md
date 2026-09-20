@@ -93,6 +93,11 @@ See the
   color. The supplied Calgary–Helena screenshot reproduces one rejected black train despite
   all four detections being within their spaces. Preserve the total-support and competing-color
   thresholds; broader live-camera validation remains open.
+- [x] Recover neutral-background color uncertainty on angled trains with guarded sampling
+  inside their image-fitted bodies. Duluth–Winnipeg logs show confident detections with intermittent
+  unknown colors; its screenshot has black readings at the support cutoff. Keep the same color
+  support and competing-color thresholds, require agreement with the original leading color,
+  and retain original route geometry. Live-camera validation remains open.
 - [ ] Persist the physical scoring-marker move gate across app restart; resume currently requires
   board reconciliation, but it does not restore the in-memory post-claim marker instruction.
 - [ ] Validate score-piece color and printed-1 acceptance with the real overhead camera for all
@@ -275,6 +280,21 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   red 11, black 11 and green 50 on CPU/DirectML; 57 focused checks and four WPF render cases
   pass. These observations do not change game scores or infer full laps. See the
   [score-marker checks](docs/evidence/score-markers-2026-09-13/validation.md).
+- [x] Recognize markers sharing a corner diagonally, as in the black/red pair on 50.
+  Require a clearly read corner anchor, keep the fallback within a small inward region,
+  preserve adjacent-cell readings, and retain fresh-frame confirmation. Live validation remains open.
+- [x] Retry up to two weak train proposals with centered, same-frame model views; require
+  independently strong matching detections and retain route/color/freshness checks. Log retry counts.
+- [x] Correct Raleigh–Charleston's bent two-space geometry using the empty-board reference.
+  Turn-114 diagnostics recognized both black pieces above 95% confidence; the old second-space
+  mapping excluded one. Keep the existing confidence/color thresholds and sideways tolerance;
+  cover both-piece confirmation, partial placement, neighboring pieces and off-route rejection.
+  All 102 focused checks pass. Both supplied-screenshot crops confirm 2/2, including 18 small
+  position-shift cases; omitting either detection remains incomplete, and the empty reference
+  produces no train detections. These are offline checks; live play after rebuilding remains unverified.
+- [ ] Capture an exact analyzed frame of the Chicago–Duluth middle-train miss and validate
+  live recovery. Its screenshot detects all three after resampling; frames with no usable
+  proposal are not recovered by the bounded weak-proposal retry.
 - [ ] **Independent ML acceptance and error-driven training.** Review saved failures, correct
   labels, retrain with recorded provenance and evaluate untouched new capture sessions. Include
   empty boards and lighting changes in held-out evaluation, all colors, crowding, motion and

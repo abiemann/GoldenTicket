@@ -38,8 +38,12 @@ reference, using ONNX Runtime on DirectML or CPU. Reviewed runtime models and th
 are committed under `assets/models/`; training photos, labels and intermediate checkpoints stay ignored.
 Train outlines follow the piece angle when a local image fit is reliable; score-marker outlines
 stay square. Uncertain train fits keep the original model box.
+For weak train detections, the runtime tries up to two centered views of the same frame.
+Only a strong, spatially matching model result can replace a weak proposal; missing pieces
+are never filled in from the recorded game state. Completely absent proposals still need investigation.
 **Piece outlines → Score track** reads each detected marker's color and printed track value.
-Markers beside the same row or column may share a score. Missing or uncertain readings are
+Markers beside the same row or column may share a score. A marker just diagonally inward from
+another clearly read corner marker can also share that corner's score. Missing or uncertain readings are
 shown explicitly and clear with stale outlines. Keep the upright USA board tightly cropped;
 these are track positions, not inferred full-lap totals or changes to the game's scores.
 **Save detection example…** records the analyzed image, predictions and a note for later review.
@@ -85,8 +89,11 @@ This build implements the core game plus initial phone, camera and photo workflo
   commit spends the cards, records ownership, scores and ends the turn. For a human who places
   trains first, the route and whole board are verified before the payment dialog opens. A valid
   payment then uses that still-current confirmation without a second placement wait.
-  Adjacent parallel lanes are checked separately. Train-color checks tolerate neutral highlights
-  when a physical color still has sufficient support and clearly leads the other piece colors. This geometry and automated
+  Adjacent parallel lanes are checked separately. Raleigh–Charleston uses individually measured
+  space directions to follow its sharp bend. Train-color checks tolerate neutral highlights
+  when a physical color still has sufficient support and clearly leads the other piece colors.
+  If neutral board pixels weaken an angled train's reading, its image-fitted interior can confirm
+  the same leading color; competing colors still prevent confirmation. This geometry and automated
   tests still need live-camera accuracy validation. During ordinary play, earlier claims retain
   their recorded color and owner while the camera checks their current train positions, separate
   pieces and any extras. New routes, saving and reloading still require live color verification.

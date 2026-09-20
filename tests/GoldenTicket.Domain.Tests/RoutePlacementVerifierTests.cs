@@ -208,6 +208,120 @@ public sealed class RoutePlacementVerifierTests
         Assert.Equal(accepted, inventory.Observe(second.Frame, second.Candidates, 1, 1).Confirmed);
     }
 
+    [Theory]
+    [InlineData(-2, -2)]
+    [InlineData(-2, 0)]
+    [InlineData(-2, 2)]
+    [InlineData(0, -2)]
+    [InlineData(0, 0)]
+    [InlineData(0, 2)]
+    [InlineData(2, -2)]
+    [InlineData(2, 0)]
+    [InlineData(2, 2)]
+    public void Observed_charleston_raleigh_trains_match_the_bent_route(double dx, double dy)
+    {
+        const string route = "charleston--raleigh";
+        var now = DateTimeOffset.UtcNow;
+        // Both black pieces were detected at >95% confidence in turn 114. The old
+        // center/direction for the Charleston end wrongly excluded the second one.
+        var first = SceneAtResolution(1996, 1248, 1, 1, now,
+            (1729.2 + dx, 716.6 + dy, MarkerColor.Black, .957),
+            (1758.7 + dx, 757.6 + dy, MarkerColor.Black, .962));
+        var second = SceneAtResolution(1996, 1248, 2, 1, now.AddSeconds(1.1),
+            (1729.4 + dx, 716.8 + dy, MarkerColor.Black, .957),
+            (1758.6 + dx, 757.7 + dy, MarkerColor.Black, .962));
+        var placement = new RoutePlacementVerifier();
+        var inventory = new BoardInventoryVerifier([new(route, MarkerColor.Black, 2)]);
+        var discovery = new BoardFirstRouteDetector();
+
+        var unclaimed = new BoardInventoryVerifier([]).Observe(first.Frame, first.Candidates, 1, 1);
+        Assert.Equal(new UnexpectedTrainLocation(route, MarkerColor.Black, 2), unclaimed.UnexpectedTrains);
+        Assert.Equal(RoutePlacementState.Stabilizing,
+            placement.Observe(first.Frame, first.Candidates, route, MarkerColor.Black, 2, "claim", 1, 1).State);
+        Assert.Equal(BoardInventoryState.Stabilizing,
+            inventory.Observe(first.Frame, first.Candidates, 1, 1).State);
+        Assert.Null(discovery.Observe(first.Frame, first.Candidates, [(route, 2)], MarkerColor.Black, "turn", 1, 1));
+        Assert.True(placement.Observe(second.Frame, second.Candidates,
+            route, MarkerColor.Black, 2, "claim", 1, 1).Confirmed);
+        Assert.True(inventory.Observe(second.Frame, second.Candidates, 1, 1).Confirmed);
+        Assert.Equal(route, discovery.Observe(second.Frame, second.Candidates,
+            [(route, 2)], MarkerColor.Black, "turn", 1, 1));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void Charleston_raleigh_still_needs_both_trains_and_cannot_use_neighboring_blue_train(int missing)
+    {
+        const string route = "charleston--raleigh";
+        (double X, double Y)[] observed = [(1729.2, 716.6), (1758.7, 757.6)];
+        var present = observed[1 - missing];
+        var now = DateTimeOffset.UtcNow;
+        var scene = SceneAtResolution(1996, 1248, 1, 1, now,
+            (present.X, present.Y, MarkerColor.Black, .96),
+            (1639.7, 707.6, MarkerColor.Blue, .961));
+        var result = new RoutePlacementVerifier().Observe(scene.Frame, scene.Candidates,
+            route, MarkerColor.Black, 2, "claim", 1, 1);
+        Assert.Equal(RoutePlacementState.Incomplete, result.State);
+        Assert.Equal(1, result.MatchedCount);
+        Assert.Equal(1 << missing, result.UnverifiedSlotMask);
+        Assert.Equal(BoardInventoryState.MissingTrains,
+            new BoardInventoryVerifier([new(route, MarkerColor.Black, 2)])
+                .Observe(scene.Frame, scene.Candidates, 1, 1).State);
+        var discovery = new BoardFirstRouteDetector();
+        Assert.Null(discovery.Observe(scene.Frame, scene.Candidates, [(route, 2)], MarkerColor.Black, "turn", 1, 1));
+        var later = SceneAtResolution(1996, 1248, 2, 1, now.AddSeconds(1.1),
+            (present.X, present.Y, MarkerColor.Black, .96),
+            (1639.7, 707.6, MarkerColor.Blue, .961));
+        Assert.Null(discovery.Observe(later.Frame, later.Candidates, [(route, 2)], MarkerColor.Black, "turn", 1, 1));
+    }
+
+    [Theory]
+    [InlineData(0, -20)]
+    [InlineData(0, 20)]
+    [InlineData(1, -20)]
+    [InlineData(1, 20)]
+    public void Charleston_raleigh_slack_follows_each_printed_rectangle(int moved, double along)
+    {
+        // Independent printed directions: the second space turns back toward Charleston.
+        (double X, double Y, double Tx, double Ty)[] printed =
+            [(1729, 717, .89, .45), (1758, 756, -.50, .87)];
+        var trains = printed.Select((slot, index) =>
+            (slot.X + (index == moved ? along * slot.Tx : 0),
+                slot.Y + (index == moved ? along * slot.Ty : 0), MarkerColor.Black, .96)).ToArray();
+        var scene = SceneAtResolution(1996, 1248, 1, 1, DateTimeOffset.UtcNow, trains);
+        Assert.Equal(RoutePlacementState.Stabilizing,
+            new RoutePlacementVerifier().Observe(scene.Frame, scene.Candidates,
+                "charleston--raleigh", MarkerColor.Black, 2, "claim", 1, 1).State);
+        Assert.Equal(BoardInventoryState.Stabilizing,
+            new BoardInventoryVerifier([new("charleston--raleigh", MarkerColor.Black, 2)])
+                .Observe(scene.Frame, scene.Candidates, 1, 1).State);
+    }
+
+    [Fact]
+    public void Charleston_raleigh_rejects_wrong_color_and_a_train_beside_the_printed_space()
+    {
+        const string route = "charleston--raleigh";
+        var now = DateTimeOffset.UtcNow;
+        var wrongColor = SceneAtResolution(1996, 1248, 1, 1, now,
+            (1729.2, 716.6, MarkerColor.Black, .96),
+            (1758.7, 757.6, MarkerColor.Red, .96));
+        Assert.Equal(RoutePlacementState.WrongColor,
+            new RoutePlacementVerifier().Observe(wrongColor.Frame, wrongColor.Candidates,
+                route, MarkerColor.Black, 2, "claim", 1, 1).State);
+
+        var offRoute = SceneAtResolution(1996, 1248, 1, 1, now,
+            (1729.2, 716.6, MarkerColor.Black, .96),
+            (1780, 770, MarkerColor.Black, .96));
+        var result = new RoutePlacementVerifier().Observe(offRoute.Frame, offRoute.Candidates,
+            route, MarkerColor.Black, 2, "claim", 1, 1);
+        Assert.Equal(RoutePlacementState.Incomplete, result.State);
+        Assert.Equal(1, result.MatchedCount);
+        Assert.Equal(BoardInventoryState.MissingTrains,
+            new BoardInventoryVerifier([new(route, MarkerColor.Black, 2)])
+                .Observe(offRoute.Frame, offRoute.Candidates, 1, 1).State);
+    }
+
     [Fact]
     public void Yellow_trains_on_kansas_city_oklahoma_city_lane_b_do_not_confirm_blue_lane_a()
     {

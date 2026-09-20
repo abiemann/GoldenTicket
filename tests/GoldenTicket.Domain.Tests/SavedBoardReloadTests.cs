@@ -39,7 +39,7 @@ public sealed class SavedBoardReloadTests
             await reloaded.ResumeMatchAsync();
 
             Assert.Equal(Screen.Table, reloaded.Screen);
-            Assert.Contains("Checking the saved board", reloaded.Game.GuidanceInstruction);
+            Assert.Equal("Saved board.", reloaded.Game.GuidanceInstruction);
             Assert.DoesNotContain("packed away", reloaded.Game.GuidanceInstruction,
                 StringComparison.OrdinalIgnoreCase);
             var coordinator = (GameCoordinator)typeof(MainViewModel)
@@ -153,7 +153,7 @@ public sealed class SavedBoardReloadTests
                 Assert.Equal(Screen.Table, reloaded.Screen);
                 Assert.True(reloaded.Game.IsPlaying);
                 Assert.True(reloaded.CheckpointPhoto.HasPhoto);
-                Assert.Contains("Checking the saved board", reloaded.Game.GuidanceInstruction);
+                Assert.Equal("Saved board.", reloaded.Game.GuidanceInstruction);
             }
         }
         finally
@@ -219,7 +219,7 @@ public sealed class SavedBoardReloadTests
                 Assert.Equal(earlier.State.StateVersion, recovered.State.StateVersion);
                 Assert.True(reloaded.Game.IsPlaying);
                 Assert.False(reloaded.HasEarlierCompletedSave);
-                Assert.Contains("Checking the saved board", reloaded.Game.GuidanceInstruction);
+                Assert.Equal("Saved board.", reloaded.Game.GuidanceInstruction);
             }
         }
         finally

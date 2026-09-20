@@ -19,7 +19,7 @@ public readonly record struct BoardSlotPoint(double X, double Y, double TangentX
 public static class ClassicUsRouteGeometry
 {
     public const string ProfileId = "ttr-us-classic-en-v1";
-    public const string GeometryVersion = "classic-us-slots-2026-09-19-v4";
+    public const string GeometryVersion = "classic-us-slots-2026-09-19-v5";
     // The original 3456 × 2160 empty-board photo, before scaling to the 1996 × 1248
     // reference used below. The original user photo is not shipped; its compact grayscale
     // calibration is embedded by ClassicUsBoardAlignment to keep live crops in these axes.
@@ -49,7 +49,9 @@ public static class ClassicUsRouteGeometry
             ["calgary--vancouver"] = Lane((268, 184), (337, 176), (405, 169)),
             ["calgary--winnipeg"] = Lane((518, 142), (580, 125), (647, 114), (716, 114), (782, 124), (849, 144)),
             ["charleston--miami"] = Lane((1742, 847), (1754, 910), (1769, 972), (1787, 1034)),
-            ["charleston--raleigh"] = Lane((1721, 711), (1741, 763)),
+            // The two printed spaces turn sharply at the bend. Use each rectangle's
+            // measured center and direction rather than the chord between centers.
+            ["charleston--raleigh"] = [Point(1729, 717, .89, .45), Point(1758, 756, -.50, .87)],
             ["chicago--duluth"] = Lane((1166, 429), (1231, 456), (1297, 479)),
             ["chicago--omaha"] = Lane((1110, 538), (1165, 510), (1237, 496), (1305, 503)),
             ["chicago--pittsburgh--a"] = Lane((1405, 474), (1477, 462), (1549, 460)),
@@ -166,11 +168,14 @@ public static class ClassicUsRouteGeometry
         return result;
     }
 
-    private static BoardSlotPoint[] One(double x, double y, double tangentX, double tangentY)
+    private static BoardSlotPoint[] One(double x, double y, double tangentX, double tangentY) =>
+        [Point(x, y, tangentX, tangentY)];
+
+    private static BoardSlotPoint Point(double x, double y, double tangentX, double tangentY)
     {
         var length = Math.Sqrt(tangentX * tangentX + tangentY * tangentY);
-        if (length < .01) throw new ArgumentException("A single train space needs a measured direction.");
-        return [new BoardSlotPoint(x / ReferenceWidth, y / ReferenceHeight,
-            tangentX / length, tangentY / length)];
+        if (length < .01) throw new ArgumentException("A train space needs a measured direction.");
+        return new BoardSlotPoint(x / ReferenceWidth, y / ReferenceHeight,
+            tangentX / length, tangentY / length);
     }
 }

@@ -235,8 +235,30 @@ public sealed class RoutePlacementVerifier
             votes[ClassifyColor(pixels[offset + 2], pixels[offset + 1], pixels[offset])]++;
             samples++;
         }
+        var reading = RankColor(votes, samples);
+        if (reading.Supported && reading.ClearLead) return reading.Color;
+
+        // A diagonal train's square ML box can include neutral board beside its body.
+        // Recover only missing support, never a disagreement between physical colors.
+        // The image fit must reinforce the original leader with the same thresholds;
+        // neither the expected player color nor the printed route chooses this sample area.
+        if (!reading.ClearLead || candidate.Kind != PieceCandidateKind.Train) return null;
+        var fitted = ReadFittedColor(frame, candidate, left * frame.Width, top * frame.Height,
+            width, height);
+        return fitted.Supported && fitted.ClearLead && fitted.Color == reading.Color
+            ? fitted.Color : null;
+    }
+
+    private readonly record struct ColorReading(int Category, int Support, int RunnerUp, int Samples)
+    {
+        public bool Supported => Samples > 0 && Support >= Samples * .55;
+        public bool ClearLead => Samples > 0 && Support - RunnerUp >= Samples * .35;
+        public MarkerColor Color => (MarkerColor)(Category - 1);
+    }
+
+    private static ColorReading RankColor(ReadOnlySpan<int> votes, int samples)
+    {
         // Neutral highlights reduce total support, but are not a competing piece color.
-        // Rank only physical colors, retaining the support floor over all samples below.
         var best = 1;
         var second = 2;
         if (votes[second] > votes[best]) (best, second) = (second, best);
@@ -252,9 +274,64 @@ public sealed class RoutePlacementVerifier
                 second = index;
             }
         }
-        if (votes[best] < samples * .55 || votes[best] - votes[second] < samples * .35)
-            return null;
-        return (MarkerColor)(best - 1);
+        return new(best, votes[best], votes[second], samples);
+    }
+
+    private static ColorReading ReadFittedColor(CameraFrame frame, PieceCandidate candidate,
+        double left, double top, double width, double height)
+    {
+        var outline = candidate.OrientedOutline;
+        if (outline is not { Count: 4 } || outline.Any(point =>
+                !double.IsFinite(point.X) || !double.IsFinite(point.Y) ||
+                point.X is < 0 or >= 1 || point.Y is < 0 or >= 1)) return default;
+
+        var x0 = outline[0].X * frame.Width;
+        var y0 = outline[0].Y * frame.Height;
+        var ux = (outline[1].X - outline[0].X) * frame.Width;
+        var uy = (outline[1].Y - outline[0].Y) * frame.Height;
+        var vx = (outline[3].X - outline[0].X) * frame.Width;
+        var vy = (outline[3].Y - outline[0].Y) * frame.Height;
+        var uLength = Distance(ux, uy);
+        var vLength = Distance(vx, vy);
+        // Keep a substantial, rectangular train body, not a tiny favorable patch of color.
+        if (Math.Min(uLength, vLength) < 5 ||
+            Math.Max(uLength, vLength) / Math.Min(uLength, vLength) is < 1.5 or > 6 ||
+            Math.Abs(ux * vx + uy * vy) > uLength * vLength * .02 ||
+            Distance(outline[2].X * frame.Width - x0 - ux - vx,
+                outline[2].Y * frame.Height - y0 - uy - vy) > 1 ||
+            Math.Abs(ux) + Math.Abs(vx) < width * .64 ||
+            Math.Abs(uy) + Math.Abs(vy) < height * .64) return default;
+
+        var cx = x0 + (ux + vx) / 2;
+        var cy = y0 + (uy + vy) / 2;
+        if (Math.Abs(cx - left - width / 2) > width * .22 ||
+            Math.Abs(cy - top - height / 2) > height * .22 ||
+            outline.Any(point => point.X * frame.Width < left - width * .12 - 2 ||
+                point.X * frame.Width > left + width * 1.12 + 2 ||
+                point.Y * frame.Height < top - height * .12 - 2 ||
+                point.Y * frame.Height > top + height * 1.12 + 2)) return default;
+
+        Span<int> votes = stackalloc int[6];
+        var samples = 0;
+        var pixels = frame.Bgra32.Span;
+        for (var gy = -3; gy <= 3; gy++)
+        for (var gx = -3; gx <= 3; gx++)
+        {
+            if (gx * gx + gy * gy > 9) continue;
+            var sx = cx + (gx * ux + gy * vx) / 12;
+            var sy = cy + (gx * uy + gy * vy) / 12;
+            var x = (int)Math.Round(sx);
+            var y = (int)Math.Round(sy);
+            // Fitted corners may include padding outside the box; sampled pixels may not.
+            // Never clamp or drop a sample to manufacture stronger support.
+            if (sx < left || sx > left + width || sy < top || sy > top + height ||
+                x < left || x > left + width || y < top || y > top + height ||
+                x < 0 || x >= frame.Width || y < 0 || y >= frame.Height) return default;
+            var offset = y * frame.Stride + x * 4;
+            votes[ClassifyColor(pixels[offset + 2], pixels[offset + 1], pixels[offset])]++;
+            samples++;
+        }
+        return RankColor(votes, samples);
     }
 
     /// <summary>Expose the verifier's own color reading for board-audit diagnostics.</summary>

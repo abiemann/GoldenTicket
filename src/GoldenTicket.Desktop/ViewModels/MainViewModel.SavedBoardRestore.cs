@@ -37,7 +37,7 @@ public sealed partial class MainViewModel
         _savedBoardRestoreCompleting = false;
         _savedBoardRestoreGuidance = null;
         SetSavedBoardRestoreTarget(null);
-        ShowSavedBoardRestoreGuidance("Checking the saved board. Keep the webcam pointed at all four corners.");
+        ShowSavedBoardRestoreGuidance("Saved board.");
         BoardInteractionLog.Write("reload.board-check.started", new
         {
             checkpoint = checkpoint.CheckpointId.Value,
@@ -86,7 +86,7 @@ public sealed partial class MainViewModel
             case SavedBoardRestoreStage.CheckingMarker when result.Marker is { } marker:
                 SetSavedBoardRestoreTarget(null);
                 ShowSavedBoardRestoreGuidance(
-                    $"Please place {marker.Color.ToString().ToUpperInvariant()} scoring marker on {marker.PrintedScore}.");
+                    $"{marker.Color.ToString().ToUpperInvariant()} scoring marker on {marker.PrintedScore}.");
                 return;
             case SavedBoardRestoreStage.CheckingTrains:
                 var route = result.Inventory?.RouteId is { } routeId &&
@@ -118,15 +118,15 @@ public sealed partial class MainViewModel
     {
         if (observation is null || observation.State is BoardInventoryState.Stabilizing or
             BoardInventoryState.WaitingForFreshFrame)
-            return "Scoring markers match. Checking every saved train on the board…";
+            return "Saved trains.";
         if (observation.State == BoardInventoryState.Unsupported)
             return "The camera cannot verify this saved route automatically. Play stays paused until the saved board can be checked.";
         if (observation.RouteId is { } pendingRouteId && CheckpointPhoto.PendingPlacement is { } pending &&
             pending.RouteId.Value == pendingRouteId)
-            return $"Restore the unfinished {pending.Color} placement on {_manifest.Describe(pending.RouteId)} " +
-                $"to match the saved photo ({pending.TrainCount} trains placed).";
+            return $"Unfinished {pending.Color} placement on {_manifest.Describe(pending.RouteId)} " +
+                $"({pending.TrainCount} trains in the saved photo).";
         if (observation.State == BoardInventoryState.UnexpectedTrain)
-            return "Remove trains that were not on the board when you saved the game.";
+            return "Trains outside the saved routes.";
         if (observation.RouteId is { } routeId)
         {
             var route = _coordinator?.Public.Checkpoint?.PhysicalTarget
@@ -135,12 +135,10 @@ public sealed partial class MainViewModel
             {
                 var color = coordinator.Public.SeatOf(route.SeatId).Color.ToString().ToUpperInvariant();
                 var name = _manifest.Describe(route.RouteId);
-                return observation.State == BoardInventoryState.WrongColor
-                    ? $"Check {name}: the saved trains there were {color}."
-                    : $"Please restore {route.Length} {color} train{(route.Length == 1 ? "" : "s")} on {name}.";
+                return $"{route.Length} {color} train{(route.Length == 1 ? "" : "s")} on {name}.";
             }
         }
-        return "Check that every saved train is visible in its original lane.";
+        return "Saved train positions and colors.";
     }
 
     private void ShowSavedBoardRestoreGuidance(string instruction)
@@ -217,7 +215,7 @@ public sealed partial class MainViewModel
                 verifier.Reset();
                 _savedBoardRestoreCompleting = false;
                 _savedBoardRestoreGuidance = null;
-                ShowSavedBoardRestoreGuidance("Keep the whole saved board visible while it is checked again.");
+                ShowSavedBoardRestoreGuidance("Saved board.");
             }
         }
     }
