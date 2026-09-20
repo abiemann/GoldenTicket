@@ -176,10 +176,12 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(GameplayScreen));
         if (!_gameLayerVisible || Screen is Screen.Setup or Screen.Table or Screen.Rebuild or Screen.FinalScore)
             Screen = screen;
+        NotifyFinalStandingsSharing();
     }
 
     private void NotifyHumanPresentation()
     {
+        ResetFinalStandingsSharing();
         OnPropertyChanged(nameof(IsSingleHumanGame));
         OnPropertyChanged(nameof(IsSoloHumanTurn));
         OnPropertyChanged(nameof(ShowSoloOpeningTicketsOnBoard));
@@ -245,6 +247,7 @@ public sealed partial class MainViewModel : ObservableObject
         HidePrivateSeat();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
         ResumeMatchCommand.NotifyCanExecuteChanged();
+        NotifyFinalStandingsSharing();
     }
 
     // ---- Setup -----------------------------------------------------------------------------
@@ -868,6 +871,7 @@ public sealed partial class MainViewModel : ObservableObject
         NotifySoloDrawCommands();
         ResumeMatchCommand.NotifyCanExecuteChanged();
         AcknowledgeResumeTurnCommand.NotifyCanExecuteChanged();
+        BackToMenuCommand.NotifyCanExecuteChanged();
     }
 
     private void RequireReload()

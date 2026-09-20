@@ -473,6 +473,21 @@ colors, portraits and winner highlights follow the game theme; navigation arrows
 horizontal scrollbar only when the panels overflow, with unavailable directions hidden.
 Standings follow the existing points, completed-ticket and longest-bonus
 tie breakers.
+The title reads **The journey has come to an end**. A bottom-right footer puts **Share to phone**
+(multi-human games only) beside **Back to Menu**. Returning from the completed standings closes
+the camera and phone connection and shows the welcome menu without deleting or rewinding the
+finished game. Neither footer action appears in the exported image.
+
+For matches with two or more human seats, **Share to phone** prepares a public standings PNG
+from a detached copy of the themed board/results view. The export includes every player and full
+route descriptions, regardless of the live horizontal scroll position, without window chrome,
+private cards or pairing overlays. Missing phone approval opens the existing shared-phone setup.
+The capture is held in memory for the current completed session and revision; an approved controller
+fetches it through a no-store, tab-authenticated endpoint. The PWA previews the image and exposes
+file sharing from an explicit tap where supported, with an image download fallback. No image or
+game payload enters the service-worker shell cache. Single-human and unfinished games cannot expose
+the image. Desktop/browser checks cover this flow; native Android/iOS share-sheet acceptance remains
+a real-device check.
 
 A monotonic counter records each player's full turn, including decisions, physical train placement
 and scoring-marker movement. A committed route advances the digital turn before its marker moves;

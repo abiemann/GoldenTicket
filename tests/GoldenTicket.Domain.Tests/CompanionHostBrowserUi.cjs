@@ -16,6 +16,7 @@ fs.mkdirSync(output, { recursive: true });
 const mime = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.webmanifest':'application/manifest+json', '.svg':'image/svg+xml', '.png':'image/png' };
 const results = [];
 let fixture = fixtures.setup, paired = false, pending = false, generation = 1, requests = [], offline = false, delayedReveal = null;
+let resultImageBytes = null;
 const send = (response, body, status=200) => { response.writeHead(status, {'Content-Type':'application/json', 'Cache-Control':'no-store'}); response.end(JSON.stringify(body)); };
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, 'http://localhost');
@@ -23,8 +24,12 @@ const server = http.createServer(async (request, response) => {
     if (offline) { request.socket.destroy(); return; }
     let body = ''; for await(const chunk of request) body += chunk;
     body = body ? JSON.parse(body) : {};
-    requests.push({url:url.pathname, body});
-    if(url.pathname === '/api/session') return send(response, paired ? { paired, csrf:'test-csrf', handoffGeneration:generation, controllerGeneration:1, apiVersion:'1', assetsVersion:'2', snapshot:fixture.snapshot } : {paired,pending});
+    requests.push({url:url.pathname, body, headers:request.headers});
+    if(url.pathname === '/api/session') return send(response, paired ? { paired, csrf:'test-csrf', handoffGeneration:generation, controllerGeneration:1, apiVersion:'1', assetsVersion:'3', snapshot:fixture.snapshot } : {paired,pending});
+    if(url.pathname.startsWith('/api/result-image/')) {
+      if(!paired || !resultImageBytes || url.pathname!==`/api/result-image/${fixture.snapshot.resultImage?.id}` || !request.headers['x-goldenticket-tab']) return send(response,{},404);
+      response.writeHead(200,{'Content-Type':'image/png','Content-Length':resultImageBytes.length,'Cache-Control':'no-store'}); response.end(resultImageBytes); return;
+    }
     if(url.pathname === '/api/pair') { pending=true; return send(response, {pending:true,identity:'2468'}); }
     if(url.pathname === '/api/hide') { generation++; return send(response,{hidden:true}); }
     if(url.pathname === '/api/reveal') {
@@ -45,7 +50,7 @@ const server = http.createServer(async (request, response) => {
   const asset = url.pathname === '/companion/' ? 'index.html' : url.pathname.startsWith('/companion/') ? url.pathname.slice('/companion/'.length) : '';
   if(!['index.html','app.js','app.css','sw.js','manifest.webmanifest','icon.svg','icon-192.png','icon-512.png'].includes(asset)) { response.writeHead(404); response.end(); return; }
   response.writeHead(200, {'Content-Type':mime[path.extname(asset)],'Cache-Control':'no-store','Service-Worker-Allowed':'/companion/',
-    'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"});
+    'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"});
   response.end(fs.readFileSync(path.join(shell,asset)));
 });
 async function record(name, action) { const start=Date.now(); await action(); results.push({name,passed:true,milliseconds:Date.now()-start}); console.log('PASS '+name); }
@@ -67,6 +72,24 @@ async function screenshot(page,name) {
 async function noOverflow(page) {
   const metrics=await page.evaluate(()=>({width:innerWidth,body:document.body.scrollWidth,html:document.documentElement.scrollWidth}));
   assert.ok(metrics.body<=metrics.width+1 && metrics.html<=metrics.width+1, JSON.stringify(metrics));
+}
+async function syntheticStandingsPng(page) {
+  if(process.env.GOLDENTICKET_RESULT_IMAGE_FIXTURE) return fs.readFileSync(process.env.GOLDENTICKET_RESULT_IMAGE_FIXTURE);
+  // Synthetic public results only; no player photos, private hands, or saved matches.
+  const data=await page.evaluate(()=>{
+    const canvas=document.createElement('canvas');canvas.width=1280;canvas.height=960;const ctx=canvas.getContext('2d');
+    ctx.fillStyle='#15232d';ctx.fillRect(0,0,1280,960);ctx.fillStyle='#ffdc87';ctx.textAlign='center';ctx.font='bold 46px Georgia';ctx.fillText('THE FINAL STANDINGS',640,92);
+    ctx.fillStyle='#f4e7ce';ctx.font='27px sans-serif';ctx.fillText('Alex wins. A journey to remember.',640,147);
+    for(const [index,name,score,time] of [[0,'Alex','92','59:25'],[1,'Jordan','82','51:03']]) {
+      const x=90+index*570;ctx.fillStyle='#233744';ctx.fillRect(x,205,530,660);ctx.strokeStyle='#d6af5c';ctx.lineWidth=4;ctx.strokeRect(x,205,530,660);
+      ctx.fillStyle='#ffdc87';ctx.font='bold 36px Georgia';ctx.fillText(name,x+265,280);ctx.fillStyle='#f4e7ce';ctx.fillRect(x+25,320,480,120);
+      ctx.fillStyle='#30291e';ctx.font='bold 62px sans-serif';ctx.fillText(score+' points',x+265,401);
+      ctx.fillStyle='#f4e7ce';ctx.font='26px sans-serif';ctx.fillText('Claimed routes · '+(index?73:64),x+265,495);ctx.fillText('Completed destinations · +18',x+265,547);ctx.fillText('Longest-route bonus · '+(index?0:10),x+265,599);
+      ctx.fillStyle='#ffdc87';ctx.fillText('Turn time · '+time,x+265,688);ctx.font='21px sans-serif';ctx.fillText('Includes placement; excludes pauses.',x+265,731);ctx.fillText('Longest continuous route · '+(index?19:41)+' trains',x+265,804);
+    }
+    return canvas.toDataURL('image/png').split(',')[1];
+  });
+  return Buffer.from(data,'base64');
 }
 async function main() {
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -93,7 +116,12 @@ async function main() {
         else await route.continue();
       });
       // An OS Internet probe can fail even while local Wi-Fi and HTTPS remain available.
-      await context.addInitScript(()=>Object.defineProperty(navigator,'onLine',{configurable:true,value:false}));
+      await context.addInitScript(()=>{
+        Object.defineProperty(navigator,'onLine',{configurable:true,value:false});
+        window.testShares=[];
+        Object.defineProperty(navigator,'canShare',{configurable:true,value:data=>data.files?.length===1&&data.files[0].type==='image/png'});
+        Object.defineProperty(navigator,'share',{configurable:true,value:async data=>window.testShares.push({name:data.files[0].name,size:data.files[0].size,type:data.files[0].type,active:navigator.userActivation.isActive,hasUrl:!!data.url})});
+      });
       const page=await context.newPage(); const errors=[]; page.on('pageerror',error=>errors.push(error.message));
       await record(viewport.name+': offline shell and browser-context pairing',async()=>{
         await page.goto(origin+'/companion/');
@@ -188,6 +216,38 @@ async function main() {
         assert.ok(browserRequests.includes('/companion/app.js'));
         assert.ok(browserRequests.includes('/api/command'));
         assert.deepEqual([...outsideLaptop],[],'The companion must never request an Internet destination.');
+      });
+      await record(viewport.name+': published standings preview and exact PNG download',async()=>{
+        assert.equal(await page.locator('#result').isVisible(),false);
+        resultImageBytes=await syntheticStandingsPng(page);
+        fixture=structuredClone(fixtures.turnStart);fixture.snapshot.canControl=false;fixture.snapshot.game.lifecycle='Finished';
+        fixture.snapshot.message='Game finished. The final standings are ready.';
+        fixture.snapshot.resultImage={id:'finished-image-1',fileName:'golden-ticket-final-standings.png'};
+        await page.locator('#result-preview').waitFor({state:'visible'});
+        await page.waitForFunction(()=>document.getElementById('result-preview').naturalWidth>0);
+        assert.equal(await page.locator('#curtain').isVisible(),false);assert.equal(await page.locator('#private').textContent(),'');
+        assert.equal(await page.locator('#public').isVisible(),false);await noOverflow(page);await screenshot(page,viewport.name+'-final-standings');
+        const delivery=requests.filter(r=>r.url==='/api/result-image/finished-image-1');assert.equal(delivery.length,1);assert.ok(delivery[0].headers['x-goldenticket-tab']);
+        const downloaded=page.waitForEvent('download');await page.locator('#result-save').click();const file=await downloaded;
+        assert.equal(file.suggestedFilename(),'golden-ticket-final-standings.png');const filePath=path.join(output,viewport.name+'-download.png');await file.saveAs(filePath);assert.deepEqual(fs.readFileSync(filePath),resultImageBytes);
+      });
+      await record(viewport.name+': file sharing preserves user activation and download fallback',async()=>{
+        assert.deepEqual(await page.evaluate(()=>window.testShares),[]);
+        await page.locator('#result-share').click();
+        assert.deepEqual(await page.evaluate(()=>window.testShares),[{name:'golden-ticket-final-standings.png',size:resultImageBytes.length,type:'image/png',active:true,hasUrl:false}]);
+        await page.evaluate(()=>Object.defineProperty(navigator,'canShare',{configurable:true,value:()=>false}));
+        fixture.snapshot.resultImage.id='finished-image-2';
+        await page.waitForResponse(r=>r.url().endsWith('/api/result-image/finished-image-2'));
+        await page.getByText('Your results are ready.',{exact:true}).waitFor();
+        assert.equal(await page.locator('#result-share').isVisible(),false);assert.equal(await page.locator('#result-save').isVisible(),true);
+        await page.getByText('On iPhone, downloaded images may be in Files.',{exact:false}).waitFor();
+      });
+      await record(viewport.name+': revocation removes standings and a new game starts covered',async()=>{
+        paired=false;
+        await page.locator('#connect').waitFor({state:'visible'});assert.equal(await page.locator('#result').isVisible(),false);
+        assert.equal(await page.locator('#result-preview').getAttribute('src'),null);assert.equal(await page.locator('#result-save').getAttribute('href'),null);
+        fixture=fixtures.turnStart;paired=true;
+        await page.locator('#curtain').waitFor({state:'visible'});assert.equal(await page.locator('#result').isVisible(),false);await waitCovered(page);
       });
       await record(viewport.name+': disconnected cover and cached reconnect shell',async()=>{
         await page.waitForResponse(r=>r.url().endsWith('/api/session')); await reveal(page);

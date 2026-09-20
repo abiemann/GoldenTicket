@@ -25,7 +25,7 @@ public sealed partial class MainViewModel
         Camera = new CameraViewModel(_store is SqliteSessionStore localStore
             ? System.IO.Path.Combine(localStore.RootDirectory, "camera-processing.json") : null);
         var inner = new CoordinatorCompanionBridge(() => _coordinator,
-            async _ => await PumpAsync(), () => CanCompanionControl);
+            async _ => await PumpAsync(), () => CanCompanionControl, resultImage: CurrentFinalStandingsImage);
         var bridge = new DesktopCompanionBridge(inner,
             () => System.Windows.Application.Current?.Dispatcher,
             BeginRemoteCommand, EndRemoteCommand, () => { if (CanCompanionControl) HideLaptopPrivateViewOnly(); }, RequireReload);
@@ -155,6 +155,7 @@ public sealed partial class MainViewModel
     {
         if (_toolsDisposed) return;
         _toolsDisposed = true;
+        ResetFinalStandingsSharing();
         _cardBoardCheck?.Completion.TrySetResult(false);
         _turnClockTimer?.Stop();
         UpdateTurnClock();

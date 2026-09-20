@@ -9,7 +9,7 @@ const sourceDir = path.resolve(__dirname, '../../src/GoldenTicket.CompanionHost/
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
 function deferred() { let resolve; const promise = new Promise(r => resolve = r); return { promise, resolve }; }
 function page(options = {}) {
-  const nodes = new Map(), listeners = {}, intervals = [], timeouts = new Map(), requests = [];
+  const nodes = new Map(), listeners = {}, intervals = [], timeouts = new Map(), requests = [], objectUrls = [], revokedUrls = [], shares = [];
   let nextTimer = 0, uuid = 0, now = Date.now();
   class Node {
     constructor(tag = 'div') { this.tag = tag; this.textContent = ''; this.hidden = false; this.value = ''; this.disabled = false; this.children = []; this.dataset = {}; this.events = {}; }
@@ -17,18 +17,20 @@ function page(options = {}) {
     append(...children) { this.children.push(...children); if (this.tag === 'select' && !this.value) this.value = this.children[0]?.value || ''; }
     replaceChildren(...children) { this.children = children; this.textContent = ''; if (this.tag === 'select') this.value = this.children[0]?.value || ''; }
     setAttribute(name, value) { this[name] = value; }
+    removeAttribute(name) { delete this[name]; }
     set innerHTML(value) { throw new Error('Private UI must not interpolate HTML'); }
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, new Node()); return nodes.get(id); };
   const state = {
-    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '2', handoffGeneration: 1,
+    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '3', handoffGeneration: 1,
     snapshot: { canControl: true, revealSeatId: 1, message: 'Pass this device to Alex.', profileId: 'classic-us', manifestHash: 'hash', routes: [],
       game: { sessionId: 'match', stateVersion: 1, activeSeatId: 1, turnNumber: 1, turnPhase: 'TurnStart', seats: [{ seatId: 1, displayName: 'Alex', symbol: 'A', color: 'Blue', routeScore: 0, trainsRemaining: 45 }], pendingClaim: null } }
   };
   const data = { view: { seatId: 1, public: state.snapshot.game, hand: [{ id: 3, kind: 'Red' }], reservedCards: [] }, heldTickets: [{id:'secret', label:'PRIVATE_DESTINATION', points:20}], offeredTickets: [], actions: { mustCommitTicketSelection: false, mustResolvePendingClaim: true } };
   function response(value, ok = true, status = 200) { return { ok, status, json: async () => structuredClone(value) }; }
   const context = vm.createContext({
-    console, Promise, AbortController, URL, structuredClone,
+    console, Promise, AbortController, Blob, File, Uint8Array, structuredClone,
+    URL: class extends URL { static createObjectURL(blob) { const url = `blob:results-${objectUrls.length}`; objectUrls.push({url, blob}); return url; } static revokeObjectURL(url) { revokedUrls.push(url); } },
     Date: class extends Date { static now() { return now; } },
     crypto: { randomUUID: () => `${String(++uuid).padStart(8, '0')}-abcd-4321-aaaa-bbbbbbbbbbbb` },
     matchMedia: () => ({ matches: !!options.standalone }),
@@ -36,7 +38,8 @@ function page(options = {}) {
     setInterval: (fn, ms) => intervals.push({fn, ms}),
     document: { hidden: false, getElementById: get, createElement: tag => new Node(tag), addEventListener: (name, fn) => listeners['document:' + name] = fn },
     window: { isSecureContext: options.secure !== false, addEventListener: (name, fn) => listeners['window:' + name] = fn },
-    navigator: { onLine: options.internetAvailable !== false, serviceWorker: { register: async () => ({}), ready: options.workerPending ? new Promise(() => {}) : Promise.resolve({}) } },
+    navigator: { onLine: options.internetAvailable !== false, serviceWorker: { register: async () => ({}), ready: options.workerPending ? new Promise(() => {}) : Promise.resolve({}) },
+      ...(options.shareSupported ? {canShare: value => value.files?.length === 1 && value.files[0].type === 'image/png', share: async value => { shares.push(value); if(options.shareError) throw options.shareError; }} : {}) },
     caches: { open: async () => ({ match: async asset => options.missingAsset === asset ? undefined : {ok:true} }) },
     fetch: async (url, request) => {
       requests.push({url, request});
@@ -50,9 +53,9 @@ function page(options = {}) {
     }
   });
   let source = fs.readFileSync(path.join(sourceDir, 'app.js'), 'utf8');
-  source = source.replace(/\}\)\(\);\s*$/, 'globalThis.clientTest = { poll, reveal, hide, submit, clearPrivate, state: () => ({paired, busy, privateData, grant, revealGeneration, handoffGeneration, shellReady}) }; })();');
+  source = source.replace(/\}\)\(\);\s*$/, 'globalThis.clientTest = { poll, reveal, hide, submit, clearPrivate, state: () => ({paired, busy, privateData, grant, revealGeneration, handoffGeneration, shellReady, resultFile, resultKey, resultUrl}) }; })();');
   vm.runInContext(source, context);
-  return { context, state, data, get, requests, options, timeouts, intervals, response, client: context.clientTest,
+  return { context, state, data, get, requests, options, timeouts, intervals, response, objectUrls, revokedUrls, shares, client: context.clientTest,
     event: async (scope, name) => { await listeners[scope + ':' + name]?.(); await flush(); },
     click: async id => { await get(id).events.click?.(); await flush(); },
     advance: ms => { now += ms; }, nodes };
@@ -181,14 +184,97 @@ test('worker caches only named shell assets and never intercepts APIs or arbitra
   const handlers={}, calls=[], deleted=[];
   const context=vm.createContext({URL, Promise,
     self:{location:{origin:'https://local.test'},addEventListener:(name,fn)=>handlers[name]=fn,skipWaiting:async()=>{},clients:{claim:async()=>{}}},
-    caches:{open:async()=>({addAll:async paths=>calls.push(...paths),match:async()=>({cached:true})}),keys:async()=>['goldenticket-companion-shell-v1','goldenticket-companion-shell-v2','other-app'],delete:async key=>deleted.push(key)},fetch:async()=>({network:true})});
+    caches:{open:async()=>({addAll:async paths=>calls.push(...paths),match:async()=>({cached:true})}),keys:async()=>['goldenticket-companion-shell-v1','goldenticket-companion-shell-v2','goldenticket-companion-shell-v3','other-app'],delete:async key=>deleted.push(key)},fetch:async()=>({network:true})});
   vm.runInContext(fs.readFileSync(path.join(sourceDir,'sw.js'),'utf8'),context);
   let installation; handlers.install({waitUntil:promise=>installation=promise}); await installation;
   let activation; handlers.activate({waitUntil:promise=>activation=promise}); await activation;
-  assert.deepEqual(deleted,['goldenticket-companion-shell-v1']);
+  assert.deepEqual(deleted,['goldenticket-companion-shell-v1','goldenticket-companion-shell-v2']);
   assert.ok(calls.includes('/companion/app.js')); assert.equal(calls.some(p=>p.startsWith('/api')),false);
-  for(const [url,method] of [['https://local.test/api/reveal','POST'],['https://local.test/api/session','GET'],['https://local.test/companion/private','GET'],['https://local.test/companion/?secret=1','GET'],['https://evil.test/companion/','GET']]) {
+  for(const [url,method] of [['https://local.test/api/reveal','POST'],['https://local.test/api/session','GET'],['https://local.test/api/result-image/image-1','GET'],['https://local.test/companion/private','GET'],['https://local.test/companion/?secret=1','GET'],['https://evil.test/companion/','GET']]) {
     let intercepted=false; handlers.fetch({request:{url,method},respondWith:()=>intercepted=true}); assert.equal(intercepted,false,url);
   }
   let shell; handlers.fetch({request:{url:'https://local.test/companion/',method:'GET'},respondWith:p=>shell=p}); assert.equal((await shell).cached,true);
+});
+
+const resultPng = fs.readFileSync(path.join(sourceDir, 'icon-192.png'));
+const imageResponse = (bytes = resultPng, contentType = 'image/png') => new Response(bytes, {headers:{'Content-Type':contentType}});
+async function receiveResults(p, id = 'image-1') {
+  p.state.snapshot.resultImage = {id, fileName:'golden-ticket-final-standings.png'};
+  p.state.snapshot.canControl = false;
+  await p.client.poll();
+  for(let i=0; i<5; i++) { await new Promise(resolve=>setImmediate(resolve)); await flush(); }
+}
+
+test('standings stay absent until published and load once with authenticated uncached transport', async () => {
+  const p=page({fetch:url=>url.startsWith('/api/result-image/')?imageResponse():undefined}); await flush();
+  assert.equal(p.requests.some(r=>r.url.startsWith('/api/result-image/')),false);
+  await receiveResults(p); assert.equal(p.get('result').hidden,false); assert.equal(p.get('curtain').hidden,true); assert.equal(p.get('public').hidden,true);
+  assert.equal(p.get('result-preview').hidden,false); assert.equal(p.get('result-save').hidden,false); assert.equal(p.get('result-share').hidden,true);
+  assert.equal(p.client.state().resultFile.name,'golden-ticket-final-standings.png');
+  assert.equal(p.client.state().resultFile.type,'image/png');
+  assert.deepEqual(Buffer.from(await p.client.state().resultFile.arrayBuffer()),resultPng);
+  const request=p.requests.find(r=>r.url==='/api/result-image/image-1').request;
+  assert.equal(request.cache,'no-store'); assert.equal(request.credentials,'same-origin'); assert.ok(request.headers['X-GoldenTicket-Tab']);
+  await p.client.poll(); assert.equal(p.requests.filter(r=>r.url.startsWith('/api/result-image/')).length,1);
+  await p.event('window','blur'); assert.equal(p.get('curtain').hidden,true); assert.equal(p.get('result-preview').hidden,false);
+});
+
+test('native sharing happens only on a tap, shares the PNG, and cancellation stays quiet', async () => {
+  const p=page({shareSupported:true,fetch:url=>url.startsWith('/api/result-image/')?imageResponse():undefined}); await flush(); await receiveResults(p);
+  assert.equal(p.shares.length,0); assert.equal(p.get('result-share').hidden,false);
+  await p.click('result-share'); assert.equal(p.shares.length,1); assert.equal(p.shares[0].files[0],p.client.state().resultFile); assert.equal(p.shares[0].url,undefined);
+  p.options.shareError={name:'AbortError'}; const before=p.get('result-status').textContent; await p.click('result-share'); assert.equal(p.get('result-status').textContent,before);
+  p.options.shareError={name:'NotAllowedError'}; await p.click('result-share'); assert.match(p.get('result-status').textContent,/Save image/); assert.equal(p.get('result-share').disabled,false);
+});
+
+test('replacement, revocation, game change, disconnect and page departure erase result URLs and files', async () => {
+  for(const action of ['replacement','revoked','new-game','removed','offline','pagehide','timeout']) {
+    const p=page({fetch:url=>url.startsWith('/api/result-image/')?imageResponse():undefined}); await flush(); await receiveResults(p);
+    const old=p.client.state().resultUrl;
+    if(action==='replacement') await receiveResults(p,'image-2');
+    if(action==='revoked') {p.state.paired=false; await p.client.poll();}
+    if(action==='new-game') {p.state.snapshot.game.sessionId='next-match'; delete p.state.snapshot.resultImage; await p.client.poll();}
+    if(action==='removed') {delete p.state.snapshot.resultImage; await p.client.poll();}
+    if(action==='offline') await p.event('window','offline');
+    if(action==='pagehide') await p.event('window','pagehide');
+    if(action==='timeout') {p.advance(6000);p.intervals.find(t=>t.ms===500).fn();}
+    assert.ok(p.revokedUrls.includes(old),action);
+    if(action!=='replacement') {
+      assert.equal(p.client.state().resultFile,null,action); assert.equal(p.get('result').hidden,true,action);
+      assert.equal(p.get('result-preview').src,undefined,action); assert.equal(p.get('result-save').href,undefined,action);
+    } else assert.notEqual(p.client.state().resultUrl,old);
+  }
+});
+
+test('late image response cannot restore results after revocation or session replacement', async () => {
+  for(const action of ['revoked','new-game','offline']) {
+    const pending=deferred(); const p=page({fetch:url=>url.startsWith('/api/result-image/')?pending.promise:undefined}); await flush(); await receiveResults(p);
+    if(action==='revoked') {p.state.paired=false;await p.client.poll();}
+    if(action==='new-game') {p.state.snapshot.game.sessionId='next';delete p.state.snapshot.resultImage;await p.client.poll();}
+    if(action==='offline') await p.event('window','offline');
+    pending.resolve(imageResponse()); await new Promise(resolve=>setImmediate(resolve)); await flush();
+    assert.equal(p.client.state().resultFile,null); assert.equal(p.objectUrls.length,0); assert.equal(p.get('result').hidden,true);
+  }
+});
+
+test('failed image download has a working retry and never starts sharing by itself', async () => {
+  let attempts=0;
+  const p=page({fetch:url=>url.startsWith('/api/result-image/')?(++attempts===1?new Response('',{status:404}):imageResponse()):undefined}); await flush(); await receiveResults(p);
+  assert.equal(p.get('result-retry').hidden,false); assert.equal(p.client.state().resultFile,null);
+  await p.client.poll(); assert.equal(attempts,1,'Polling must not retry the failed image indefinitely.');
+  await p.click('result-retry'); assert.equal(attempts,2); assert.equal(p.get('result-save').hidden,false); assert.equal(p.get('result-retry').hidden,true); assert.equal(p.shares.length,0);
+});
+
+test('result download rejects non-PNG, invalid signatures and oversized streamed bodies', async () => {
+  for(const makeResponse of [()=>imageResponse(resultPng,'text/html'),()=>imageResponse('not-a-png'),()=>imageResponse(new Uint8Array(16*1024*1024+1)),()=>new Response(null,{headers:{'Content-Type':'image/png','Content-Length':String(16*1024*1024+1)}})]) {
+    const p=page({fetch:url=>url.startsWith('/api/result-image/')?makeResponse():undefined}); await flush(); await receiveResults(p);
+    assert.equal(p.client.state().resultFile,null); assert.equal(p.objectUrls.length,0); assert.equal(p.get('result-retry').hidden,false);
+  }
+});
+
+test('result metadata cannot fetch external URLs and unsafe filenames use a PNG basename', async () => {
+  const p=page({fetch:url=>url.startsWith('/api/result-image/')?imageResponse():undefined}); await flush(); await receiveResults(p,'https://elsewhere.test/private');
+  assert.equal(p.requests.some(r=>r.url.startsWith('/api/result-image/')),false);
+  p.state.snapshot.resultImage={id:'safe-id',fileName:'../../bad.html'};await p.client.poll();await new Promise(resolve=>setImmediate(resolve));await flush();
+  assert.equal(p.client.state().resultFile.name,'golden-ticket-final-standings.png');
 });

@@ -53,6 +53,7 @@ public sealed partial class ConnectionViewModel : ObservableObject, IAsyncDispos
     [ObservableProperty] private string _publicCertificatePath = "";
     [ObservableProperty] private string _pendingIdentity = "No phone is waiting for approval.";
     [ObservableProperty] private string _controller = "No phone connected.";
+    [ObservableProperty] private bool _hasApprovedController;
     [ObservableProperty] private string _firewallCommand = "Start the host to see its exact firewall scope.";
     [ObservableProperty] private BitmapSource? _connectionQr;
     [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(ApproveCommand))]
@@ -167,6 +168,7 @@ public sealed partial class ConnectionViewModel : ObservableObject, IAsyncDispos
             ? $"{pending.DeviceLabel} · identity {pending.Identity}. Compare this with the phone before approving."
             : "No phone is waiting for approval.";
         Controller = state.ControllerLabel is { } label ? $"Controller: {label}" : "No phone connected.";
+        HasApprovedController = state.Running && state.ControllerLabel is not null;
         var landing = state.BootstrapAddress ?? state.Address;
         if (_qrAddress != landing)
         {

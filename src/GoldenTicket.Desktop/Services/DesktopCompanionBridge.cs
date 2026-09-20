@@ -20,6 +20,9 @@ internal sealed class DesktopCompanionBridge(
     public Task<CompanionPublicSnapshot> ReadPublicAsync(CancellationToken cancellationToken = default) =>
         RunAsync(() => inner.ReadPublicAsync(cancellationToken), cancellationToken);
 
+    public Task<CompanionResultImage?> ReadResultImageAsync(string id, CancellationToken cancellationToken = default) =>
+        RunAsync(() => inner.ReadResultImageAsync(id, cancellationToken), cancellationToken);
+
     public Task<CompanionPrivateSnapshot?> ReadPrivateAsync(SeatId seat, long expectedVersion,
         CancellationToken cancellationToken = default) => RunAsync(async () =>
         {

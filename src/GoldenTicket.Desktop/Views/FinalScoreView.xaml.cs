@@ -9,6 +9,37 @@ public partial class FinalScoreView : UserControl
 {
     public FinalScoreView() => InitializeComponent();
 
+    internal double PrepareForImage(double width)
+    {
+        // This is a detached export instance. Never scroll or resize the live standings.
+        FinalActionsPanel.Visibility = Visibility.Collapsed;
+        PlayerNavigation.Visibility = Visibility.Collapsed;
+        ResultCards.Height = double.NaN;
+        ResultsScroll.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+        ResultCards.Measure(new Size(width - 48, double.PositiveInfinity));
+        foreach (var panel in Descendants<Border>(ResultCards).Where(panel => panel.Name == "PlayerResultPanel"))
+            panel.MaxHeight = double.PositiveInfinity;
+        foreach (var scroll in Descendants<ScrollViewer>(ResultCards).Where(scroll => scroll.Name == "WitnessTrailScroll"))
+            scroll.VerticalScrollBarVisibility = ScrollBarVisibility.Disabled;
+        foreach (var name in Descendants<TextBlock>(ResultCards).Where(text => text.TextTrimming != TextTrimming.None))
+        {
+            name.TextTrimming = TextTrimming.None;
+            name.TextWrapping = TextWrapping.Wrap;
+        }
+        ResultCards.Measure(new Size(width - 48, double.PositiveInfinity));
+        return Math.Max(1000, ResultCards.DesiredSize.Height + 190);
+    }
+
+    private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            var child = VisualTreeHelper.GetChild(root, index);
+            if (child is T match) yield return match;
+            foreach (var descendant in Descendants<T>(child)) yield return descendant;
+        }
+    }
+
     private void OnPreviousPlayer(object sender, RoutedEventArgs e) =>
         ResultsScroll.ScrollToHorizontalOffset(ResultsScroll.HorizontalOffset - 356);
 

@@ -76,7 +76,7 @@ public sealed class CompanionServer(ICompanionGameBridge bridge) : IAsyncDisposa
                 context.Response.Headers.CacheControl = "no-store";
                 context.Response.Headers["X-Content-Type-Options"] = "nosniff";
                 context.Response.Headers["Referrer-Policy"] = "no-referrer";
-                context.Response.Headers.ContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+                context.Response.Headers.ContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
                 var policy = RequestAllowed(context, selected, origins, NetworkPrivate);
                 if (policy != 200) { context.Response.StatusCode = policy; return; }
                 if (HttpMethods.IsPost(context.Request.Method) && !AllowWrite()) { context.Response.StatusCode = 429; return; }
@@ -216,7 +216,20 @@ public sealed class CompanionServer(ICompanionGameBridge bridge) : IAsyncDisposa
             if (!snapshot.CanControl) _authority.InvalidatePrivateGrants();
             if (Credentials(context) != credentials) return Results.Unauthorized();
             return Results.Ok(new { paired = true, csrf = credentials.Csrf, controllerGeneration = credentials.Generation,
-                handoffGeneration = _authority.Generation, apiVersion = ApiVersion, assetsVersion = "2", snapshot });
+                handoffGeneration = _authority.Generation, apiVersion = ApiVersion, assetsVersion = "3", snapshot });
+        });
+        app.MapGet("/api/result-image/{id}", async (HttpContext context, string id) =>
+        {
+            var credentials = Credentials(context);
+            if (credentials is null) return Results.Unauthorized();
+            if (!Guid.TryParseExact(id, "N", out _)) return Results.NotFound();
+            var image = await bridge.ReadResultImageAsync(id, context.RequestAborted);
+            // A controller can be revoked or replaced while the desktop dispatcher is busy.
+            if (Credentials(context) != credentials) return Results.Unauthorized();
+            if (image is null || !CompanionResultImage.IsValid(image) || image.Info.Id != id) return Results.NotFound();
+            context.Response.Headers.CacheControl = "no-store";
+            context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+            return Results.File(image.Png, "image/png", image.Info.FileName, enableRangeProcessing: false);
         });
         app.MapPost("/api/hide", (HttpContext context) =>
         {

@@ -13,7 +13,8 @@ public sealed partial class MainViewModel
     [RelayCommand]
     private void OpenMultiHumanPhoneSetup()
     {
-        if (_coordinator is null || !CanConnectPhone || !IsGameplayScreenActive(Screen.Table)) return;
+        if (_coordinator is null || !CanConnectPhone ||
+            !(IsGameplayScreenActive(Screen.Table) || IsGameplayScreenActive(Screen.FinalScore))) return;
         Connection.RefreshInterfaces();
         ShowMultiHumanPhoneSetup = true;
     }

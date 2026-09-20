@@ -66,6 +66,7 @@ internal static partial class Program
                 await VerifyWindowExitConfirmation();
                 await VerifyDisplayMode();
                 await VerifyWindowPresentationPersistence();
+                await VerifyFinalStandingsSharing();
                 await VerifyGameMenu();
                 await VerifyGameTableLayout();
                 await VerifyPlacementTarget();

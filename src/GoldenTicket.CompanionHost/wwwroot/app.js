@@ -8,6 +8,8 @@
   let shellReady = false, browserMode = false, installPrompt = null;
   let busy = false, polling = false, lastHeartbeat = 0, revealDeadline = 0, lastInteraction = 0;
   let connectionGeneration = 0;
+  const maxResultBytes = 16 * 1024 * 1024;
+  let resultKey = null, resultGeneration = 0, resultFile = null, resultUrl = null, resultAbort = null, sharingResult = false;
   const standalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
   const trainCount = count => `${count} train${count === 1 ? "" : "s"}`;
 
@@ -16,14 +18,14 @@
     revealGeneration++;
     privateData = null; grant = null; revealDeadline = 0;
     byId("private").replaceChildren(); byId("private").hidden = true;
-    byId("curtain").hidden = !paired;
+    byId("curtain").hidden = !paired || resultKey !== null;
   }
   function hide(notify = true) {
     clearPrivate();
     if (notify && csrf && paired) api("/api/hide", {}).catch(() => {});
   }
   function disconnect(message) {
-    clearPrivate(); lastHeartbeat = 0;
+    clearResultImage(); clearPrivate(); lastHeartbeat = 0;
     byId("connection").textContent = "Laptop connection unavailable";
     byId("curtain-detail").textContent = "Return to the same private network. Your game is saved on the laptop. No actions are queued offline.";
     byId("reveal").disabled = true;
@@ -54,18 +56,19 @@
       if (generation !== connectionGeneration || document.hidden) return;
       if (!result.paired) {
         if (paired) { clearPrivate(); notice("This controller was revoked or replaced. Request a fresh code on the laptop."); }
+        clearResultImage(); snapshot = null;
         paired = false; csrf = null; handoffGeneration = -1; pending = result.pending;
         byId("connect").hidden = false; byId("curtain").hidden = true; byId("public").hidden = true;
         byId("connection").textContent = pending ? "Waiting for laptop approval" : "Connected securely · Pair to play";
         updatePairForm(); return;
       }
-      if (result.apiVersion !== "1" || result.assetsVersion !== "2") { disconnect("The app shell needs an update. Reload from the laptop before playing."); return; }
+      if (result.apiVersion !== "1" || result.assetsVersion !== "3") { disconnect("The app shell needs an update. Reload from the laptop before playing."); return; }
       if (currentIdentity(snapshot) !== currentIdentity(result.snapshot) || (grant && result.handoffGeneration > handoffGeneration)) clearPrivate();
       paired = true; pending = false; csrf = result.csrf; snapshot = result.snapshot;
       handoffGeneration = Math.max(handoffGeneration, result.handoffGeneration); lastHeartbeat = Date.now();
       byId("connect").hidden = true; byId("curtain").hidden = privateData !== null;
       byId("connection").textContent = "Synchronized with laptop · Private LAN";
-      renderPublic();
+      renderPublic(); syncResultImage();
     } catch (error) { if (generation === connectionGeneration) disconnect(error.message); }
     finally { polling = false; }
   }
@@ -75,6 +78,88 @@
   }
   function button(text, callback, className) {
     const node = element("button", text, className); node.type = "button"; node.addEventListener("click", callback); return node;
+  }
+  function resultMetadata() {
+    const value = snapshot?.resultImage;
+    return paired && snapshot?.game && value && /^[a-zA-Z0-9_-]{1,128}$/.test(value.id) ? value : null;
+  }
+  function clearResultImage() {
+    resultGeneration++; resultAbort?.abort(); resultAbort = null;
+    resultKey = null; resultFile = null; sharingResult = false;
+    byId("result-preview").removeAttribute("src");
+    byId("result-save").removeAttribute("href");
+    if (resultUrl) URL.revokeObjectURL(resultUrl);
+    resultUrl = null;
+    for (const id of ["result", "result-preview", "result-save", "result-share", "result-retry", "result-help"]) byId(id).hidden = true;
+    byId("result-status").textContent = "";
+  }
+  function canShareResult() {
+    try { return resultFile && typeof navigator.share === "function" && typeof navigator.canShare === "function" && navigator.canShare({ files: [resultFile] }); }
+    catch { return false; }
+  }
+  function syncResultImage() {
+    const metadata = resultMetadata();
+    if (!metadata) { if (resultKey) clearResultImage(); return; }
+    const key = `${snapshot.game.sessionId}:${metadata.id}`;
+    byId("curtain").hidden = true; byId("public").hidden = true;
+    if (key === resultKey) return;
+    clearPrivate(); clearResultImage(); byId("curtain").hidden = true;
+    resultKey = key; byId("result").hidden = false;
+    loadResultImage();
+  }
+  async function loadResultImage() {
+    const metadata = resultMetadata();
+    if (!metadata || resultAbort || !resultKey) return;
+    const generation = resultGeneration;
+    const abort = new AbortController(); resultAbort = abort;
+    const timeout = setTimeout(() => abort.abort(), 10000);
+    byId("result-status").textContent = "Receiving the image…"; byId("result-retry").hidden = true;
+    try {
+      const response = await fetch(`/api/result-image/${encodeURIComponent(metadata.id)}`, {
+        headers: { "X-GoldenTicket-Tab": tab }, credentials: "same-origin", cache: "no-store", signal: abort.signal
+      });
+      if (!response.ok) throw new Error("The image is no longer available. Try again, or send it again from the laptop.");
+      if (response.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "image/png") throw new Error("The laptop did not send a PNG image. Send the standings again.");
+      if (Number(response.headers.get("Content-Length")) > maxResultBytes) throw new Error("This image is too large. Send the standings again from the laptop.");
+      const reader = response.body.getReader(), chunks = [];
+      let size = 0;
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (size > maxResultBytes) throw new Error("This image is too large. Send the standings again from the laptop.");
+          chunks.push(value);
+        }
+      } catch (error) { await reader.cancel().catch(() => {}); throw error; }
+      finally { reader.releaseLock(); }
+      const blob = new Blob(chunks, { type: "image/png" });
+      const signature = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
+      if (signature.length !== 8 || signature.some((byte, index) => byte !== [137, 80, 78, 71, 13, 10, 26, 10][index])) throw new Error("The image could not be read. Try sending it again from the laptop.");
+      if (generation !== resultGeneration || abort.signal.aborted || !paired) return;
+      const fileName = /^[a-zA-Z0-9_-]+\.png$/.test(metadata.fileName) ? metadata.fileName : "golden-ticket-final-standings.png";
+      resultFile = new File([blob], fileName, { type: "image/png" }); resultUrl = URL.createObjectURL(blob);
+      byId("result-preview").src = resultUrl; byId("result-preview").hidden = false;
+      byId("result-save").href = resultUrl; byId("result-save").download = fileName; byId("result-save").hidden = false;
+      byId("result-share").hidden = !canShareResult(); byId("result-share").disabled = false;
+      byId("result-help").hidden = false;
+      byId("result-status").textContent = "Your results are ready.";
+    } catch (error) {
+      if (generation !== resultGeneration) return;
+      byId("result-status").textContent = error.name === "AbortError" ? "The image took too long to arrive. Check the laptop connection and try again." : error instanceof TypeError ? "Could not receive the image. Check the laptop connection and try again." : error.message;
+      byId("result-retry").hidden = false;
+    } finally { clearTimeout(timeout); abort.abort(); if (generation === resultGeneration) resultAbort = null; }
+  }
+  async function shareResultImage() {
+    if (sharingResult || !canShareResult() || !lastHeartbeat || Date.now() - lastHeartbeat >= 6000) return;
+    const generation = resultGeneration;
+    sharingResult = true; byId("result-share").disabled = true;
+    try {
+      // The file is prepared before the tap, so the native share sheet keeps user activation.
+      await navigator.share({ files: [resultFile], title: "Golden Ticket · Final standings" });
+    } catch (error) {
+      if (generation === resultGeneration && error.name !== "AbortError") byId("result-status").textContent = "Sharing could not be opened. Try again, or use Save image instead.";
+    } finally { if (generation === resultGeneration) { sharingResult = false; byId("result-share").disabled = false; } }
   }
   function renderPublic() {
     byId("handoff").textContent = snapshot.message;
@@ -211,7 +296,7 @@
       let timeout;
       try { await Promise.race([navigator.serviceWorker.ready, new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error("App shell activation timed out.")), 10000); })]); }
       finally { clearTimeout(timeout); }
-      const cache = await caches.open("goldenticket-companion-shell-v2");
+      const cache = await caches.open("goldenticket-companion-shell-v3");
       const cached = await Promise.all(shellPaths.map(path => cache.match(path)));
       if (cached.some(value => !value)) throw new Error("Some app files have not been saved yet.");
       shellReady = true; byId("shell-status").textContent = "Offline app shell ready. Gameplay still needs the laptop on your LAN."; updatePairForm();
@@ -229,12 +314,14 @@
   });
   byId("hide").addEventListener("click", () => hide());
   byId("reveal").addEventListener("click", reveal);
+  byId("result-share").addEventListener("click", shareResultImage);
+  byId("result-retry").addEventListener("click", loadResultImage);
   byId("browser-mode").addEventListener("click", () => { browserMode = true; updatePairForm(); });
   byId("install").addEventListener("click", async () => { if (installPrompt) { await installPrompt.prompt(); installPrompt = null; byId("install").hidden = true; } });
   window.addEventListener("beforeinstallprompt", event => { event.preventDefault(); installPrompt = event; byId("install").hidden = false; });
   document.addEventListener("visibilitychange", () => { if (document.hidden) { connectionGeneration++; hide(); } else { clearPrivate(); poll(); } });
   window.addEventListener("blur", () => hide());
-  window.addEventListener("pagehide", () => { connectionGeneration++; hide(); });
+  window.addEventListener("pagehide", () => { connectionGeneration++; hide(); clearResultImage(); });
   window.addEventListener("pageshow", () => { clearPrivate(); poll(); });
   window.addEventListener("offline", () => disconnect("Reconnect to the laptop before continuing."));
   document.addEventListener("pointercancel", () => hide());

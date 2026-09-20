@@ -202,6 +202,11 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   a separate pairing code; keep the setup available from the game table.
 - [ ] **Multi-human phone handoff acceptance.** Complete and verify installation, pairing,
   private cards, and pass-and-hide on a real shared phone before claiming the PWA workflow is finished.
+- [x] **Final standings to the shared phone.** Multi-human games can send an image of the board
+  and all standings to the approved PWA for preview, file sharing or download. Exports contain only
+  public final results and stay outside the shell cache; session/version and controller checks apply.
+- [ ] **Standings sharing on real phones.** Verify Android and iOS installation, native share sheets,
+  image saving and return from the share sheet using the laptop-hosted PWA.
 - [x] **Camera and photo foundation.** Windows video-only capture, selectable formats, manual
   four-corner crop and conservative scene-reference checks; optional plaintext, checksummed,
   operator-attested checkpoint photos with integrity/readback and stale-capture protection.

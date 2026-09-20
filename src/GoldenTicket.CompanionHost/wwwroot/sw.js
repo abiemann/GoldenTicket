@@ -1,5 +1,5 @@
 "use strict";
-const CACHE = "goldenticket-companion-shell-v2";
+const CACHE = "goldenticket-companion-shell-v3";
 const SHELL = ["/companion/", "/companion/app.js", "/companion/app.css", "/companion/manifest.webmanifest", "/companion/icon.svg", "/companion/icon-192.png", "/companion/icon-512.png"];
 self.addEventListener("install", event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener("activate", event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith("goldenticket-companion-shell-") && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())));

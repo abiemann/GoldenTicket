@@ -11,6 +11,7 @@
         <local:PlayerColorBrushConverter x:Key="PlayerColorBrush" />
         <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
         <local:TrainCountTextConverter x:Key="TrainCountText" />
+        <local:EmptyStringToVisibilityConverter x:Key="MessageVisibility" />
         <Style x:Key="ResultNavigationButton" TargetType="Button">
             <Setter Property="Background" Value="#F01A2531" />
             <Setter Property="Foreground" Value="#FFFFE7B0" />
@@ -94,11 +95,12 @@
         </Style>
     </UserControl.Resources>
     <Grid Margin="24,18,24,18">
-        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
         <Border HorizontalAlignment="Center" MaxWidth="1000" Padding="30,13" Margin="0,0,0,12"
                 CornerRadius="12" Background="#F01A2531" BorderBrush="#FFD4AC6B" BorderThickness="1.5">
             <StackPanel>
-                <TextBlock Text="THE FINAL STANDINGS" Foreground="#FFFFE7B0" FontSize="27" FontWeight="Bold" TextAlignment="Center" />
+                <TextBlock Text="THE JOURNEY HAS COME TO AN END" Foreground="#FFFFE7B0" FontSize="27" FontWeight="Bold"
+                           TextAlignment="Center" TextWrapping="Wrap" />
                 <TextBlock Text="{Binding FinalSummary}" Foreground="#FFF8EEDC" FontSize="15"
                            TextWrapping="Wrap" TextAlignment="Center" Margin="0,5,0,0" AutomationProperties.LiveSetting="Polite" />
             </StackPanel>
@@ -207,6 +209,23 @@
                     Click="OnPreviousPlayer" IsEnabled="False" AutomationProperties.Name="Previous player results" />
             <Button x:Name="NextPlayerButton" Content="›" Style="{StaticResource ResultNavigationButton}"
                     Click="OnNextPlayer" IsEnabled="False" Margin="12,0,0,0" AutomationProperties.Name="Next player results" />
+        </StackPanel>
+        <StackPanel x:Name="FinalActionsPanel" Grid.Row="3" HorizontalAlignment="Right" Margin="0,8,0,0">
+            <TextBlock Text="{Binding FinalStandingsShareStatus}" Foreground="#FFFFE7B0" FontSize="12"
+                       TextWrapping="Wrap" TextAlignment="Right" MaxWidth="580" Margin="0,0,0,5"
+                       Visibility="{Binding FinalStandingsShareStatus, Converter={StaticResource MessageVisibility}}"
+                       AutomationProperties.LiveSetting="Polite" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <StackPanel x:Name="SharePanel" Margin="0,0,12,0"
+                            Visibility="{Binding CanShareFinalStandings, Converter={StaticResource BoolToVisibility}}">
+                    <Button x:Name="ShareToPhoneButton" Content="Share to phone" Command="{Binding SendFinalStandingsToPhoneCommand}"
+                            Style="{StaticResource ResultNavigationButton}" Width="180" Height="42" FontSize="16"
+                            AutomationProperties.Name="Share final standings image to the shared phone" />
+                </StackPanel>
+                <Button x:Name="BackToMenuButton" Content="Back to Menu" Command="{Binding BackToMenuCommand}"
+                        Style="{StaticResource ResultNavigationButton}" Width="180" Height="42" FontSize="16"
+                        AutomationProperties.Name="Back to Menu" />
+            </StackPanel>
         </StackPanel>
     </Grid>
 </UserControl>

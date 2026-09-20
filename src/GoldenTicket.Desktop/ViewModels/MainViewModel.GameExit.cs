@@ -359,6 +359,30 @@ public sealed partial class MainViewModel
         finally { SetOperationInProgress(false); }
     }
 
+    public bool CanLeaveFinalStandings => !_toolsDisposed && !_exitRequested && !_operationInProgress &&
+        !IsGameExitSaving && Busy is null && _scoreMarkerStep is null &&
+        _coordinator?.Public.Lifecycle == SessionLifecycle.Finished && IsGameplayScreenActive(Screen.FinalScore);
+
+    [RelayCommand(CanExecute = nameof(CanLeaveFinalStandings))]
+    private async Task BackToMenuAsync()
+    {
+        if (!CanLeaveFinalStandings) return;
+        SetOperationInProgress(true);
+        try
+        {
+            // Completed results are already journaled. Returning to the menu must preserve
+            // them, unlike the in-game Quit action that intentionally discards unsaved play.
+            await PersistTurnClockAsync();
+            await LeaveGameForMenuAsync();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            FinalStandingsShareStatus = "Could not return to the menu. Please try again.";
+            BoardInteractionLog.Write("final-standings.menu-failed", new { errorType = exception.GetType().Name });
+        }
+        finally { SetOperationInProgress(false); }
+    }
+
     private async Task LeaveGameForMenuAsync()
     {
         // Quit may already have rewound or deleted this save; stop without writing discarded time.

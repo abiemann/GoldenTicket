@@ -107,6 +107,12 @@ This build implements the core game plus initial phone, camera and photo workflo
 - Exact final scoring, including the longest continuous route as a true maximum edge-simple trail
   with the witness trail shown. Final standings appear over the board as horizontally scrolling
   portrait panels, with the full points breakdown, destination totals and a scrollable route trail.
+- In games with two or more humans, **Share to phone** on the final standings prepares a PNG with
+  the board and all players' full results. The approved shared phone PWA previews it and offers
+  **Share image** where file sharing is supported, plus **Save image**. The image stays on the
+  local connection until someone chooses to share it; single-human games do not show this action.
+  The results screen is titled **The journey has come to an end**. Its bottom-right **Back to Menu**
+  button returns to the welcome menu while preserving the completed game and results.
 - The live header shows `Turn N · h:mm:ss`, starting at `0:00:00`. This total game timer
   keeps running while the match is open, including menus, focus loss, technical screens, saved-board
   reconciliation and the final scoring-marker move. It stops when the match finishes, is left or the

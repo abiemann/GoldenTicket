@@ -36,6 +36,18 @@
       <button id="reveal" type="button" disabled>Reveal my cards</button>
       <p class="fine-print">Tap Hide before passing the device. Cards also hide when you leave the app, the connection drops, or the turn changes. Device screenshots cannot be prevented.</p>
     </section>
+    <section id="result" class="panel result-panel" hidden aria-labelledby="result-title">
+      <p class="eyebrow">A JOURNEY TO REMEMBER</p><h2 id="result-title">The final standings</h2>
+      <p>Your table's results, sent from the laptop. Share the image or save it to keep.</p>
+      <p id="result-status" role="status">Receiving the image…</p>
+      <img id="result-preview" class="result-preview" alt="Final standings with the game board, player scores and turn times" hidden>
+      <div class="actions result-actions">
+        <button id="result-share" type="button" hidden>Share image</button>
+        <a id="result-save" class="save-image" download="golden-ticket-final-standings.png" target="_blank" rel="noopener" hidden>Save image</a>
+        <button id="result-retry" class="secondary" type="button" hidden>Try again</button>
+      </div>
+      <p id="result-help" class="fine-print" hidden>If Save image opens a preview, press and hold the image to save it, or use your browser's Share menu. On iPhone, downloaded images may be in Files.</p>
+    </section>
     <section id="private" class="panel" hidden aria-label="Private player turn"></section>
     <section id="public" class="panel" hidden><p class="eyebrow">AT THE TABLE</p><h2>Journey progress</h2><div id="scoreboard"></div><p id="public-instruction"></p></section>
     <footer>Local play · No account · No cloud<br>Physical train placement is verified on the laptop.</footer>

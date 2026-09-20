@@ -11,6 +11,23 @@ subscription, cloud pairing service, or Internet connection is required for the 
 Developer package restore may require Internet access before the test. Phone installation
 behavior without Internet still needs to pass the real-device checklist.
 
+## Share the final standings
+
+In a game with at least two human players, select **Share to phone** on the laptop's final-standings
+screen. If needed, connect and approve the shared phone first, then select **Share to phone** again.
+Keep the PWA open; its next synchronization loads a preview of the board and every player's results.
+Tap **Share image** to choose a destination from the phone's share sheet when file sharing is
+supported, or **Save image** to download the PNG and share it from the phone's files or photos app.
+The phone explains the fallback when its browser cannot share files directly.
+Finish sharing or saving before selecting **Back to Menu** on the laptop, which closes the phone
+connection and preserves the completed game's results.
+
+The image is transferred over the existing local connection. It is not uploaded to a sharing
+service automatically or stored in the PWA's offline cache. The laptop keeps only the latest image
+for the current completed game in memory; send it again after restarting or reloading the game.
+Games with one human do not show this action. Native share/save behavior still needs the Android
+and iOS checks in the [device checklist](companion-device-evidence.md).
+
 ## 1. Use the same trusted local network
 
 Connect the laptop and phone to the same LAN. The laptop may use **Ethernet** while the phone uses

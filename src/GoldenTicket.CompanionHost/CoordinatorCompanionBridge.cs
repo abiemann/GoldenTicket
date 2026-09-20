@@ -9,7 +9,8 @@ namespace GoldenTicket.CompanionHost;
 public sealed class CoordinatorCompanionBridge(
     Func<GameCoordinator?> coordinator,
     Func<CancellationToken, Task>? afterAcceptedCommand = null,
-    Func<bool>? canControl = null) : ICompanionGameBridge
+    Func<bool>? canControl = null,
+    Func<CompanionResultImage?>? resultImage = null) : ICompanionGameBridge
 {
     public async Task<CompanionPublicSnapshot> ReadPublicAsync(CancellationToken cancellationToken = default)
     {
@@ -39,7 +40,27 @@ public sealed class CoordinatorCompanionBridge(
             : $"Pass this device to {view.SeatOf(new SeatId(reveal!.Value)).DisplayName}.";
         return new(view, allowed ? reveal : null, allowed, message, game.Manifest.ProfileId,
             game.Manifest.DataHash, game.Manifest.Routes.Select(r => new CompanionRoute(r.RouteId.Value,
-                game.Manifest.Describe(r.RouteId), r.Length, r.RequiredCardKind?.ToString() ?? "Any color")).ToArray());
+                game.Manifest.Describe(r.RouteId), r.Length, r.RequiredCardKind?.ToString() ?? "Any color")).ToArray(),
+            CurrentResultImage(game, view)?.Info);
+    }
+
+    public Task<CompanionResultImage?> ReadResultImageAsync(string id, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var game = coordinator();
+        var image = game is null ? null : CurrentResultImage(game, game.Public);
+        return Task.FromResult(image?.Info.Id == id ? image : null);
+    }
+
+    private CompanionResultImage? CurrentResultImage(GameCoordinator game, Domain.Projections.PublicView view)
+    {
+        if (view.Lifecycle != SessionLifecycle.Finished || game.StorageFaulted ||
+            game.Seats.Count(s => s.Kind == SeatKind.Human) < 2 || coordinator() != game ||
+            game.Public.StateVersion != view.StateVersion) return null;
+        var image = resultImage?.Invoke();
+        return image is not null && image.SessionId == game.SessionId.Value && image.StateVersion == view.StateVersion &&
+               CompanionResultImage.IsValid(image) && coordinator() == game && game.Public.StateVersion == view.StateVersion
+            ? image : null;
     }
 
     public async Task<CompanionPrivateSnapshot?> ReadPrivateAsync(SeatId seat, long expectedVersion,
