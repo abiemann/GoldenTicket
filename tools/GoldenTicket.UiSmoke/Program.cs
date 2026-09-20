@@ -945,9 +945,6 @@ internal static partial class Program
                 if (!IsElementShown(gameTable) || scene.Width != 1440 || scene.Height != 900 ||
                     !ReferenceEquals(board.Source, model.Camera.GameTablePreview) ||
                     stations.Items.Count != model.Table.Seats.Count || market.Items.Count != 5 ||
-                    Canvas.GetLeft(drawPilesPanel) != (model.Table.Seats.Count < 5 ? 368 : 14) ||
-                    Canvas.GetLeft(marketPanel) != (model.Table.Seats.Count < 5 ? 622 : 975) ||
-                    Canvas.GetTop(marketPanel) != 768 ||
                     locomotive.TextWrapping != TextWrapping.NoWrap || locomotiveCard.Width < 76 ||
                     firstMarketBounds.Left < marketPanel.BorderThickness.Left + marketPanel.Padding.Left - .5 ||
                     lastMarketBounds.Right > marketPanel.ActualWidth -
@@ -965,6 +962,9 @@ internal static partial class Program
                             StringComparison.Ordinal) && button.IsEnabled) ||
                     VisibleText(gameTable).Contains("Shift+Esc", StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("The game table must retain its phase, acting-seat and human-instruction guidance above the shared board crop.");
+                if (Canvas.GetLeft(drawPilesPanel) != 368 || Canvas.GetLeft(marketPanel) != 622 ||
+                    Canvas.GetTop(marketPanel) != 768)
+                    throw new InvalidOperationException($"Draw piles and market must stay centered below the board for {model.Table.Seats.Count} players; got draw X={Canvas.GetLeft(drawPilesPanel)}, market X/Y={Canvas.GetLeft(marketPanel)}/{Canvas.GetTop(marketPanel)}.");
                 var sceneBounds = scene.TransformToAncestor(view).TransformBounds(new Rect(scene.RenderSize));
                 if (sceneBounds.Left < -1 || sceneBounds.Top < -1 ||
                     sceneBounds.Right > view.ActualWidth + 1 || sceneBounds.Bottom > view.ActualHeight + 1)
@@ -999,10 +999,14 @@ internal static partial class Program
                     Math.Abs(trainsRemaining.TranslatePoint(new Point(), tileGrid).X -
                              trainLabel.TranslatePoint(new Point(), tileGrid).X) > 0.5)
                     throw new InvalidOperationException("Remaining trains must sit above the T card and align with Train cards.");
-                var trainStack = Descendants<ItemsControl>(tileGrid)
-                    .Single(control => Grid.GetColumn(control) == 1);
-                var destinationStack = Descendants<ItemsControl>(tileGrid)
-                    .Single(control => Grid.GetColumn(control) == 2);
+                var trainStackButton = Descendants<Button>(tileGrid)
+                    .Single(button => AutomationProperties.GetName(button) == "Show your train cards");
+                var destinationStackButton = Descendants<Button>(tileGrid)
+                    .Single(button => AutomationProperties.GetName(button) == "Show your destinations");
+                if (Grid.GetColumn(trainStackButton) != 1 || Grid.GetColumn(destinationStackButton) != 2)
+                    throw new InvalidOperationException("The train-card and destination stack buttons must align with their labels.");
+                var trainStack = Descendants<ItemsControl>(trainStackButton).Single();
+                var destinationStack = Descendants<ItemsControl>(destinationStackButton).Single();
                 if (trainStack.Items.Count != 4 || destinationStack.Items.Count != 2 ||
                     Descendants<Border>(trainStack).Count(border => border.Width == 36 && border.Height == 35) != 4 ||
                     Descendants<Border>(destinationStack).Count(border => border.Width == 36 && border.Height == 35) != 2 ||
@@ -1011,13 +1015,17 @@ internal static partial class Program
                     destinationStack.Items[0] is not CardStackLayer { Left: 12, Top: 0 } ||
                     destinationStack.Items[1] is not CardStackLayer { Left: 0, Top: 6, Letter: "D" })
                     throw new InvalidOperationException("Seat stacks must render four train cards and two destinations with equal fan height.");
+                var leftSeats = model.Game.TableSeats.Where(tile => tile.Left == 10).ToArray();
+                var rightSeats = model.Game.TableSeats.Where(tile => tile.Left == 1180).ToArray();
                 if (model.Game.TableSeats[0].Left != 10 || model.Game.TableSeats[1].Left != 1180 ||
+                    leftSeats.Length + rightSeats.Length != model.Table.Seats.Count ||
+                    Math.Abs(leftSeats.Length - rightSeats.Length) > 1 ||
                     (model.Table.Seats.Count == 3 &&
                      (model.Game.TableSeats[2].Left != 10 || model.Game.TableSeats[2].Top != 530)) ||
                     (model.Table.Seats.Count == 5 &&
-                     (model.Game.TableSeats[2].Left != 10 || model.Game.TableSeats[3].Left != 1180 ||
-                      model.Game.TableSeats[4].Left != 595 || model.Game.TableSeats[4].Top != 735)))
-                    throw new InvalidOperationException("Players one and two must face each other, with the fifth centered below the board.");
+                     (leftSeats.Length != 3 || rightSeats.Length != 2 ||
+                      Math.Abs(leftSeats.Average(tile => tile.Top) - rightSeats.Average(tile => tile.Top)) > .5)))
+                    throw new InvalidOperationException("Every player must flank the board in balanced side columns, with five players sharing the same vertical center across the two columns.");
                 var status = Descendants<TextBlock>(gameTable)
                     .Single(text => text.DataContext is GameTableSeat tableSeat && tableSeat.Seat.SeatId.Value == 1 &&
                                     text.Text == "Kept 2 destinations and returned 1.");
@@ -1360,21 +1368,33 @@ internal static partial class Program
             var heldCityMarkers = (ItemsControl)animatedTable.FindName("DestinationCityMarkers");
             var heldDestinationLines = (ItemsControl)animatedTable.FindName("DestinationLines");
             if (!IsElementShown(humanTrainStack) || !IsElementShown(humanDestinationsStack) ||
-                IsElementShown(computerStack) || IsElementShown(miniPanel) || solo.PrivateSeat is not null)
-                throw new InvalidOperationException("Only the solo human's T and D stacks should be clickable after opening setup.");
+                !humanTrainStack.IsHitTestVisible || !humanDestinationsStack.IsHitTestVisible ||
+                !IsElementShown(computerStack) || computerStack.IsHitTestVisible || computerStack.Focusable ||
+                IsElementShown(miniPanel) || solo.PrivateSeat is not null)
+                throw new InvalidOperationException($"Only the solo human's T and D stacks should be clickable after opening setup. " +
+                    $"Human shown/hit={IsElementShown(humanTrainStack)}/{humanTrainStack.IsHitTestVisible}, " +
+                    $"destinations shown/hit={IsElementShown(humanDestinationsStack)}/{humanDestinationsStack.IsHitTestVisible}, " +
+                    $"computer shown/hit/focus/command={IsElementShown(computerStack)}/{computerStack.IsHitTestVisible}/{computerStack.Focusable}/{computerStack.Command?.CanExecute(computerStack.CommandParameter)}, " +
+                    $"panel={IsElementShown(miniPanel)}, private={solo.PrivateSeat is not null}, soloTurn={solo.IsSoloHumanTurn}.");
             if (humanTrainStack.Command is null ||
                 !humanTrainStack.Command.CanExecute(humanTrainStack.CommandParameter))
                 throw new InvalidOperationException($"The T stack must bind its toggle command and human seat; " +
                     $"command={humanTrainStack.Command is not null}, parameter={humanTrainStack.CommandParameter is GameTableSeat}.");
 
+            await solo.ToggleSoloTrainCardsCommand.ExecuteAsync((GameTableSeat)computerStack.DataContext);
+            if (solo.ShowSoloCardPanel || solo.PrivateSeat is not null)
+                throw new InvalidOperationException("A direct computer-stack command must not reveal a private hand.");
+
             ((IInvokeProvider)new ButtonAutomationPeer(humanTrainStack).GetPattern(PatternInterface.Invoke)!).Invoke();
             for (var attempt = 0; attempt < 20 && !solo.ShowSoloTrainCards; attempt++) await Task.Delay(50);
             animatedTable.UpdateLayout();
-            if (!solo.ShowSoloTrainCards || !IsElementShown(miniPanel) || miniTrainCards.Items.Count != 4 ||
+            var groupedCards = miniTrainCards.Items.Cast<SoloTrainCardRow>().ToArray();
+            if (!solo.ShowSoloTrainCards || !IsElementShown(miniPanel) || groupedCards.Sum(row => row.Count) != 4 ||
+                groupedCards.Select(row => row.Kind).Distinct().Count() != groupedCards.Length ||
                 !IsElementShown(heldCityMarkers) || !IsElementShown(heldDestinationLines) ||
                 heldDestinationLines.Items.Count != 2 ||
                 solo.PrivateSeat is not null || solo.Screen != Screen.Table)
-                throw new InvalidOperationException($"The T stack must expand four mini train cards while the board remains visible. " +
+                throw new InvalidOperationException($"The T stack must show one card per color accounting for all four held cards while the board remains visible. " +
                     $"Selected={solo.ShowSoloTrainCards}, panel={IsElementShown(miniPanel)}, " +
                     $"cards={miniTrainCards.Items.Count}, private={solo.PrivateSeat is not null}, screen={solo.Screen}, " +
                     $"enabled={humanTrainStack.IsEnabled}, opening={solo.ShowSoloOpeningTicketsOnBoard}, " +
@@ -1388,7 +1408,9 @@ internal static partial class Program
             if (!IsElementShown(heldCityMarkers) || !IsElementShown(heldDestinationLines))
                 throw new InvalidOperationException("Re-enabling the train-card destination setting must restore the map overlay.");
             var trainScroller = Descendants<ScrollViewer>(miniPanel).Single(IsElementShown);
-            if (!IsGameHorizontalScroller(trainScroller))
+            if (trainScroller.ScrollableHeight != 0 ||
+                trainScroller.HorizontalScrollBarVisibility != ScrollBarVisibility.Auto ||
+                (trainScroller.ScrollableWidth > 0 && !IsGameHorizontalScroller(trainScroller)))
                 throw new InvalidOperationException("The solo train-card tray must scroll horizontally with the game-styled scrollbar.");
             var wheel = new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, -120)
             {
@@ -1396,13 +1418,16 @@ internal static partial class Program
             };
             trainScroller.RaiseEvent(wheel);
             animatedTable.UpdateLayout();
-            if (!wheel.Handled || trainScroller.HorizontalOffset <= 0)
+            if (trainScroller.ScrollableWidth > 0 && (!wheel.Handled || trainScroller.HorizontalOffset <= 0))
                 throw new InvalidOperationException("The mouse wheel must move the train-card tray sideways.");
             await RenderSizes("solo-train-cards-horizontal-synthetic",
                 () => new GameTableView { DataContext = solo }, view =>
                 {
                     var tray = (Border)view.FindName("SoloCardPanel");
-                    if (!IsGameHorizontalScroller(Descendants<ScrollViewer>(tray).Single(IsElementShown)))
+                    var scroller = Descendants<ScrollViewer>(tray).Single(IsElementShown);
+                    if (scroller.ScrollableHeight != 0 ||
+                        scroller.HorizontalScrollBarVisibility != ScrollBarVisibility.Auto ||
+                        (scroller.ScrollableWidth > 0 && !IsGameHorizontalScroller(scroller)))
                         throw new InvalidOperationException("The solo train-card tray must remain horizontally scrollable at both window sizes.");
                 });
 
@@ -1536,8 +1561,9 @@ internal static partial class Program
             var computerTurnDestinationStack = Descendants<Button>(animatedTable).Single(button =>
                 AutomationProperties.GetName(button) == "Show your destinations" &&
                 button.DataContext is GameTableSeat tile && tile.Seat.Operator == "human");
-            if (solo.IsSoloHumanTurn || IsElementShown(computerTurnTrainStack) ||
-                IsElementShown(computerTurnDestinationStack) || IsElementShown(miniPanel) ||
+            if (solo.IsSoloHumanTurn || computerTurnTrainStack.IsHitTestVisible || computerTurnTrainStack.Focusable ||
+                computerTurnDestinationStack.IsHitTestVisible || computerTurnDestinationStack.Focusable ||
+                IsElementShown(miniPanel) ||
                 IsElementShown(heldCityMarkers))
                 throw new InvalidOperationException("The human's card stacks and preview must be unavailable during the computer's turn.");
             await solo.ToggleSoloDestinationsCommand.ExecuteAsync((GameTableSeat)computerTurnDestinationStack.DataContext);

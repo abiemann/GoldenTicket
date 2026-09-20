@@ -307,6 +307,7 @@ public sealed partial class MainViewModel
 
             // The photo and camera-observed inventory have both passed durable readback.
             // This checkpoint is now a completed Save Game even if menu navigation fails.
+            await PersistTurnClockAsync();
             Table.SaveName = "";
             await LeaveGameForMenuAsync();
         }
@@ -360,6 +361,8 @@ public sealed partial class MainViewModel
 
     private async Task LeaveGameForMenuAsync()
     {
+        // Quit may already have rewound or deleted this save; stop without writing discarded time.
+        _coordinator?.SetGameTimingRunning(false);
         _coordinator = null;
         _driver = null;
         ResetAutomaticPhysicalFlow();

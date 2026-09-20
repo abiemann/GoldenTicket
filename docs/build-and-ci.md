@@ -49,6 +49,23 @@ lock-file cache setup used here. GitHub's [Windows runner inventory](https://git
 describes the hosted environment. Runner selection alone is not evidence of success; review the
 individual workflow run's results.
 
+### Keeping UI and camera checks current
+
+After changing the game-table layout, run the WPF smoke tool as well as the .NET tests:
+
+```powershell
+dotnet run --project tools/GoldenTicket.UiSmoke -c Release --no-build -- artifacts/ci/desktop-ui
+```
+
+Its assertions cover balanced player columns for two through five players, public card stacks
+that remain visible without exposing computer hands, and train-card previews grouped by color.
+Grouped cards only need a horizontal scrollbar when they overflow the tray. Update these
+assertions alongside intentional presentation changes; focused unit tests do not render the UI.
+
+Camera-flow tests must wait for a canceled action to finish before publishing the next route
+observations. Frames received while that action is still pending do not verify a new claim;
+waiting longer without fresh frames cannot complete verification before payment.
+
 ## Installed-runtime contract
 
 | Traffic or data | Location |

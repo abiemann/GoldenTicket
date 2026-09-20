@@ -281,14 +281,18 @@ public sealed class InMemorySessionStore : ISessionStore
     private static TurnTimingSnapshot? UsableTiming(TurnTimingSnapshot? timing, GameState state)
     {
         if (timing?.Turns is null) return null;
+        var maximumTicks = TimeSpan.FromDays(365).Ticks;
+        if (timing.GameElapsedTicks is { } total && (total < 0 || total > maximumTicks)) return null;
+        long recordedTicks = 0;
         var previousTurn = 0;
         var unfinished = false;
         foreach (var turn in timing.Turns)
         {
             if (turn is null || turn.TurnNumber <= previousTurn || turn.TurnNumber > state.TurnNumber ||
                 unfinished || !state.Seats.Any(seat => seat.SeatId == turn.SeatId) ||
-                turn.ElapsedTicks < 0 || turn.ElapsedTicks > TimeSpan.FromDays(365).Ticks)
+                turn.ElapsedTicks < 0 || turn.ElapsedTicks > maximumTicks - recordedTicks)
                 return null;
+            recordedTicks += turn.ElapsedTicks;
             previousTurn = turn.TurnNumber;
             unfinished = !turn.Completed;
         }

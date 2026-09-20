@@ -9,7 +9,7 @@ public sealed partial class MainViewModel
 {
     private readonly TimeProvider _turnTimeProvider;
     private DispatcherTimer? _turnClockTimer;
-    [ObservableProperty] private string _turnClockSuffix = "";
+    [ObservableProperty] private string _gameClockSuffix = "";
 
     private void InitializeTurnClock()
     {
@@ -30,13 +30,16 @@ public sealed partial class MainViewModel
     private void UpdateTurnClock()
     {
         var coordinator = _coordinator;
-        if (coordinator is null) { TurnClockSuffix = ""; return; }
+        if (coordinator is null) { GameClockSuffix = ""; return; }
+        // The visible match clock keeps running through menus, lost focus, and board checks.
+        // Per-player statistics retain their existing pause rules and appear only at the end.
+        coordinator.SetGameTimingRunning(!_toolsDisposed);
         coordinator.SetTurnTimingPaused(IsGameInputPaused || IsCheckingResumedGame ||
             NeedsBoardReconciliation || ShowMultiHumanPhoneSetup || _mustReload || _exitRequested ||
             _toolsDisposed || !_systemAvailable || !_windowActive || !IsGameplayScreenActive(Screen.Table));
-        var current = coordinator.TurnTiming.Turns.LastOrDefault(turn => !turn.Completed);
-        TurnClockSuffix = IsCheckingResumedGame || current is null ? "" :
-            "  ·  " + FormatTurnTime(TimeSpan.FromTicks(current.ElapsedTicks));
+        var timing = coordinator.TurnTiming;
+        GameClockSuffix = coordinator.Public.Lifecycle == SessionLifecycle.Setup ? "" :
+            "  ·  Game " + FormatTurnTime(TimeSpan.FromTicks(timing.GameElapsedTicks ?? 0));
     }
 
     private async Task PersistTurnClockAsync()

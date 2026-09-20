@@ -45,9 +45,13 @@ See the
 - [x] Replace the technical final-score list with themed portrait standings over the live board,
   horizontal player navigation, full scoring details and scrollable longest-route trails.
 - [x] Record full-turn time per player, including physical placement and scoring-marker movement,
-  with a live counter and total/average time in the standings. Exclude menus, technical tools,
+  with total/average time shown only in the final standings. Exclude menus, technical tools,
   inactivity, sleep and reload checks; preserve timing across saves without inventing old history.
   Partially recorded turns do not contribute to the average.
+- [x] Show a separate total game timer beside the turn number. Count continuously while a match is
+  open, including menus, focus loss, technical screens, reconciliation and the final scoring-marker
+  move. Stop on departure, shutdown or completion; restore the saved total without counting closed-app
+  time. Seed older saves from recorded turn times, or zero when no timing exists; past pauses are unknown.
 - [x] Validate turn timing, save compatibility, rewinding and physical-flow attribution with 194
   related regression tests. Offscreen WPF checks cover two and five result panels at 1280×800
   and 1920×1200, including player navigation and full route-text scrolling.

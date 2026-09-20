@@ -8,6 +8,9 @@ public sealed partial class GameCoordinator
 
     public void SetTurnTimingPaused(bool paused) => _turnTiming.SetPaused(paused);
 
+    /// <summary>Count the running game's elapsed time independently of individual turn pauses.</summary>
+    public void SetGameTimingRunning(bool running) => _turnTiming.SetGameRunning(running);
+
     /// <summary>Keep physical scoring-marker time with the player who claimed the route.</summary>
     public void HoldTurnTimingForScoreMarker() => _turnTiming.HoldForScoreMarker();
 

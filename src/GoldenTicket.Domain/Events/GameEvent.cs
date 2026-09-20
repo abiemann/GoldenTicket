@@ -302,8 +302,7 @@ public sealed record ClaimCommitted(
 
     public override PublicEventEntry ToPublicEntry(BoardManifest manifest) =>
         new("ClaimCommitted", SeatId,
-            $"Claimed {RouteText(manifest, RouteId)} for {Points} point{(Points == 1 ? "" : "s")}. " +
-            $"{TrainsRemaining} train{(TrainsRemaining == 1 ? "" : "s")} left.");
+            $"Claimed {RouteText(manifest, RouteId)} for {Points} point{(Points == 1 ? "" : "s")}.");
 }
 
 /// <summary>

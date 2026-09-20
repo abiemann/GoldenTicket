@@ -107,10 +107,16 @@ This build implements the core game plus initial phone, camera and photo workflo
 - Exact final scoring, including the longest continuous route as a true maximum edge-simple trail
   with the witness trail shown. Final standings appear over the board as horizontally scrolling
   portrait panels, with the full points breakdown, destination totals and a scrollable route trail.
-- Per-player turn timing: the live counter includes decisions, train placement and scoring-marker
-  movement. Menus, technical tools, window inactivity, sleep and saved-game restoration pause it.
-  Final standings show recorded total time and the average of fully timed turns. Older saves have
-  no retrospective timing; interrupted or partially recorded turns are excluded from the average.
+- The live header shows `Turn N · Game m:ss` (or `h:mm:ss` after an hour). This total game timer
+  keeps running while the match is open, including menus, focus loss, technical screens, saved-board
+  reconciliation and the final scoring-marker move. It stops when the match finishes, is left or the
+  app closes, and resumes from its saved total without counting time while the app was closed.
+  Older saves seed the total from recorded turn times; past pauses cannot be reconstructed, and
+  saves without timing history start at zero.
+- Per-player timing appears only in the final standings: recorded total time and the average of fully
+  timed turns include decisions, train placement and scoring-marker movement. These player statistics
+  still exclude menus, technical tools, window inactivity, sleep and saved-game restoration.
+  Interrupted or partially recorded turns are excluded from the average; unavailable history is not invented.
 - Heuristic computer opponents at three difficulty levels, which see only their own seat's view.
 - Durable local saves: an append-only event journal in SQLite with a tamper-evident hash chain,
   plaintext local payloads, command deduplication, and restore by replay verified against a stored
@@ -483,9 +489,10 @@ not a completed Save Game and does not grant permission to clear the physical bo
 7. After someone finishes a turn with two trains or fewer, every seat takes one more turn, and then
    portrait panels appear over the board with each player's final points, route points, destination
    gains and losses, completed/missed tickets, longest-route bonus and full route trail. Scroll
-   horizontally or use the arrows to see every player. Total and average turn times include physical
-   placement and scoring-marker movement, excluding pauses. Timing begins when the updated app is
-   used; unavailable history is shown as unavailable.
+   horizontally or use the arrows to see every player. Each player's total and average turn times
+   include physical placement and scoring-marker movement, excluding pauses. These final statistics
+   are separate from the continuous total game timer shown during play. Unavailable player timing
+   history is shown as unavailable.
 
 For multiple humans, follow the phone setup shown on **THE GAME TABLE**. Select a Private LAN
 connection and explicitly start the local host; only then can the table display a connection QR.

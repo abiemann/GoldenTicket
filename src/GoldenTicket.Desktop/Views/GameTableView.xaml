@@ -453,7 +453,7 @@
                                    FontWeight="Bold" HorizontalAlignment="Center" />
                         <TextBlock x:Name="GuidancePhaseText" Foreground="#FFDCC18A" FontSize="15"
                                    HorizontalAlignment="Center">
-                            <Run Text="{Binding Game.GuidanceTurn, Mode=OneWay}" /><Run Text="{Binding TurnClockSuffix, Mode=OneWay}" />
+                            <Run Text="{Binding Game.GuidanceTurn, Mode=OneWay}" /><Run Text="{Binding GameClockSuffix, Mode=OneWay}" />
                         </TextBlock>
                         <TextBlock x:Name="GuidanceSeatText" Text="{Binding Game.GuidanceSeat}" Foreground="White" FontSize="18"
                                    FontWeight="SemiBold" HorizontalAlignment="Center" />

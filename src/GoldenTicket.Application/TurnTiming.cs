@@ -7,9 +7,9 @@ public sealed record TurnTimingEntry(int TurnNumber, SeatId SeatId, long Elapsed
     bool Completed, bool IsPartial);
 
 public sealed record TurnTimingSnapshot(IReadOnlyList<TurnTimingEntry> Turns,
-    bool AwaitingScoreMarker = false, bool WasRunning = false);
+    bool AwaitingScoreMarker = false, bool WasRunning = false, long? GameElapsedTicks = null);
 
-/// <summary>Monotonic full-turn time, independent of gameplay rules and state hashes.</summary>
+/// <summary>Independent monotonic turn and game clocks, outside gameplay rules and state hashes.</summary>
 public sealed class TurnTimingTracker
 {
     private readonly object _gate = new();
@@ -21,6 +21,8 @@ public sealed class TurnTimingTracker
     private bool _paused = true;
     private bool _enabled;
     private bool _holdingMarker;
+    private bool _gameRunning;
+    private long _gameElapsedTicks;
     private int? _current;
     private int? _initialTurn;
 
@@ -30,6 +32,9 @@ public sealed class TurnTimingTracker
         _clock = clock ?? TimeProvider.System;
         _stamp = _clock.GetTimestamp();
         _turns = saved?.Turns.ToList() ?? [];
+        // Older saves know only active turn time; their unrecorded pauses cannot be rebuilt.
+        // Start stopped on restore so time spent outside the running game is never added.
+        _gameElapsedTicks = saved?.GameElapsedTicks ?? _turns.Sum(turn => turn.ElapsedTicks);
         _restored = restored;
         var unfinished = _turns.FindLastIndex(turn => !turn.Completed);
         if (unfinished >= 0)
@@ -73,6 +78,15 @@ public sealed class TurnTimingTracker
         }
     }
 
+    public void SetGameRunning(bool running)
+    {
+        lock (_gate)
+        {
+            Accumulate();
+            _gameRunning = running;
+        }
+    }
+
     public void ReleaseScoreMarker()
     {
         lock (_gate)
@@ -88,7 +102,7 @@ public sealed class TurnTimingTracker
         lock (_gate)
         {
             Accumulate();
-            return new(_turns.ToArray(), _holdingMarker, IsCounting);
+            return new(_turns.ToArray(), _holdingMarker, IsCounting, _gameElapsedTicks);
         }
     }
 
@@ -113,12 +127,18 @@ public sealed class TurnTimingTracker
         (view.Lifecycle == SessionLifecycle.Active || _holdingMarker && view.Lifecycle == SessionLifecycle.Finished) &&
         view.TurnPhase != TurnPhase.RulesDecisionRequired;
 
+    private bool IsGameCounting => _gameRunning && _view is { } view &&
+        (view.Lifecycle is not (SessionLifecycle.Setup or SessionLifecycle.Finished) ||
+            _holdingMarker && view.Lifecycle == SessionLifecycle.Finished);
+
     private void Accumulate()
     {
         var now = _clock.GetTimestamp();
+        var elapsed = Math.Max(0, _clock.GetElapsedTime(_stamp, now).Ticks);
+        if (IsGameCounting)
+            _gameElapsedTicks = checked(_gameElapsedTicks + elapsed);
         if (IsCounting && _current is { } current)
         {
-            var elapsed = Math.Max(0, _clock.GetElapsedTime(_stamp, now).Ticks);
             var previous = _turns[current];
             _turns[current] = previous with { ElapsedTicks = checked(previous.ElapsedTicks + elapsed) };
         }

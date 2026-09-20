@@ -144,7 +144,7 @@ public sealed class TurnTimingTests
     }
 
     [Fact]
-    public async Task Desktop_menu_and_focus_pauses_freeze_current_turn_counter()
+    public async Task Desktop_shows_continuous_game_time_while_private_turn_time_excludes_pauses()
     {
         var clock = new ManualFrameTimeProvider();
         var model = new MainViewModel(TestManifest.Manifest, new InMemorySessionStore(), timeProvider: clock);
@@ -165,7 +165,31 @@ public sealed class TurnTimingTests
             clock.Advance(TimeSpan.FromMinutes(10));
             model.SetWindowActive(true);
             Assert.Equal(TimeSpan.FromSeconds(15).Ticks, coordinator.TurnTiming.Turns.Last().ElapsedTicks);
-            Assert.Equal("  ·  0:15", model.TurnClockSuffix);
+            Assert.Equal(TimeSpan.FromMinutes(30).Add(TimeSpan.FromSeconds(15)).Ticks,
+                coordinator.TurnTiming.GameElapsedTicks);
+            Assert.Equal("  ·  Game 30:15", model.GameClockSuffix);
+
+            // The visible total includes restore dialogs and technical tools too.
+            model.IsCheckingResumedGame = true;
+            clock.Advance(TimeSpan.FromSeconds(5));
+            model.IsCheckingResumedGame = false;
+            model.SetGameLayerVisible(false);
+            model.Screen = Screen.Camera;
+            clock.Advance(TimeSpan.FromSeconds(7));
+            model.Screen = Screen.Table;
+            model.SetGameLayerVisible(true);
+            Assert.Equal("  ·  Game 30:27", model.GameClockSuffix);
+            Assert.Equal(TimeSpan.FromSeconds(15).Ticks, coordinator.TurnTiming.Turns.Last().ElapsedTicks);
+
+            model.BeginExitRequest();
+            clock.Advance(TimeSpan.FromSeconds(8));
+            model.CancelExitRequest();
+            Assert.Equal("  ·  Game 30:35", model.GameClockSuffix);
+
+            await model.DisposeToolsAsync();
+            clock.Advance(TimeSpan.FromHours(1));
+            Assert.Equal(TimeSpan.FromMinutes(30).Add(TimeSpan.FromSeconds(35)).Ticks,
+                coordinator.TurnTiming.GameElapsedTicks);
         }
         finally { await model.DisposeToolsAsync(); }
     }

@@ -472,15 +472,24 @@ tie breakers.
 
 A monotonic counter records each player's full turn, including decisions, physical train placement
 and scoring-marker movement. A committed route advances the digital turn before its marker moves;
-timing remains assigned to the claiming player until that marker is verified. The game table shows
-the current turn's elapsed time, and final panels show recorded total time and the average of fully
-timed turns. Menus, reload/rebuild verification, technical tools, window inactivity, system sleep
-and faults pause timing. New timing data is supplementary versioned SQLite metadata, written with
-accepted commands and flushed after marker verification and clean shutdown; it does not alter the
-game journal or state fingerprint. Rewinding a save removes later timing snapshots. Old saves
-remain readable and show unavailable historical times. An interrupted active turn or a turn first
-observed in an older save is partial and excluded from the average; the UI identifies partial
-timing coverage.
+timing remains assigned to the claiming player until that marker is verified. Per-player timing
+appears only in the final panels, which show recorded total time and the average of fully timed
+turns. Menus, reload/rebuild verification, technical tools, window inactivity, system sleep and faults
+continue to pause these player statistics. An interrupted active turn or a turn first observed in an
+older save is partial and excluded from the average; the UI identifies partial timing coverage.
+
+The game-table header instead shows `Turn N · Game m:ss`, switching to `h:mm:ss` after an hour.
+This separate total game counter runs continuously while a match is open, including menus, focus
+loss, technical screens, saved-board reconciliation and the final scoring-marker move. Those
+conditions do not pause the total. It stops when the match is completed, the player actually leaves
+it or the app shuts down. Reopening a saved match resumes its accumulated total without counting
+the time spent outside the match or with the app closed. Older saves with per-turn metadata seed
+the total from those recorded turn times; historical pauses cannot be reconstructed. Saves without
+timing history start the total at zero and retain unavailable historical player statistics.
+
+Timing data is supplementary versioned SQLite metadata, written with accepted commands and flushed
+after marker verification, completed saves and clean shutdown; it does not alter the game journal
+or state fingerprint. Rewinding a save removes later timing snapshots. Old saves remain readable.
 
 A **Return to game** button at the top of the technical interface reverses the transition and
 brings the game layer back over the entire content area. Both layers bind to the same game

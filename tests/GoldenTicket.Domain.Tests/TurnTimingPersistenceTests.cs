@@ -23,23 +23,25 @@ public sealed class TurnTimingPersistenceTests : IDisposable
         var fixture = await CreateAsync(sqlite);
         var turns = new List<TurnTimingEntry> { new(1, new SeatId(1), 175_000_000, false, true) };
         await fixture.SubmitAsync(new SaveAndPackAway(fixture.Envelope(), "Timing save"),
-            new TurnTimingSnapshot(turns, AwaitingScoreMarker: true));
+            new TurnTimingSnapshot(turns, AwaitingScoreMarker: true, GameElapsedTicks: 300_000_000));
         turns[0] = turns[0] with { ElapsedTicks = 1 };
         var restored = await fixture.RestoreAsync();
         var hash = StateHash.Compute(restored.State);
         var version = restored.State.StateVersion;
         var journalCount = restored.Journal.Count;
         Assert.Equal(175_000_000, Assert.Single(restored.Timing!.Turns).ElapsedTicks);
+        Assert.Equal(300_000_000, restored.Timing.GameElapsedTicks);
         Assert.True(restored.Timing.AwaitingScoreMarker);
         Assert.True(restored.Timing.Turns[0].IsPartial);
 
         var completedTurns = new List<TurnTimingEntry>
             { restored.Timing.Turns[0] with { ElapsedTicks = 215_000_000, Completed = true } };
         await fixture.Store.SaveTurnTimingAsync(fixture.State.SessionId, version,
-            new TurnTimingSnapshot(completedTurns), Token);
+            new TurnTimingSnapshot(completedTurns, GameElapsedTicks: 400_000_000), Token);
         completedTurns.Clear();
         restored = await fixture.RestoreAsync();
         Assert.Equal(215_000_000, Assert.Single(restored.Timing!.Turns).ElapsedTicks);
+        Assert.Equal(400_000_000, restored.Timing.GameElapsedTicks);
         Assert.True(restored.Timing.Turns[0].Completed);
         Assert.False(restored.Timing.AwaitingScoreMarker);
         Assert.Equal(hash, StateHash.Compute(restored.State));
@@ -49,6 +51,7 @@ public sealed class TurnTimingPersistenceTests : IDisposable
         // A later command without timing must retain the latest earlier snapshot.
         await fixture.SubmitAsync(new CancelPackAwayPreparation(fixture.Envelope(), "continue"));
         Assert.Equal(215_000_000, Assert.Single((await fixture.RestoreAsync()).Timing!.Turns).ElapsedTicks);
+        Assert.Equal(400_000_000, (await fixture.RestoreAsync()).Timing!.GameElapsedTicks);
     }
 
     [Fact]
@@ -133,22 +136,80 @@ public sealed class TurnTimingPersistenceTests : IDisposable
     public async Task Rewind_removes_later_timing_even_when_the_new_branch_reuses_its_version(bool sqlite)
     {
         var fixture = await CreateAsync(sqlite);
-        await fixture.SaveAsync("Earlier save", Timing(100));
+        await fixture.SaveAsync("Earlier save", Timing(100) with { GameElapsedTicks = 200 });
         var checkpointId = fixture.State.Checkpoint!.CheckpointId;
         var savedVersion = fixture.State.StateVersion;
         await fixture.ResumeAsync();
-        await fixture.SaveAsync("Discarded save", Timing(999));
+        await fixture.SaveAsync("Discarded save", Timing(999) with { GameElapsedTicks = 1500 });
         var futureVersion = fixture.State.StateVersion;
 
         var rewound = await fixture.Store.RewindToVerifiedCheckpointAsync(fixture.State.SessionId,
             checkpointId, TestManifest.Manifest, TestManifest.Catalog, Token);
         Assert.Equal(savedVersion, rewound.State.StateVersion);
         Assert.Equal(100, Assert.Single(rewound.Timing!.Turns).ElapsedTicks);
+        Assert.Equal(200, rewound.Timing.GameElapsedTicks);
         fixture.State = rewound.State;
         await fixture.ResumeAsync();
         await fixture.SaveAsync("Replacement save");
         Assert.Equal(futureVersion, fixture.State.StateVersion);
         Assert.Equal(100, Assert.Single((await fixture.RestoreAsync()).Timing!.Turns).ElapsedTicks);
+        Assert.Equal(200, (await fixture.RestoreAsync()).Timing!.GameElapsedTicks);
+    }
+
+    [Theory]
+    [InlineData("", null)]
+    [InlineData(",\"GameElapsedTicks\":null", null)]
+    [InlineData(",\"GameElapsedTicks\":0", 0L)]
+    [InlineData(",\"GameElapsedTicks\":1000", 1000L)]
+    public async Task Legacy_and_current_total_fields_restore_without_inventing_historical_pause_time(
+        string totalField, long? expectedTotal)
+    {
+        var fixture = await CreateAsync(sqlite: true);
+        var disk = (SqliteSessionStore)fixture.Store;
+        await disk.SaveTurnTimingAsync(fixture.State.SessionId, fixture.State.StateVersion, Timing(100), Token);
+        var payload = "{\"Turns\":[{\"TurnNumber\":1,\"SeatId\":1," +
+            "\"ElapsedTicks\":100,\"Completed\":false,\"IsPartial\":false}]" + totalField + "}";
+        await MutateAsync(disk, fixture.State.SessionId, "UPDATE TurnTiming SET Payload = $payload;",
+            Encoding.UTF8.GetBytes(payload));
+        var restored = await fixture.RestoreAsync();
+        Assert.NotNull(restored.Timing);
+        Assert.Equal(expectedTotal, restored.Timing.GameElapsedTicks);
+        Assert.Equal(expectedTotal ?? 100,
+            new TurnTimingTracker(saved: restored.Timing, restored: true).Snapshot().GameElapsedTicks);
+        Assert.Equal(StateHash.Compute(fixture.State), StateHash.Compute(restored.State));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Invalid_total_ticks_are_supplementary_and_do_not_block_gameplay_restore(bool sqlite)
+    {
+        var fixture = await CreateAsync(sqlite);
+        foreach (var ticks in new[] { -1L, TimeSpan.FromDays(365).Ticks + 1, long.MaxValue })
+        {
+            await fixture.Store.SaveTurnTimingAsync(fixture.State.SessionId, fixture.State.StateVersion,
+                Timing(100) with { GameElapsedTicks = ticks }, Token);
+            var restored = await fixture.RestoreAsync();
+            Assert.Null(restored.Timing);
+            Assert.Equal(fixture.State.StateVersion, restored.State.StateVersion);
+            Assert.Equal(StateHash.Compute(fixture.State), StateHash.Compute(restored.State));
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Legacy_turn_sum_is_bounded_before_it_can_seed_the_total_clock(bool sqlite)
+    {
+        var fixture = await CreateAsync(sqlite);
+        await fixture.SubmitAsync(new SelectTrainCard(fixture.Envelope(new SeatId(1)), null));
+        await fixture.SubmitAsync(new SelectTrainCard(fixture.Envelope(new SeatId(1)), null));
+        await fixture.Store.SaveTurnTimingAsync(fixture.State.SessionId, fixture.State.StateVersion,
+            new([new(1, new SeatId(1), TimeSpan.FromDays(200).Ticks, true, false),
+                 new(2, new SeatId(2), TimeSpan.FromDays(200).Ticks, false, false)]), Token);
+        var restored = await fixture.RestoreAsync();
+        Assert.Null(restored.Timing);
+        Assert.Equal(StateHash.Compute(fixture.State), StateHash.Compute(restored.State));
     }
 
     [Theory]
@@ -164,6 +225,8 @@ public sealed class TurnTimingPersistenceTests : IDisposable
     [InlineData("multiple-unfinished")]
     [InlineData("unfinished-not-last")]
     [InlineData("marker-without-unfinished")]
+    [InlineData("non-numeric-total")]
+    [InlineData("out-of-range-total")]
     public async Task Corrupt_supplementary_timing_does_not_block_a_verified_game(string corruption)
     {
         var fixture = await CreateAsync(sqlite: true);
@@ -195,6 +258,8 @@ public sealed class TurnTimingPersistenceTests : IDisposable
                 [entry, entry with { TurnNumber = 2, SeatId = new SeatId(2), Completed = true }])),
             "marker-without-unfinished" => JsonSerializer.Serialize(new TurnTimingSnapshot(
                 [entry with { Completed = true }], AwaitingScoreMarker: true)),
+            "non-numeric-total" => JsonSerializer.Serialize(new { timing.Turns, GameElapsedTicks = "invalid" }),
+            "out-of-range-total" => "{\"Turns\":[],\"GameElapsedTicks\":9223372036854775808}",
             _ => throw new InvalidOperationException()
         };
         await MutateAsync(disk, fixture.State.SessionId, "UPDATE TurnTiming SET Payload = $payload;",

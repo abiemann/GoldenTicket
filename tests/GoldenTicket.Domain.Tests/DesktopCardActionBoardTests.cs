@@ -131,7 +131,6 @@ public sealed class DesktopCardActionBoardTests
 
         var at = DateTimeOffset.UtcNow;
         fixture.Publish(3, at, blackTrains: true);
-        fixture.Publish(4, at.AddSeconds(1.1), blackTrains: true);
         await draw.WaitAsync(TimeSpan.FromSeconds(7), TestContext.Current.CancellationToken);
 
         await fixture.AssertUnchangedAsync(before);
@@ -142,12 +141,17 @@ public sealed class DesktopCardActionBoardTests
         await fixture.AssertUnchangedAsync(before);
         Assert.False(model.ShowSoloTicketOffer);
 
-        // The route remains a valid claim at TurnStart; canceling the draw must reveal its
-        // payment choice once the pending operation releases the board-first observer.
+        // Wait for cancellation before publishing the route proof: frames sent while the
+        // draw is still pending are intentionally ignored by the board-first observer.
+        // Two frames discover the route; the third completes whole-board verification
+        // before payment is offered. Waiting alone must not substitute for camera evidence.
+        fixture.Publish(4, at.AddSeconds(1.1), blackTrains: true);
+        Assert.Null(model.BoardFirstProposal);
         fixture.Publish(5, at.AddSeconds(2.2), blackTrains: true);
+        Assert.Null(model.BoardFirstProposal);
+        Assert.Null(fixture.Coordinator.Public.PendingClaim);
+        await fixture.AssertUnchangedAsync(before);
         fixture.Publish(6, at.AddSeconds(3.3), blackTrains: true);
-        for (var attempt = 0; model.BoardFirstProposal is null && attempt < 100; attempt++)
-            await Task.Delay(20, TestContext.Current.CancellationToken);
         var proposal = Assert.IsType<BoardFirstClaimProposal>(model.BoardFirstProposal);
         Assert.Equal("little-rock--saint-louis", proposal.RouteId.Value);
         Assert.NotEmpty(proposal.Payments);
