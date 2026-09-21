@@ -259,6 +259,33 @@ public class CompanionHostTests
         Assert.Empty(await game.CheckInvariantsAsync());
     }
     [Fact]
+    public async Task DetectedRoutePaymentsCannotBypassTheDesktopCameraAuthorization()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var game = await CreateGame();
+        var bridge = new CoordinatorCompanionBridge(() => game);
+        foreach (var seat in new[] { 1, 2 })
+        {
+            var data = (await bridge.ReadPrivateAsync(new(seat), game.Public.StateVersion, token))!;
+            Assert.True((await bridge.ExecuteAsync(new(seat), new CompanionCommand(
+                Guid.NewGuid().ToString("N"), game.SessionId.Value, game.Public.StateVersion,
+                "keepTickets", KeptTickets: data.OfferedTickets.Take(2).Select(ticket => ticket.Id).ToArray()), token)).Accepted);
+        }
+        var own = (await bridge.ReadPrivateAsync(new(1), game.Public.StateVersion, token))!;
+        var claim = own.Actions.Claims.First();
+        var command = new CompanionCommand(Guid.NewGuid().ToString("N"), game.SessionId.Value,
+            game.Public.StateVersion, "payDetectedRoute", RouteId: claim.RouteId.Value,
+            Payment: claim.Payments[0], DetectedClaimId: Guid.NewGuid().ToString("N"));
+
+        var receipt = await bridge.ExecuteAsync(new(1), command, token);
+
+        Assert.False(receipt.Accepted);
+        Assert.Equal("ActionNotAllowed", receipt.Code);
+        Assert.Equal(command.ExpectedStateVersion, game.Public.StateVersion);
+        Assert.Null(game.Public.PendingClaim);
+        Assert.Equal(own.View.Hand, (await game.GetSeatViewAsync(new(1), token)).Hand);
+    }
+    [Fact]
     public async Task DesktopBusyAndReconciliationGateBlocksBothPrivateReadsAndCommands()
     {
         var game = await CreateGame(); var allowed = true;

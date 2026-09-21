@@ -39,6 +39,14 @@ Destination selections are preserved, and tapping elsewhere on the page or scrol
 hide the hand. Leaving the page, putting the browser in the background, losing the connection
 or changing turns still covers it; use **Hide** before passing the device.
 
+To claim a route with the camera, place your trains on the board. Once the laptop verifies the
+route, the revealed browser view automatically shows its name and legal payment choices. Choose
+the cards to spend and press **Pay**. This is the route you placed, not a recommendation. If the
+camera needs another look, payment waits; correcting or removing the trains updates the browser.
+Card draws stay blocked while unclaimed or misplaced trains need attention. Payment choices
+remain private on the phone, and detecting a route never uncovers a hidden hand automatically.
+Camera-free technical play retains the manual route selector.
+
 The QR carries only the local address, not the pairing code or private cards. No phone camera
 permission is needed inside the game: use the phone's existing QR scanner. ADB and USB are not
 required. There is no installation step, offline app cache or home-screen requirement.

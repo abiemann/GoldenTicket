@@ -232,7 +232,7 @@ A human may begin placing trains without preselecting a route. When the board st
 
 The candidate remains provisional until both payment authorization and current physical evidence are available. Enter `AwaitClaimAuthorization`, bind the proposal to its seat, state version, board revision, camera epoch, and proposal ID, and block unrelated card actions. Allow only authorization, rejection with physical restoration, pause, or recovery. A route suggestion alone cannot commit the claim.
 
-The single-human desktop flow confirms the new route and whole board before opening payment:
+The single-human desktop and multi-human Quick play flows confirm the new route and whole board before opening payment:
 two distinct fresh observations must identify every new train in the correct lane and color,
 retain the occupied spaces of committed routes, and find no extra trains. Continue checking while
 the player chooses cards. Payment is enabled only while the confirmation remains current. At
@@ -242,12 +242,22 @@ routes and the newly confirmed route, then submit the held stable color evidence
 claim commit path without another color check or multi-frame placement wait. If trains move,
 extras appear, evidence becomes stale or its camera identity changes during persistence, retain
 the authorized pending placement and recheck it. The scoring-marker movement and verification step is unchanged. A durable
-authorization substate and the companion equivalent remain broader verification work.
+authorization substate remains broader verification work.
+
+Quick play publishes only the camera route's proposal ID, route identity and readiness in its
+public snapshot. Existing private legal actions supply the payment choices for the revealed
+human. Same-turn camera updates refresh the browser's action area without hiding the hand or
+resetting destination choices; they never reveal a covered hand. In camera play, replace manual
+route selection with the detected route and an explicit **Pay** action. Bind that command to
+the proposal ID as well as seat/session/state, and recheck live camera evidence at the desktop
+write boundary. The public laptop shows route guidance, never the phone's payment cards.
+Removed, replaced or unverified proposals cannot authorize a payment. Camera-free technical
+play retains manual selection.
 
 If the player started a route during an already selected card action, explain the conflict and guide them to restore the physical board. Do not reinterpret the card action as a claim or discard an already revealed card to make the history fit.
 
 The desktop camera flow checks committed train inventory during `TurnStart`,
-`AwaitingSecondTrainCard`, and `AwaitingTicketKeep`. Before submitting a local human card
+`AwaitingSecondTrainCard`, and `AwaitingTicketKeep`. Before submitting a local or Quick play human card
 action, it requires two distinct fresh captures taken after the click, at least one second
 apart, matching the complete committed board's occupancy. During normal gameplay, committed
 routes retain their recorded owner and physical color; their sampled color is not reclassified
@@ -258,8 +268,8 @@ advancing the turn; at `TurnStart`, the existing board-first detector can then o
 payment dialog. Later in a draw action, the user must remove those trains. The check times out
 after five seconds without a command submission and is canceled on focus loss. Explicitly
 camera-free technical play retains its manual workflow; a game using the camera cannot silently
-fall back to that path after the camera stops. Companion phone actions do not yet use this
-desktop gate and remain part of the unfinished multi-human verification flow.
+fall back to that path after the camera stops. Quick play uses the same gate before remote
+card actions.
 
 ### 4.5 AI turn
 

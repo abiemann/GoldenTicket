@@ -512,7 +512,10 @@ not a completed Save Game and does not grant permission to clear the physical bo
    blocks train-card and destination draws, including through the technical private view. Opening
    a menu or hand does not dismiss it; correct the placement or remove the trains and let the
    camera verify the recorded board again.
-   With multiple humans in Quick play, private actions stay on the shared phone. In PRACTICAL,
+   With multiple humans in Quick play, a camera-verified route appears automatically in the
+   revealed phone view. Choose its payment and press **Pay**; the laptop rechecks the current
+   route and board before accepting it. Unrelated card draws stay blocked while the placement
+   needs attention, and the public laptop never shows the private payment choices. In PRACTICAL,
    the active human uses the laptop after the others look away, then covers their cards.
 
 6. For computer claims and routes selected digitally before placement, the public screen names

@@ -651,7 +651,7 @@
             <views:FinalStandingsView BoardImage="{Binding Camera.GameTablePreview}"
                 Visibility="{Binding GameplayScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=FinalScore}" />
 
-            <Button Content="Play options" Command="{Binding OpenMultiHumanPhoneSetupCommand}"
+            <Button Content="LAN Game" Command="{Binding OpenMultiHumanPhoneSetupCommand}"
                     Style="{StaticResource PhoneShortcutButton}" Padding="14,8" FontSize="13"
                     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,12,12,0"
                     AutomationProperties.Name="Choose phone or Practical play" />

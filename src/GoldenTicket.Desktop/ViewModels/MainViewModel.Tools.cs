@@ -19,6 +19,7 @@ public sealed partial class MainViewModel
     public CameraViewModel Camera { get; private set; } = null!;
     public ConnectionViewModel Connection { get; private set; } = null!;
     public CheckpointPhotoViewModel CheckpointPhoto { get; private set; } = null!;
+    internal ICompanionGameBridge CompanionBridge { get; private set; } = null!;
 
     private void InitializeTools(CameraViewModel? camera)
     {
@@ -26,10 +27,11 @@ public sealed partial class MainViewModel
             ? System.IO.Path.Combine(localStore.RootDirectory, "camera-processing.json") : null);
         var inner = new CoordinatorCompanionBridge(() => _coordinator,
             async _ => await PumpAsync(), () => CanCompanionControl, resultImage: CurrentFinalStandingsImage);
-        var bridge = new DesktopCompanionBridge(inner,
+        CompanionBridge = new DesktopCompanionBridge(inner,
             () => System.Windows.Application.Current?.Dispatcher,
-            BeginRemoteCommand, EndRemoteCommand, () => { if (CanCompanionControl) HideLaptopPrivateViewOnly(); }, RequireReload);
-        Connection = new ConnectionViewModel(bridge);
+            BeginRemoteCommand, EndRemoteCommand, () => { if (CanCompanionControl) HideLaptopPrivateViewOnly(); }, RequireReload,
+            CurrentCompanionBoardInteraction, InterceptCompanionCommandAsync);
+        Connection = new ConnectionViewModel(CompanionBridge);
         Connection.PropertyChanged += ConnectionPresentationChanged;
         PropertyChanged += (_, args) =>
         {
@@ -58,7 +60,7 @@ public sealed partial class MainViewModel
     }
 
     private bool CanCompanionControl => CanConnectPhone && Connection.UseQuickPlay && !_toolsDisposed && !_exitRequested &&
-        !IsGameInputPaused && _systemAvailable && !_mustReload &&
+        !IsGameInputPaused && _systemAvailable && !_mustReload && _scoreMarkerStep is null &&
         (!_operationInProgress || _handlingRemoteCommand) && !NeedsBoardReconciliation &&
         IsGameplayScreenActive(Screen.Table) && _coordinator is { StorageFaulted: false };
 

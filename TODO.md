@@ -190,6 +190,9 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
 - [x] Remove the browser's inactivity timeout and private-view expiry, preserving cards and
   destination selections while connected; keep the hand visible through ordinary focus changes
   and touches outside its controls. Hide, backgrounding, disconnect and turn changes still cover it.
+- [x] Send camera-detected routes to the revealed Quick play browser for private payment, with
+  live rechecks/removal updates and proposal-bound authorization. Apply the laptop's board check
+  to phone card draws; keep camera-free manual route selection as a technical fallback.
 - [x] Confine save paths and reject linked/unsupported paths before filesystem operations.
 - [x] Check snapshot/journal/version integrity and prevent competing writers for supported saves.
 - [x] Keep unreadable saves visible, sanitize recovery errors, and block gameplay after uncertain writes.
@@ -481,7 +484,7 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   camera choice, native-format fallback, preview, CPU/GPU preprocessing and manual crop against
   the real board. Evaluate the experimental empty-board detector. Add printable markers, board
   landmarks, automatic calibration, detailed quality gates and recording/replay.
-- [ ] **M4: verification.** The board-first solo-human path confirms the new route and whole-board
+- [ ] **M4: verification.** The board-first solo-human and Quick play paths confirm the new route and whole-board
   inventory before payment, then commits with guarded current evidence without a second placement
   wait. Complete the durable authorization substate, broader whole-board
   recognition, occlusion/unknown foreground rejection, jog/reconnect recovery, stale-epoch

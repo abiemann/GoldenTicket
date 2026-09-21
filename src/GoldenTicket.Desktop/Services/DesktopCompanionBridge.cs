@@ -13,12 +13,18 @@ internal sealed class DesktopCompanionBridge(
     Func<bool> beginCommand,
     Action endCommand,
     Action beforePrivateRead,
-    Action commandFaulted) : ICompanionGameBridge
+    Action commandFaulted,
+    Func<CompanionBoardInteraction?>? boardInteraction = null,
+    Func<SeatId, CompanionCommand, CancellationToken, Task<CompanionCommandReceipt?>>? interceptCommand = null) : ICompanionGameBridge
 {
     private readonly SemaphoreSlim _serial = new(1, 1);
 
     public Task<CompanionPublicSnapshot> ReadPublicAsync(CancellationToken cancellationToken = default) =>
-        RunAsync(() => inner.ReadPublicAsync(cancellationToken), cancellationToken);
+        OnDispatcherAsync(async () =>
+        {
+            var snapshot = await inner.ReadPublicAsync(cancellationToken);
+            return snapshot with { BoardInteraction = boardInteraction?.Invoke() };
+        }, cancellationToken);
 
     public Task<CompanionResultImage?> ReadResultImageAsync(string id, CancellationToken cancellationToken = default) =>
         RunAsync(() => inner.ReadResultImageAsync(id, cancellationToken), cancellationToken);
@@ -41,6 +47,10 @@ internal sealed class DesktopCompanionBridge(
                 // Keep the authorization cancellation alive until the coordinator admits the
                 // command. Its durable command id handles retry; uncertain writes remain governed
                 // by the coordinator's storage-fault protection.
+                if (interceptCommand is not null &&
+                    await interceptCommand(seat, command, cancellationToken) is { } intercepted)
+                    return intercepted;
+                cancellationToken.ThrowIfCancellationRequested();
                 return await inner.ExecuteAsync(seat, command, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
@@ -55,15 +65,20 @@ internal sealed class DesktopCompanionBridge(
     private async Task<T> RunAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
     {
         await _serial.WaitAsync(cancellationToken);
-        try
-        {
-            var ui = dispatcher();
-            if (ui is { HasShutdownStarted: true } || ui is { HasShutdownFinished: true })
-                throw new OperationCanceledException("The desktop is closing.");
-            return ui is not null && !ui.CheckAccess()
-                ? await ui.InvokeAsync(action, DispatcherPriority.Normal, cancellationToken).Task.Unwrap()
-                : await action();
-        }
+        try { return await OnDispatcherAsync(action, cancellationToken); }
         finally { _serial.Release(); }
+    }
+
+    // Public polling must remain responsive while a command waits for fresh camera frames.
+    // The dispatcher still protects UI-owned state; only private reads and mutations serialize.
+    private async Task<T> OnDispatcherAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var ui = dispatcher();
+        if (ui is { HasShutdownStarted: true } || ui is { HasShutdownFinished: true })
+            throw new OperationCanceledException("The desktop is closing.");
+        return ui is not null && !ui.CheckAccess()
+            ? await ui.InvokeAsync(action, DispatcherPriority.Normal, cancellationToken).Task.Unwrap()
+            : await action();
     }
 }

@@ -49,3 +49,13 @@ summary{cursor:pointer;min-height:44px;padding:10px 0;font-size:.9rem;font-weigh
 .draw-help{margin-top:14px;color:#e7deca;font-size:.9rem}.draw-help p{margin:6px 0}
 @media(min-width:700px){.draw-picker{grid-template-columns:190px minmax(0,1fr)}}
 @media(max-width:480px){.draw-market{grid-template-columns:repeat(3,minmax(0,1fr))}.market-card-label{font-size:.72rem}}
+
+/* Camera-confirmed placements bring their payment choices to the existing hand. */
+.detected-route{margin-top:26px;padding:18px;border:2px solid #d6af62;border-radius:13px;background:#1a2531}
+.detected-route h3{margin:5px 0 8px;color:#ffe0a0;font-size:1.3rem;line-height:1.3}
+.detected-route p{margin:8px 0}.detected-route .eyebrow{margin:0;color:#efc36a}
+.detected-route-length{color:#cbbf9f;font-size:.85rem}.detected-route-status{font-size:.9rem;color:#e7deca}
+.detected-payments{display:flex;flex-wrap:wrap;gap:9px;margin:16px 0}
+.payment-choice{min-height:46px;padding:9px 12px;border:2px solid #a38651;background:#223642;color:#ffe7b0;box-shadow:none;font-size:.9rem}
+.payment-choice[aria-pressed=true]{background:#faedd1;border-color:#efc36a;color:#30261c;box-shadow:0 0 0 1px #efc36a}
+.detected-pay{min-width:116px;margin-top:3px}.detected-route+.draw-area{margin-top:16px}

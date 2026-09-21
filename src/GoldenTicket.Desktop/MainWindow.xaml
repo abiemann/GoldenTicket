@@ -94,9 +94,6 @@
             <DockPanel>
                 <TextBlock DockPanel.Dock="Left" Text="GoldenTicket" FontWeight="Bold" FontSize="22"
                            Foreground="{StaticResource Action.Primary}" VerticalAlignment="Center" Margin="0,0,24,0" />
-                <Button DockPanel.Dock="Right" Content="{Binding Camera.ComputeBadge}" ToolTip="{Binding Camera.ComputeExplanation}"
-                        Command="{Binding ShowCameraCommand}" Style="{StaticResource SecondaryButton}"
-                        AutomationProperties.Name="Image processor status. Open camera settings." />
                 <WrapPanel>
                     <Button x:Name="ReturnToGameButton" Content="Return to game" Click="ReturnToGame_Click"
                             Style="{StaticResource PrimaryButton}" />

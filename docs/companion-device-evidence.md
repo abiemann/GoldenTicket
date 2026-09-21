@@ -28,6 +28,8 @@ Run this on Android Chrome and repeat on iPhone/iPad Safari when hardware is ava
 | Pair and approve | Separate code is accepted, matching identity is approved on the laptop, and unapproved devices cannot reveal cards. |
 | Opening tickets | Each human sees only their own offer and can keep the required selection. |
 | Normal card/ticket/route choices | Correct active-seat options work; laptop retains train-placement verification and authoritative game state. |
+| Place trains before paying | The revealed phone updates to the camera-detected route, offers only its legal payments, and commits after Pay with current board evidence. The hidden phone and public laptop expose no payment choices. |
+| Move/remove trains while choosing payment | Pay pauses or the proposal clears; an old proposal cannot spend cards. Phone card draws also wait for the recorded board to match. |
 | Pass and hide | Cards clear before handoff; the next human obtains only their own private view. |
 | Destination check/uncheck and idle time | Cards and selections remain visible and usable after several minutes without interaction while the page is foregrounded and connected. |
 | Outside-control touches, focus changes and scrolling | Cards and selected destinations remain visible while the page stays in the foreground. |

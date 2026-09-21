@@ -12,6 +12,7 @@ public sealed partial class MainViewModel
         if (args.PropertyName == nameof(ConnectionViewModel.UsePractical))
         {
             HidePrivateSeat();
+            ResetBoardFirstClaimFlow();
             OnPropertyChanged(nameof(RevealPrompt));
             OnPropertyChanged(nameof(ShowPracticalHandoff));
         }

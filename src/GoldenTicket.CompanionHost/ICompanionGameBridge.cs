@@ -19,7 +19,12 @@ public interface ICompanionGameBridge
 
 public sealed record CompanionPublicSnapshot(PublicView? Game, int? RevealSeatId, bool CanControl,
     string Message, string? ProfileId, string? ManifestHash, IReadOnlyList<CompanionRoute> Routes,
-    CompanionResultImageInfo? ResultImage = null);
+    CompanionResultImageInfo? ResultImage = null, CompanionBoardInteraction? BoardInteraction = null);
+/// <summary>Public camera guidance only. Legal payments and cards remain in the revealed seat view.</summary>
+public sealed record CompanionBoardInteraction(bool UseCameraClaims, bool CardActionsBlocked,
+    string? Message, CompanionDetectedRoute? DetectedRoute = null);
+public sealed record CompanionDetectedRoute(string ProposalId, string RouteId, string Label,
+    int Length, bool Ready);
 public sealed record CompanionResultImageInfo(string Id, string FileName);
 /// <summary>An in-memory public standings capture, bound to one completed game revision.</summary>
 public sealed record CompanionResultImage(string SessionId, long StateVersion, CompanionResultImageInfo Info, byte[] Png)
@@ -37,9 +42,10 @@ public sealed record CompanionTicket(string Id, string Label, int Points);
 public sealed record CompanionPrivateSnapshot(SeatView View, LegalActions Actions,
     IReadOnlyList<CompanionTicket> HeldTickets, IReadOnlyList<CompanionTicket> OfferedTickets,
     int MinimumKeep);
-/// <summary>Explicit allowlist: drawTrain, drawTickets, keepTickets and planClaim. All others rejected.</summary>
+/// <summary>Explicit allowlist: drawTrain, drawTickets, keepTickets, planClaim and payDetectedRoute.
+/// Detected-route payment also requires the desktop's current camera proposal and fresh evidence.</summary>
 public sealed record CompanionCommand(string CommandId, string SessionId, long ExpectedStateVersion,
     string Kind, int? Slot = null, string? RouteId = null, PaymentOption? Payment = null,
-    string[]? KeptTickets = null, string[]? ReturnedTickets = null);
+    string[]? KeptTickets = null, string[]? ReturnedTickets = null, string? DetectedClaimId = null);
 public sealed record CompanionCommandReceipt(bool Accepted, bool Duplicate, long StateVersion,
     string? Code, string Message);

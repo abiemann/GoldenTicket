@@ -191,7 +191,7 @@ public sealed class CompanionServer(ICompanionGameBridge bridge, TimeProvider? t
             if (!snapshot.CanControl) _authority.InvalidatePrivateGrants();
             if (Credentials(context) != credentials) return Results.Unauthorized();
             return Results.Ok(new { paired = true, csrf = credentials.Csrf, controllerGeneration = credentials.Generation,
-                handoffGeneration = _authority.Generation, apiVersion = ApiVersion, assetsVersion = "6", snapshot });
+                handoffGeneration = _authority.Generation, apiVersion = ApiVersion, assetsVersion = "7", snapshot });
         });
         app.MapGet("/api/result-image/{id}", async (HttpContext context, string id) =>
         {
@@ -237,7 +237,10 @@ public sealed class CompanionServer(ICompanionGameBridge bridge, TimeProvider? t
             if (!await _requests.WaitAsync(0, context.RequestAborted)) return Results.StatusCode(429);
             try
             {
-                var credentials = Credentials(context);
+                // A current command is also proof that the controller is connected. This
+                // gives the desktop's bounded camera check a full heartbeat interval;
+                // Authenticate still invalidates any grant after a prior connection gap.
+                var credentials = Credentials(context, heartbeat: true);
                 if (credentials is null || !Csrf(context, credentials)) return Results.Unauthorized();
                 var request = await context.Request.ReadFromJsonAsync<ActionRequest>(context.RequestAborted);
                 if (request?.Command is null) return Results.BadRequest();

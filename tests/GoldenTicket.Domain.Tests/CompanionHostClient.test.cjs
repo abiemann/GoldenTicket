@@ -22,7 +22,7 @@ function page(options = {}) {
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, new Node()); return nodes.get(id); };
   const state = {
-    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '6', handoffGeneration: 1,
+    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '7', handoffGeneration: 1,
     snapshot: { canControl: true, revealSeatId: 1, message: 'Pass this device to Alex.', profileId: 'classic-us', manifestHash: 'hash', routes: [],
       game: { sessionId: 'match', stateVersion: 1, activeSeatId: 1, turnNumber: 1, turnPhase: 'TurnStart', seats: [{ seatId: 1, displayName: 'Alex', symbol: 'A', color: 'Blue', routeScore: 0, trainsRemaining: 45 }], pendingClaim: null } }
   };
@@ -75,6 +75,19 @@ async function ticketOffer(p) {
   return descendants(p.get('private')).filter(node => node.type === 'checkbox');
 }
 async function checkTicket(node, checked) { node.checked = checked; node.events.change(); await flush(); }
+function cameraTurn(p) {
+  p.state.snapshot.game.faceUp=['Red','Green','White','Pink','Blue'];
+  p.state.snapshot.routes=[{id:'first-route',label:'Calgary – Helena',length:2},{id:'other-route',label:'Seattle – Vancouver',length:1}];
+  p.state.snapshot.boardInteraction={useCameraClaims:true,cardActionsBlocked:false,message:null,detectedRoute:null};
+  p.data.actions={mustCommitTicketSelection:false,mustResolvePendingClaim:false,canDrawBlindTrainCard:true,canRequestTicketOffer:true,drawableFaceUpSlots:[0,1,2,3,4],claims:[
+    {routeId:'first-route',length:2,payments:[{color:'Red',colorCards:2,locomotives:0},{color:'Red',colorCards:1,locomotives:1}]},
+    {routeId:'other-route',length:1,payments:[{color:'Blue',colorCards:1,locomotives:0}]}
+  ]};
+}
+function detect(p, overrides={}) {
+  p.state.snapshot.boardInteraction={useCameraClaims:true,cardActionsBlocked:true,message:null,detectedRoute:{proposalId:'placement-1',routeId:'first-route',label:'Calgary – Helena',length:2,ready:true,...overrides}};
+}
+function privateNode(p, name) { return descendants(p.get('private')).find(node=>node['aria-label']===name); }
 
 test('joining is ready immediately and a pending request cannot be submitted again', async () => {
   const p = page({paired:false}); await flush();
@@ -142,6 +155,7 @@ test('private reveal renders only the permitted view and Hide clears DOM and mem
 test('delayed private response cannot uncover a hand after Hide', async () => {
   const reply = deferred(); const p = page({fetch:url => url === '/api/reveal' ? reply.promise : undefined}); await flush();
   const operation = p.client.reveal(); await flush(); p.client.hide();
+  assert.ok([...p.timeouts.values()].some(timer=>timer.ms===5000),'Reveal keeps its five-second timeout');
   reply.resolve(p.response({grant:'late',handoffGeneration:2,data:p.data})); await operation;
   assert.equal(p.client.state().privateData, null); assert.equal(p.get('private').hidden, true);
 });
@@ -239,9 +253,80 @@ test('heartbeat timeout still covers the hand without waiting for a network requ
   const disconnected=page(); await flush(); await disconnected.client.reveal(); disconnected.advance(6000);
   disconnected.intervals.find(t=>t.ms===500).fn(); assert.equal(disconnected.client.state().privateData,null);
 });
+test('camera claims wait for a detected route and polls never reveal a hidden hand', async () => {
+  const p=page(); await flush(); cameraTurn(p); await p.client.poll(); await p.client.reveal();
+  assert.equal(descendants(p.get('private')).some(node=>node.tag==='select'),false);
+  assert.ok(descendants(p.get('private')).some(node=>node.textContent.includes('Place your trains on the board.')));
+  await p.client.submit('planClaim',{routeId:'first-route',payment:p.data.actions.claims[0].payments[0]});
+  assert.equal(p.requests.some(r=>r.url==='/api/command'),false);
+  p.client.hide(); detect(p); await p.client.poll();
+  assert.equal(p.get('private').hidden,true); assert.equal(p.get('private').children.length,0);
+  assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,1);
+});
+test('camera-only polls update payment choices while preserving the private hand and same-proposal selection', async () => {
+  const p=page(); await flush(); cameraTurn(p); await p.client.poll(); await p.client.reveal();
+  const hand=descendants(p.get('private')).find(node=>node.className==='cards');
+  const tickets=descendants(p.get('private')).find(node=>node.className==='tickets');
+  detect(p); await p.client.poll();
+  assert.equal(p.get('private').hidden,false); assert.ok(descendants(p.get('private')).includes(hand)); assert.ok(descendants(p.get('private')).includes(tickets));
+  assert.equal(privateNode(p,'Pay with 1 Blue'),undefined,'Only payments for the detected route are offered');
+  assert.equal(privateNode(p,'Draw a blind card').disabled,true); assert.equal(privateNode(p,'Draw destination tickets').disabled,true);
+  assert.equal(descendants(p.get('private')).filter(node=>node.className==='market-card').every(node=>node.disabled),true);
+  await p.client.submit('drawTrain',{slot:null}); await p.client.submit('drawTickets');
+  assert.equal(p.requests.some(r=>r.url==='/api/command'),false);
+  await privateNode(p,'Pay with 1 Red + 1 Locomotive').events.click();
+  assert.equal(privateNode(p,'Pay for detected route').disabled,false);
+  detect(p,{ready:false}); await p.client.poll();
+  assert.equal(privateNode(p,'Pay with 1 Red + 1 Locomotive')['aria-pressed'],'true'); assert.equal(privateNode(p,'Pay for detected route').disabled,true);
+  await p.client.submit('payDetectedRoute',{routeId:'first-route',payment:p.data.actions.claims[0].payments[1],detectedClaimId:'placement-1'});
+  assert.equal(p.requests.some(r=>r.url==='/api/command'),false);
+  detect(p); await p.client.poll();
+  assert.equal(privateNode(p,'Pay with 1 Red + 1 Locomotive')['aria-pressed'],'true');
+  assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,1);
+  await privateNode(p,'Pay for detected route').events.click(); await flush();
+  const payload=JSON.parse(p.requests.find(r=>r.url==='/api/command').request.body);
+  assert.equal(payload.command.kind,'payDetectedRoute'); assert.equal(payload.command.detectedClaimId,'placement-1'); assert.equal(payload.command.routeId,'first-route');
+  assert.deepEqual(payload.command.payment,{color:'Red',colorCards:1,locomotives:1}); assert.equal(p.get('private').hidden,true);
+});
+test('removed or replaced camera proposals clear payment choices and reject stale submissions', async () => {
+  const p=page(); await flush(); cameraTurn(p); detect(p); await p.client.poll(); await p.client.reveal();
+  await privateNode(p,'Pay with 2 Red').events.click(); const oldPay=privateNode(p,'Pay for detected route');
+  detect(p,{proposalId:'placement-2'}); await p.client.poll();
+  assert.equal(privateNode(p,'Pay with 2 Red')['aria-pressed'],'false'); assert.equal(privateNode(p,'Pay for detected route').disabled,true);
+  await oldPay.events.click(); await p.client.submit('payDetectedRoute',{routeId:'first-route',payment:p.data.actions.claims[0].payments[0],detectedClaimId:'placement-1'});
+  assert.equal(p.requests.some(r=>r.url==='/api/command'),false);
+  await privateNode(p,'Pay with 2 Red').events.click();
+  await oldPay.events.click(); await flush();
+  assert.equal(p.requests.some(r=>r.url==='/api/command'),false,'A detached Pay button must not spend a newly selected payment on its old proposal');
+  p.state.snapshot.boardInteraction.detectedRoute=null; p.state.snapshot.boardInteraction.cardActionsBlocked=false; await p.client.poll();
+  assert.equal(privateNode(p,'Pay for detected route'),undefined); assert.equal(privateNode(p,'Draw a blind card').disabled,false);
+  detect(p,{proposalId:'placement-2'}); await p.client.poll();
+  assert.equal(privateNode(p,'Pay for detected route').disabled,true); assert.equal(privateNode(p,'Pay with 2 Red')['aria-pressed'],'false');
+});
+test('camera-only polls preserve in-progress destination ticket checkboxes', async () => {
+  const p=page(), choices=await ticketOffer(p); await checkTicket(choices[0],true);
+  detect(p); await p.client.poll(); detect(p,{proposalId:'placement-2',ready:false}); await p.client.poll();
+  const current=descendants(p.get('private')).filter(node=>node.type==='checkbox');
+  assert.equal(current[0],choices[0]); assert.equal(current[0].checked,true); assert.equal(privateNode(p,'Pay for detected route'),undefined);
+  const keep=descendants(p.get('private')).find(node=>node.textContent==='Keep selected tickets');
+  assert.equal(keep.disabled,true);
+  await p.client.submit('keepTickets',{keptTickets:['first'],returnedTickets:['second']});
+  assert.equal(p.requests.some(r=>r.url==='/api/command'),false); assert.equal(current[0].checked,true);
+  p.state.snapshot.boardInteraction.cardActionsBlocked=false; await p.client.poll();
+  assert.equal(keep.disabled,false); assert.equal(descendants(p.get('private')).find(node=>node.type==='checkbox'),choices[0]);
+});
+test('a delayed private reveal uses the newest camera proposal without requesting another hand', async () => {
+  const reply=deferred(), p=page({fetch:url=>url==='/api/reveal'?reply.promise:undefined}); await flush(); cameraTurn(p); detect(p); await p.client.poll();
+  const revealing=p.client.reveal(); await flush();
+  detect(p,{proposalId:'placement-2',routeId:'other-route',label:'Seattle – Vancouver',length:1}); await p.client.poll();
+  reply.resolve(p.response({grant:'latest-hand',handoffGeneration:2,data:p.data})); await revealing;
+  assert.ok(privateNode(p,'Pay with 1 Blue')); assert.equal(privateNode(p,'Pay with 2 Red'),undefined);
+  assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,1); assert.equal(p.get('private').hidden,false);
+});
 test('command clears private UI before transport and duplicate tap cannot submit twice', async () => {
   const result = deferred(); const p=page({fetch:url=>url==='/api/command'?result.promise:undefined}); await flush(); await p.client.reveal();
   const sending=p.client.submit('drawTrain',{slot:null}); await flush();
+  assert.ok([...p.timeouts.values()].some(timer=>timer.ms===8000),'Commands allow the laptop eight seconds for a camera check');
   assert.equal(p.get('private').children.length,0); assert.equal(p.client.state().grant,null);
   await p.client.submit('drawTrain',{slot:null}); assert.equal(p.requests.filter(r=>r.url==='/api/command').length,1);
   result.resolve(p.response({accepted:true,message:'Saved.'})); await sending;

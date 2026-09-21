@@ -33,6 +33,7 @@ public sealed class BoardFirstClaimProposal(
     IReadOnlyList<BoardFirstPaymentRow> payments, IReadOnlyList<HeldCard>? availableCards = null)
     : ObservableObject
 {
+    public string ProposalId { get; } = Guid.NewGuid().ToString("N");
     public SessionId SessionId { get; } = sessionId;
     public SeatId SeatId { get; } = seatId;
     public string SeatName { get; } = seatName;
@@ -160,7 +161,7 @@ public sealed partial class MainViewModel
         }
     }
 
-    public bool ShowBoardFirstClaimProposal => BoardFirstProposal is not null;
+    public bool ShowBoardFirstClaimProposal => IsSingleHumanGame && BoardFirstProposal is not null;
 
     private void ResetBoardFirstClaimFlow()
     {
@@ -194,7 +195,7 @@ public sealed partial class MainViewModel
 
     private void ObserveBoardFirstClaim(GameTableAnalysis analysis)
     {
-        if (_coordinator is not { } coordinator || !IsSingleHumanGame ||
+        if (_coordinator is not { } coordinator || !(IsSingleHumanGame || UsesCompanionCameraClaims) ||
             coordinator.Public.Lifecycle != SessionLifecycle.Active ||
             coordinator.Public.TurnPhase != TurnPhase.TurnStart ||
             coordinator.Public.SeatOf(coordinator.Public.ActiveSeatId).Kind != SeatKind.Human)
@@ -533,10 +534,20 @@ public sealed partial class MainViewModel
 
     private async Task AuthorizeBoardFirstClaimAsync(BoardFirstPaymentRow? payment)
     {
-        if (_boardFirstSubmitting || _operationInProgress || payment is null ||
-            BoardFirstProposal is not { } proposal || !proposal.Payments.Contains(payment) ||
-            !proposal.CanConfirmPayment || proposal.SelectedPayment != payment ||
-            _coordinator is not { } coordinator || !ReferenceEquals(coordinator, _coordinator) ||
+        if (payment is null || BoardFirstProposal is not { } proposal ||
+            !proposal.CanConfirmPayment || proposal.SelectedPayment != payment) return;
+        await CommitBoardFirstClaimAsync(proposal, payment, proposal.SelectedCardIds, CommandId.New());
+    }
+
+    private async Task<SubmitOutcome?> CommitBoardFirstClaimAsync(BoardFirstClaimProposal proposal,
+        BoardFirstPaymentRow payment, ImmutableArray<CardId> cards, CommandId commandId,
+        bool remote = false, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_boardFirstSubmitting || (_operationInProgress && !(remote && _handlingRemoteCommand)) ||
+            !ReferenceEquals(BoardFirstProposal, proposal) || !proposal.Payments.Contains(payment) ||
+            !proposal.CameraEvidenceCurrent ||
+            _coordinator is not { } coordinator ||
             coordinator.SessionId != proposal.SessionId ||
             coordinator.Public.StateVersion != proposal.StateVersion ||
             coordinator.Public.TurnPhase != TurnPhase.TurnStart ||
@@ -549,25 +560,26 @@ public sealed partial class MainViewModel
             _boardFirstConfirmedAnalysis is not { } confirmed ||
             !HasCurrentBoardFirstPaymentEvidence(coordinator, proposal, confirmed, out _) ||
             IsGameInputPaused || !_windowActive || !IsGameplayScreenActive(Screen.Table) ||
-            _mustReload || NeedsBoardReconciliation)
-            return;
+            _mustReload || NeedsBoardReconciliation || _scoreMarkerStep is not null)
+            return null;
 
         _boardFirstSubmitting = true;
+        var wasBusy = _operationInProgress;
         SetOperationInProgress(true);
         try
         {
-            var cards = proposal.SelectedCardIds;
             if (cards.Length != payment.Option.Total ||
-                cards.Any(cardId => !seatView.Available.Any(card => card.Id == cardId))) return;
+                cards.Distinct().Count() != cards.Length ||
+                cards.Any(cardId => !seatView.Available.Any(card => card.Id == cardId))) return null;
             var command = new PlanClaim(
-                new CommandEnvelope(coordinator.SessionId, CommandId.New(),
+                new CommandEnvelope(coordinator.SessionId, commandId,
                     proposal.StateVersion, proposal.SeatId), proposal.RouteId, cards);
-            var outcome = await coordinator.SubmitAsync(command);
+            var outcome = await coordinator.SubmitAsync(command, cancellationToken);
             if (!outcome.IsAccepted)
             {
                 Status = outcome.Result.Rejection?.Message ?? "That route could not be claimed.";
                 if (outcome.Result.Rejection?.Code == "StorageFaulted") RequireReload();
-                return;
+                return outcome;
             }
 
             await RefreshAsync();
@@ -601,12 +613,14 @@ public sealed partial class MainViewModel
                 Game.ShowGuidance(Table.TurnText, proposal.SeatName,
                     "The board changed while payment was being confirmed. Keep your trains in place while the camera rechecks them.");
             }
+            return outcome;
         }
-        catch (Exception) { RequireReload(); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { RequireReload(); return null; }
         finally
         {
             _boardFirstSubmitting = false;
-            SetOperationInProgress(false);
+            SetOperationInProgress(wasBusy);
         }
     }
 }

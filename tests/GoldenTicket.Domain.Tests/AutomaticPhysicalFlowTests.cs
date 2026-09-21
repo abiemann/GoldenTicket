@@ -11,7 +11,7 @@ using System.Windows.Media.Imaging;
 
 namespace GoldenTicket.Domain.Tests;
 
-public sealed class AutomaticPhysicalFlowTests
+public sealed partial class AutomaticPhysicalFlowTests
 {
     [Fact]
     public void Board_first_payment_requires_exact_legal_cards_including_wilds()

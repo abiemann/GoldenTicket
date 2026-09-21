@@ -91,7 +91,8 @@ public sealed class CoordinatorCompanionBridge(
         CompanionCommandReceipt Refused(string code, string message) =>
             new(false, false, coordinator()?.Public.StateVersion ?? 0, code, message);
         if (!Guid.TryParseExact(command.CommandId, "N", out _) || command.SessionId?.Length > 100 ||
-            command.RouteId?.Length > 120 || command.KeptTickets?.Length > 3 || command.ReturnedTickets?.Length > 3 ||
+            command.RouteId?.Length > 120 || command.DetectedClaimId?.Length > 100 ||
+            command.KeptTickets?.Length > 3 || command.ReturnedTickets?.Length > 3 ||
             (command.KeptTickets ?? []).Concat(command.ReturnedTickets ?? []).Any(id => string.IsNullOrWhiteSpace(id) || id.Length > 120))
             return Refused("InvalidCommand", "That choice is not valid.");
         var game = coordinator();

@@ -36,7 +36,7 @@ const requestHandler = async (request, response) => {
     let body = ''; for await(const chunk of request) body += chunk;
     body = body ? JSON.parse(body) : {};
     requests.push({url:url.pathname, body, headers:request.headers});
-    if(url.pathname === '/api/session') return send(response, paired ? { paired, csrf:'test-csrf', handoffGeneration:generation, controllerGeneration:1, apiVersion:'1', assetsVersion:'6', snapshot:fixture.snapshot } : {paired,pending});
+    if(url.pathname === '/api/session') return send(response, paired ? { paired, csrf:'test-csrf', handoffGeneration:generation, controllerGeneration:1, apiVersion:'1', assetsVersion:'7', snapshot:fixture.snapshot } : {paired,pending});
     if(url.pathname.startsWith('/api/result-image/')) {
       if(!paired || !resultImageBytes || url.pathname!==`/api/result-image/${fixture.snapshot.resultImage?.id}` || !request.headers['x-goldenticket-tab']) return send(response,{},404);
       response.writeHead(200,{'Content-Type':'image/png','Content-Length':resultImageBytes.length,'Cache-Control':'no-store'}); response.end(resultImageBytes); return;
@@ -52,6 +52,15 @@ const requestHandler = async (request, response) => {
     if(url.pathname === '/api/command') {
       if(!paired || !activeGrant || body.grant!==activeGrant.grant || body.seat!==activeGrant.seat || generation!==activeGrant.handoffGeneration ||
         body.command.sessionId!==activeGrant.sessionId || body.command.expectedStateVersion!==activeGrant.version) return send(response,{},409);
+      const board=fixture.snapshot.boardInteraction;
+      if(board?.cardActionsBlocked && ['drawTrain','drawTickets','keepTickets'].includes(body.command.kind)) return send(response,{},409);
+      if(body.command.kind === 'payDetectedRoute') {
+        const detected=board?.detectedRoute;
+        const choices=fixture.data.actions.claims.find(claim=>claim.routeId===detected?.routeId)?.payments || [];
+        if(!board?.useCameraClaims || !detected?.ready || body.command.detectedClaimId!==detected.proposalId || body.command.routeId!==detected.routeId ||
+          !choices.some(choice=>['color','colorCards','locomotives'].every(key=>choice[key]===body.command.payment?.[key]))) return send(response,{},409);
+        fixture=fixtures.nextHuman;
+      }
       if(body.command.kind === 'keepTickets') fixture = fixtures.secondHumanSetup;
       if(body.command.kind === 'drawTrain') fixture = fixture === fixtures.turnStart ? fixtures.secondDraw : fixtures.nextHuman;
       if(body.command.kind === 'drawTickets') fixture = fixtures.ticketOffer;
@@ -283,6 +292,81 @@ async function main() {
         assert.equal(command.kind,'planClaim'); assert.ok(command.routeId); assert.ok(command.payment.colorCards+command.payment.locomotives>0);
         await reveal(page); await page.getByRole('heading',{name:'Follow the placement instructions on the laptop.'}).waitFor();
         assert.equal(await page.getByRole('button',{name:/verify|confirm placement/i}).count(),0);
+      });
+      await record(viewport.name+': detected camera route brings only its payments to the current hand',async()=>{
+        fixtures.cameraTurn=structuredClone(fixtures.turnStart);
+        fixtures.cameraTurn.snapshot.boardInteraction={useCameraClaims:true,cardActionsBlocked:false,message:null,detectedRoute:null};
+        await changeFixture(page,'cameraTurn'); await reveal(page);
+        assert.equal(await page.getByRole('combobox',{name:'Route to claim'}).count(),0);
+        await page.getByText('Place your trains on the board.',{exact:false}).waitFor();
+        await page.locator('#private .cards').evaluate(node=>node.dataset.identity='original-hand');
+        await page.locator('#private .tickets').first().evaluate(node=>node.dataset.identity='original-tickets');
+        const claim=fixture.data.actions.claims.find(candidate=>candidate.payments.length>1);
+        assert.ok(claim,'Camera test needs a route with a real choice of payments.');
+        const definition=fixture.snapshot.routes.find(route=>route.id===claim.routeId);
+        const proposal={proposalId:'camera-placement-1',routeId:claim.routeId,label:definition.label,length:claim.length,ready:true};
+        const initialVersion=fixture.snapshot.game.stateVersion, reveals=requests.filter(r=>r.url==='/api/reveal').length, commandCount=requests.filter(r=>r.url==='/api/command').length;
+        fixture.snapshot.boardInteraction={useCameraClaims:true,cardActionsBlocked:true,message:null,detectedRoute:proposal};
+        await page.locator('.detected-route').getByRole('heading',{name:definition.label,exact:true}).waitFor();
+        assert.equal(fixture.snapshot.game.stateVersion,initialVersion);
+        assert.equal(await page.locator('#private .cards').getAttribute('data-identity'),'original-hand');
+        assert.equal(await page.locator('#private .tickets').first().getAttribute('data-identity'),'original-tickets');
+        assert.equal(await page.locator('.payment-choice').count(),claim.payments.length);
+        assert.equal(await page.getByRole('button',{name:'Draw a blind card',exact:true}).isDisabled(),true);
+        assert.equal(await page.getByRole('button',{name:'Draw destination tickets',exact:true}).isDisabled(),true);
+        assert.equal(await page.locator('.market-card:enabled').count(),0);
+        const pay=page.getByRole('button',{name:'Pay for detected route',exact:true}); assert.equal(await pay.isDisabled(),true);
+        const paymentIndex=1; await page.locator('.payment-choice').nth(paymentIndex).click();
+        assert.equal(await pay.isDisabled(),false);
+        const panelBounds=await page.locator('.detected-route').boundingBox(), drawBounds=await page.locator('.draw-area').boundingBox();
+        assert.ok(panelBounds.y+panelBounds.height<=drawBounds.y,'Detected payment must be above the draw controls.');
+        await noOverflow(page); await page.locator('.detected-route').screenshot({path:path.join(output,viewport.name+'-detected-payment-panel.png')});
+        await screenshot(page,viewport.name+'-detected-payment');
+        fixture.snapshot.boardInteraction.detectedRoute={...proposal,ready:false};
+        fixture.snapshot.boardInteraction.message='Confirming the trains on the board.';
+        await page.getByText('Confirming the trains on the board.',{exact:true}).waitFor();
+        assert.equal(await pay.isDisabled(),true); assert.equal(await page.locator('.payment-choice').nth(paymentIndex).getAttribute('aria-pressed'),'true');
+        fixture.snapshot.boardInteraction.detectedRoute={...proposal}; fixture.snapshot.boardInteraction.message=null;
+        await page.waitForFunction(()=>document.querySelector('.detected-pay')?.disabled===false);
+        assert.equal(await page.locator('.payment-choice').nth(paymentIndex).getAttribute('aria-pressed'),'true');
+        assert.equal(requests.filter(r=>r.url==='/api/reveal').length,reveals); assert.equal(requests.filter(r=>r.url==='/api/command').length,commandCount);
+        await pay.click(); await waitCovered(page); await page.getByText('Pass this device to Jordan.',{exact:true}).waitFor();
+        const command=requests.filter(r=>r.url==='/api/command').at(-1).body.command;
+        assert.equal(command.kind,'payDetectedRoute'); assert.equal(command.routeId,proposal.routeId); assert.equal(command.detectedClaimId,proposal.proposalId);
+        assert.deepEqual(command.payment,claim.payments[paymentIndex]);
+      });
+      await record(viewport.name+': replacing camera proposals clears payment selection without revealing hidden cards',async()=>{
+        await changeFixture(page,'cameraTurn');
+        const reveals=requests.filter(r=>r.url==='/api/reveal').length;
+        fixture.snapshot.boardInteraction.detectedRoute={...fixture.snapshot.boardInteraction.detectedRoute,proposalId:'camera-placement-2'};
+        await page.waitForResponse(r=>r.url().endsWith('/api/session') && r.ok()); await waitCovered(page);
+        assert.equal(requests.filter(r=>r.url==='/api/reveal').length,reveals);
+        await reveal(page); await page.locator('.payment-choice').first().click();
+        fixture.snapshot.boardInteraction.detectedRoute={...fixture.snapshot.boardInteraction.detectedRoute,proposalId:'camera-placement-3'};
+        await page.waitForFunction(()=>document.querySelector('.detected-pay')?.disabled===true && !document.querySelector('.payment-choice[aria-pressed=true]'));
+        await page.locator('.payment-choice').first().click();
+        fixture.snapshot.boardInteraction.detectedRoute=null; fixture.snapshot.boardInteraction.cardActionsBlocked=false;
+        await page.locator('.detected-route').getByRole('heading',{name:'Claim a route',exact:true}).waitFor();
+        assert.equal(await page.locator('.payment-choice').count(),0); assert.equal(await page.getByRole('button',{name:'Draw a blind card',exact:true}).isDisabled(),false);
+        await page.locator('#hide').click(); await waitCovered(page);
+        const claim=fixture.data.actions.claims[0], definition=fixture.snapshot.routes.find(route=>route.id===claim.routeId);
+        fixture.snapshot.boardInteraction={useCameraClaims:true,cardActionsBlocked:true,message:null,detectedRoute:{proposalId:'camera-placement-4',routeId:claim.routeId,label:definition.label,length:claim.length,ready:true}};
+        await page.waitForResponse(r=>r.url().endsWith('/api/session') && r.ok()); await waitCovered(page);
+      });
+      await record(viewport.name+': a camera check blocks keeping tickets without losing checked destinations',async()=>{
+        fixtures.cameraTicketOffer=structuredClone(fixtures.ticketOffer);
+        await changeFixture(page,'cameraTicketOffer'); await reveal(page);
+        const choices=page.locator('#private input[type=checkbox]'); await choices.first().check();
+        await choices.first().evaluate(node=>node.dataset.identity='original-ticket-checkbox');
+        const keep=page.getByRole('button',{name:'Keep selected tickets',exact:true}); assert.equal(await keep.isDisabled(),false);
+        fixture.snapshot.boardInteraction={useCameraClaims:true,cardActionsBlocked:true,message:'Camera is checking the board.',detectedRoute:null};
+        await page.getByText('Camera is checking the board.',{exact:true}).waitFor();
+        assert.equal(await keep.isDisabled(),true); assert.equal(await choices.first().isChecked(),true);
+        assert.equal(await choices.first().getAttribute('data-identity'),'original-ticket-checkbox');
+        fixture.snapshot.boardInteraction.cardActionsBlocked=false; fixture.snapshot.boardInteraction.message=null;
+        await page.waitForFunction(()=>[...document.querySelectorAll('#private button')].some(button=>button.textContent==='Keep selected tickets' && !button.disabled));
+        assert.equal(await choices.first().isChecked(),true); assert.equal(await choices.first().getAttribute('data-identity'),'original-ticket-checkbox');
+        await keep.click(); await waitCovered(page);
       });
       await record(viewport.name+': Hide, leaving the page and stale reveal cover private DOM',async()=>{
         await page.locator('#hide').click(); await waitCovered(page); await reveal(page);

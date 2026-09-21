@@ -203,8 +203,10 @@ public sealed partial class MainViewModel
         }
     }
 
-    private async Task<bool> CheckBoardBeforeCardActionAsync(GameCoordinator coordinator, long version)
+    private async Task<bool> CheckBoardBeforeCardActionAsync(GameCoordinator coordinator, long version,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         // Technical/manual sessions without a camera retain operator verification.
         if (!UsesCameraForCardActions || coordinator.Public.Lifecycle != SessionLifecycle.Active) return true;
         _cardBoardCameraSeen = true;
@@ -224,7 +226,7 @@ public sealed partial class MainViewModel
         var confirmed = false;
         try
         {
-            confirmed = await check.Completion.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            confirmed = await check.Completion.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
             confirmed = confirmed && CardBoardContextCurrent(coordinator, version) &&
                 _cardActionBoardWarning is null && BoardFirstProposal is null &&
                 _boardFirstInvalidMoveMessage is null && Camera.IsGameTablePreviewUpright &&

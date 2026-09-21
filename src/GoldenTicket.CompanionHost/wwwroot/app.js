@@ -9,6 +9,7 @@
   let csrf = null, snapshot = null, privateData = null, grant = null;
   let revealGeneration = 0, handoffGeneration = -1, paired = false, pending = false;
   let busy = false, polling = false, lastHeartbeat = 0;
+  let privateActionsTarget = null, ticketOfferControls = null, renderedBoardInteraction = null, detectedPayment = null;
   let connectionGeneration = 0;
   const maxResultBytes = 16 * 1024 * 1024;
   let resultKey = null, resultGeneration = 0, resultUrl = null, resultAbort = null;
@@ -18,6 +19,7 @@
   function clearPrivate() {
     revealGeneration++;
     privateData = null; grant = null;
+    privateActionsTarget = null; ticketOfferControls = null; renderedBoardInteraction = null; detectedPayment = null;
     byId("private").replaceChildren(); byId("private").hidden = true;
     byId("curtain").hidden = !paired || resultKey !== null;
   }
@@ -34,7 +36,7 @@
   }
   async function api(path, body) {
     const abort = new AbortController();
-    const timeout = setTimeout(() => abort.abort(), 5000);
+    const timeout = setTimeout(() => abort.abort(), path === "/api/command" ? 8000 : 5000);
     try {
       const headers = { "X-GoldenTicket-Tab": tab };
       if (body !== undefined) { headers["Content-Type"] = "application/json"; if (csrf) headers["X-GoldenTicket-CSRF"] = csrf; }
@@ -63,14 +65,14 @@
         byId("connection").textContent = pending ? "Waiting for the laptop" : "Connected to your game";
         updatePairForm(); return;
       }
-      if (result.apiVersion !== "1" || result.assetsVersion !== "6") { disconnect("The companion needs an update. Reload from the laptop before playing."); return; }
+      if (result.apiVersion !== "1" || result.assetsVersion !== "7") { disconnect("The companion needs an update. Reload from the laptop before playing."); return; }
       if (currentIdentity(snapshot) !== currentIdentity(result.snapshot) || (grant && result.handoffGeneration > handoffGeneration)) clearPrivate();
       paired = true; pending = false; csrf = result.csrf; snapshot = result.snapshot;
       updatePairForm();
       handoffGeneration = Math.max(handoffGeneration, result.handoffGeneration); lastHeartbeat = Date.now();
       byId("connect").hidden = true; byId("curtain").hidden = privateData !== null;
       byId("connection").textContent = "Synchronized with laptop · Private LAN";
-      renderPublic(); syncResultImage();
+      renderPublic(); syncResultImage(); syncBoardActions();
     } catch (error) { if (generation === connectionGeneration) disconnect(error.message); }
     finally { polling = false; }
   }
@@ -176,6 +178,18 @@
   }
   async function submit(kind, details = {}) {
     if (busy || !privateData || !grant || document.hidden || Date.now() - lastHeartbeat >= 6000) { hide(); return; }
+    const board = snapshot?.boardInteraction;
+    if ((kind === "drawTrain" || kind === "drawTickets" || kind === "keepTickets") && board?.cardActionsBlocked) {
+      notice(board.message || "Finish the train placement before drawing cards."); return;
+    }
+    if (kind === "planClaim" && board?.useCameraClaims) { notice("Place your trains on the board to choose their payment."); return; }
+    if (kind === "payDetectedRoute") {
+      const route = board?.detectedRoute;
+      const payments = privateData.actions.claims?.find(claim => claim.routeId === route?.routeId)?.payments || [];
+      if (!board?.useCameraClaims || !route?.ready || details.detectedClaimId !== route.proposalId || details.routeId !== route.routeId || !payments.some(payment => paymentKey(payment) === paymentKey(details.payment))) {
+        notice("The detected route changed. Check its current payment choices."); return;
+      }
+    }
     busy = true;
     const payload = { seat: privateData.view.seatId, grant, command: { commandId: randomId(), sessionId: privateData.view.public.sessionId, expectedStateVersion: privateData.view.public.stateVersion, kind, ...details } };
     // Remove private DOM immediately, but do not revoke the grant authorizing this in-flight choice.
@@ -193,6 +207,7 @@
   }
   function renderPrivate() {
     const target = byId("private"); target.replaceChildren();
+    privateActionsTarget = null; ticketOfferControls = null; detectedPayment = null;
     const own = privateData.view.public.seats.find(s => s.seatId === privateData.view.seatId);
     target.append(element("p", "ONLY FOR YOU", "eyebrow"), element("h2", `${own.displayName}'s cards`), element("p", "Use Hide before passing the device.", "fine-print"));
     const cards = element("div", undefined, "cards");
@@ -210,7 +225,10 @@
     target.append(tickets);
     if (privateData.actions.mustCommitTicketSelection) renderOffer(target);
     else if (privateData.actions.mustResolvePendingClaim) target.append(element("h3", "Follow the placement instructions on the laptop."));
-    else renderActions(target);
+    else {
+      privateActionsTarget = element("div", undefined, "private-actions");
+      target.append(privateActionsTarget); renderActions(privateActionsTarget);
+    }
     target.append(button("Hide my cards", () => hide(), "secondary"));
     target.hidden = false;
   }
@@ -223,8 +241,15 @@
     const kept = button("Keep selected tickets", () => submit("keepTickets", { keptTickets: offered.filter(t => selected.has(t.id)).map(t => t.id), returnedTickets: returns().map(t => t.id) }));
     kept.disabled = true;
     const returned = element("p", "", "fine-print");
+    const boardWarning = element("p", "", "detected-route-status"); boardWarning.setAttribute("role", "status");
     const returns = () => { const values = offered.filter(t => !selected.has(t.id)); return reversed ? values.reverse() : values; };
-    function update() { kept.disabled = selected.size < privateData.minimumKeep; returned.textContent = `Return order: ${returns().map(t => t.label).join("; ") || "keep all"}`; }
+    function update() {
+      const board = snapshot.boardInteraction;
+      kept.disabled = selected.size < privateData.minimumKeep || Boolean(board?.cardActionsBlocked);
+      boardWarning.hidden = !board?.cardActionsBlocked;
+      boardWarning.textContent = board?.cardActionsBlocked ? board.message || "Finish the train placement before keeping tickets." : "";
+      returned.textContent = `Return order: ${returns().map(t => t.label).join("; ") || "keep all"}`;
+    }
     for (const ticket of offered) {
       const label = element("label", undefined, "ticket ticket-choice");
       const check = document.createElement("input"); check.type = "checkbox";
@@ -232,19 +257,24 @@
       label.append(check, element("span", `${ticket.label} · ${ticket.points} points`)); list.append(label);
     }
     const actions = element("div", undefined, "actions"); actions.append(kept, button("Reverse return order", () => { reversed = !reversed; update(); }, "secondary"));
-    target.append(list, returned, actions); update();
+    target.append(list, returned, boardWarning, actions);
+    ticketOfferControls = { update }; renderedBoardInteraction = JSON.stringify(snapshot.boardInteraction || null); update();
   }
   function renderActions(target) {
+    target.replaceChildren();
     const actions = privateData.actions;
-    if (actions.canDrawBlindTrainCard || actions.drawableFaceUpSlots.length || actions.canRequestTicketOffer) renderDrawPicker(target, actions);
-    if (actions.claims.length) {
+    const board = snapshot.boardInteraction;
+    renderedBoardInteraction = JSON.stringify(board || null);
+    if (board?.useCameraClaims) renderDetectedRoute(target, board);
+    else detectedPayment = null;
+    if (actions.canDrawBlindTrainCard || actions.drawableFaceUpSlots.length || actions.canRequestTicketOffer) renderDrawPicker(target, actions, Boolean(board?.cardActionsBlocked));
+    if (!board?.useCameraClaims && actions.claims.length) {
       target.append(element("h3", "Claim a route"), element("p", "Choose the route and exact payment. The laptop will then ask for physical train placement."));
       const route = document.createElement("select"); route.setAttribute("aria-label", "Route to claim");
       const payment = document.createElement("select"); payment.setAttribute("aria-label", "Cards to spend");
       const review = element("p", "", "badge"); review.setAttribute("aria-live", "polite");
       for (const claim of actions.claims) { const definition = snapshot.routes.find(r => r.id === claim.routeId); const option = element("option", `${definition?.label || claim.routeId} · ${trainCount(claim.length)}`); option.value = claim.routeId; route.append(option); }
       let choices = [];
-      const paymentLabel = choice => `${choice.colorCards ? `${choice.colorCards} ${choice.color}` : ""}${choice.colorCards && choice.locomotives ? " + " : ""}${choice.locomotives ? `${choice.locomotives} locomotive(s)` : ""}`;
       function reviewSelection() {
         const definition = snapshot.routes.find(r => r.id === route.value);
         const choice = choices[Number(payment.value)];
@@ -260,7 +290,54 @@
     }
     target.append(element("div", "", "actions"));
   }
-  function renderDrawPicker(target, actions) {
+  function syncBoardActions() {
+    const boardKey = JSON.stringify(snapshot.boardInteraction || null);
+    if (!privateData || boardKey === renderedBoardInteraction) return;
+    if (ticketOfferControls) { ticketOfferControls.update(); renderedBoardInteraction = boardKey; }
+    else if (privateActionsTarget) renderActions(privateActionsTarget);
+  }
+  function paymentKey(choice) { return choice ? `${choice.color || ""}:${choice.colorCards}:${choice.locomotives}` : ""; }
+  function paymentLabel(choice) {
+    return `${choice.colorCards ? `${choice.colorCards} ${choice.color}` : ""}${choice.colorCards && choice.locomotives ? " + " : ""}${choice.locomotives ? `${choice.locomotives} ${choice.locomotives === 1 ? "Locomotive" : "Locomotives"}` : ""}`;
+  }
+  function renderDetectedRoute(target, board) {
+    const panel = element("section", undefined, "detected-route");
+    panel.setAttribute("aria-label", "Detected route payment");
+    const route = board.detectedRoute;
+    if (!route) {
+      detectedPayment = null;
+      panel.append(element("h3", "Claim a route"), element("p", board.message || "Place your trains on the board. Your payment choices will appear here."));
+      target.append(panel); return;
+    }
+    const choices = privateData.actions.claims.find(claim => claim.routeId === route.routeId)?.payments || [];
+    if (detectedPayment?.proposalId !== route.proposalId || detectedPayment?.routeId !== route.routeId || !choices.some(choice => paymentKey(choice) === detectedPayment.key)) detectedPayment = null;
+    panel.append(element("p", "ROUTE DETECTED", "eyebrow"), element("h3", route.label), element("p", trainCount(route.length), "detected-route-length"));
+    const status = element("p", !route.ready ? board.message || "Waiting for the camera to confirm the trains." : choices.length ? "Choose the cards to spend." : "You don't have a matching payment for this route.", "detected-route-status");
+    status.setAttribute("role", "status"); panel.append(status);
+    const payments = element("div", undefined, "detected-payments"); payments.setAttribute("role", "group"); payments.setAttribute("aria-label", "Cards to spend on the detected route");
+    const pay = button("Pay", () => {
+      const payment = choices.find(choice => paymentKey(choice) === detectedPayment?.key);
+      if (payment) submit("payDetectedRoute", { routeId: route.routeId, payment, detectedClaimId: route.proposalId });
+    }, "detected-pay");
+    pay.setAttribute("aria-label", "Pay for detected route");
+    const options = [];
+    function updateSelection() {
+      for (const {option, key} of options) option.setAttribute("aria-pressed", String(key === detectedPayment?.key));
+      pay.disabled = !route.ready || !detectedPayment;
+    }
+    for (const choice of choices) {
+      const key = paymentKey(choice);
+      const option = button(paymentLabel(choice), () => {
+        const current = snapshot.boardInteraction?.detectedRoute;
+        if (!current?.ready || current.proposalId !== route.proposalId || current.routeId !== route.routeId) return;
+        detectedPayment = { proposalId: route.proposalId, routeId: route.routeId, key }; updateSelection();
+      }, "payment-choice");
+      option.setAttribute("aria-label", `Pay with ${paymentLabel(choice)}`); option.disabled = !route.ready;
+      options.push({option, key}); payments.append(option);
+    }
+    updateSelection(); panel.append(payments, pay); target.append(panel);
+  }
+  function renderDrawPicker(target, actions, blocked = false) {
     const area = element("div", undefined, "draw-area");
     const picker = element("div", undefined, "draw-picker");
     const piles = element("section", undefined, "draw-panel draw-piles");
@@ -268,8 +345,8 @@
     piles.setAttribute("aria-labelledby", pileTitle.id);
     const pileButtons = element("div", undefined, "draw-pile-list");
     for (const pile of [
-      { letter: "T", label: "TRAIN", name: "Draw a blind card", className: "train-pile", enabled: actions.canDrawBlindTrainCard, help: "train-draw-help", draw: () => submit("drawTrain", { slot: null }) },
-      { letter: "D", label: "DESTINATIONS", name: "Draw destination tickets", className: "destination-pile", enabled: actions.canRequestTicketOffer, help: "destination-draw-help", draw: () => submit("drawTickets") }
+      { letter: "T", label: "TRAIN", name: "Draw a blind card", className: "train-pile", enabled: actions.canDrawBlindTrainCard && !blocked, help: "train-draw-help", draw: () => submit("drawTrain", { slot: null }) },
+      { letter: "D", label: "DESTINATIONS", name: "Draw destination tickets", className: "destination-pile", enabled: actions.canRequestTicketOffer && !blocked, help: "destination-draw-help", draw: () => submit("drawTickets") }
     ]) {
       const option = button(undefined, pile.draw, `draw-pile ${pile.className}`);
       option.setAttribute("aria-label", pile.name);
@@ -285,7 +362,7 @@
     const market = element("div", undefined, "draw-market");
     for (const [slot, kind] of privateData.view.public.faceUp.entries()) {
       const option = button(undefined, () => submit("drawTrain", { slot }), "market-card");
-      option.dataset.color = kind; option.disabled = !actions.drawableFaceUpSlots.includes(slot);
+      option.dataset.color = kind; option.disabled = blocked || !actions.drawableFaceUpSlots.includes(slot);
       option.setAttribute("aria-label", `${kind} · slot ${slot + 1}`);
       option.setAttribute("aria-describedby", "train-draw-help");
       option.append(element("span", kind, "market-card-label")); market.append(option);
