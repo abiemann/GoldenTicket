@@ -1427,6 +1427,11 @@ Begin with a per-user installer and a ZIP artifact. Storefronts, paid code-signi
 
 ## 18. Processes, interfaces, and repository layout
 
+The implemented dependency graph and ownership rules are documented in
+[architecture.md](docs/architecture.md). Executable architecture tests protect platform independence
+and prohibit production dependencies on tests/tools. The schematic interfaces and proposed layout
+below also include future product work.
+
 ### 18.1 Process model
 
 Use one desktop process initially, with the embedded companion host calling the application coordinator through typed contracts. Only the device-to-laptop boundary is a network API; internal rules, vision, AI, and storage do not become microservices. Camera callbacks, inference, AI search, persistence, audio, and HTTP/WebSocket handling run through bounded asynchronous workers. Only WPF view updates run on the dispatcher.
@@ -1511,6 +1516,12 @@ DESIGN.md
 Keep full training recordings outside ordinary source history; reference them by dataset manifests and checksums in a developer-managed local storage location. No external dataset host is required. Add a README and task tracker during implementation to distinguish built milestones from this design.
 
 ### 18.4 Test toolchain
+
+`GoldenTicket.Core.Tests` targets portable .NET and tests rules, AI, application/storage contracts
+and architecture. `GoldenTicket.Domain.Tests` retains its historical name for Windows desktop,
+vision and host integration tests. Fixture helpers are source-linked; each test case has one owning
+suite. CI includes a portable-core Ubuntu job and full Windows validation. Capture fixtures use
+`ICameraCapture` rather than modifying native-service private fields.
 
 Use `dotnet test` with a pinned free test framework, such as xUnit, and a small seeded property/fault generator. WPF UI integration may use a pinned Windows UI Automation wrapper after its license is verified; do not make a commercial UI-test runner mandatory.
 

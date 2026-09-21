@@ -1,3 +1,4 @@
+using GoldenTicket.Testing;
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Windows.Media.Imaging;
@@ -1001,6 +1002,7 @@ public sealed class CameraCornerLearningFlowTests
         public string ModelDirectory { get; } = Path.Combine(Path.GetTempPath(), "synthetic-corner-model-" + Guid.NewGuid().ToString("N"));
         public ConcurrentQueue<(string Directory, bool PreferGpu)> FactoryCalls { get; } = new();
         public CameraViewModel Camera { get; }
+        public FakeCameraCapture Capture => (FakeCameraCapture)Camera.Capture;
         public CameraFrame Frame => Camera.Capture.LatestFrame!;
         public Action<byte[], int, int>? FramePainter { get; set; }
         public object? Registration => Field("_registration").GetValue(Camera);
@@ -1027,7 +1029,7 @@ public sealed class CameraCornerLearningFlowTests
         public Fixture(Func<string, bool, IBoardCornerDetector>? factory = null,
             Func<string, bool, IPieceModelDetector>? pieceFactory = null)
         {
-            Camera = new(pieceModelDirectory: ModelDirectory + "-unused-pieces", boardCornerModelDirectory: ModelDirectory,
+            Camera = new(capture: new FakeCameraCapture(), pieceModelDirectory: ModelDirectory + "-unused-pieces", boardCornerModelDirectory: ModelDirectory,
                 pieceModelFactory: pieceFactory,
                 boardCornerModelFactory: (directory, preferGpu) =>
                 {
@@ -1036,7 +1038,7 @@ public sealed class CameraCornerLearningFlowTests
                 });
             Camera.SelectedProcessor = Camera.ProcessorModes.Single(option => option.Value == FrameComputeMode.Cpu);
             Camera.UseEnhancedPreview = false;
-            SetCapture("<ActiveDevice>k__BackingField", new CameraDevice("synthetic-corner-camera", "Synthetic corner camera"));
+            Capture.ActiveDevice = new CameraDevice("synthetic-corner-camera", "Synthetic corner camera");
             Camera.IsRunning = true;
             Refresh();
         }
@@ -1052,9 +1054,9 @@ public sealed class CameraCornerLearningFlowTests
                 pixels[index + 3] = 255;
             }
             FramePainter?.Invoke(pixels, width, height);
-            SetCapture("_epoch", epoch);
-            SetCapture("_running", true);
-            SetCapture("_latest", CameraFrame.CopyFromBgra32(width, height, pixels, ++_sequence, epoch, clock: Clock));
+            Capture.Epoch = epoch;
+            Capture.IsRunning = true;
+            Capture.LatestFrame = CameraFrame.CopyFromBgra32(width, height, pixels, ++_sequence, epoch, clock: Clock);
         }
 
         public void SelectManualCrop()
@@ -1080,8 +1082,6 @@ public sealed class CameraCornerLearningFlowTests
         }
 
         private static FieldInfo Field(string name) => typeof(CameraViewModel).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!;
-        private void SetCapture(string name, object value) => typeof(CameraCaptureService)
-            .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(Camera.Capture, value);
 
         public async ValueTask DisposeAsync()
         {

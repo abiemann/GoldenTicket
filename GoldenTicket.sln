@@ -39,6 +39,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GoldenTicket.PieceDetection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GoldenTicket.MlPieceSmoke", "tools\GoldenTicket.MlPieceSmoke\GoldenTicket.MlPieceSmoke.csproj", "{6AB3CAB3-E672-47F3-8B8E-AB7D8249F495}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GoldenTicket.Core.Tests", "tests\GoldenTicket.Core.Tests\GoldenTicket.Core.Tests.csproj", "{3C78C714-BDE6-4A2B-9165-39CD29C693D3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -49,6 +51,18 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{3C78C714-BDE6-4A2B-9165-39CD29C693D3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3C78C714-BDE6-4A2B-9165-39CD29C693D3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3C78C714-BDE6-4A2B-9165-39CD29C693D3}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{3C78C714-BDE6-4A2B-9165-39CD29C693D3}.Debug|x64.Build.0 = Debug|Any CPU
+		{3C78C714-BDE6-4A2B-9165-39CD29C693D3}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{3C78C714-BDE6-4A2B-9165-39CD29C693D3}.Debug|x86.Build.0 = Debug|Any CPU
+		{3C78C714-BDE6-4A2B-9165-39CD29C693D3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3C78C714-BDE6-4A2B-9165-39CD29C693D3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3C78C714-BDE6-4A2B-9165-39CD29C693D3}.Release|x64.ActiveCfg = Release|Any CPU
+		{3C78C714-BDE6-4A2B-9165-39CD29C693D3}.Release|x64.Build.0 = Release|Any CPU
+		{3C78C714-BDE6-4A2B-9165-39CD29C693D3}.Release|x86.ActiveCfg = Release|Any CPU
+		{3C78C714-BDE6-4A2B-9165-39CD29C693D3}.Release|x86.Build.0 = Release|Any CPU
 		{393DBC9E-6AA4-4A7F-97DA-71D4EFE5BE47}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{393DBC9E-6AA4-4A7F-97DA-71D4EFE5BE47}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{393DBC9E-6AA4-4A7F-97DA-71D4EFE5BE47}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -234,6 +248,7 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{3C78C714-BDE6-4A2B-9165-39CD29C693D3} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{393DBC9E-6AA4-4A7F-97DA-71D4EFE5BE47} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{857C81AF-4DE8-43BD-93AD-4F23AE3E6FB8} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{79DF4AF5-551E-4B65-9416-B4021D6A1939} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}

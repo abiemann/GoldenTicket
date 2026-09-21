@@ -1,3 +1,4 @@
+using GoldenTicket.Testing;
 using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Reflection;
@@ -312,15 +313,12 @@ public sealed class CameraLearningFlowTests
         fixture.Refresh();
         fixture.Model.Pause();
         var processing = fixture.ProcessAsync();
-        var lifecycle = (SemaphoreSlim)typeof(CameraCaptureService)
-            .GetField("_lifecycle", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(fixture.Camera.Capture)!;
+        var releaseCapture = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Capture.StopHandler = () => releaseCapture.Task;
         Task closing = Task.CompletedTask;
-        var locked = false;
         try
         {
             await fixture.Model.Entered.Task.WaitAsync(TimeSpan.FromSeconds(60), Token);
-            await lifecycle.WaitAsync(Token);
-            locked = true;
             closing = dispose ? fixture.Camera.DisposeAsync().AsTask()
                 : fixture.Camera.StopCommand.ExecuteAsync(null);
             Assert.False(closing.IsCompleted);
@@ -328,7 +326,7 @@ public sealed class CameraLearningFlowTests
             AssertNoMarkerScores(fixture.Camera);
             fixture.Model.Release();
             await processing.WaitAsync(TimeSpan.FromSeconds(60), Token);
-            // Capture still owns its old frame until teardown acquires the gate; its late
+            // Capture still owns its old frame until teardown is released; its late
             // inference must not restore readings after the user's stop/dispose request.
             Assert.Empty(fixture.Camera.PieceOutlines);
             AssertNoMarkerScores(fixture.Camera);
@@ -336,7 +334,7 @@ public sealed class CameraLearningFlowTests
         finally
         {
             fixture.Model.Release();
-            if (locked) lifecycle.Release();
+            releaseCapture.TrySetResult();
             await Task.WhenAll(processing, closing).WaitAsync(TimeSpan.FromSeconds(60), Token);
         }
         Assert.Empty(fixture.Camera.PieceOutlines);
@@ -474,18 +472,19 @@ public sealed class CameraLearningFlowTests
         public string ModelDirectory { get; } = Path.Combine(Path.GetTempPath(), "synthetic-piece-model-" + Guid.NewGuid().ToString("N"));
         public ConcurrentQueue<(string Directory, bool PreferGpu)> FactoryCalls { get; } = new();
         public CameraViewModel Camera { get; }
+        public FakeCameraCapture Capture => (FakeCameraCapture)Camera.Capture;
         public CameraFrame Frame => Camera.Capture.LatestFrame!;
 
         public Fixture(Func<string, bool, IPieceModelDetector>? factory = null)
         {
-            Camera = new(pieceModelDirectory: ModelDirectory, pieceModelFactory: (directory, preferGpu) =>
+            Camera = new(capture: new FakeCameraCapture(), pieceModelDirectory: ModelDirectory, pieceModelFactory: (directory, preferGpu) =>
             {
                 FactoryCalls.Enqueue((directory, preferGpu));
                 return factory is not null ? factory(directory, preferGpu) : FactoryCalls.Count == 1 ? Model : _replacement;
             });
             Camera.SelectedProcessor = Camera.ProcessorModes.Single(option => option.Value == FrameComputeMode.Cpu);
             Camera.UseEnhancedPreview = false;
-            SetCapture("<ActiveDevice>k__BackingField", new CameraDevice("synthetic-ml-camera", "Synthetic ML camera"));
+            Capture.ActiveDevice = new CameraDevice("synthetic-ml-camera", "Synthetic ML camera");
             Camera.IsRunning = true;
             Refresh();
         }
@@ -512,9 +511,9 @@ public sealed class CameraLearningFlowTests
                 bytes[index + 2] = (byte)(value - 15);
                 bytes[index + 3] = 255;
             }
-            SetCapture("_epoch", epoch);
-            SetCapture("_running", true);
-            SetCapture("_latest", CameraFrame.CopyFromBgra32(width, height, bytes, ++_sequence, epoch, clock: Clock));
+            Capture.Epoch = epoch;
+            Capture.IsRunning = true;
+            Capture.LatestFrame = CameraFrame.CopyFromBgra32(width, height, bytes, ++_sequence, epoch, clock: Clock);
         }
 
         public Task ProcessAsync()
@@ -523,9 +522,6 @@ public sealed class CameraLearningFlowTests
                 .Invoke(Camera, [Frame]);
             return (Task)typeof(CameraViewModel).GetField("_frameWork", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(Camera)!;
         }
-
-        private void SetCapture(string field, object value) => typeof(CameraCaptureService)
-            .GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(Camera.Capture, value);
 
         public async ValueTask DisposeAsync()
         {

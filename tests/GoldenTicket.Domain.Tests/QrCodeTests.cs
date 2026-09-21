@@ -1,5 +1,5 @@
 using System.Text;
-using GoldenTicket.ConnectivitySpike.Connect;
+using GoldenTicket.CompanionHost.Connect;
 
 namespace GoldenTicket.Domain.Tests;
 

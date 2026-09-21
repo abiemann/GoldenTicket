@@ -1,3 +1,4 @@
+using GoldenTicket.Testing;
 using System.Reflection;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Vision;
@@ -57,7 +58,8 @@ public sealed class CameraGameTableAnalysisTests
 
     private sealed class Fixture : IAsyncDisposable
     {
-        public CameraViewModel Camera { get; } = new();
+        public CameraViewModel Camera { get; } = new(capture: new FakeCameraCapture());
+        public FakeCameraCapture Capture => (FakeCameraCapture)Camera.Capture;
         public ManualFrameTimeProvider Clock { get; } = new();
         public FakeModel Model { get; } = new();
         public CameraFrame Frame { get; }
@@ -74,9 +76,9 @@ public sealed class CameraGameTableAnalysisTests
                 pixels[i + 3] = 255;
             }
             Frame = CameraFrame.CopyFromBgra32(width, height, pixels, sequence: 7, epoch: 3, clock: Clock);
-            SetCapture("_latest", Frame);
-            SetCapture("_epoch", 3L);
-            SetCapture("_running", true);
+            Capture.LatestFrame = Frame;
+            Capture.Epoch = 3L;
+            Capture.IsRunning = true;
             Camera.IsRunning = true;
             Set("_gameTableRegistration", BoardRegistration.Create(Frame, Corners));
             Set("_gameTablePreviewRequested", true);
@@ -92,9 +94,6 @@ public sealed class CameraGameTableAnalysisTests
                 .GetField("_gameTableAnalysisWork", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .GetValue(Camera)!;
         }
-
-        private void SetCapture(string field, object value) => typeof(CameraCaptureService)
-            .GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(Camera.Capture, value);
 
         private void Set(string field, object value) => typeof(CameraViewModel)
             .GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(Camera, value);

@@ -1,3 +1,4 @@
+using GoldenTicket.Testing;
 using GoldenTicket.Application;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain;
@@ -233,14 +234,13 @@ public sealed class DesktopGameScreenTests
             second.Game.SelectWelcome(1);
             await second.Game.ActivateSelectedAsync();
             var camera = second.Camera;
-            var capture = camera.Capture;
-            var captureType = typeof(CameraCaptureService);
+            var capture = (FakeCameraCapture)camera.Capture;
             var cameraType = typeof(CameraViewModel);
             var pixels = new byte[320 * 180 * 4];
             var frame = CameraFrame.CopyFromBgra32(320, 180, pixels, 1, 1);
-            captureType.GetField("_epoch", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(capture, 1L);
-            captureType.GetField("_running", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(capture, true);
-            captureType.GetField("_latest", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(capture, frame);
+            capture.Epoch = 1L;
+            capture.IsRunning = true;
+            capture.LatestFrame = frame;
             camera.IsRunning = true;
             camera.BeginReloadBoardFraming();
             cameraType.GetField("_gameBoardCapture", BindingFlags.Instance | BindingFlags.NonPublic)!
@@ -293,5 +293,5 @@ public sealed class DesktopGameScreenTests
     }
 
     private static MainViewModel NewModel(InMemorySessionStore? store = null) =>
-        new(ManifestLoader.LoadClassicUs(), store ?? new InMemorySessionStore());
+        new(ManifestLoader.LoadClassicUs(), store ?? new InMemorySessionStore(), camera: new CameraViewModel(capture: new FakeCameraCapture()));
 }

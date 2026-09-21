@@ -51,6 +51,18 @@ public sealed class GameState
 
         for (var i = 0; i < manifest.RulesConstants.FaceUpMarketSize; i++)
             FaceUpInternal.Add(null);
+
+        // Expose live views without exposing the mutable collections behind them. An
+        // IReadOnlyList/Dictionary interface alone would still allow callers to cast back.
+        RouteOwners = new ReadOnlyDictionaryView<RouteId, SeatId>(RouteOwnersInternal);
+        TrainStock = new ReadOnlyDictionaryView<SeatId, int>(TrainStockInternal);
+        RouteScore = new ReadOnlyDictionaryView<SeatId, int>(RouteScoreInternal);
+        TrainDeck = new ReadOnlyListView<CardId>(TrainDeckInternal);
+        TrainDiscard = new ReadOnlyListView<CardId>(TrainDiscardInternal);
+        FaceUp = new ReadOnlyListView<CardId?>(FaceUpInternal);
+        TicketDeck = new ReadOnlyListView<TicketId>(TicketDeckInternal);
+        SetupOffers = new ReadOnlyDictionaryView<SeatId, ImmutableArray<TicketId>>(SetupOffersInternal);
+        PendingTicketReturns = new ReadOnlyDictionaryView<SeatId, ImmutableArray<TicketId>>(PendingTicketReturnsInternal);
     }
 
     // ---- Identity and compatibility -------------------------------------------------------
@@ -116,34 +128,33 @@ public sealed class GameState
 
     // ---- Board ----------------------------------------------------------------------------
 
-    public IReadOnlyDictionary<RouteId, SeatId> RouteOwners => RouteOwnersInternal;
+    public IReadOnlyDictionary<RouteId, SeatId> RouteOwners { get; }
 
-    public IReadOnlyDictionary<SeatId, int> TrainStock => TrainStockInternal;
+    public IReadOnlyDictionary<SeatId, int> TrainStock { get; }
 
-    public IReadOnlyDictionary<SeatId, int> RouteScore => RouteScoreInternal;
+    public IReadOnlyDictionary<SeatId, int> RouteScore { get; }
 
     // ---- Supply ---------------------------------------------------------------------------
 
     /// <summary>Face-down train deck; index 0 is the top card.</summary>
-    public IReadOnlyList<CardId> TrainDeck => TrainDeckInternal;
+    public IReadOnlyList<CardId> TrainDeck { get; }
 
-    public IReadOnlyList<CardId> TrainDiscard => TrainDiscardInternal;
+    public IReadOnlyList<CardId> TrainDiscard { get; }
 
     /// <summary>The face-up market. A null slot means the supply could not fill it.</summary>
-    public IReadOnlyList<CardId?> FaceUp => FaceUpInternal;
+    public IReadOnlyList<CardId?> FaceUp { get; }
 
-    public IReadOnlyList<TicketId> TicketDeck => TicketDeckInternal;
+    public IReadOnlyList<TicketId> TicketDeck { get; }
 
     // ---- Private holdings -----------------------------------------------------------------
 
-    public IReadOnlyList<CardId> HandOf(SeatId seat) => TrainHandsInternal[seat];
+    public IReadOnlyList<CardId> HandOf(SeatId seat) => new ReadOnlyListView<CardId>(TrainHandsInternal[seat]);
 
-    public IReadOnlyList<TicketId> TicketsOf(SeatId seat) => TicketHandsInternal[seat];
+    public IReadOnlyList<TicketId> TicketsOf(SeatId seat) => new ReadOnlyListView<TicketId>(TicketHandsInternal[seat]);
 
-    public IReadOnlyDictionary<SeatId, ImmutableArray<TicketId>> SetupOffers => SetupOffersInternal;
+    public IReadOnlyDictionary<SeatId, ImmutableArray<TicketId>> SetupOffers { get; }
 
-    public IReadOnlyDictionary<SeatId, ImmutableArray<TicketId>> PendingTicketReturns =>
-        PendingTicketReturnsInternal;
+    public IReadOnlyDictionary<SeatId, ImmutableArray<TicketId>> PendingTicketReturns { get; }
 
     public TicketOffer? CurrentTicketOffer { get; internal set; }
 
@@ -212,7 +223,7 @@ public sealed class GameState
     {
         var reserved = ReservedCardsOf(seat);
         return reserved.IsEmpty
-            ? TrainHandsInternal[seat]
+            ? HandOf(seat)
             : TrainHandsInternal[seat].Where(card => !reserved.Contains(card));
     }
 

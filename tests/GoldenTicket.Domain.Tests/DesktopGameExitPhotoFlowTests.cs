@@ -1,3 +1,4 @@
+using GoldenTicket.Testing;
 using System.Reflection;
 using System.Security.Cryptography;
 using GoldenTicket.Application;
@@ -23,7 +24,7 @@ public sealed class DesktopGameExitPhotoFlowTests
         var root = Path.Combine(Path.GetTempPath(), "GoldenTicket.Tests", Guid.NewGuid().ToString("N"));
         var store = new SqliteSessionStore(root);
         var manifest = ManifestLoader.LoadClassicUs();
-        var model = new MainViewModel(manifest, store);
+        var model = new MainViewModel(manifest, store, camera: new CameraViewModel(capture: new FakeCameraCapture()));
         model.Setup.ManualVerificationAccepted = true;
         foreach (var seat in model.Setup.Seats) seat.IsComputer = true;
         model.SetGameLayerVisible(true);
@@ -86,7 +87,7 @@ public sealed class DesktopGameExitPhotoFlowTests
         var root = Path.Combine(Path.GetTempPath(), "GoldenTicket.Tests", Guid.NewGuid().ToString("N"));
         var store = new SqliteSessionStore(root);
         var manifest = ManifestLoader.LoadClassicUs();
-        var model = new MainViewModel(manifest, store);
+        var model = new MainViewModel(manifest, store, camera: new CameraViewModel(capture: new FakeCameraCapture()));
         model.Setup.ManualVerificationAccepted = true;
         model.SetGameLayerVisible(true);
         try
@@ -142,7 +143,7 @@ public sealed class DesktopGameExitPhotoFlowTests
         var root = Path.Combine(Path.GetTempPath(), "GoldenTicket.Tests", Guid.NewGuid().ToString("N"));
         var store = new SqliteSessionStore(root);
         var manifest = ManifestLoader.LoadClassicUs();
-        var model = new MainViewModel(manifest, store);
+        var model = new MainViewModel(manifest, store, camera: new CameraViewModel(capture: new FakeCameraCapture()));
         model.Setup.ManualVerificationAccepted = true;
         model.SetGameLayerVisible(true);
         try
@@ -221,16 +222,16 @@ public sealed class DesktopGameExitPhotoFlowTests
     private sealed class SyntheticCamera : IDisposable
     {
         private readonly CameraViewModel _camera;
+        private FakeCameraCapture Capture => (FakeCameraCapture)_camera.Capture;
         private BoardRegistration? _registration;
         private long _sequence;
 
         public SyntheticCamera(CameraViewModel camera)
         {
             _camera = camera;
-            SetCapture("<ActiveDevice>k__BackingField",
-                new CameraDevice("save-game-synthetic-camera", "Synthetic board camera"));
-            SetCapture("_epoch", 1L);
-            SetCapture("_running", true);
+            Capture.ActiveDevice = new CameraDevice("save-game-synthetic-camera", "Synthetic board camera");
+            Capture.Epoch = 1L;
+            Capture.IsRunning = true;
             _camera.IsRunning = true;
         }
 
@@ -269,7 +270,7 @@ public sealed class DesktopGameExitPhotoFlowTests
                 }
             }
             var frame = CameraFrame.CopyFromBgra32(width, height, pixels, ++_sequence, 1);
-            SetCapture("_latest", frame);
+            Capture.LatestFrame = frame;
             _registration ??= BoardRegistration.Create(frame,
                 [new(0, 0), new(1, 0), new(1, 1), new(0, 1)]);
             SetCamera("_gameTableRegistration", _registration);
@@ -283,9 +284,6 @@ public sealed class DesktopGameExitPhotoFlowTests
 
         private void SetCamera(string name, object value) => typeof(CameraViewModel)
             .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(_camera, value);
-
-        private void SetCapture(string name, object value) => typeof(CameraCaptureService)
-            .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(_camera.Capture, value);
 
         public void Dispose() { }
     }

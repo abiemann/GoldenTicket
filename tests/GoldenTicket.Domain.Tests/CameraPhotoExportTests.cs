@@ -1,3 +1,4 @@
+using GoldenTicket.Testing;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -104,7 +105,7 @@ public sealed class CameraPhotoExportTests
     {
         await using var fixture = new CaptureFixture();
         fixture.SelectCrop();
-        fixture.SetCaptureField("_running", false);
+        fixture.Capture.IsRunning = false;
         fixture.Camera.IsRunning = false;
         Assert.False(fixture.Camera.CanExportPhoto);
         await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Camera.CaptureExportPhotoAsync(Token));
@@ -133,13 +134,14 @@ public sealed class CameraPhotoExportTests
     private sealed class CaptureFixture : IAsyncDisposable
     {
         private long _sequence;
-        public CameraViewModel Camera { get; } = new();
+        public CameraViewModel Camera { get; } = new(capture: new FakeCameraCapture());
+        public FakeCameraCapture Capture => (FakeCameraCapture)Camera.Capture;
         public SceneReferenceMonitor Monitor => (SceneReferenceMonitor)typeof(CameraViewModel)
             .GetField("_monitor", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(Camera)!;
 
         public CaptureFixture()
         {
-            SetCaptureField("<ActiveDevice>k__BackingField", new CameraDevice("synthetic-board-camera", "Synthetic board camera"));
+            Capture.ActiveDevice = new CameraDevice("synthetic-board-camera", "Synthetic board camera");
             Refresh();
             Camera.IsRunning = true;
         }
@@ -178,13 +180,10 @@ public sealed class CameraPhotoExportTests
             if (stale)
                 frame = (CameraFrame)typeof(CameraFrame).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single()
                     .Invoke([width, height, bytes, _sequence, epoch, DateTimeOffset.UtcNow.AddSeconds(-5), Stopwatch.GetTimestamp() - 5 * Stopwatch.Frequency]);
-            SetCaptureField("_epoch", epoch);
-            SetCaptureField("_running", true);
-            SetCaptureField("_latest", frame);
+            Capture.Epoch = epoch;
+            Capture.IsRunning = true;
+            Capture.LatestFrame = frame;
         }
-
-        public void SetCaptureField(string name, object value) => typeof(CameraCaptureService)
-            .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(Camera.Capture, value);
 
         public ValueTask DisposeAsync() => Camera.DisposeAsync();
     }

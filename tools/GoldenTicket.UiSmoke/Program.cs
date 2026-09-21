@@ -1,3 +1,4 @@
+using GoldenTicket.Testing;
 using System.Diagnostics;
 using System.IO;
 using System.Globalization;
@@ -121,13 +122,15 @@ internal static partial class Program
         foreach (var delayCleanup in new[] { false, true })
         {
             BindingLog.Context = delayCleanup ? "window-shutdown-delayed" : "window-shutdown-idle";
-            var model = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
+            var releaseCapture = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var capture = new FakeCameraCapture
+            {
+                StopHandler = delayCleanup ? () => releaseCapture.Task : null
+            };
+            var model = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore(),
+                camera: new CameraViewModel(capture: capture));
             var dispatcher = Dispatcher.CurrentDispatcher;
             var failures = new List<Exception>();
-            var gate = (SemaphoreSlim)(typeof(CameraCaptureService)
-                .GetField("_lifecycle", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(model.Camera.Capture)
-                ?? throw new InvalidOperationException("The camera shutdown fixture needs its lifecycle semaphore."));
-            var gateHeld = false;
             GoldenTicket.Desktop.MainWindow? window = null;
             var closedCount = 0;
             var loadedCount = 0;
@@ -140,11 +143,6 @@ internal static partial class Program
             dispatcher.UnhandledException += OnDispatcherFailure;
             try
             {
-                if (delayCleanup)
-                {
-                    await gate.WaitAsync();
-                    gateHeld = true;
-                }
                 // Construct the real production window, but never Show it or raise Loaded:
                 // there is no native input, camera, listener, or persisted-session load.
                 window = new GoldenTicket.Desktop.MainWindow(model);
@@ -154,13 +152,12 @@ internal static partial class Program
                 window.Close();
                 if (closedCount != 0 || window.IsEnabled)
                     throw new InvalidOperationException("Closing must disable input and defer final close until the original Closing event returns.");
-                if (gateHeld)
+                if (delayCleanup)
                 {
                     await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
                     if (closedCount != 0)
                         throw new InvalidOperationException("The window must remain open while camera cleanup is pending.");
-                    gate.Release();
-                    gateHeld = false;
+                    releaseCapture.TrySetResult();
                 }
                 await closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
                 await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
@@ -172,7 +169,7 @@ internal static partial class Program
             }
             finally
             {
-                if (gateHeld) gate.Release();
+                releaseCapture.TrySetResult();
                 // A failed assertion must still drain disposal and detach the window's system
                 // subscriptions before the next scenario or the runner's explicit shutdown.
                 try
@@ -487,7 +484,8 @@ internal static partial class Program
 
     private static async Task VerifyGameMenu()
     {
-        var model = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
+        var model = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore(),
+            camera: new CameraViewModel(capture: new FakeCameraCapture()));
         try
         {
             void VerifyRoster(UserControl view)
@@ -660,8 +658,7 @@ internal static partial class Program
             }, [(1280, 800)]);
             model.Camera.CameraCompatibilityMessage = "";
             var camera = model.Camera;
-            var capture = camera.Capture;
-            var captureType = typeof(CameraCaptureService);
+            var capture = (FakeCameraCapture)camera.Capture;
             var cameraType = typeof(CameraViewModel);
             var pixels = new byte[320 * 180 * 4];
             for (var y = 0; y < 180; y++)
@@ -677,12 +674,9 @@ internal static partial class Program
             var frameForCorners = CameraFrame.CopyFromBgra32(320, 180, pixels, 1, 1);
             try
             {
-                captureType.GetField("_epoch", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .SetValue(capture, 1L);
-                captureType.GetField("_running", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .SetValue(capture, true);
-                captureType.GetField("_latest", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .SetValue(capture, frameForCorners);
+                capture.Epoch = 1L;
+                capture.IsRunning = true;
+                capture.LatestFrame = frameForCorners;
                 camera.IsRunning = true;
                 camera.Preview = BitmapSource.Create(320, 180, 96, 96, PixelFormats.Bgra32,
                     null, pixels, 320 * 4);
@@ -741,8 +735,7 @@ internal static partial class Program
                             throw new InvalidOperationException("Fresh corners and score pieces must enable PLAY and hide the board notice.");
                     }, [(875, 680), (1280, 800)]);
                 var freshBoardFrame = CameraFrame.CopyFromBgra32(320, 180, pixels, 2, 1);
-                captureType.GetField("_latest", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .SetValue(capture, freshBoardFrame);
+                capture.LatestFrame = freshBoardFrame;
                 camera.BeginGameTablePreview();
                 for (var attempt = 0; attempt < 20 && camera.GameTablePreview is null; attempt++)
                     await Task.Delay(100);
@@ -752,8 +745,7 @@ internal static partial class Program
                 var savedUprightPhoto = camera.GameTablePreview;
                 camera.EndGameTablePreview();
                 camera.RequestGameTablePreview();
-                captureType.GetField("_latest", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .SetValue(capture, CameraFrame.CopyFromBgra32(320, 180, pixels, 3, 1));
+                capture.LatestFrame = CameraFrame.CopyFromBgra32(320, 180, pixels, 3, 1);
                 foreach (var corner in new[] { new NormalizedPoint(.1, .12), new(.9, .12),
                     new(.9, .88), new(.1, .88) }) camera.SelectedCorners.Add(corner);
                 cameraType.GetMethod("UpdateBoardCrop", BindingFlags.Instance | BindingFlags.NonPublic)!
@@ -772,10 +764,8 @@ internal static partial class Program
                 camera.EndGameTablePreview();
                 camera.Preview = null;
                 camera.IsRunning = false;
-                captureType.GetField("_running", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .SetValue(capture, false);
-                captureType.GetField("_latest", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .SetValue(capture, null);
+                capture.IsRunning = false;
+                capture.LatestFrame = null;
             }
             var confirmationView = new GameScreenView { DataContext = model };
             await Arrange(confirmationView, 875, 680);

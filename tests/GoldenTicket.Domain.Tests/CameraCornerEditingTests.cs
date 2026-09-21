@@ -1,3 +1,4 @@
+using GoldenTicket.Testing;
 using System.Diagnostics;
 using System.Reflection;
 using GoldenTicket.Desktop.ViewModels;
@@ -167,7 +168,8 @@ public sealed class CameraCornerEditingTests
     // Seed owned synthetic frames without opening hardware or adding a production test bypass.
     private sealed class CaptureFixture : IAsyncDisposable
     {
-        public CameraViewModel Camera { get; } = new();
+        public CameraViewModel Camera { get; } = new(capture: new FakeCameraCapture());
+        public FakeCameraCapture Capture => (FakeCameraCapture)Camera.Capture;
         private long _sequence;
 
         public CaptureFixture()
@@ -200,13 +202,10 @@ public sealed class CameraCornerEditingTests
             if (stale)
                 frame = (CameraFrame)typeof(CameraFrame).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single()
                     .Invoke([width, height, bytes, _sequence, epoch, DateTimeOffset.UtcNow.AddSeconds(-5), Stopwatch.GetTimestamp() - 5 * Stopwatch.Frequency]);
-            Set("_epoch", epoch);
-            Set("_running", true);
-            Set("_latest", frame);
+            Capture.Epoch = epoch;
+            Capture.IsRunning = true;
+            Capture.LatestFrame = frame;
         }
-
-        private void Set(string name, object value) => typeof(CameraCaptureService)
-            .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(Camera.Capture, value);
 
         public ValueTask DisposeAsync() => Camera.DisposeAsync();
     }

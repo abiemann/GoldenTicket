@@ -20,9 +20,9 @@ public sealed partial class MainViewModel
     public ConnectionViewModel Connection { get; private set; } = null!;
     public CheckpointPhotoViewModel CheckpointPhoto { get; private set; } = null!;
 
-    private void InitializeTools()
+    private void InitializeTools(CameraViewModel? camera)
     {
-        Camera = new CameraViewModel(_store is SqliteSessionStore localStore
+        Camera = camera ?? new CameraViewModel(_store is SqliteSessionStore localStore
             ? System.IO.Path.Combine(localStore.RootDirectory, "camera-processing.json") : null);
         var inner = new CoordinatorCompanionBridge(() => _coordinator,
             async _ => await PumpAsync(), () => CanCompanionControl, resultImage: CurrentFinalStandingsImage);

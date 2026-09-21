@@ -20,7 +20,7 @@ must not download them. No Node/npm/Playwright dependency is shipped in the Wind
 ## GitHub Actions
 
 [Windows CI](../.github/workflows/windows-ci.yml) runs on pushes to `main`, pull requests and manual
-**Run workflow** requests. One bounded Windows job:
+**Run workflow** requests. A bounded Windows job:
 
 1. Checks out source without persisting repository credentials.
 2. Installs the SDK from `global.json` and Node 24 for development tests.
@@ -32,6 +32,19 @@ must not download them. No Node/npm/Playwright dependency is shipped in the Wind
    synthetic game fixtures exported by the .NET tests. Non-laptop browser origins are blocked.
 8. Retains test reports and synthetic UI screenshots for seven days, including partial evidence
    when a later check fails. It does not upload game saves, certificates, dumps or player photos.
+
+A separate `ubuntu-24.04` job restores and runs `GoldenTicket.Core.Tests` with the same pinned SDK.
+That portable suite covers Domain/Application/AI/SQLite and executable architecture boundaries;
+it has no WPF, camera or phone-host dependency. The existing `GoldenTicket.Domain.Tests` project
+retains its historical name for Windows integration coverage. Each suite writes a separate TRX
+report. See [architecture and test ownership](architecture.md).
+
+To run only the portable suite locally:
+
+```sh
+dotnet restore tests/GoldenTicket.Core.Tests/GoldenTicket.Core.Tests.csproj --locked-mode --configfile NuGet.config
+dotnet test tests/GoldenTicket.Core.Tests/GoldenTicket.Core.Tests.csproj --no-restore
+```
 
 The job uses `windows-2025`, read-only repository permissions, immutable official-action commit
 pins and no project secrets. New runs cancel superseded runs for the same PR/ref, and the job has

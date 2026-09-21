@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Windows.Threading;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Vision;
+using GoldenTicket.Testing;
 
 namespace GoldenTicket.Domain.Tests;
 
@@ -14,19 +15,21 @@ public sealed class CameraGameTableReconnectTests
         var connected = false;
         var searches = 0;
         var starts = 0;
-        CameraViewModel? instance = null;
-        await using var camera = instance = new CameraViewModel(
+        var capture = new FakeCameraCapture
+        {
+            AvailableFormats = [new(1920, 1080, 30, "MJPG")],
+            StartHandler = (selected, _, _) =>
+            {
+                Assert.Equal(device, selected);
+                starts++;
+                return Task.CompletedTask;
+            }
+        };
+        await using var camera = new CameraViewModel(capture: capture,
             enumerateDevices: _ =>
             {
                 searches++;
                 return Task.FromResult<IReadOnlyList<CameraDevice>>(connected ? [device] : []);
-            },
-            startCapture: (selected, _, _) =>
-            {
-                Assert.Equal(device, selected);
-                starts++;
-                SetField(instance!.Capture, "_running", true);
-                return Task.CompletedTask;
             },
             getCameraFormats: (_, _) => Task.FromResult<IReadOnlyList<CameraFormat>>(
                 [new(1920, 1080, 30, "MJPG")]));
@@ -56,7 +59,7 @@ public sealed class CameraGameTableReconnectTests
         Assert.Equal(2, starts);
 
         // A later transport failure should use the same recovery path.
-        SetField(camera.Capture, "_running", false);
+        capture.IsRunning = false;
         PreviewTick(camera);
         Assert.Contains("Please connect a webcam", camera.GameTablePreviewStatus);
         await RetryAsync(camera);
@@ -65,7 +68,7 @@ public sealed class CameraGameTableReconnectTests
 
         camera.EndGameTablePreview();
         Assert.False(RetryTimer(camera).IsEnabled);
-        SetField(camera.Capture, "_running", false);
+        capture.IsRunning = false;
         await RetryAsync(camera);
         Assert.Equal(4, searches);
     }

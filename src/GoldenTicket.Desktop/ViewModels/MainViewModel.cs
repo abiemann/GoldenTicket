@@ -57,7 +57,7 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     public MainViewModel(BoardManifest manifest, ISessionStore store, CheckpointPhotoStore? photoStore = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null, CameraViewModel? camera = null)
     {
         _turnTimeProvider = timeProvider ?? TimeProvider.System;
         _manifest = manifest;
@@ -75,7 +75,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         Setup = new SetupViewModel(manifest);
         Table = new TableViewModel(manifest);
-        InitializeTools();
+        InitializeTools(camera);
         Game = new GameScreenViewModel(this);
         InitializeTurnClock();
         Camera.PropertyChanged += (_, args) =>

@@ -28,6 +28,38 @@ env:
   NODE_PATH: ${{ github.workspace }}/tools/ci/node_modules
 
 jobs:
+  portable-core:
+    name: Portable rules, application, AI and storage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Restore portable test dependencies
+        run: dotnet restore tests/GoldenTicket.Core.Tests/GoldenTicket.Core.Tests.csproj --locked-mode --configfile NuGet.config
+
+      - name: Test portable core and architecture boundaries
+        run: dotnet test tests/GoldenTicket.Core.Tests/GoldenTicket.Core.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=core-tests.trx" --results-directory artifacts/ci/core-tests --blame-hang-timeout 2m
+
+      - name: Retain portable test reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: portable-core-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/ci/core-tests/**/*.trx
+          if-no-files-found: warn
+          retention-days: 7
+
   build-and-test:
     name: Windows build and tests
     runs-on: windows-2025
@@ -67,7 +99,7 @@ jobs:
         run: dotnet build GoldenTicket.sln --configuration Release --no-restore -p:ContinuousIntegrationBuild=true
 
       - name: Test rules, desktop, persistence and local HTTPS
-        run: dotnet test GoldenTicket.sln --configuration Release --no-build --no-restore --logger "trx;LogFileName=tests.trx" --results-directory artifacts/ci/tests --blame-hang-timeout 2m
+        run: dotnet test GoldenTicket.sln --configuration Release --no-build --no-restore --logger "trx;LogFilePrefix=tests" --results-directory artifacts/ci/tests --blame-hang-timeout 2m
 
       - name: Test companion privacy and LAN-only behavior
         run: node --test tests/GoldenTicket.ConnectivitySpike.Tests/shell.test.cjs tests/GoldenTicket.Domain.Tests/CompanionHostClient.test.cjs

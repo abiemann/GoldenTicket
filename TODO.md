@@ -5,6 +5,20 @@ The complete requirements remain in [DESIGN.md](DESIGN.md). This is a partial ma
 implementation with a game companion and camera/reference-photo tools, not a completed automatic
 camera-assisted product. See [September 12 progress and morning checks](docs/IMPLEMENTATION-2026-09-12.md).
 
+## Architecture (September 21, 2026)
+
+See the implemented [architecture and tradeoffs](docs/architecture.md).
+
+- [x] Protect referee collections with genuine read-only views and mutation regressions.
+- [x] Align in-memory/SQLite store contracts and share logical timing-snapshot validation.
+- [x] Stage timing transitions until storage acknowledges a command; preserve clock controls during I/O.
+- [x] Inject a coherent camera-capture lifecycle and replace private-field capture test fixtures.
+- [x] Separate portable core tests from Windows integration; guard project dependencies in tests.
+- [x] Test shipped companion QR/networking code and document contributor boundaries.
+- [ ] Confirm the new portable-core job on Linux CI after these changes are pushed.
+- [ ] Extract further physical-board workflows from the desktop orchestration when extending them,
+  preserving privacy, operation/epoch gates and existing acceptance checks.
+
 ## Game screen (implemented September 14, 2026)
 
 See the

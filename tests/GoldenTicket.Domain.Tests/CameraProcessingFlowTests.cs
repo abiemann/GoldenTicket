@@ -1,3 +1,4 @@
+using GoldenTicket.Testing;
 using System.Reflection;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Vision;
@@ -116,11 +117,12 @@ public sealed class CameraProcessingFlowTests
         // These are flow/identity checks, not hosted-runner speed benchmarks.
         // Advance time explicitly for stale evidence; retain the real CPU pipeline.
         private readonly ManualFrameTimeProvider _clock = new();
-        public CameraViewModel Camera { get; } = new(pieceModelDirectory: Path.Combine(Path.GetTempPath(), "GoldenTicket-no-model-flow-fixture"));
+        public CameraViewModel Camera { get; } = new(capture: new FakeCameraCapture(), pieceModelDirectory: Path.Combine(Path.GetTempPath(), "GoldenTicket-no-model-flow-fixture"));
+        public FakeCameraCapture Capture => (FakeCameraCapture)Camera.Capture;
         public CameraFrame Frame => Camera.Capture.LatestFrame!;
         public Fixture()
         {
-            Set("<ActiveDevice>k__BackingField", new CameraDevice("synthetic", "Synthetic"));
+            Capture.ActiveDevice = new CameraDevice("synthetic", "Synthetic");
             Camera.IsRunning = true;
             Refresh();
         }
@@ -150,9 +152,9 @@ public sealed class CameraProcessingFlowTests
             }
             var frame = CameraFrame.CopyFromBgra32(width, height, bytes, ++_sequence, 1, clock: _clock);
             if (stale) _clock.Advance(TimeSpan.FromSeconds(5));
-            Set("_epoch", 1L);
-            Set("_running", true);
-            Set("_latest", frame);
+            Capture.Epoch = 1L;
+            Capture.IsRunning = true;
+            Capture.LatestFrame = frame;
         }
         public async Task ProcessAsync()
         {
@@ -160,8 +162,6 @@ public sealed class CameraProcessingFlowTests
                 .Invoke(Camera, [Frame]);
             await (Task)typeof(CameraViewModel).GetField("_frameWork", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(Camera)!;
         }
-        private void Set(string name, object value) => typeof(CameraCaptureService)
-            .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(Camera.Capture, value);
         public ValueTask DisposeAsync() => Camera.DisposeAsync();
     }
 }

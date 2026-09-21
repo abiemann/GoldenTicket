@@ -1,3 +1,4 @@
+using GoldenTicket.Testing;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
@@ -15,7 +16,7 @@ internal static partial class Program
     {
         await VerifyCornerSelectionEntry();
         BindingLog.Context = "camera-pan-gestures";
-        await using var camera = new CameraViewModel
+        await using var camera = new CameraViewModel(capture: new FakeCameraCapture())
         {
             Preview = SyntheticCropFixture(), IsRunning = true, SelectingCorners = true
         };
@@ -174,7 +175,7 @@ internal static partial class Program
     private static async Task VerifyCornerSelectionEntry()
     {
         BindingLog.Context = "camera-corner-selection-entry";
-        await using var camera = new CameraViewModel
+        await using var camera = new CameraViewModel(capture: new FakeCameraCapture())
         {
             Preview = SyntheticCropFixture(), IsRunning = true
         };
@@ -243,15 +244,15 @@ internal static partial class Program
             camera.Preview.CopyPixels(pixels, camera.Preview.PixelWidth * 4, 0);
             CameraFrame Frame(long sequence) => CameraFrame.CopyFromBgra32(camera.Preview.PixelWidth,
                 camera.Preview.PixelHeight, pixels, sequence: sequence, epoch: 74, clock: clock);
-            ZoomField(camera.Capture, "_epoch", 74L);
-            ZoomField(camera.Capture, "_latest", Frame(1));
-            ZoomField(camera.Capture, "_running", true);
+            ((FakeCameraCapture)camera.Capture).Epoch = 74L;
+            ((FakeCameraCapture)camera.Capture).LatestFrame = Frame(1);
+            ((FakeCameraCapture)camera.Capture).IsRunning = true;
             clock.Advance(TimeSpan.FromSeconds(3));
             await SelectCorners();
             VerifyLocalFailure("stale");
             checks.Add("A deterministically stale owned frame also leaves selection inactive and exposes the freshness error locally.");
 
-            ZoomField(camera.Capture, "_latest", Frame(2));
+            ((FakeCameraCapture)camera.Capture).LatestFrame = Frame(2);
             await SelectCorners();
             if (!camera.SelectingCorners || camera.SelectedCorners.Count != 0 ||
                 !string.IsNullOrEmpty(problem.Text) || prompt.Text != camera.CropText ||

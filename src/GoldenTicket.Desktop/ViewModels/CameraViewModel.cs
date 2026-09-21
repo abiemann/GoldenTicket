@@ -24,7 +24,6 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     private readonly DispatcherTimer _previewTimer;
     private readonly DispatcherTimer _gameTableCameraRetryTimer;
     private readonly Func<CancellationToken, Task<IReadOnlyList<CameraDevice>>> _enumerateDevices;
-    private readonly Func<CameraDevice, CameraCapturePreference, CancellationToken, Task> _startCapture;
     private readonly SceneReferenceMonitor _monitor = new();
     private readonly CancellationTokenSource _lifetime = new();
     private BoardRegistration? _registration;
@@ -48,17 +47,16 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         string? boardCornerModelDirectory = null,
         Func<string, bool, IBoardCornerDetector>? boardCornerModelFactory = null,
         Func<CancellationToken, Task<IReadOnlyList<CameraDevice>>>? enumerateDevices = null,
-        Func<CameraDevice, CameraCapturePreference, CancellationToken, Task>? startCapture = null,
-        Func<CameraDevice, CancellationToken, Task<IReadOnlyList<CameraFormat>>>? getCameraFormats = null)
+        Func<CameraDevice, CancellationToken, Task<IReadOnlyList<CameraFormat>>>? getCameraFormats = null,
+        ICameraCapture? capture = null)
     {
         _processingSettingsPath = processingSettingsPath;
         _pieceModelDirectory = pieceModelDirectory ?? Path.Combine(AppContext.BaseDirectory, "models", "pieces");
         _pieceModelFactory = pieceModelFactory ?? ((directory, preferGpu) => LearnedPieceDetector.Load(directory, preferGpu));
         _boardCornerModelDirectory = boardCornerModelDirectory ?? Path.Combine(AppContext.BaseDirectory, "models", "board-corners");
         _boardCornerModelFactory = boardCornerModelFactory ?? ((directory, preferGpu) => LearnedBoardCornerDetector.Load(directory, preferGpu));
-        Capture = new CameraCaptureService();
+        Capture = capture ?? new CameraCaptureService();
         _enumerateDevices = enumerateDevices ?? CameraCaptureService.EnumerateAsync;
-        _startCapture = startCapture ?? Capture.StartAsync;
         _getCameraFormats = getCameraFormats ?? CameraCaptureService.GetAvailableFormatsAsync;
         _cameraCapabilitiesEnabled = getCameraFormats is not null;
         _previewTimer = new DispatcherTimer(DispatcherPriority.Background)
@@ -76,7 +74,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             Services.FrameProcessingPreferences.Load(processingSettingsPath));
     }
 
-    public CameraCaptureService Capture { get; }
+    /// <summary>The capture owned by this view model, including its stream state and disposal.</summary>
+    public ICameraCapture Capture { get; }
     public ObservableCollection<CameraDevice> Devices { get; } = [];
     public ObservableCollection<string> AvailableFormats { get; } = [];
     public ObservableCollection<NormalizedPoint> SelectedCorners { get; } = [];
@@ -204,7 +203,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
                 throw new InvalidOperationException(CameraCompatibilityMessage);
             }
             await InitializeProcessingAsync();
-            await _startCapture(selected, SelectedPreference.Value, _lifetime.Token);
+            await Capture.StartAsync(selected, SelectedPreference.Value, _lifetime.Token);
             if (_disposed) return;
             if (selected != SelectedDevice)
             {

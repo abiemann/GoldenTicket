@@ -485,26 +485,7 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
         try
         {
             var timing = JsonSerializer.Deserialize<TurnTimingSnapshot>((byte[])payload);
-            if (timing?.Turns is null) return null;
-            var maximumTicks = TimeSpan.FromDays(365).Ticks;
-            if (timing.GameElapsedTicks is { } total && (total < 0 || total > maximumTicks)) return null;
-            long recordedTicks = 0;
-            var previousTurn = 0;
-            var unfinished = false;
-            // Statistics are supplementary. Damaged metadata must neither fabricate time nor
-            // prevent a verified game journal from loading. Bound a save's total and recorded
-            // turn sum to one year, also keeping legacy fallback addition safe from overflow.
-            foreach (var turn in timing.Turns)
-            {
-                if (turn is null || turn.TurnNumber <= previousTurn || turn.TurnNumber > state.TurnNumber ||
-                    unfinished || !state.Seats.Any(seat => seat.SeatId == turn.SeatId) ||
-                    turn.ElapsedTicks < 0 || turn.ElapsedTicks > maximumTicks - recordedTicks)
-                    return null;
-                recordedTicks += turn.ElapsedTicks;
-                previousTurn = turn.TurnNumber;
-                unfinished = !turn.Completed;
-            }
-            return timing.AwaitingScoreMarker && !unfinished ? null : timing;
+            return TurnTimingSnapshotValidator.ValidateForRestore(timing, state);
         }
         catch (Exception error) when (error is JsonException or NotSupportedException or InvalidCastException)
         {

@@ -248,14 +248,15 @@ public sealed partial class GameCoordinator
             var next = _state.Fork();
             GameReducer.ApplyTransition(next, transition.Events);
             var hash = StateHash.Compute(next);
-            _turnTiming.Synchronize(Projector.ProjectPublic(next));
+            var nextView = Projector.ProjectPublic(next);
+            var nextTiming = _turnTiming.PreviewSynchronization(nextView);
 
             try
             {
                 await _store.CommitAsync(
                     next,
                     new StoredCommandOutcome(envelope.CommandId, true, next.StateVersion, null, null,
-                        _turnTiming.Snapshot()),
+                        nextTiming),
                     transition,
                     hash,
                     cancellationToken);
@@ -268,8 +269,9 @@ public sealed partial class GameCoordinator
                 throw;
             }
 
+            _turnTiming.Synchronize(nextView);
             _state = next;
-            _publicView = Projector.ProjectPublic(next);
+            _publicView = nextView;
             var entries = AppendHistory(transition.Events);
 
             update = new CoordinatorUpdate(_publicView, entries);

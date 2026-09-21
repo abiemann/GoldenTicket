@@ -81,7 +81,7 @@ public static class CameraFormatPolicy
 /// Video-only WinRT capture with a capacity-one owned frame. Start from the WPF STA/UI context
 /// for Windows' consent-sensitive initialization. No callback mutates game state.
 /// </summary>
-public sealed class CameraCaptureService : IAsyncDisposable
+public sealed class CameraCaptureService : ICameraCapture
 {
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly object _frameGate = new();

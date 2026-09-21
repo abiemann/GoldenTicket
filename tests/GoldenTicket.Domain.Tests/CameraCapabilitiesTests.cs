@@ -1,3 +1,4 @@
+using GoldenTicket.Testing;
 using System.Collections.Specialized;
 using System.Reflection;
 using GoldenTicket.Desktop.ViewModels;
@@ -17,7 +18,7 @@ public sealed class CameraCapabilitiesTests
     [Fact]
     public async Task Unknown_camera_does_not_offer_4k_or_open_hardware_on_selection()
     {
-        await using var camera = new CameraViewModel();
+        await using var camera = new CameraViewModel(capture: new FakeCameraCapture());
         camera.SelectedDevice = FourKDevice;
 
         Assert.False(camera.HasNative4K);
@@ -55,21 +56,23 @@ public sealed class CameraCapabilitiesTests
     [Fact]
     public async Task A_720p_camera_warns_about_poor_lighting_but_can_start_preview()
     {
-        var starts = 0;
-        await using var camera = new CameraViewModel(
-            getCameraFormats: (_, _) => Task.FromResult<IReadOnlyList<CameraFormat>>([Hd]),
-            startCapture: (device, preference, _) =>
+        var capture = new FakeCameraCapture
+        {
+            AvailableFormats = [Hd],
+            StartHandler = (device, preference, _) =>
             {
                 Assert.Equal(HdDevice, device);
                 Assert.Equal(CameraCapturePreference.Balanced1080p, preference);
-                starts++;
                 return Task.CompletedTask;
-            });
+            }
+        };
+        await using var camera = new CameraViewModel(capture: capture,
+            getCameraFormats: (_, _) => Task.FromResult<IReadOnlyList<CameraFormat>>([Hd]));
         SetField(camera, "_processorReady", true);
         camera.SelectedDevice = HdDevice;
         await camera.StartCommand.ExecuteAsync(null);
 
-        Assert.Equal(1, starts);
+        Assert.Equal(1, capture.StartCalls);
         Assert.True(camera.IsRunning, camera.Problem);
         Assert.Null(camera.Problem);
         Assert.False(camera.HasNative4K);
@@ -82,18 +85,13 @@ public sealed class CameraCapabilitiesTests
     [Fact]
     public async Task A_sub_720p_camera_is_rejected_before_starting_capture_or_image_processing()
     {
-        var starts = 0;
-        await using var camera = new CameraViewModel(
-            getCameraFormats: (_, _) => Task.FromResult<IReadOnlyList<CameraFormat>>([new(640, 480, 30, "MJPG")]),
-            startCapture: (_, _, _) =>
-            {
-                starts++;
-                return Task.CompletedTask;
-            });
+        var capture = new FakeCameraCapture();
+        await using var camera = new CameraViewModel(capture: capture,
+            getCameraFormats: (_, _) => Task.FromResult<IReadOnlyList<CameraFormat>>([new(640, 480, 30, "MJPG")]));
         camera.SelectedDevice = new("legacy", "Legacy webcam");
         await camera.StartCommand.ExecuteAsync(null);
 
-        Assert.Equal(0, starts);
+        Assert.Equal(0, capture.StartCalls);
         Assert.False(camera.IsRunning);
         Assert.False(GetField<bool>(camera, "_processorReady"));
         Assert.Contains("not compatible", camera.Problem);
@@ -104,7 +102,7 @@ public sealed class CameraCapabilitiesTests
     [Fact]
     public async Task Switching_from_4k_to_720p_removes_4k_and_resets_the_selected_quality()
     {
-        await using var camera = new CameraViewModel(getCameraFormats: (device, _) =>
+        await using var camera = new CameraViewModel(capture: new FakeCameraCapture(), getCameraFormats: (device, _) =>
             Task.FromResult<IReadOnlyList<CameraFormat>>(device == FourKDevice ? [FourK, FullHd] : [Hd]));
         camera.SelectedDevice = FourKDevice;
         await camera.RefreshSelectedCameraCapabilitiesAsync();
@@ -123,7 +121,7 @@ public sealed class CameraCapabilitiesTests
     public async Task Refreshing_connected_cameras_preserves_the_selected_item_and_4k_preference()
     {
         IReadOnlyList<CameraDevice> connected = [FullHdDevice, FourKDevice];
-        await using var camera = new CameraViewModel(
+        await using var camera = new CameraViewModel(capture: new FakeCameraCapture(),
             enumerateDevices: _ => Task.FromResult(connected),
             getCameraFormats: (device, _) => Task.FromResult<IReadOnlyList<CameraFormat>>(
                 device.Id == FourKDevice.Id ? [FourK, FullHd] : [FullHd]));
@@ -152,20 +150,15 @@ public sealed class CameraCapabilitiesTests
     [Fact]
     public async Task Starting_an_incompatible_camera_stops_the_previous_stream_and_invalidates_its_board()
     {
-        var starts = 0;
-        await using var camera = new CameraViewModel(
-            getCameraFormats: (_, _) => Task.FromResult<IReadOnlyList<CameraFormat>>([new(640, 480, 30, "MJPG")]),
-            startCapture: (_, _, _) =>
-            {
-                starts++;
-                return Task.CompletedTask;
-            });
+        var capture = new FakeCameraCapture();
+        await using var camera = new CameraViewModel(capture: capture,
+            getCameraFormats: (_, _) => Task.FromResult<IReadOnlyList<CameraFormat>>([new(640, 480, 30, "MJPG")]));
         var frame = CameraFrame.CopyFromBgra32(1920, 1080, new byte[1920 * 1080 * 4], sequence: 4, epoch: 2);
-        SetField(camera.Capture, "_latest", frame);
-        SetField(camera.Capture, "_running", true);
-        SetField(camera.Capture, "<ActiveDevice>k__BackingField", FullHdDevice);
-        SetField(camera.Capture, "<NegotiatedFormat>k__BackingField", FullHd);
-        SetField(camera.Capture, "<AvailableFormats>k__BackingField", new CameraFormat[] { FullHd });
+        capture.LatestFrame = frame;
+        capture.IsRunning = true;
+        capture.ActiveDevice = FullHdDevice;
+        capture.NegotiatedFormat = FullHd;
+        capture.AvailableFormats = [FullHd];
         SetField(camera, "_gameTableRegistration", BoardRegistration.Create(frame,
             [new(0, 0), new(1, 0), new(1, 1), new(0, 1)]));
         SetField(camera, "_gameTablePreviewRequested", true);
@@ -178,7 +171,7 @@ public sealed class CameraCapabilitiesTests
 
         await camera.StartCommand.ExecuteAsync(null);
 
-        Assert.Equal(0, starts);
+        Assert.Equal(0, capture.StartCalls);
         Assert.False(camera.Capture.IsRunning);
         Assert.Null(camera.Capture.ActiveDevice);
         Assert.Null(camera.Capture.LatestFrame);
@@ -193,7 +186,7 @@ public sealed class CameraCapabilitiesTests
     public async Task A_late_result_from_the_previous_camera_cannot_restore_its_4k_option()
     {
         var delayedFormats = new TaskCompletionSource<IReadOnlyList<CameraFormat>>(TaskCreationOptions.RunContinuationsAsynchronously);
-        await using var camera = new CameraViewModel(getCameraFormats: (device, _) =>
+        await using var camera = new CameraViewModel(capture: new FakeCameraCapture(), getCameraFormats: (device, _) =>
             device == FourKDevice ? delayedFormats.Task : Task.FromResult<IReadOnlyList<CameraFormat>>([Hd]));
         camera.SelectedDevice = FourKDevice;
         var oldRequest = camera.RefreshSelectedCameraCapabilitiesAsync();
@@ -216,7 +209,7 @@ public sealed class CameraCapabilitiesTests
     public async Task Disposing_while_probe_is_in_flight_ignores_its_late_result()
     {
         var delayedFormats = new TaskCompletionSource<IReadOnlyList<CameraFormat>>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var camera = new CameraViewModel(getCameraFormats: (_, _) => delayedFormats.Task);
+        var camera = new CameraViewModel(capture: new FakeCameraCapture(), getCameraFormats: (_, _) => delayedFormats.Task);
         try
         {
             camera.SelectedDevice = FourKDevice;
@@ -239,7 +232,7 @@ public sealed class CameraCapabilitiesTests
     public async Task Failed_probe_removes_stale_4k_and_explains_how_to_check_the_current_format()
     {
         var fail = false;
-        await using var camera = new CameraViewModel(getCameraFormats: (_, _) => fail
+        await using var camera = new CameraViewModel(capture: new FakeCameraCapture(), getCameraFormats: (_, _) => fail
             ? Task.FromException<IReadOnlyList<CameraFormat>>(new InvalidOperationException("Camera is busy"))
             : Task.FromResult<IReadOnlyList<CameraFormat>>([FourK, FullHd]));
         camera.SelectedDevice = FourKDevice;
@@ -260,20 +253,15 @@ public sealed class CameraCapabilitiesTests
     [Fact]
     public async Task Probe_failure_allows_the_capture_service_to_validate_the_real_format()
     {
-        var starts = 0;
-        await using var camera = new CameraViewModel(
-            getCameraFormats: (_, _) => Task.FromException<IReadOnlyList<CameraFormat>>(new InvalidOperationException("Probe unavailable")),
-            startCapture: (_, _, _) =>
-            {
-                starts++;
-                return Task.CompletedTask;
-            });
+        var capture = new FakeCameraCapture { AvailableFormats = [FullHd] };
+        await using var camera = new CameraViewModel(capture: capture,
+            getCameraFormats: (_, _) => Task.FromException<IReadOnlyList<CameraFormat>>(new InvalidOperationException("Probe unavailable")));
         SetField(camera, "_processorReady", true);
         camera.SelectedDevice = FullHdDevice;
 
         await camera.StartCommand.ExecuteAsync(null);
 
-        Assert.Equal(1, starts);
+        Assert.Equal(1, capture.StartCalls);
         Assert.True(camera.IsRunning, camera.Problem);
         Assert.False(camera.HasNative4K);
     }
@@ -287,11 +275,11 @@ public sealed class CameraCapabilitiesTests
         camera.SelectedDevice = FullHdDevice;
         await camera.RefreshSelectedCameraCapabilitiesAsync();
         Assert.False(camera.HasCameraCompatibilityMessage);
-        SetField(camera.Capture, "<ActiveDevice>k__BackingField", FullHdDevice);
-        SetField(camera.Capture, "<NegotiatedFormat>k__BackingField", useDeliveredDimensions ? FullHd : Hd);
+        ((FakeCameraCapture)camera.Capture).ActiveDevice = FullHdDevice;
+        ((FakeCameraCapture)camera.Capture).NegotiatedFormat = useDeliveredDimensions ? FullHd : Hd;
         if (useDeliveredDimensions)
-            SetField(camera.Capture, "_deliveredFrameDimensions", new CameraFrameDimensions(1280, 720));
-        SetField(camera.Capture, "_running", true);
+            ((FakeCameraCapture)camera.Capture).DeliveredFrameDimensions = new CameraFrameDimensions(1280, 720);
+        ((FakeCameraCapture)camera.Capture).IsRunning = true;
 
         PreviewTick(camera);
 
@@ -301,7 +289,7 @@ public sealed class CameraCapabilitiesTests
     }
 
     private static CameraViewModel CreateCamera(IReadOnlyList<CameraFormat> formats) =>
-        new(getCameraFormats: (_, _) => Task.FromResult(formats));
+        new(capture: new FakeCameraCapture(), getCameraFormats: (_, _) => Task.FromResult(formats));
 
     private static void PreviewTick(CameraViewModel camera) => typeof(CameraViewModel)
         .GetMethod("PreviewTick", BindingFlags.Instance | BindingFlags.NonPublic)!

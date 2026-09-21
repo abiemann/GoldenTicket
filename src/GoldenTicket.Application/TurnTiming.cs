@@ -58,6 +58,44 @@ public sealed class TurnTimingTracker
         }
     }
 
+    /// <summary>
+    /// Prepare the timing payload for a candidate transaction without publishing its turn change.
+    /// The coordinator calls Synchronize only after storage acknowledges that transaction. Clock
+    /// controls remain live during I/O; applying the view afterwards must not replace a newer pause
+    /// or score-marker hold with flags copied before the write.
+    /// </summary>
+    internal TurnTimingSnapshot PreviewSynchronization(PublicView view)
+    {
+        lock (_gate)
+        {
+            Accumulate();
+            var candidate = new TurnTimingTracker(this)
+            {
+                _view = view,
+                _initialTurn = _initialTurn ?? view.TurnNumber,
+            };
+            candidate.Reconcile();
+            return new(candidate._turns.ToArray(), candidate._holdingMarker,
+                candidate.IsCounting, candidate._gameElapsedTicks);
+        }
+    }
+
+    private TurnTimingTracker(TurnTimingTracker source)
+    {
+        _clock = source._clock;
+        _stamp = source._stamp;
+        _turns = [.. source._turns];
+        _restored = source._restored;
+        _view = source._view;
+        _paused = source._paused;
+        _enabled = source._enabled;
+        _holdingMarker = source._holdingMarker;
+        _gameRunning = source._gameRunning;
+        _gameElapsedTicks = source._gameElapsedTicks;
+        _current = source._current;
+        _initialTurn = source._initialTurn;
+    }
+
     public void SetPaused(bool paused)
     {
         lock (_gate)

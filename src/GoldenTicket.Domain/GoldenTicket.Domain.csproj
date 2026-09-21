@@ -5,9 +5,10 @@
     <RootNamespace>GoldenTicket.Domain</RootNamespace>
   </PropertyGroup>
 
-  <!-- The test project drives the engine directly and sets up controlled hands. -->
+  <!-- The test suites drive the engine directly and set up controlled hands. -->
   <ItemGroup>
     <InternalsVisibleTo Include="GoldenTicket.Domain.Tests" />
+    <InternalsVisibleTo Include="GoldenTicket.Core.Tests" />
   </ItemGroup>
 
   <!-- DESIGN 6.3: the board/ticket manifest is versioned data, separate from executable code.

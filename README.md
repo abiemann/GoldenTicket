@@ -7,6 +7,10 @@ computer opponents.
 
 `DESIGN.md` is the full design. This README says what is **built** and what is **not**.
 
+See the implemented [architecture](docs/architecture.md) and [contributor guide](CONTRIBUTING.md)
+for code structure and development boundaries. Automated tests check dependency direction; the
+portable core suite is separate from Windows UI, camera and phone-host integration tests.
+
 The September 12, 2026 [implementation audit](docs/AUDIT-2026-09-12.md) found that the full design is
 **not implemented**. It reviews the new pack-away, supply-policy and connectivity work, documents
 the corrected bugs and security issues, and separates automated evidence from remaining device tests.
@@ -303,6 +307,15 @@ from installed gameplay. Automated browser tests block non-laptop origins while 
 real phone certificate, home-screen installation and WAN-disconnected device acceptance remain open.
 
 ## Build, test, run
+
+Rules, application coordination, AI and SQLite tests can also run without Windows:
+
+```bash
+dotnet restore tests/GoldenTicket.Core.Tests/GoldenTicket.Core.Tests.csproj --locked-mode --configfile NuGet.config
+dotnet test tests/GoldenTicket.Core.Tests/GoldenTicket.Core.Tests.csproj --no-restore
+```
+
+The complete solution and desktop integration checks require Windows:
 
 ```bash
 dotnet restore GoldenTicket.sln --locked-mode --configfile NuGet.config

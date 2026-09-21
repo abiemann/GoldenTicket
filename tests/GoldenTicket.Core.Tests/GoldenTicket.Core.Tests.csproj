@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>GoldenTicket.Domain.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/GoldenTicket.Domain/GoldenTicket.Domain.csproj" />
+    <ProjectReference Include="../../src/GoldenTicket.Application/GoldenTicket.Application.csproj" />
+    <ProjectReference Include="../../src/GoldenTicket.AI/GoldenTicket.AI.csproj" />
+    <ProjectReference Include="../../src/GoldenTicket.Persistence/GoldenTicket.Persistence.csproj" />
+    <Compile Include="../Shared/RulesHarness.cs" Link="Support/RulesHarness.cs" />
+    <Compile Include="../Shared/ManualFrameTimeProvider.cs" Link="Support/ManualFrameTimeProvider.cs" />
+  </ItemGroup>
+</Project>
