@@ -123,7 +123,12 @@ This build implements the core game plus initial phone, camera and photo workflo
   timed turns include decisions, train placement and scoring-marker movement. These player statistics
   still exclude menus, technical tools, window inactivity, sleep and saved-game restoration.
   Interrupted or partially recorded turns are excluded from the average; unavailable history is not invented.
-- Heuristic computer opponents at three difficulty levels, which see only their own seat's view.
+- Computer opponents use Standard play by default. On **Choose players**, click the smiling badge
+  at the bottom-right of a computer portrait to spin it into a purple devil for **Aggressive** play;
+  click again to return to Standard. Each computer has its own choice, retained in saved games.
+  Aggressive players favour short routes near human networks and opportunities to interrupt a
+  growing continuous railway, using only public claims. Standard play is unchanged; opponents never
+  see another player's private cards or tickets. Relaxed and Challenging remain in technical setup.
 - Durable local saves: an append-only event journal in SQLite with a tamper-evident hash chain,
   plaintext local payloads, command deduplication, and restore by replay verified against a stored
   state fingerprint. Game saves are not encrypted; saves written in the former encrypted format

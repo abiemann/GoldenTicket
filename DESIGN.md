@@ -1108,8 +1108,23 @@ Evaluate claims using immediate public value, private network improvement, resou
 | Relaxed | Legal heuristic with bounded variation and forgiving planning | About 0.25–0.75 seconds |
 | Standard | Better route alternatives, resource planning, and public opponent signals | About 1–2 seconds |
 | Challenging | Bounded sampled lookahead with stronger evaluation | About 3–5 seconds |
+| Aggressive | Existing heuristic plus public human-network blocking, especially short connections and continuous-route extensions | About 1–2 seconds |
 
 These are initial latency targets, not strength claims. Difficulty changes computation and decision policy, never private-information access or deck order. Personality changes wording and optional strategic preferences, but cannot grant illegal actions.
+
+The character-selection screen offers Standard (smiling face) and Aggressive (purple devil) through
+a separate badge at the bottom-right of each computer portrait. Clicking the badge spins it and
+changes only that computer's style; keyboard activation works too, and reduced-motion preferences
+skip the animation. Human and unselected characters have no badge. New games and changing a
+computer back to an unselected character reset to Standard. The existing per-seat difficulty field
+persists this choice; older difficulty values and Standard's decision path remain unchanged.
+
+Aggressive evaluation uses only public human-owned routes to reward adjacent short claims,
+connections between human networks, and opportunities to obstruct continuous-route extensions.
+It may collect cards for those targets but still considers its own tickets, score and payment cost.
+A spare parallel lane in a four- or five-player game prevents a claim being treated as a block.
+Search is bounded and cancellable. This is a heuristic preference, not knowledge of human
+destinations or a guarantee of stronger play or denying the longest-route bonus.
 
 ### 15.4 Search without hidden-state leakage
 

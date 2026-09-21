@@ -11,6 +11,97 @@
         <local:EmptyStringToVisibilityConverter x:Key="MessageVisibility" />
         <local:ScreenVisibilityConverter x:Key="ScreenVisibility" />
 
+        <DrawingImage x:Key="StandardAiFace">
+            <DrawingImage.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="Transparent" Geometry="M 0,0 H 48 V 48 H 0 Z" />
+                    <GeometryDrawing>
+                        <GeometryDrawing.Brush>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                <GradientStop Color="#FFFFE990" Offset="0" />
+                                <GradientStop Color="#FFFFCF4A" Offset="0.6" />
+                                <GradientStop Color="#FFF1A839" Offset="1" />
+                            </LinearGradientBrush>
+                        </GeometryDrawing.Brush>
+                        <GeometryDrawing.Pen><Pen Brush="#FFE6A637" Thickness="1" /></GeometryDrawing.Pen>
+                        <GeometryDrawing.Geometry><EllipseGeometry Center="24,25" RadiusX="19" RadiusY="19" /></GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <GeometryDrawing Brush="#66F59665">
+                        <GeometryDrawing.Geometry>
+                            <GeometryGroup><EllipseGeometry Center="12.5,28" RadiusX="4" RadiusY="2.5" />
+                                <EllipseGeometry Center="35.5,28" RadiusX="4" RadiusY="2.5" /></GeometryGroup>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <GeometryDrawing Geometry="M 12.5,23 Q 16.5,16 20.5,23 M 27.5,23 Q 31.5,16 35.5,23">
+                        <GeometryDrawing.Pen><Pen Brush="#FF543D2C" Thickness="2.8" StartLineCap="Round" EndLineCap="Round" /></GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                    <GeometryDrawing Brush="#FF654030" Geometry="M 13,29 Q 24,35 35,29 C 32,41 16,41 13,29 Z" />
+                    <GeometryDrawing Brush="#FFFFF7DA" Geometry="M 15,30 Q 24,34 33,30 Q 24,37 15,30 Z" />
+                </DrawingGroup>
+            </DrawingImage.Drawing>
+        </DrawingImage>
+        <DrawingImage x:Key="AggressiveAiFace">
+            <DrawingImage.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="Transparent" Geometry="M 0,0 H 48 V 48 H 0 Z" />
+                    <GeometryDrawing Brush="#FFB996DA" Geometry="M 7,4 Q 5,15 12,20 L 19,13 Z M 41,4 Q 43,15 36,20 L 29,13 Z">
+                        <GeometryDrawing.Pen><Pen Brush="#FF684888" Thickness="1" /></GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                    <GeometryDrawing>
+                        <GeometryDrawing.Brush>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                <GradientStop Color="#FFD3A3F0" Offset="0" />
+                                <GradientStop Color="#FFAD6BCD" Offset="0.55" />
+                                <GradientStop Color="#FF864CAF" Offset="1" />
+                            </LinearGradientBrush>
+                        </GeometryDrawing.Brush>
+                        <GeometryDrawing.Pen><Pen Brush="#FF80509E" Thickness="1" /></GeometryDrawing.Pen>
+                        <GeometryDrawing.Geometry><EllipseGeometry Center="24,26" RadiusX="19" RadiusY="18" /></GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <GeometryDrawing Brush="#FF392743" Geometry="M 11,21 Q 16,25 21,24 Q 17,31 13,27 Z M 37,21 Q 32,25 27,24 Q 31,31 35,27 Z" />
+                    <GeometryDrawing Geometry="M 11,19 L 20,22 M 37,19 L 28,22">
+                        <GeometryDrawing.Pen><Pen Brush="#FF392743" Thickness="2.3" StartLineCap="Round" EndLineCap="Round" /></GeometryDrawing.Pen>
+                    </GeometryDrawing>
+                    <GeometryDrawing Brush="#FF392743" Geometry="M 14,31 Q 24,38 35,29 C 31,42 17,41 14,31 Z" />
+                    <GeometryDrawing Brush="#FFF5E9FA" Geometry="M 17,33 Q 25,37 32,32 Q 25,39 17,33 Z" />
+                </DrawingGroup>
+            </DrawingImage.Drawing>
+        </DrawingImage>
+
+        <Style x:Key="AiStyleBadgeButton" TargetType="Button">
+            <Setter Property="Width" Value="44" />
+            <Setter Property="Height" Value="44" />
+            <Setter Property="Background" Value="#FF1B2733" />
+            <Setter Property="BorderBrush" Value="#FFE0BA6A" />
+            <Setter Property="BorderThickness" Value="1.5" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="BadgeFrame" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="24">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="BadgeFrame" Property="Background" Value="#FF493541" />
+                                <Setter TargetName="BadgeFrame" Property="BorderBrush" Value="#FFFFE7B0" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="BadgeFrame" Property="BorderBrush" Value="#FFFFFFFF" />
+                                <Setter TargetName="BadgeFrame" Property="BorderThickness" Value="2.5" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="BadgeFrame" Property="Background" Value="#FF664955" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="GameChoiceButton" TargetType="Button">
             <Setter Property="Background" Value="#DB17212C" />
             <Setter Property="Foreground" Value="#FFF8EEDC" />
@@ -398,17 +489,40 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Button Style="{StaticResource GameSeatButton}" Width="157" Margin="5,0"
-                                    MouseEnter="Seat_MouseEnter" Click="Seat_Click"
-                                    AutomationProperties.Name="{Binding AccessibleName}">
-                                <StackPanel>
-                                    <Image Source="{Binding Portrait}" Width="129" Height="129"
-                                           Stretch="Uniform" />
-                                    <TextBlock Text="{Binding Label}" Foreground="#FFFFF1D7" FontSize="17"
-                                               FontWeight="SemiBold" HorizontalAlignment="Center"
-                                               Margin="0,10,0,0" />
-                                </StackPanel>
-                            </Button>
+                            <Grid Width="157" Margin="5,0">
+                                <Button Style="{StaticResource GameSeatButton}" Tag="CharacterRole"
+                                        MouseEnter="Seat_MouseEnter" Click="Seat_Click"
+                                        AutomationProperties.Name="{Binding AccessibleName}">
+                                    <StackPanel>
+                                        <Image Tag="CharacterPortrait" Source="{Binding Portrait}" Width="129" Height="129"
+                                               Stretch="Uniform" />
+                                        <TextBlock Text="{Binding Label}" Foreground="#FFFFF1D7" FontSize="17"
+                                                   FontWeight="SemiBold" HorizontalAlignment="Center"
+                                                   Margin="0,10,0,0" />
+                                    </StackPanel>
+                                </Button>
+                                <Grid Width="129" Height="129" HorizontalAlignment="Center" VerticalAlignment="Top"
+                                      Margin="0,14,0,0" Visibility="{Binding IsComputer, Converter={StaticResource BoolToVisibility}}">
+                                    <Button Style="{StaticResource AiStyleBadgeButton}" Tag="AiStyleBadge"
+                                            HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-3,-3"
+                                            MouseEnter="Seat_MouseEnter" Click="AiStyle_Click"
+                                            ToolTip="{Binding AiStyleToolTip}"
+                                            AutomationProperties.Name="{Binding AiStyleAccessibleName}">
+                                        <Image Tag="AiStyleImage" Width="40" Height="40" RenderTransformOrigin="0.5,0.5">
+                                            <Image.Style>
+                                                <Style TargetType="Image">
+                                                    <Setter Property="Source" Value="{StaticResource StandardAiFace}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsAggressive}" Value="True">
+                                                            <Setter Property="Source" Value="{StaticResource AggressiveAiFace}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Image.Style>
+                                        </Image>
+                                    </Button>
+                                </Grid>
+                            </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
@@ -416,6 +530,8 @@
                            Text="Choose at least two. Click a face to cycle: Player → Computer → Unselected."
                            Foreground="#FFE6D9C3" FontSize="14" HorizontalAlignment="Center"
                            Margin="0,15,0,0" />
+                <TextBlock Text="Click a computer's smile to switch between Standard and Aggressive."
+                           Foreground="#FFE6D9C3" FontSize="14" HorizontalAlignment="Center" Margin="0,5,0,0" />
                 <TextBlock Text="{Binding Game.Message}" Foreground="#FFFFD576" Margin="6,8,0,0"
                            Visibility="{Binding Game.Message, Converter={StaticResource MessageVisibility}}"
                            AutomationProperties.LiveSetting="Polite" />

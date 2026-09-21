@@ -68,6 +68,7 @@ internal static partial class Program
                 await VerifyWindowPresentationPersistence();
                 await VerifyFinalStandingsSharing();
                 await VerifyGameMenu();
+                await VerifyAiStyleSelection();
                 await VerifyGameTableLayout();
                 await VerifyPlacementTarget();
                 await VerifyGameLayerTransition();
@@ -513,11 +514,11 @@ internal static partial class Program
                     Math.Abs(titleBounds.Left + titleBounds.Width / 2 - dialogBounds.Left - dialogBounds.Width / 2) > 2 ||
                     backBounds.Right + 8 > titleBounds.Left || back.Content is not null)
                     throw new InvalidOperationException("The steampunk back arrow must sit at the dialog's left edge beside its centered title.");
-                var faces = Descendants<Image>(view).Where(image => image.DataContext is GameSeatChoice).ToArray();
+                var faces = Descendants<Image>(view).Where(image => image.Tag as string == "CharacterPortrait").ToArray();
                 if (faces.Length != 5 || play.Content as string != "SET-UP BOARD" ||
                     play.IsEnabled != model.Game.CanPlay)
                     throw new InvalidOperationException("All five character portraits and the chosen-seat board setup button must be visible.");
-                var seatButtons = Descendants<Button>(dialog).Where(button => button.DataContext is GameSeatChoice).ToArray();
+                var seatButtons = Descendants<Button>(dialog).Where(button => button.Tag as string == "CharacterRole").ToArray();
                 if (Descendants<CheckBox>(dialog).Any() || seatButtons.Length != 5 ||
                     Bounds(instructions).Top <= seatButtons.Max(button => Bounds(button).Bottom))
                     throw new InvalidOperationException("The roster instruction must follow all five faces without a checkbox.");
@@ -785,7 +786,7 @@ internal static partial class Program
             var pointerView = new GameScreenView { DataContext = model };
             await Arrange(pointerView, 1000, 620);
             var fourth = Descendants<Button>(pointerView).Single(button =>
-                button.DataContext is GameSeatChoice { Number: 4 });
+                button.Tag as string == "CharacterRole" && button.DataContext is GameSeatChoice { Number: 4 });
             model.Game.SelectSeat(0);
             ((Button)pointerView.FindName("PlayButton"))
                 .RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount)

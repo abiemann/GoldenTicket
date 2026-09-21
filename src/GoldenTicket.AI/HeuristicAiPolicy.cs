@@ -30,6 +30,17 @@ public sealed class HeuristicAiPolicy : IAiPolicy
 
         var legal = LegalActionCalculator.For(view, manifest);
 
+        // Keep the established styles on their original path, including random consumption.
+        // Only Aggressive evaluates public human networks; the same legal payments still apply.
+        if (budget.Difficulty == AiDifficulty.Aggressive && !legal.MustCommitTicketSelection)
+        {
+            var blocking = AggressiveRoutePlanner.Evaluate(view, manifest, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(view.Public.TurnPhase == TurnPhase.AwaitingSecondTrainCard
+                ? PickCard(view, legal, ColorDemand(view, manifest, blocking))
+                : ChooseTurnAction(view, manifest, legal, budget, random, blocking));
+        }
+
         AiDecision decision =
             legal.MustCommitTicketSelection ? ChooseTickets(view, manifest, budget) :
             view.Public.TurnPhase == TurnPhase.AwaitingSecondTrainCard ? ChooseSecondCard(view, manifest, legal) :
@@ -136,12 +147,22 @@ public sealed class HeuristicAiPolicy : IAiPolicy
     }
 
     /// <summary>How much this seat still wants each colour, given the routes its plan needs.</summary>
-    private static Dictionary<TrainCardKind, double> ColorDemand(SeatView view, BoardManifest manifest)
+    private static Dictionary<TrainCardKind, double> ColorDemand(
+        SeatView view, BoardManifest manifest, IReadOnlyDictionary<RouteId, double>? blocking = null)
     {
         var plan = RoutePlanner.Plan(view, manifest);
         var demand = new Dictionary<TrainCardKind, double>();
 
-        foreach (var (routeId, value) in plan.RouteValue)
+        var routeValues = plan.RouteValue;
+        if (blocking is { Count: > 0 })
+        {
+            var combined = new Dictionary<RouteId, double>(routeValues);
+            foreach (var (routeId, value) in blocking)
+                combined[routeId] = combined.GetValueOrDefault(routeId) + value * 0.5;
+            routeValues = combined;
+        }
+
+        foreach (var (routeId, value) in routeValues)
         {
             var route = manifest.Route(routeId);
 
@@ -168,12 +189,13 @@ public sealed class HeuristicAiPolicy : IAiPolicy
     // ---- Turn choice --------------------------------------------------------------------------
 
     private static AiDecision ChooseTurnAction(
-        SeatView view, BoardManifest manifest, LegalActions legal, DecisionBudget budget, DeterministicRandom random)
+        SeatView view, BoardManifest manifest, LegalActions legal, DecisionBudget budget, DeterministicRandom random,
+        IReadOnlyDictionary<RouteId, double>? blocking = null)
     {
         var plan = RoutePlanner.Plan(view, manifest);
         var trains = view.TrainsRemaining;
 
-        var bestClaim = BestClaim(view, manifest, legal, plan, budget, random);
+        var bestClaim = BestClaim(view, manifest, legal, plan, budget, random, blocking);
 
         if (bestClaim is { } claim)
         {
@@ -187,12 +209,13 @@ public sealed class HeuristicAiPolicy : IAiPolicy
         if (legal.CanRequestTicketOffer &&
             trains >= 20 &&
             unfinished == 0 &&
+            blocking is not { Count: > 0 } &&
             view.Public.TurnNumber > view.Public.Seats.Length)
         {
             return new AiDrawTickets();
         }
 
-        var card = PickCard(view, legal, ColorDemand(view, manifest));
+        var card = PickCard(view, legal, ColorDemand(view, manifest, blocking));
         if (card is not AiNoDecision) return card;
 
         if (bestClaim is { } fallbackClaim) return new AiClaimRoute(fallbackClaim.RouteId, fallbackClaim.Payment);
@@ -220,7 +243,8 @@ public sealed class HeuristicAiPolicy : IAiPolicy
         LegalActions legal,
         NetworkPlan plan,
         DecisionBudget budget,
-        DeterministicRandom random)
+        DeterministicRandom random,
+        IReadOnlyDictionary<RouteId, double>? blocking = null)
     {
         ScoredClaim? best = null;
         var constants = manifest.RulesConstants;
@@ -233,6 +257,7 @@ public sealed class HeuristicAiPolicy : IAiPolicy
 
             double score = constants.ScoreForLength(route.Length);
             score += plan.ValueOf(claim.RouteId) * 2.5;
+            score += blocking?.GetValueOrDefault(claim.RouteId) ?? 0;
 
             // Locomotives are the scarcest card; spending them needs to be worth it.
             score -= payment.Locomotives * 1.8;

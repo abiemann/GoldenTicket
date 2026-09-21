@@ -37,12 +37,15 @@ public enum SeatKind
     Computer = 1,
 }
 
-/// <summary>DESIGN 15.3 difficulty levels. Changes computation only, never information access.</summary>
+/// <summary>Computer play styles and decision budgets. Never changes information access.</summary>
 public enum AiDifficulty
 {
     Relaxed = 0,
     Standard = 1,
     Challenging = 2,
+
+    /// <summary>Standard ticket planning plus public-board blocking of human networks.</summary>
+    Aggressive = 3,
 }
 
 /// <summary>Session lifecycle gate (DESIGN 9.2), limited to the states this build implements.</summary>

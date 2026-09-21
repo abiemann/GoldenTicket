@@ -36,6 +36,12 @@ public sealed partial class GameSeatChoice(int number) : ObservableObject
         _ => throw new InvalidOperationException($"Character {Number} has no train color."),
     };
     public bool IsChosen => Role != CharacterRole.Unselected;
+    public bool IsComputer => Role == CharacterRole.Computer;
+    public bool IsAggressive => Difficulty == AiDifficulty.Aggressive;
+    public string AiStyleAccessibleName => $"{Label}, {(IsAggressive ? "aggressive" : "standard")} computer. Switch to {(IsAggressive ? "standard" : "aggressive")}.";
+    public string AiStyleToolTip => IsAggressive
+        ? "Aggressive: competes for routes to block human players and their longest railway. Click for Standard."
+        : "Standard: the original computer play style. Click for Aggressive.";
     public string Label => Role switch
     {
         CharacterRole.Human => $"Player {RoleNumber}",
@@ -56,22 +62,34 @@ public sealed partial class GameSeatChoice(int number) : ObservableObject
         : _humanPortrait ??= LoadPortrait(false);
 
     [ObservableProperty] private CharacterRole _role;
+    [ObservableProperty] private AiDifficulty _difficulty = AiDifficulty.Standard;
     [ObservableProperty] private int _roleNumber;
     [ObservableProperty] private bool _isSelected;
 
     partial void OnRoleChanged(CharacterRole value)
     {
+        if (value != CharacterRole.Computer) Difficulty = AiDifficulty.Standard;
         OnPropertyChanged(nameof(IsChosen));
+        OnPropertyChanged(nameof(IsComputer));
         OnPropertyChanged(nameof(Label));
         OnPropertyChanged(nameof(AccessibleName));
         OnPropertyChanged(nameof(PortraitUri));
         OnPropertyChanged(nameof(Portrait));
+        OnPropertyChanged(nameof(AiStyleAccessibleName));
+    }
+
+    partial void OnDifficultyChanged(AiDifficulty value)
+    {
+        OnPropertyChanged(nameof(IsAggressive));
+        OnPropertyChanged(nameof(AiStyleAccessibleName));
+        OnPropertyChanged(nameof(AiStyleToolTip));
     }
 
     partial void OnRoleNumberChanged(int value)
     {
         OnPropertyChanged(nameof(Label));
         OnPropertyChanged(nameof(AccessibleName));
+        OnPropertyChanged(nameof(AiStyleAccessibleName));
     }
 
     public void Cycle() => Role = Role switch
@@ -477,6 +495,12 @@ public sealed partial class GameScreenViewModel : ObservableObject
         Message = null;
     }
 
+    public void ToggleAiStyle(GameSeatChoice choice)
+    {
+        if (IsBusy || !IsCharacterSelection || !SeatChoices.Contains(choice) || !choice.IsComputer) return;
+        choice.Difficulty = choice.IsAggressive ? AiDifficulty.Standard : AiDifficulty.Aggressive;
+    }
+
     public void MoveSelection(int delta)
     {
         if (IsBusy) return;
@@ -499,7 +523,12 @@ public sealed partial class GameScreenViewModel : ObservableObject
             case GameScreenStage.Welcome:
                 if (WelcomeSelection == 0)
                 {
-                    foreach (var choice in SeatChoices) { choice.Role = CharacterRole.Unselected; choice.RoleNumber = 0; }
+                    foreach (var choice in SeatChoices)
+                    {
+                        choice.Role = CharacterRole.Unselected;
+                        choice.RoleNumber = 0;
+                        choice.Difficulty = AiDifficulty.Standard;
+                    }
                     SeatSelection = -1;
                     _main.Setup.ManualVerificationAccepted = false;
                     OnPropertyChanged(nameof(SelectedSeatCount));
@@ -530,6 +559,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
             seat.IsComputer = chosen[index].Role == CharacterRole.Computer;
             seat.DisplayName = chosen[index].Label;
             seat.Color = chosen[index].TrainColor;
+            seat.Difficulty = seat.IsComputer ? chosen[index].Difficulty : AiDifficulty.Standard;
         }
         _main.Setup.StartingSeatIndex = 0;
     }

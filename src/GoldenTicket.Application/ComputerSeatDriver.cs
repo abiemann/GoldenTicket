@@ -217,6 +217,7 @@ public sealed class ComputerSeatDriver
         AiDifficulty.Relaxed => new DecisionBudget(difficulty, TimeSpan.FromMilliseconds(750)),
         AiDifficulty.Standard => new DecisionBudget(difficulty, TimeSpan.FromSeconds(2)),
         AiDifficulty.Challenging => new DecisionBudget(difficulty, TimeSpan.FromSeconds(5)),
+        AiDifficulty.Aggressive => new DecisionBudget(difficulty, TimeSpan.FromSeconds(2)),
         _ => new DecisionBudget(difficulty, TimeSpan.FromSeconds(2)),
     };
 

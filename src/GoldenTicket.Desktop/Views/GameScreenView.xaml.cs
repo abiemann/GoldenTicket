@@ -137,6 +137,13 @@ public partial class GameScreenView : UserControl
             }
             return;
         }
+        // The badge is its own button. Let WPF activate it with Enter/Space instead
+        // of routing Enter through the character's role-cycling shortcut.
+        if (Keyboard.FocusedElement is Button { Tag: "AiStyleBadge" } && e.Key is Key.Enter or Key.Space)
+        {
+            if (e.IsRepeat) e.Handled = true;
+            return;
+        }
         if (e.Key is Key.Up or Key.Left)
         {
             game.MoveSelection(-1);
@@ -226,6 +233,48 @@ public partial class GameScreenView : UserControl
         FocusCurrentChoice();
     }
 
+    private void AiStyle_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        var game = Game;
+        if (_faceFlipping || game is null || game.IsBusy || !game.IsCharacterSelection ||
+            sender is not Button { DataContext: GameSeatChoice { IsComputer: true } choice, Content: Image image }) return;
+        game.SelectSeat(choice.Number - 1);
+        if (!SystemParameters.ClientAreaAnimation)
+        {
+            game.ToggleAiStyle(choice);
+            return;
+        }
+
+        _faceFlipping = true;
+        game.IsFaceFlipping = true;
+        var transform = new RotateTransform();
+        image.RenderTransform = transform;
+        var firstHalf = new DoubleAnimation(0, 180, TimeSpan.FromMilliseconds(160))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+        };
+        firstHalf.Completed += (_, _) =>
+        {
+            transform.BeginAnimation(RotateTransform.AngleProperty, null);
+            transform.Angle = 180;
+            game.ToggleAiStyle(choice);
+            var secondHalf = new DoubleAnimation(180, 360, TimeSpan.FromMilliseconds(160))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
+            secondHalf.Completed += (_, _) =>
+            {
+                transform.BeginAnimation(RotateTransform.AngleProperty, null);
+                transform.Angle = 0;
+                _faceFlipping = false;
+                game.IsFaceFlipping = false;
+            };
+            transform.BeginAnimation(RotateTransform.AngleProperty, secondHalf);
+        };
+        transform.BeginAnimation(RotateTransform.AngleProperty, firstHalf);
+    }
+
     private Button? FindSeatButton(int index)
     {
         if (SeatItems.ItemContainerGenerator.ContainerFromIndex(index) is not DependencyObject container) return null;
@@ -234,7 +283,7 @@ public partial class GameScreenView : UserControl
 
     private static Button? FindButton(DependencyObject parent)
     {
-        if (parent is Button button) return button;
+        if (parent is Button { Tag: "CharacterRole" } button) return button;
         for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
             if (FindButton(VisualTreeHelper.GetChild(parent, index)) is { } found) return found;
         return null;

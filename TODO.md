@@ -516,6 +516,11 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   before the final narrative feature pass.
 - [ ] Implement and evaluate the specified Challenging AI sampled lookahead; current difficulty
   choices tune a heuristic. Keep opponent hands/deck state inaccessible and report strength honestly.
+- [x] Add per-computer Standard/Aggressive badges to character selection, with a spinning toggle
+  and saved style choices. Aggressive claims and card demand use public human networks to favour
+  short blocks and continuous-route interference; Standard behaviour is preserved.
+- [ ] Playtest Aggressive against humans across seat counts and seeds, measuring disruption,
+  game completion and decision time before making comparative difficulty claims.
 - [ ] **M7: distribution completion.** Validate the self-contained x64 ZIP on clean Windows, add an
   installer, native dependency smoke checks, complete license/asset notice review and upgrades/uninstall
   that retain saves. Establish packaging before the final narrative pass, then refresh it with the
