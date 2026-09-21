@@ -25,27 +25,74 @@ public class CompanionHostTests
         return (authority, authority.Authenticate(pending.Value.Session, new string('a', 32), true)!);
     }
     [Fact]
-    public void PairingRequiresExplicitLaptopApprovalAndCodeIsSingleUse()
+    public void PairingRequiresExplicitLaptopApprovalAndKeepsTheCodeAvailable()
     {
         var authority = new ControllerAuthority(); authority.NewCode(); var code = authority.PairingCode;
         var pending = authority.RequestPair(code, new string('a', 32), "Pixel");
         Assert.NotNull(pending);
         Assert.Null(authority.Authenticate(pending.Value.Session, new string('a', 32)));
-        Assert.Null(authority.RequestPair(code, new string('b', 32), "Second phone"));
+        Assert.Equal(code, authority.PairingCode);
         Assert.True(authority.Approve());
         Assert.NotNull(authority.Authenticate(pending.Value.Session, new string('a', 32)));
         Assert.Null(authority.Authenticate(pending.Value.Session, new string('b', 32)));
+        Assert.Equal(code, authority.PairingCode);
+        var replacement = authority.RequestPair(code, new string('b', 32), "Second phone");
+        Assert.NotNull(replacement);
+        Assert.Null(authority.Authenticate(replacement.Value.Session, new string('b', 32)));
+        Assert.NotNull(authority.Authenticate(pending.Value.Session, new string('a', 32)));
     }
     [Fact]
-    public void PairingCodesAttemptLimitAndExpiryAreEnforced()
+    public void PairingCodeRemainsValidAfterLongIdle()
     {
         var clock = new Clock(); var authority = new ControllerAuthority(clock); authority.NewCode();
         var code = authority.PairingCode;
+        clock.Now += TimeSpan.FromDays(2);
+        Assert.Equal(code, authority.PairingCode);
+        Assert.NotNull(authority.RequestPair(code, new string('a', 32), "Pixel"));
+        Assert.True(authority.Approve());
+    }
+    [Fact]
+    public void IncorrectEntriesDoNotConsumeOrPermanentlyLockThePairingCode()
+    {
+        var authority = new ControllerAuthority(); authority.NewCode();
+        var code = authority.PairingCode;
         var wrong = code == "111111" ? "222222" : "111111";
-        for (var i = 0; i < 6; i++) Assert.Null(authority.RequestPair(wrong, new string('a', 32), "Pixel"));
-        Assert.Null(authority.RequestPair(code, new string('a', 32), "Pixel"));
-        authority.NewCode(); code = authority.PairingCode; clock.Now += TimeSpan.FromMinutes(5);
-        Assert.Null(authority.RequestPair(code, new string('a', 32), "Pixel"));
+        for (var i = 0; i < 20; i++) Assert.Null(authority.RequestPair(wrong, new string('a', 32), "Pixel"));
+        Assert.Equal(code, authority.PairingCode);
+        Assert.NotNull(authority.RequestPair(code, new string('a', 32), "Pixel"));
+        Assert.True(authority.Approve());
+    }
+    [Fact]
+    public void ExpiredApprovalCanBeRequestedAgainWithTheSameCode()
+    {
+        var clock = new Clock(); var authority = new ControllerAuthority(clock); authority.NewCode();
+        var code = authority.PairingCode;
+        var pending = authority.RequestPair(code, new string('a', 32), "Pixel")!.Value;
+        clock.Now += TimeSpan.FromMinutes(3);
+        Assert.False(authority.IsPending(pending.Session, new string('a', 32)));
+        Assert.False(authority.Approve());
+        Assert.Equal(code, authority.PairingCode);
+        var retry = authority.RequestPair(code, new string('a', 32), "Pixel")!.Value;
+        Assert.NotEqual(pending.Session, retry.Session);
+        Assert.True(authority.Approve());
+        Assert.Null(authority.Authenticate(pending.Session, new string('a', 32)));
+        Assert.NotNull(authority.Authenticate(retry.Session, new string('a', 32)));
+    }
+    [Fact]
+    public void NewCodeInvalidatesThePreviousCodeAndPendingApprovalButKeepsTheApprovedController()
+    {
+        var (authority, current) = Paired();
+        var oldCode = authority.PairingCode;
+        var pending = authority.RequestPair(oldCode, new string('b', 32), "Tablet")!.Value;
+        authority.NewCode();
+        Assert.NotEqual(oldCode, authority.PairingCode);
+        Assert.Null(authority.PendingApproval);
+        Assert.False(authority.IsPending(pending.Session, new string('b', 32)));
+        Assert.False(authority.Approve());
+        Assert.Null(authority.RequestPair(oldCode, new string('b', 32), "Tablet"));
+        Assert.NotNull(authority.Authenticate(current.Session, current.Tab));
+        Assert.Null(authority.Authenticate(pending.Session, new string('b', 32)));
+        Assert.NotNull(authority.RequestPair(authority.PairingCode, new string('b', 32), "Tablet"));
     }
     [Fact]
     public void ReplacingControllerRevokesOldCookieGrantAndInFlightCancellation()
@@ -53,7 +100,11 @@ public class CompanionHostTests
         var (authority, old) = Paired();
         var grant = authority.Reveal(old, 1, "match", 10)!;
         var cancellation = authority.AuthorizeCommand(old, grant.Token, 1, "match", 10)!.Value.Cancellation;
-        authority.NewCode(); var newer = authority.RequestPair(authority.PairingCode, new string('b', 32), "Tablet")!;
+        var newer = authority.RequestPair(authority.PairingCode, new string('b', 32), "Tablet")!;
+        Assert.NotNull(authority.Authenticate(old.Session, old.Tab));
+        Assert.True(authority.ValidateGrant(old, grant.Token, 1, "match", 10));
+        Assert.False(cancellation.IsCancellationRequested);
+        Assert.Null(authority.Authenticate(newer.Value.Session, new string('b', 32)));
         Assert.True(authority.Approve());
         Assert.True(cancellation.IsCancellationRequested);
         Assert.Null(authority.Authenticate(old.Session, old.Tab));
@@ -86,11 +137,16 @@ public class CompanionHostTests
         Assert.Null(authority.Authenticate(device.Session, device.Tab, true));
     }
     [Fact]
-    public void PrivateGrantExpiresAfterThirtySecondsEvenWithHeartbeats()
+    public void PrivateGrantRemainsUsableAfterThirtySecondsWithOngoingHeartbeats()
     {
         var clock = new Clock(); var (authority, device) = Paired(clock); var grant = authority.Reveal(device, 1, "match", 9)!;
-        for (var i = 0; i < 15; i++) { clock.Now += TimeSpan.FromSeconds(2); authority.Authenticate(device.Session, device.Tab, true); }
-        Assert.False(authority.ValidateGrant(device, grant.Token, 1, "match", 9));
+        var original = authority.AuthorizeCommand(device, grant.Token, 1, "match", 9)!.Value;
+        for (var i = 0; i < 60; i++) { clock.Now += TimeSpan.FromSeconds(2); authority.Authenticate(device.Session, device.Tab, true); }
+        Assert.True(authority.ValidateGrant(device, grant.Token, 1, "match", 9));
+        var current = authority.AuthorizeCommand(device, grant.Token, 1, "match", 9)!.Value;
+        Assert.Equal(original.Cancellation, current.Cancellation);
+        Assert.False(current.Cancellation.IsCancellationRequested);
+        Assert.Equal(TimeSpan.FromSeconds(6), current.ValidFor);
     }
     [Fact]
     public void ARevealRequestedBeforeHideCannotAcquireANewGrantAfterItsHandoffWasRevoked()
@@ -117,7 +173,7 @@ public class CompanionHostTests
         Assert.Null(authority.AuthorizeCommand(device, grant.Token, 1, "match", 4));
     }
     [Fact]
-    public void QueuedCommandAuthorizationCannotOutliveTheCurrentHeartbeatOrPrivateGrant()
+    public void QueuedCommandAuthorizationCannotOutliveTheCurrentHeartbeat()
     {
         var clock = new Clock(); var (authority, device) = Paired(clock);
         var grant = authority.Reveal(device, 1, "match", 4)!;
@@ -125,6 +181,19 @@ public class CompanionHostTests
         var admitted = authority.AuthorizeCommand(device, grant.Token, 1, "match", 4)!.Value;
         Assert.Equal(TimeSpan.FromSeconds(1), admitted.ValidFor);
         clock.Now += TimeSpan.FromSeconds(1);
+        Assert.Null(authority.AuthorizeCommand(device, grant.Token, 1, "match", 4));
+    }
+    [Fact]
+    public void ControllerSessionStillExpiresAfterTwelveHoursEvenWithAFreshHeartbeatAndGrant()
+    {
+        var clock = new Clock(); var (authority, device) = Paired(clock);
+        clock.Now += TimeSpan.FromHours(12) - TimeSpan.FromSeconds(1);
+        Assert.NotNull(authority.Authenticate(device.Session, device.Tab, true));
+        var grant = authority.Reveal(device, 1, "match", 4)!;
+        Assert.Equal(TimeSpan.FromSeconds(1), authority.AuthorizeCommand(device, grant.Token, 1, "match", 4)!.Value.ValidFor);
+        clock.Now += TimeSpan.FromSeconds(1);
+        Assert.Null(authority.Authenticate(device.Session, device.Tab, true));
+        Assert.False(authority.ValidateGrant(device, grant.Token, 1, "match", 4));
         Assert.Null(authority.AuthorizeCommand(device, grant.Token, 1, "match", 4));
     }
     [Theory]

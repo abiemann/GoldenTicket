@@ -22,7 +22,7 @@ namespace GoldenTicket.Domain.Tests;
 public class CompanionHostTransportTests
 {
     [Fact]
-    public async Task HttpTransportRequiresApprovalCsrfAndCurrentSeatGrantAndCommitsOnce()
+    public async Task HttpTransportRequiresApprovalCsrfAndCurrentSeatGrantCommitsOnceAndReusesTheCode()
     {
         var token = TestContext.Current.CancellationToken;
         var game = await GameCoordinator.CreateAsync(new GameRules(TestManifest.Manifest, TestManifest.Catalog), new InMemorySessionStore(),
@@ -52,7 +52,11 @@ public class CompanionHostTransportTests
         foreach (var asset in new[] { "app.js", "app.css", "icon.svg" })
             Assert.True((await client.GetAsync("/companion/" + asset, token)).IsSuccessStatusCode, asset);
         server.NewPairingCode();
-        var pairing = await client.PostAsJsonAsync("/api/pair", new { code = server.Authority.PairingCode, tab, label = "Transport fixture" }, token);
+        var code = server.Authority.PairingCode;
+        var wrongCode = code == "111111" ? "222222" : "111111";
+        for (var attempt = 0; attempt < 7; attempt++)
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync("/api/pair", new { code = wrongCode, tab, label = "Transport fixture" }, token)).StatusCode);
+        var pairing = await client.PostAsJsonAsync("/api/pair", new { code, tab, label = "Transport fixture" }, token);
         Assert.True(pairing.IsSuccessStatusCode);
         var cookie = string.Join(";", pairing.Headers.GetValues("Set-Cookie"));
         Assert.Contains("GoldenTicketQuickPlayController=", cookie);
@@ -64,7 +68,7 @@ public class CompanionHostTransportTests
         Assert.False(status.GetProperty("paired").GetBoolean()); Assert.True(status.GetProperty("pending").GetBoolean());
         Assert.True(server.ApprovePendingController());
         status = await client.GetFromJsonAsync<JsonElement>("/api/session", token);
-        Assert.Equal("5", status.GetProperty("assetsVersion").GetString());
+        Assert.Equal("6", status.GetProperty("assetsVersion").GetString());
         var csrf = status.GetProperty("csrf").GetString()!;
         var generation = status.GetProperty("handoffGeneration").GetInt64();
         var reveal = new { seat = 1, sessionId = game.SessionId.Value, version = game.Public.StateVersion, handoffGeneration = generation };
@@ -86,6 +90,24 @@ public class CompanionHostTransportTests
         Assert.DoesNotContain("offeredTickets", publicState.GetRawText());
         client.DefaultRequestHeaders.Remove("Origin"); client.DefaultRequestHeaders.Add("Origin", "https://attacker.example");
         Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync("/api/hide", new { }, token)).StatusCode);
+
+        Assert.Equal(code, server.Authority.PairingCode);
+        using var secondHandler = new HttpClientHandler { CookieContainer = new() };
+        using var secondClient = new HttpClient(secondHandler) { BaseAddress = new Uri(address), Timeout = TimeSpan.FromSeconds(10) };
+        var secondTab = Guid.NewGuid().ToString("n");
+        secondClient.DefaultRequestHeaders.Add("X-GoldenTicket-Tab", secondTab);
+        secondClient.DefaultRequestHeaders.Add("Origin", address);
+        var secondPairing = await secondClient.PostAsJsonAsync("/api/pair", new { code, tab = secondTab, label = "Replacement phone" }, token);
+        Assert.True(secondPairing.IsSuccessStatusCode);
+        var pendingSecond = await secondClient.GetFromJsonAsync<JsonElement>("/api/session", token);
+        Assert.False(pendingSecond.GetProperty("paired").GetBoolean());
+        Assert.True(pendingSecond.GetProperty("pending").GetBoolean());
+        client.DefaultRequestHeaders.Remove("Origin"); client.DefaultRequestHeaders.Add("Origin", address);
+        Assert.True((await client.GetFromJsonAsync<JsonElement>("/api/session", token)).GetProperty("paired").GetBoolean());
+        Assert.True(server.ApprovePendingController());
+        Assert.True((await secondClient.GetFromJsonAsync<JsonElement>("/api/session", token)).GetProperty("paired").GetBoolean());
+        Assert.False((await client.GetFromJsonAsync<JsonElement>("/api/session", token)).GetProperty("paired").GetBoolean());
+        Assert.Equal(code, server.Authority.PairingCode);
         Assert.Empty(await game.CheckInvariantsAsync(token));
         await app.StopAsync(token);
     }

@@ -185,6 +185,7 @@ This build implements the core game plus initial phone, camera and photo workflo
   during private card choices, with no phone or network setup.
 - **Quick play is the recommended connection:** scan the QR, join, and play in the browser on
   HTTP port 8080. The shared device shows authorized private cards and is passed between humans.
+  Cards stay visible without an idle timeout while connected; use **Hide** before passing the device.
   **PRACTICAL** provides private laptop controls and deliberate handoffs. Neither mode asks players
   to install an app or certificate. The laptop owns the match and verifies physical moves.
   Real-phone and complete multi-human laptop acceptance remain pending.

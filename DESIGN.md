@@ -297,9 +297,9 @@ For exactly one human, show the three opening destination tickets in a compact *
 
 The compact solo T/D preview is available only on the human's turn. During a computer turn, its stack targets cannot be clicked, and a preview closes as play advances.
 
-With multiple humans, display the phone setup prompt on the public game table and show a QR only after the local host has a reachable address on the selected Private LAN interface. At a human handoff, first show a neutral curtain on the companion: “Pass this device to Alex.” Reveal the active seat's private view only after an explicit action and a fresh laptop-issued private-view grant. The planned hold-to-peek option returns to the curtain when released; it is not implemented yet. The current explicit reveal uses a visible Hide control and inactivity timeout. The laptop remains on the public board view; Shift+Escape exposes technical recovery controls without changing the normal table presentation. Cards and pass-and-hide are implemented in the shared client and await real-device acceptance in both connection modes.
+With multiple humans, display the phone setup prompt on the public game table and show a QR only after the local host has a reachable address on the selected Private LAN interface. At a human handoff, first show a neutral curtain on the companion: “Pass this device to Alex.” Reveal the active seat's private view only after an explicit action and a fresh laptop-issued private-view grant. The planned hold-to-peek option returns to the curtain when released; it is not implemented yet. The current explicit reveal uses a visible Hide control without an inactivity timeout. The laptop remains on the public board view; Shift+Escape exposes technical recovery controls without changing the normal table presentation. Cards and pass-and-hide are implemented in the shared client and await real-device acceptance in both connection modes.
 
-The unresolved solo opening destination choice stays visible through ordinary laptop focus changes and idle time. Other private views hide on deactivation and idle timeout. Always hide on seat changes, device lock, sleep, connection loss, recovery dialogs that leave the private workflow, and entry into public mode. Clear private DOM/view models, tooltips, search results, accessible labels, and pending narration at the same transition. The public scoreboard cannot acquire focus behind an unhidden private window. Mobile lifecycle and operating-system snapshot limitations are addressed in section 4.9.
+The unresolved solo opening destination choice stays visible through ordinary laptop focus changes and idle time. Other laptop private views hide on deactivation and idle timeout; the browser has no inactivity timeout. Always hide on seat changes, device lock, sleep, connection loss, recovery dialogs that leave the private workflow, and entry into public mode. Clear private DOM/view models, tooltips, search results, accessible labels, and pending narration at the same transition. The public scoreboard cannot acquire focus behind an unhidden private window. Mobile lifecycle and operating-system snapshot limitations are addressed in section 4.9.
 
 This is social privacy on a shared device, not protection against another person watching over a shoulder, screen-recording software, or a local administrator. The app must make the handoff easy without pretending to solve those physical limitations.
 
@@ -354,9 +354,9 @@ The browser companion is a private controller for the existing Windows game, not
 
 Use a responsive layout for phones and tablets in portrait and landscape, with a single-column phone view, grouped card counts, large ticket-selection controls, and a sticky Hide action. Initial usability targets are 48 CSS-pixel touch targets and operation at 360 CSS pixels of width. Honor safe-area insets, dynamic viewport height, text enlargement, reduced motion, and device/browser contrast settings. Interaction must not depend on hover, dragging precisely, or a physical keyboard.
 
-On `visibilitychange` to hidden, `pagehide`, a dropped connection, or an expired private-view grant, synchronously cover the view and remove private data from application memory/DOM. On `pageshow`, foregrounding, reload, or restored history, start covered and request a new grant only after an explicit reveal action. The current tap-to-reveal view stays open through ordinary focus changes, outside-control touches and scrolling, including `pointercancel`; these are not page departures. A future held-to-peek view would hide on release or pointer cancellation.
+On `visibilitychange` to hidden, `pagehide`, a dropped connection, or a revoked private-view grant, synchronously cover the view and remove private data from application memory/DOM. On `pageshow`, foregrounding, reload, or restored history, start covered and request a new grant only after an explicit reveal action. The current tap-to-reveal view stays open through ordinary focus changes, outside-control touches and scrolling, including `pointercancel`; these are not page departures. A future held-to-peek view would hide on release or pointer cancellation.
 
-The browser's 30-second idle timer restarts on touch, keyboard interaction and destination checkbox changes. Explicit activity renews the existing server grant through `/api/activity`, coalesced to at most one request per five seconds, without re-fetching private cards or rebuilding selected destinations. Public polling alone does not renew a grant. Renewal must match the current seat, session, state version and handoff generation, and cannot revive an expired, hidden or revoked view. Hide, page backgrounding and real inactivity still clear the hand immediately.
+The browser has no inactivity timer, and private-view grants have no separate time limit. Cards and destination selections stay visible while the foreground page remains connected. The grant must still match the current controller, seat, session, state version and handoff generation. Hide, page backgrounding, turn changes, controller replacement and connection loss clear the hand and invalidate its authorization; elapsed idle time alone does neither. The six-second connection watchdog and controller-session lifetime remain in force.
 
 Maintain a client-local `revealGeneration`, incremented on every Hide, background event, peek release/cancellation, handoff, and disconnect. Every asynchronous private request captures it. Apply a private response only if its generation still matches, the document is visible, the reveal/peek state is still active, and the server grant/controller/handoff remain valid. Discard stale responses even when they concern the same human seat; a delayed response must never uncover a hidden hand.
 
@@ -1576,13 +1576,15 @@ See [phone setup](docs/phone-setup.md).
 1. Join the laptop and shared phone/tablet to the same trusted Private LAN.
 2. Choose **Quick play**, select the connection and explicitly start hosting.
 3. Scan the QR to open `/companion/`, or type the displayed address.
-4. Enter the separate short-lived code and approve the matching device identity on the laptop.
+4. Enter the pairing code and approve the matching device identity on the laptop.
 5. Synchronize the public match view and keep private cards covered until the active human
    explicitly reveals their authorized hand.
 6. Hide cards before passing the device to the next human.
 
 The QR contains only the local address, never reusable credentials, card hands, deck order or a
-game save. Pairing codes are single-use, short-lived, rate-limited and scoped to the laptop.
+game save. The pairing code stays valid throughout the hosting session and remains reusable
+after a successful pairing or an incorrect entry. Only host restart or an explicit **New pairing code**
+changes it. Pairing requests remain rate-limited and every replacement needs laptop approval.
 Phone reload currently requires fresh pairing. Host restart or switching to PRACTICAL revokes
 the controller; the same authoritative match remains on the laptop. A changed IP needs a new
 address and pairing, not save migration. No device-installation or cache-readiness gate precedes
@@ -1604,13 +1606,13 @@ Private hands, offers, pending private command bodies and grants live only in ac
 memory. Do not put them in Cache Storage, IndexedDB, localStorage, URLs or persisted browser
 history. Responses use `Cache-Control: no-store`. The HTTP controller cookie is `HttpOnly` and
 `SameSite=Strict`, with POST Origin/CSRF checks; it cannot use HTTPS-only cookie flags. Clear
-private state on Hide, page backgrounding, idle timeout, disconnect and controller changes. No service worker
+private state on Hide, page backgrounding, turn changes, disconnect and controller changes. No service worker
 is registered and no offline app shell is maintained. If the laptop is unavailable, cover/disable
 the loaded view; a fresh page load needs the laptop again.
 
 #### Device, controller, and private-view authorization
 
-Permit one active controlling companion tab/device for the match. Track `deviceSessionId`, `controllerLeaseId`, `controllerGeneration`, `handoffGeneration`, and a short-lived `privateViewGrant` for the active human seat. A second tab or replacement phone cannot concurrently spend cards; taking control requires a deliberate laptop action and revokes the previous lease. Start with a foreground heartbeat every two seconds and hide/disable after six seconds without a valid response, then tune against real devices. Renew grants only while the correct controller is active; reconnecting does not automatically reveal a hand.
+Permit one active controlling companion tab/device for the match. Track `deviceSessionId`, `controllerLeaseId`, `controllerGeneration`, `handoffGeneration`, and a `privateViewGrant` for the active human seat that remains valid until the private view or controller is invalidated. A second tab or replacement phone cannot concurrently spend cards; taking control requires a deliberate laptop action and revokes the previous lease. Start with a foreground heartbeat every two seconds and hide/disable after six seconds without a valid response, then tune against real devices. Validate grants only while the correct controller and turn are current; reconnecting does not automatically reveal a hand.
 
 Before handoff, blank and clear the current private view locally, revoke its grant, and acknowledge handoff to the laptop. The next reveal obtains a fresh grant for the expected seat. The host projects and sends only that seat's allowed data. It never broadcasts all hands and relies on the UI to hide them. Reject cross-seat requests, expired grants, late messages from a prior handoff, and old controller generations.
 
@@ -2241,7 +2243,7 @@ bounded photo-pair/GPU evidence and remaining physical acceptance are described 
 Current deviations remain explicit: the browser companion uses bundled plain JavaScript and two-second public
 snapshot polling instead of the specified TypeScript build and WS event cursor. Controller sessions are
 process-local and each page reload requires fresh laptop-approved pairing. The device uses a
-30-second inactivity timeout and Hide, without hold-to-peek. Photos are operator-attested plaintext
+visible Hide control without an inactivity timeout or hold-to-peek. Photos are operator-attested plaintext
 sidecars with SHA-256 checksums for `LogicalStateOnly` checkpoints, not `VerifiedBoardPhoto` evidence.
 The local learned piece model supplies train candidates to a measured automatic claim check for
 all 100 classic-US routes and 309 printed train spaces. One pulsing cue marks each requested space.

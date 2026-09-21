@@ -22,7 +22,7 @@ function page(options = {}) {
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, new Node()); return nodes.get(id); };
   const state = {
-    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '5', handoffGeneration: 1,
+    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '6', handoffGeneration: 1,
     snapshot: { canControl: true, revealSeatId: 1, message: 'Pass this device to Alex.', profileId: 'classic-us', manifestHash: 'hash', routes: [],
       game: { sessionId: 'match', stateVersion: 1, activeSeatId: 1, turnNumber: 1, turnPhase: 'TurnStart', seats: [{ seatId: 1, displayName: 'Alex', symbol: 'A', color: 'Blue', routeScore: 0, trainsRemaining: 45 }], pendingClaim: null } }
   };
@@ -44,8 +44,7 @@ function page(options = {}) {
       if (options.offline) throw new Error('Offline');
       if (options.fetch) { const result = options.fetch(url, request); if (result !== undefined) return await result; }
       if (url === '/api/session') return response(state);
-      if (url === '/api/reveal') { state.handoffGeneration++; return response({grant:'private-grant', expiresAt:new Date(now + 30000).toISOString(), handoffGeneration: state.handoffGeneration, data}); }
-      if (url === '/api/activity') return response({expiresAt:new Date(now + 30000).toISOString(), handoffGeneration:state.handoffGeneration});
+      if (url === '/api/reveal') { state.handoffGeneration++; return response({grant:'private-grant', handoffGeneration: state.handoffGeneration, data}); }
       if (url === '/api/command') return response({ accepted:true, message:'Choice saved on laptop.' });
       if (url === '/api/pair') return response({pending:true, identity:'1234'});
       return response({hidden:true});
@@ -60,7 +59,7 @@ function page(options = {}) {
     advance: ms => { now += ms; }, nodes };
 }
 
-// Keep the laptop connection fresh while exercising the independent private-view timer.
+// Advance time without interaction while keeping the laptop connection fresh.
 async function elapse(p, ms) {
   while (ms > 0) {
     const step = Math.min(ms, 2000); p.advance(step); ms -= step;
@@ -143,13 +142,13 @@ test('private reveal renders only the permitted view and Hide clears DOM and mem
 test('delayed private response cannot uncover a hand after Hide', async () => {
   const reply = deferred(); const p = page({fetch:url => url === '/api/reveal' ? reply.promise : undefined}); await flush();
   const operation = p.client.reveal(); await flush(); p.client.hide();
-  reply.resolve(p.response({grant:'late',expiresAt:new Date(Date.now()+30000).toISOString(),handoffGeneration:2,data:p.data})); await operation;
+  reply.resolve(p.response({grant:'late',handoffGeneration:2,data:p.data})); await operation;
   assert.equal(p.client.state().privateData, null); assert.equal(p.get('private').hidden, true);
 });
 test('background then foreground always returns covered even with delayed reveal', async () => {
   const reply = deferred(); const p = page({fetch:url => url === '/api/reveal' ? reply.promise : undefined}); await flush();
   const operation = p.client.reveal(); await flush(); p.context.document.hidden = true; await p.event('document','visibilitychange');
-  reply.resolve(p.response({grant:'late',expiresAt:new Date(Date.now()+30000).toISOString(),handoffGeneration:2,data:p.data})); await operation;
+  reply.resolve(p.response({grant:'late',handoffGeneration:2,data:p.data})); await operation;
   p.context.document.hidden = false; await p.event('document','visibilitychange');
   assert.equal(p.client.state().grant, null); assert.equal(p.get('private').children.length,0);
 });
@@ -158,13 +157,13 @@ test('a newer laptop handoff observed during reveal rejects the delayed old priv
   const operation=p.client.reveal(); await flush();
   // Server granted generation2, then laptop Hide revoked it as generation3 before the response arrived.
   p.state.handoffGeneration=3; await p.client.poll();
-  reply.resolve(p.response({grant:'revoked',expiresAt:new Date(Date.now()+30000).toISOString(),handoffGeneration:2,data:p.data})); await operation;
+  reply.resolve(p.response({grant:'revoked',handoffGeneration:2,data:p.data})); await operation;
   assert.equal(p.client.state().privateData,null); assert.equal(p.get('private').hidden,true);
 });
 test('a poll observing this reveal own generation does not discard its valid response', async () => {
   const reply=deferred(); const p=page({fetch:url=>url==='/api/reveal'?reply.promise:undefined}); await flush();
   const operation=p.client.reveal(); await flush(); p.state.handoffGeneration=2; await p.client.poll();
-  reply.resolve(p.response({grant:'valid',expiresAt:new Date(Date.now()+30000).toISOString(),handoffGeneration:2,data:p.data})); await operation;
+  reply.resolve(p.response({grant:'valid',handoffGeneration:2,data:p.data})); await operation;
   assert.equal(p.get('private').hidden,false); assert.equal(p.client.state().grant,'valid');
 });
 test('an old poll cannot rewind handoff generation and re-pairing can reset it for a restarted host', async () => {
@@ -201,61 +200,44 @@ test('leaving the page still clears the private view immediately', async () => {
   assert.equal(p.get('private').children.length,0); assert.equal(p.client.state().grant,null);
 });
 
-test('checking and unchecking destinations renews idle time without rebuilding selections', async () => {
+test('untouched destination selections remain available after ten minutes and can still be submitted', async () => {
   const p=page(), choices=await ticketOffer(p);
-  await elapse(p,25000); await checkTicket(choices[0],true); await checkTicket(choices[1],true);
-  await elapse(p,24000); await checkTicket(choices[0],false);
-  await elapse(p,6000);
-  assert.equal(p.get('private').hidden,false,'The original absolute expiry must not hide active choices');
+  await checkTicket(choices[0],true); await checkTicket(choices[1],true); await checkTicket(choices[0],false);
+  await elapse(p,600000);
+  assert.equal(p.get('private').hidden,false,'Time alone must not hide the hand or discard ticket selections');
   const current=descendants(p.get('private')).filter(node=>node.type==='checkbox');
   assert.equal(current[0],choices[0]); assert.equal(current[0].checked,false); assert.equal(current[1].checked,true);
-  assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,1,'Activity must not fetch/rebuild the private view');
-  const renewals=p.requests.filter(r=>r.url==='/api/activity'); assert.equal(renewals.length,2);
-  assert.deepEqual(JSON.parse(renewals[0].request.body),{seat:1,sessionId:'match',version:1,grant:'private-grant',handoffGeneration:2});
+  assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,1,'Polling must not fetch/rebuild the private view');
+  assert.equal(p.requests.some(r=>r.url==='/api/activity'),false,'Reading cards must not require activity renewals');
   const keep=descendants(p.get('private')).find(node=>node.textContent==='Keep selected tickets');
   assert.equal(keep.disabled,false); await keep.events.click(); await flush();
-  assert.deepEqual(JSON.parse(p.requests.find(r=>r.url==='/api/command').request.body).command.keptTickets,['second']);
+  const payload=JSON.parse(p.requests.find(r=>r.url==='/api/command').request.body);
+  assert.deepEqual(payload.command.keptTickets,['second']); assert.equal(payload.grant,'private-grant');
 });
 
-test('a touch outside the private controls extends idle time and renewal requests are coalesced', async () => {
+test('a hand remains visible without interaction and its original grant still permits a command', async () => {
   const p=page(); await flush(); await p.client.reveal();
-  await elapse(p,1000);
-  for(let i=0;i<50;i++) await p.event('document','pointerdown');
-  assert.equal(p.requests.filter(r=>r.url==='/api/activity').length,0);
-  await elapse(p,4000);
-  assert.equal(p.requests.filter(r=>r.url==='/api/activity').length,1);
-  // Server authorization lasts until t=35s; the actual last touch was at t=1s.
-  await elapse(p,25999); assert.equal(p.get('private').hidden,false);
-  await elapse(p,1); assert.equal(p.get('private').hidden,true,'Idle cover is 30s after activity, not the later network renewal');
+  const originalData=p.client.state().privateData;
+  await elapse(p,300000);
+  assert.equal(p.get('private').hidden,false); assert.equal(p.client.state().privateData,originalData);
+  assert.equal(p.client.state().grant,'private-grant'); assert.equal(p.client.state().handoffGeneration,2);
+  assert.equal(p.requests.some(r=>r.url==='/api/activity'),false);
+  await p.client.submit('drawTrain',{slot:null});
+  const command=JSON.parse(p.requests.find(r=>r.url==='/api/command').request.body);
+  assert.equal(command.grant,'private-grant'); assert.equal(command.command.kind,'drawTrain');
+  assert.equal(p.get('private').hidden,true);
 });
 
-test('an overdue timeout cannot be revived by touching before the next watchdog tick', async () => {
-  const p=page(); await flush(); await p.client.reveal(); p.advance(30000); await p.client.poll();
-  await p.event('document','pointerdown');
-  assert.equal(p.get('private').hidden,true); assert.equal(p.requests.some(r=>r.url==='/api/activity'),false);
+test('Escape still hides a private hand after a long read', async () => {
+  const p=page(); await flush(); await p.client.reveal(); await elapse(p,120000);
+  await p.event('document','keydown',{key:'Escape'});
+  assert.equal(p.get('private').hidden,true); assert.equal(p.client.state().grant,null);
+  assert.ok(p.requests.some(r=>r.url==='/api/hide'));
 });
 
-test('delayed activity replies cannot uncover a hand after Hide or a turn change', async () => {
-  for(const change of ['hide','revision']) {
-    const reply=deferred(), p=page({fetch:url=>url==='/api/activity'?reply.promise:undefined});
-    await flush(); await p.client.reveal(); await elapse(p,6000); await p.event('document','pointerdown');
-    if(change==='hide') p.client.hide(); else { p.state.snapshot.game.stateVersion++; await p.client.poll(); }
-    reply.resolve(p.response({expiresAt:new Date(Date.now()+60000).toISOString(),handoffGeneration:2})); await flush();
-    assert.equal(p.get('private').hidden,true); assert.equal(p.client.state().grant,null);
-  }
-});
-
-test('refused activity renewal covers the hand without submitting a choice', async () => {
-  const p=page({fetch:url=>url==='/api/activity'?Promise.resolve({ok:false,status:401}):undefined});
-  await flush(); await p.client.reveal(); await elapse(p,6000); await p.event('document','pointerdown');
-  assert.equal(p.get('private').hidden,true); assert.equal(p.requests.some(r=>r.url==='/api/command'),false);
-});
-
-test('heartbeat timeout and inactivity cover independently without waiting for network', async () => {
+test('heartbeat timeout still covers the hand without waiting for a network request', async () => {
   const disconnected=page(); await flush(); await disconnected.client.reveal(); disconnected.advance(6000);
   disconnected.intervals.find(t=>t.ms===500).fn(); assert.equal(disconnected.client.state().privateData,null);
-  const idle=page(); await flush(); await idle.client.reveal(); await elapse(idle,30000);
-  assert.equal(idle.client.state().privateData,null); assert.equal(idle.requests.some(r=>r.url==='/api/activity'),false);
 });
 test('command clears private UI before transport and duplicate tap cannot submit twice', async () => {
   const result = deferred(); const p=page({fetch:url=>url==='/api/command'?result.promise:undefined}); await flush(); await p.client.reveal();

@@ -21,11 +21,11 @@ public sealed record CompanionServerStatus(bool Running, string? Address, string
 
 /// <summary>Embedded, same-origin, selected-Private-LAN game controller. Shell updates use bounded
 /// two-second public snapshot polling in this milestone; the phone never queues offline actions.</summary>
-public sealed class CompanionServer(ICompanionGameBridge bridge) : IAsyncDisposable
+public sealed class CompanionServer(ICompanionGameBridge bridge, TimeProvider? timeProvider = null) : IAsyncDisposable
 {
     public const string ApiVersion = "1";
     private const string CookieName = "GoldenTicketQuickPlayController";
-    private readonly ControllerAuthority _authority = new();
+    private readonly ControllerAuthority _authority = new(timeProvider);
     internal ControllerAuthority Authority => _authority;
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly SemaphoreSlim _requests = new(1, 1);
@@ -177,7 +177,7 @@ public sealed class CompanionServer(ICompanionGameBridge bridge) : IAsyncDisposa
             var request = await context.Request.ReadFromJsonAsync<PairRequest>(context.RequestAborted);
             if (request is null || request.Code is null || request.Tab is null || request.Label is null) return Results.BadRequest();
             var pending = _authority.RequestPair(request.Code, request.Tab, request.Label);
-            if (pending is null) return Results.Json(new { message = "Code expired or incorrect. Request a new code on the laptop." }, statusCode: 403);
+            if (pending is null) return Results.Json(new { message = "Could not join. Check the pairing code shown on the laptop and try again." }, statusCode: 403);
             context.Response.Cookies.Append(CookieName, pending.Value.Session, new CookieOptions { HttpOnly = true, Secure = false, SameSite = SameSiteMode.Strict, Path = "/", MaxAge = TimeSpan.FromHours(12), IsEssential = true });
             Notify();
             return Results.Ok(new { pending = true, identity = pending.Value.Approval.Identity, message = "Confirm this identity on the laptop." });
@@ -191,7 +191,7 @@ public sealed class CompanionServer(ICompanionGameBridge bridge) : IAsyncDisposa
             if (!snapshot.CanControl) _authority.InvalidatePrivateGrants();
             if (Credentials(context) != credentials) return Results.Unauthorized();
             return Results.Ok(new { paired = true, csrf = credentials.Csrf, controllerGeneration = credentials.Generation,
-                handoffGeneration = _authority.Generation, apiVersion = ApiVersion, assetsVersion = "5", snapshot });
+                handoffGeneration = _authority.Generation, apiVersion = ApiVersion, assetsVersion = "6", snapshot });
         });
         app.MapGet("/api/result-image/{id}", async (HttpContext context, string id) =>
         {
@@ -228,24 +228,9 @@ public sealed class CompanionServer(ICompanionGameBridge bridge) : IAsyncDisposa
                 if (grant is null) return Results.Unauthorized();
                 var privateSnapshot = await bridge.ReadPrivateAsync(new SeatId(request.Seat), request.Version, context.RequestAborted);
                 if (privateSnapshot is null || !_authority.ValidateGrant(credentials, grant.Token, request.Seat, request.SessionId, request.Version)) return Results.Conflict();
-                return Results.Ok(new { grant = grant.Token, expiresAt = grant.ExpiresAt, handoffGeneration = grant.Generation, data = privateSnapshot });
+                return Results.Ok(new { grant = grant.Token, handoffGeneration = grant.Generation, data = privateSnapshot });
             }
             finally { _requests.Release(); }
-        });
-        app.MapPost("/api/activity", async (HttpContext context) =>
-        {
-            // Activity may arrive just before the click submits a choice. Like session polling,
-            // this public read must not occupy the command gate; renewal itself is atomic.
-            var credentials = Credentials(context);
-            if (credentials is null || !Csrf(context, credentials)) return Results.Unauthorized();
-            var request = await context.Request.ReadFromJsonAsync<ActivityRequest>(context.RequestAborted);
-            if (request is null || string.IsNullOrEmpty(request.Grant) || string.IsNullOrEmpty(request.SessionId)) return Results.BadRequest();
-            var snapshot = await bridge.ReadPublicAsync(context.RequestAborted);
-            if (!snapshot.CanControl || snapshot.RevealSeatId != request.Seat || snapshot.Game?.StateVersion != request.Version || snapshot.Game.SessionId.Value != request.SessionId) return Results.Conflict();
-            var renewed = _authority.RenewPrivateGrant(credentials, request.Grant, request.Seat,
-                request.SessionId, request.Version, request.HandoffGeneration);
-            if (renewed is null) return Results.Unauthorized();
-            return Results.Ok(new { expiresAt = renewed.ExpiresAt, handoffGeneration = renewed.Generation });
         });
         app.MapPost("/api/command", async (HttpContext context) =>
         {
@@ -275,7 +260,6 @@ public sealed class CompanionServer(ICompanionGameBridge bridge) : IAsyncDisposa
     }
     private sealed record PairRequest(string Code, string Tab, string Label);
     private sealed record RevealRequest(int Seat, string SessionId, long Version, long HandoffGeneration);
-    private sealed record ActivityRequest(int Seat, string SessionId, long Version, string Grant, long HandoffGeneration);
     private sealed record ActionRequest(int Seat, string Grant, CompanionCommand Command);
 
     public async Task StopAsync(CancellationToken cancellationToken = default)

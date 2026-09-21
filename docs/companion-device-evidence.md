@@ -29,7 +29,7 @@ Run this on Android Chrome and repeat on iPhone/iPad Safari when hardware is ava
 | Opening tickets | Each human sees only their own offer and can keep the required selection. |
 | Normal card/ticket/route choices | Correct active-seat options work; laptop retains train-placement verification and authoritative game state. |
 | Pass and hide | Cards clear before handoff; the next human obtains only their own private view. |
-| Destination check/uncheck and idle timer | Every change restarts the 30-second idle timer without losing the selection; genuine inactivity covers the hand. |
+| Destination check/uncheck and idle time | Cards and selections remain visible and usable after several minutes without interaction while the page is foregrounded and connected. |
 | Outside-control touches, focus changes and scrolling | Cards and selected destinations remain visible while the page stays in the foreground. |
 | Background, lock, page departure and return | View resumes covered and fresh authorization is needed. |
 | Reload | Fresh pairing works without losing or repeating the current turn. |

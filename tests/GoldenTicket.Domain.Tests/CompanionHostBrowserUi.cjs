@@ -2,6 +2,8 @@
 // Synthetic hosts and .NET payloads do not prove real-device/LAN acceptance.
 // First run CompanionHostBrowserFixtures with GOLDENTICKET_COMPANION_FIXTURE_DIRECTORY set.
 // NODE_PATH must point to the existing bundled node_modules containing Playwright. No npm install.
+// Optional visual iteration: GOLDENTICKET_BROWSER_DRAW_ONLY=1 and
+// GOLDENTICKET_BROWSER_VIEWPORTS=pixel,small-phone,tablet,wide-tablet.
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
@@ -12,12 +14,20 @@ const assets = path.join(root, 'src/GoldenTicket.CompanionHost/wwwroot');
 const fixturePath = process.env.GOLDENTICKET_COMPANION_FIXTURES || path.join(root, 'artifacts/companion-browser/fixtures.json');
 const output = process.env.GOLDENTICKET_BROWSER_EVIDENCE || path.join(root, 'docs/evidence/companion-browser-2026-09-12');
 const fixtures = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+// The seeded .NET market need not include a locomotive. Explicitly supply one to
+// exercise second-draw legality while retaining its real surrounding payload.
+fixtures.secondDraw.snapshot.game.faceUp[2]='Locomotive';
+fixtures.secondDraw.data.view.public.faceUp[2]='Locomotive';
+fixtures.secondDraw.data.actions.drawableFaceUpSlots=fixtures.secondDraw.data.actions.drawableFaceUpSlots.filter(slot=>slot!==2);
 fs.mkdirSync(output, { recursive: true });
 const mime = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.svg':'image/svg+xml' };
 const results = [];
+const drawOnly=process.env.GOLDENTICKET_BROWSER_DRAW_ONLY==='1';
+const viewports=[{name:'pixel',width:448,height:900},{name:'small-phone',width:320,height:740},{name:'tablet',width:768,height:1024},{name:'wide-tablet',width:1024,height:768}]
+  .filter(viewport=>process.env.GOLDENTICKET_BROWSER_VIEWPORTS ? process.env.GOLDENTICKET_BROWSER_VIEWPORTS.split(',').includes(viewport.name) : viewport.name!=='wide-tablet');
+assert.ok(viewports.length,'GOLDENTICKET_BROWSER_VIEWPORTS must select an existing viewport.');
 let fixture = fixtures.setup, paired = false, pending = false, generation = 1, requests = [], offline = false, delayedReveal = null;
-let resultImageBytes = null, activeGrant = null, controlledNow = null;
-const serverNow = () => controlledNow ?? Date.now();
+let resultImageBytes = null, activeGrant = null;
 const send = (response, body, status=200) => { response.writeHead(status, {'Content-Type':'application/json', 'Cache-Control':'no-store'}); response.end(JSON.stringify(body)); };
 const requestHandler = async (request, response) => {
   const url = new URL(request.url, 'http://localhost');
@@ -26,7 +36,7 @@ const requestHandler = async (request, response) => {
     let body = ''; for await(const chunk of request) body += chunk;
     body = body ? JSON.parse(body) : {};
     requests.push({url:url.pathname, body, headers:request.headers});
-    if(url.pathname === '/api/session') return send(response, paired ? { paired, csrf:'test-csrf', handoffGeneration:generation, controllerGeneration:1, apiVersion:'1', assetsVersion:'5', snapshot:fixture.snapshot } : {paired,pending});
+    if(url.pathname === '/api/session') return send(response, paired ? { paired, csrf:'test-csrf', handoffGeneration:generation, controllerGeneration:1, apiVersion:'1', assetsVersion:'6', snapshot:fixture.snapshot } : {paired,pending});
     if(url.pathname.startsWith('/api/result-image/')) {
       if(!paired || !resultImageBytes || url.pathname!==`/api/result-image/${fixture.snapshot.resultImage?.id}` || !request.headers['x-goldenticket-tab']) return send(response,{},404);
       response.writeHead(200,{'Content-Type':'image/png','Content-Length':resultImageBytes.length,'Cache-Control':'no-store'}); response.end(resultImageBytes); return;
@@ -34,18 +44,14 @@ const requestHandler = async (request, response) => {
     if(url.pathname === '/api/pair') { pending=true; return send(response, {pending:true,identity:'2468'}); }
     if(url.pathname === '/api/hide') { generation++; activeGrant=null; return send(response,{hidden:true}); }
     if(url.pathname === '/api/reveal') {
-      const reply = {grant:'test-private-grant', expiresAt:new Date(serverNow()+30000).toISOString(), handoffGeneration:++generation, data:fixture.data};
-      activeGrant={seat:body.seat,sessionId:body.sessionId,version:body.version,grant:reply.grant,handoffGeneration:reply.handoffGeneration,expiresAt:reply.expiresAt};
+      const reply = {grant:'test-private-grant', handoffGeneration:++generation, data:fixture.data};
+      activeGrant={seat:body.seat,sessionId:body.sessionId,version:body.version,grant:reply.grant,handoffGeneration:reply.handoffGeneration};
       if(delayedReveal) { delayedReveal.response=response; delayedReveal.reply=reply; return; }
       return send(response, reply);
     }
-    if(url.pathname === '/api/activity') {
-      if(!paired || !activeGrant || generation!==activeGrant.handoffGeneration || serverNow()>=Date.parse(activeGrant.expiresAt) ||
-        ['seat','sessionId','version','grant','handoffGeneration'].some(key=>body[key]!==activeGrant[key])) return send(response,{},409);
-      activeGrant.expiresAt=new Date(serverNow()+30000).toISOString();
-      return send(response,{expiresAt:activeGrant.expiresAt,handoffGeneration:generation});
-    }
     if(url.pathname === '/api/command') {
+      if(!paired || !activeGrant || body.grant!==activeGrant.grant || body.seat!==activeGrant.seat || generation!==activeGrant.handoffGeneration ||
+        body.command.sessionId!==activeGrant.sessionId || body.command.expectedStateVersion!==activeGrant.version) return send(response,{},409);
       if(body.command.kind === 'keepTickets') fixture = fixtures.secondHumanSetup;
       if(body.command.kind === 'drawTrain') fixture = fixture === fixtures.turnStart ? fixtures.secondDraw : fixtures.nextHuman;
       if(body.command.kind === 'drawTickets') fixture = fixtures.ticketOffer;
@@ -82,6 +88,46 @@ async function noOverflow(page) {
   const metrics=await page.evaluate(()=>({width:innerWidth,body:document.body.scrollWidth,html:document.documentElement.scrollWidth}));
   assert.ok(metrics.body<=metrics.width+1 && metrics.html<=metrics.width+1, JSON.stringify(metrics));
 }
+async function drawPicker(page, name) {
+  const picker=page.locator('#private .draw-picker'); await picker.waitFor({state:'visible'});
+  await picker.getByRole('heading',{name:'DRAW PILES',exact:true}).waitFor();
+  await picker.getByRole('heading',{name:'FACE-UP TRAIN CARDS',exact:true}).waitFor();
+  const market=picker.locator('.face-up-panel').getByRole('button');
+  const faceUp=fixture.data.view.public.faceUp, actions=fixture.data.actions;
+  assert.equal(await market.count(),faceUp.length);
+  for(const [slot,kind] of faceUp.entries()) {
+    assert.equal(await market.nth(slot).getAttribute('aria-label'),`${kind} · slot ${slot+1}`);
+    assert.equal(await market.nth(slot).isDisabled(),!actions.drawableFaceUpSlots.includes(slot));
+    assert.equal(await market.nth(slot).isVisible(),true);
+  }
+  assert.equal(await picker.getByRole('button',{name:'Draw a blind card',exact:true}).isDisabled(),!actions.canDrawBlindTrainCard);
+  assert.equal(await picker.getByRole('button',{name:'Draw destination tickets',exact:true}).isDisabled(),!actions.canRequestTicketOffer);
+  const help=page.locator('#private .draw-help');
+  assert.match(await help.textContent(),/Take two cards|Choose your second card/);
+  if(actions.canRequestTicketOffer) assert.match(await help.textContent(),/Draw destination tickets\. You must keep at least one\./);
+  await page.locator('#private .draw-area').screenshot({path:path.join(output,name+'-draw-area.png')});
+  const bounds=await picker.boundingBox(), helpBounds=await help.boundingBox();
+  assert.ok(helpBounds.y>=bounds.y+bounds.height-1,'Draw instructions must follow the complete picker.');
+  const slots=await market.evaluateAll(buttons=>buttons.map(button=>{const r=button.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};}));
+  for(const [index,box] of slots.entries()) {
+    assert.ok(box.x>=bounds.x-1 && box.x+box.width<=bounds.x+bounds.width+1,'Every market slot must fit inside the picker.');
+    assert.ok(box.y>=bounds.y-1 && box.y+box.height<=bounds.y+bounds.height+1,'Every market slot must fit inside the picker.');
+    for(const other of slots.slice(index+1)) assert.ok(box.x+box.width<=other.x+1 || other.x+other.width<=box.x+1 || box.y+box.height<=other.y+1 || other.y+other.height<=box.y+1,`Market slots must not overlap: ${JSON.stringify({box,other})}`);
+  }
+  const labels=await market.locator('.market-card-label').evaluateAll(nodes=>nodes.map(node=>{
+    const range=document.createRange();range.selectNodeContents(node);
+    const text=range.getBoundingClientRect(), label=node.getBoundingClientRect();
+    return {name:node.textContent,left:text.left,right:text.right,labelLeft:label.left,labelRight:label.right};
+  }));
+  for(const label of labels) assert.ok(label.left>=label.labelLeft-1 && label.right<=label.labelRight+1,`The complete ${label.name} label must fit on its card: ${JSON.stringify(label)}`);
+  const pileLabels=await picker.locator('.pile-label').evaluateAll(nodes=>nodes.map(node=>{
+    const range=document.createRange();range.selectNodeContents(node);
+    const text=range.getBoundingClientRect(), panel=node.closest('.draw-piles').getBoundingClientRect();
+    return {name:node.textContent,lines:range.getClientRects().length,left:text.left,right:text.right,panelLeft:panel.left,panelRight:panel.right};
+  }));
+  for(const label of pileLabels) assert.ok(label.lines===1 && label.left>=label.panelLeft && label.right<=label.panelRight,`The complete ${label.name} pile label must fit on one line: ${JSON.stringify(label)}`);
+  await noOverflow(page);
+}
 async function syntheticStandingsPng(page) {
   if(process.env.GOLDENTICKET_RESULT_IMAGE_FIXTURE) return fs.readFileSync(process.env.GOLDENTICKET_RESULT_IMAGE_FIXTURE);
   // Synthetic public results only; no player photos, private hands, or saved matches.
@@ -110,9 +156,9 @@ async function main() {
   ]});
   const browserVersion=browser.version();
   try {
-    for(const viewport of [{name:'pixel',width:448,height:900},{name:'small-phone',width:320,height:740},{name:'tablet',width:768,height:1024}]) {
-      fixture=fixtures.setup; paired=false; pending=false; generation=1; requests=[]; offline=false; delayedReveal=null; activeGrant=null; controlledNow=null;
-      const context=await browser.newContext({viewport:{width:viewport.width,height:viewport.height},deviceScaleFactor:1,isMobile:viewport.name!=='tablet',hasTouch:true});
+    for(const viewport of viewports) {
+      fixture=fixtures.setup; paired=false; pending=false; generation=1; requests=[]; offline=false; delayedReveal=null; activeGrant=null;
+      const context=await browser.newContext({viewport:{width:viewport.width,height:viewport.height},deviceScaleFactor:1,isMobile:!viewport.name.includes('tablet'),hasTouch:true});
       const outsideLaptop=new Set(), browserRequests=[];
       // Keep the local host reachable while denying Internet destinations. Full browser offline
       // mode would also disconnect the LAN, which is a different acceptance condition.
@@ -153,21 +199,16 @@ async function main() {
         const choices=page.locator('#private input[type=checkbox]'); assert.equal(await choices.count(),3);
         assert.equal(await page.getByRole('button',{name:'Keep selected tickets'}).isDisabled(),true);
         const initialGrant={...activeGrant}, hideCount=requests.filter(r=>r.url==='/api/hide').length;
-        const renewed=page.waitForResponse(r=>r.url().endsWith('/api/activity') && r.ok());
         await choices.nth(0).check(); await choices.nth(1).check();
         await choices.nth(0).uncheck();
         await page.getByRole('heading',{name:'Golden Ticket',exact:true}).tap();
         await page.evaluate(()=>{window.dispatchEvent(new Event('blur'));document.dispatchEvent(new PointerEvent('pointercancel',{bubbles:true}));});
-        const response=await renewed;
-        assert.ok(Date.parse((await response.json()).expiresAt)>Date.parse(initialGrant.expiresAt));
         assert.equal(activeGrant.handoffGeneration,initialGrant.handoffGeneration);
         assert.equal(activeGrant.grant,initialGrant.grant);
         assert.equal(await page.locator('#private').isVisible(),true);
         assert.deepEqual(await choices.evaluateAll(nodes=>nodes.map(node=>node.checked)),[false,true,false]);
         assert.equal(requests.filter(r=>r.url==='/api/hide').length,hideCount);
-        const activity=requests.filter(r=>r.url==='/api/activity').at(-1);
-        assert.deepEqual(activity.body,Object.fromEntries(['seat','sessionId','version','grant','handoffGeneration'].map(key=>[key,initialGrant[key]])));
-        assert.equal(activity.headers['x-goldenticket-csrf'],'test-csrf');
+        assert.equal(requests.some(r=>r.url==='/api/activity'),false);
       });
       await record(viewport.name+': human opening tickets and pass-and-hide',async()=>{
         const choices=page.locator('#private input[type=checkbox]');
@@ -180,16 +221,41 @@ async function main() {
       });
       await record(viewport.name+': card draw, second draw and next human',async()=>{
         await changeFixture(page,'turnStart'); await reveal(page); await noOverflow(page);
+        await drawPicker(page,viewport.name);
         await screenshot(page,viewport.name+'-private-turn');
         await page.getByRole('button',{name:'Draw a blind card'}).click(); await waitCovered(page); await reveal(page);
+        assert.equal(requests.filter(r=>r.url==='/api/command').at(-1).body.command.slot,null);
         await page.getByText('Choose your second card.',{exact:false}).waitFor();
-        assert.equal(await page.getByRole('button',{name:/Locomotive · slot/}).count(),0);
+        await drawPicker(page,viewport.name+'-second-card');
+        const locomotive=page.getByRole('button',{name:'Locomotive · slot 3',exact:true});
+        assert.equal(await locomotive.isDisabled(),true);
+        const count=requests.filter(r=>r.url==='/api/command').length;
+        await locomotive.scrollIntoViewIfNeeded();const box=await locomotive.boundingBox();
+        await page.touchscreen.tap(box.x+box.width/2,box.y+box.height/2);
+        assert.equal(requests.filter(r=>r.url==='/api/command').length,count,'Tapping a disabled locomotive must not submit a draw.');
+        assert.equal(await page.locator('#private').isVisible(),true);
         await page.getByRole('button',{name:'Draw a blind card'}).click(); await waitCovered(page);
+        await page.getByText('Pass this device to Jordan.',{exact:true}).waitFor();
+      });
+      await record(viewport.name+': face-up card keeps its actual slot number',async()=>{
+        await changeFixture(page,'turnStart'); await reveal(page);
+        const slot=3, kind=fixture.data.view.public.faceUp[slot];
+        await page.getByRole('button',{name:`${kind} · slot ${slot+1}`,exact:true}).click(); await waitCovered(page);
+        const command=requests.filter(r=>r.url==='/api/command').at(-1).body.command;
+        assert.equal(command.kind,'drawTrain'); assert.equal(command.slot,slot);
+        await reveal(page);
+        // Slot 3 is a disabled locomotive; slot 5 must still send index 4 rather
+        // than an index compressed around the disabled slot.
+        const secondSlot=4, secondKind=fixture.data.view.public.faceUp[secondSlot];
+        await page.getByRole('button',{name:`${secondKind} · slot ${secondSlot+1}`,exact:true}).click(); await waitCovered(page);
+        const secondCommand=requests.filter(r=>r.url==='/api/command').at(-1).body.command;
+        assert.equal(secondCommand.kind,'drawTrain'); assert.equal(secondCommand.slot,secondSlot);
         await page.getByText('Pass this device to Jordan.',{exact:true}).waitFor();
       });
       await record(viewport.name+': ticket offer return ordering',async()=>{
         await changeFixture(page,'turnStart'); await reveal(page);
         await page.getByRole('button',{name:'Draw destination tickets'}).click(); await waitCovered(page); await reveal(page);
+        assert.equal(requests.filter(r=>r.url==='/api/command').at(-1).body.command.kind,'drawTickets');
         await page.locator('#private input[type=checkbox]').nth(0).check();
         const before=await page.getByText('Return order:',{exact:false}).textContent();
         await page.getByRole('button',{name:'Reverse return order'}).click();
@@ -197,6 +263,7 @@ async function main() {
         await noOverflow(page); await screenshot(page,viewport.name+'-ticket-offer');
         await page.getByRole('button',{name:'Keep selected tickets'}).click(); await waitCovered(page);
       });
+      if(drawOnly) { assert.deepEqual(errors,[]); assert.deepEqual([...outsideLaptop],[]); await context.close(); continue; }
       await record(viewport.name+': route payment and laptop physical verification boundary',async()=>{
         await changeFixture(page,'turnStart'); await reveal(page);
         const routes=page.getByRole('combobox',{name:'Route to claim'}); assert.ok(await routes.locator('option').count()>0);
@@ -291,38 +358,35 @@ async function main() {
         assert.deepEqual([...outsideLaptop],[]);
         assert.deepEqual(errors,[]);
       });
-      if(viewport.name==='pixel') await record('pixel: destination activity renews idle time, then inactivity covers the hand',async()=>{
+      if(viewport.name==='pixel') await record('pixel: untouched destinations remain visible for two minutes and can still be submitted',async()=>{
         await changeFixture(page,'ticketOffer'); await reveal(page);
         const choices=page.locator('#private input[type=checkbox]');
-        const initialDeadline=Date.parse(activeGrant.expiresAt), initialGeneration=activeGrant.handoffGeneration;
-        const start=Date.now(); controlledNow=start; await page.clock.setFixedTime(start);
+        await choices.nth(0).check(); await choices.nth(1).check(); await choices.nth(0).uncheck();
+        const selectedTicket=fixture.data.offeredTickets[1].id;
+        const originalGrant={...activeGrant}, revealCount=requests.filter(r=>r.url==='/api/reveal').length, hideCount=requests.filter(r=>r.url==='/api/hide').length;
+        const start=Date.now(); await page.clock.setFixedTime(start);
         // Only Date is controlled: real Chromium input, the 500 ms watchdog, polling and
         // HTTP requests still run. Advance in five-second steps so heartbeat checks remain
-        // meaningful, awaiting a fresh poll before changing each actual checkbox.
-        for(let step=1;step<=7;step++) {
-          controlledNow=start+step*5000; await page.clock.setFixedTime(controlledNow);
-          await page.waitForResponse(r=>r.url().endsWith('/api/session') && r.ok());
-          const renewed=page.waitForResponse(r=>r.url().endsWith('/api/activity') && r.ok());
-          await choices.nth(0).setChecked(step%2===1); await renewed;
-          assert.equal(await choices.nth(0).isChecked(),step%2===1);
+        // meaningful. No pointer, keyboard or checkbox interaction occurs during this wait.
+        for(let step=1;step<=24;step++) {
+          await page.clock.setFixedTime(start+step*5000);
+          const heartbeat=await page.waitForResponse(r=>r.url().endsWith('/api/session') && r.ok()); await heartbeat.finished();
+          assert.equal(await choices.nth(0).isChecked(),false); assert.equal(await choices.nth(1).isChecked(),true);
           assert.equal(await page.locator('#private').isVisible(),true);
         }
-        assert.ok(controlledNow>initialDeadline,'Selections must remain visible beyond the original reveal deadline.');
-        assert.equal(activeGrant.handoffGeneration,initialGeneration);
-        const renewals=requests.filter(r=>r.url==='/api/activity').length;
-        for(let step=8;step<=12;step++) {
-          controlledNow=start+step*5000; await page.clock.setFixedTime(controlledNow);
-          await page.waitForResponse(r=>r.url().endsWith('/api/session') && r.ok());
-          assert.equal(await choices.nth(0).isChecked(),true);
-          assert.equal(await page.locator('#private').isVisible(),true);
-        }
-        assert.equal(requests.filter(r=>r.url==='/api/activity').length,renewals,'Polling must not renew idle time.');
-        controlledNow=start+65000; await page.clock.setFixedTime(controlledNow); await waitCovered(page);
+        assert.deepEqual(activeGrant,originalGrant);
+        assert.equal(requests.filter(r=>r.url==='/api/reveal').length,revealCount);
+        assert.equal(requests.filter(r=>r.url==='/api/hide').length,hideCount);
+        assert.equal(requests.some(r=>r.url==='/api/activity'),false);
+        await page.getByRole('button',{name:'Keep selected tickets'}).click(); await waitCovered(page);
+        await page.getByText('Pass this device to Jordan.',{exact:true}).waitFor();
+        const payload=requests.filter(r=>r.url==='/api/command').at(-1).body;
+        assert.equal(payload.grant,originalGrant.grant); assert.deepEqual(payload.command.keptTickets,[selectedTicket]);
         assert.deepEqual(errors,[]);
       });
       await context.close();
     }
-    fs.writeFileSync(path.join(output,'browser-ui-results.json'),JSON.stringify({browser:'Chromium '+browserVersion,fixtureTransport:'Real insecure HTTP goldenticket.test origin mapped to loopback; no browser security overrides or certificate dependencies; no real-phone acceptance claim.',internetIsolation:'Page requests outside the laptop fixture origin are blocked and recorded; navigator.onLine is false. Browser/OS background traffic is outside this harness.',viewports:['448×900','320×740','768×1024'],screenshots:'Synthetic player data only',results},null,2));
+    fs.writeFileSync(path.join(output,'browser-ui-results.json'),JSON.stringify({browser:'Chromium '+browserVersion,scope:drawOnly?'Focused draw controls and opening-ticket flow':'Complete companion workflow',fixtureFile:fixturePath,fixtureTransport:'Real insecure HTTP goldenticket.test origin mapped to loopback; no browser security overrides or certificate dependencies; no real-phone acceptance claim.',internetIsolation:'Page requests outside the laptop fixture origin are blocked and recorded; navigator.onLine is false. Browser/OS background traffic is outside this harness.',viewports:viewports.map(v=>`${v.width}×${v.height}`),screenshots:'Synthetic player data only',results},null,2));
     console.log(`${results.length} browser UI scenarios passed.`);
   } finally { await browser.close(); await new Promise(resolve=>server.close(resolve)); }
 }

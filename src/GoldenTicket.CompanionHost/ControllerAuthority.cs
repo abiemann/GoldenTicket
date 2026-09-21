@@ -5,8 +5,7 @@ namespace GoldenTicket.CompanionHost;
 
 public sealed record ControllerApproval(string Identity, string DeviceLabel, DateTimeOffset ExpiresAt);
 internal sealed record ControllerCredentials(string Session, string Csrf, string Tab, long Generation);
-internal sealed record PrivateGrant(string Token, int Seat, string SessionId, long Version, long Generation,
-    DateTimeOffset ExpiresAt);
+internal sealed record PrivateGrant(string Token, int Seat, string SessionId, long Version, long Generation);
 internal readonly record struct CommandAuthorization(CancellationToken Cancellation, TimeSpan ValidFor);
 
 /// <summary>Bounded, process-local authorization. Restart requires pairing; every new tab needs
@@ -16,8 +15,6 @@ internal sealed class ControllerAuthority(TimeProvider? timeProvider = null)
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
     private readonly object _sync = new();
     private string _code = "";
-    private DateTimeOffset _codeExpiry;
-    private int _attempts;
     private Pending? _pending;
     private ControllerCredentials? _controller;
     private DateTimeOffset _sessionExpiry;
@@ -28,14 +25,19 @@ internal sealed class ControllerAuthority(TimeProvider? timeProvider = null)
     private CancellationTokenSource _grantCancellation = new();
     private sealed record Pending(string Session, string Tab, ControllerApproval Approval);
 
-    internal string PairingCode { get { lock (_sync) return _time.GetUtcNow() < _codeExpiry && _attempts < 6 ? _code : "Expired — generate another code"; } }
+    internal string PairingCode { get { lock (_sync) return _code; } }
     internal ControllerApproval? PendingApproval { get { lock (_sync) return ValidPending()?.Approval; } }
     internal string? ControllerLabel { get { lock (_sync) return _controller is not null && _time.GetUtcNow() < _sessionExpiry ? _deviceLabel : null; } }
     internal long Generation { get { lock (_sync) return _generation; } }
     internal static string Token() => Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
     internal void NewCode()
     {
-        lock (_sync) { _code = RandomNumberGenerator.GetInt32(0, 1000000).ToString("D6"); _codeExpiry = _time.GetUtcNow().AddMinutes(5); _attempts = 0; _pending = null; }
+        lock (_sync)
+        {
+            var previous = _code;
+            do { _code = RandomNumberGenerator.GetInt32(0, 1000000).ToString("D6"); } while (_code == previous);
+            _pending = null;
+        }
     }
     internal (string Session, ControllerApproval Approval)? RequestPair(string code, string tab, string label)
     {
@@ -43,10 +45,10 @@ internal sealed class ControllerAuthority(TimeProvider? timeProvider = null)
         {
             if (tab.Length is < 20 or > 100 || label.Length is < 1 or > 64 || string.IsNullOrWhiteSpace(label) ||
                 label.Any(c => char.IsControl(c) || char.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.Format) ||
-                code.Length != 6 || _time.GetUtcNow() >= _codeExpiry || _attempts >= 6) return null;
-            _attempts++;
+                code.Length != 6) return null;
             if (!FixedEquals(code, _code)) return null;
-            _codeExpiry = _time.GetUtcNow(); // The code cannot approve two devices.
+            // Keep the hosting code reusable. Each connection still needs laptop approval,
+            // and approving a replacement revokes the previous controller.
             var session = Token();
             var approval = new ControllerApproval(RandomNumberGenerator.GetInt32(0, 10000).ToString("D4"), label, _time.GetUtcNow().AddMinutes(2));
             _pending = new(session, tab, approval);
@@ -92,7 +94,7 @@ internal sealed class ControllerAuthority(TimeProvider? timeProvider = null)
             if (credentials != _controller || (expectedGeneration is { } generation && generation != _generation) || _time.GetUtcNow() >= _sessionExpiry ||
                 _time.GetUtcNow() - _heartbeat >= TimeSpan.FromSeconds(6)) return null;
             InvalidateCore();
-            _grant = new(Token(), seat, sessionId, version, _generation, _time.GetUtcNow().AddSeconds(30));
+            _grant = new(Token(), seat, sessionId, version, _generation);
             return _grant;
         }
     }
@@ -104,21 +106,7 @@ internal sealed class ControllerAuthority(TimeProvider? timeProvider = null)
             return credentials == _controller && _time.GetUtcNow() < _sessionExpiry &&
                 _time.GetUtcNow() - _heartbeat < TimeSpan.FromSeconds(6) &&
                 _grant is { } g && FixedEquals(grant, g.Token) && g.Seat == seat && g.SessionId == sessionId &&
-                g.Version == version && g.Generation == _generation && _time.GetUtcNow() < g.ExpiresAt;
-        }
-    }
-    /// <summary>Explicit activity extends only the current live view. It cannot reveal a hand,
-    /// replace a grant, or revive one invalidated by Hide, expiry, heartbeat loss or revocation.</summary>
-    internal PrivateGrant? RenewPrivateGrant(ControllerCredentials credentials, string? grant, int seat,
-        string? sessionId, long version, long expectedGeneration)
-    {
-        lock (_sync)
-        {
-            if (expectedGeneration != _generation || !ValidateGrant(credentials, grant, seat, sessionId, version)) return null;
-            var now = _time.GetUtcNow();
-            _heartbeat = now;
-            _grant = _grant! with { ExpiresAt = now.AddSeconds(30) };
-            return _grant;
+                g.Version == version && g.Generation == _generation;
         }
     }
     /// <summary>Validation and cancellation capture are one atomic authorization decision. A hide
@@ -130,7 +118,7 @@ internal sealed class ControllerAuthority(TimeProvider? timeProvider = null)
         {
             if (!ValidateGrant(credentials, grant, seat, sessionId, version)) return null;
             var now = _time.GetUtcNow();
-            var deadline = new[] { _grant!.ExpiresAt, _sessionExpiry, _heartbeat.AddSeconds(6) }.Min();
+            var deadline = new[] { _sessionExpiry, _heartbeat.AddSeconds(6) }.Min();
             return new(_grantCancellation.Token, deadline - now);
         }
     }

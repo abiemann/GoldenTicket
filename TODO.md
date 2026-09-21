@@ -187,8 +187,9 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   current decision, and continue eligible AI turns after resolving a pause or rebuild.
 - [x] Bound browser network checks, clear private data on page backgrounding/disconnect, and keep the
   browser dependent on the laptop for authoritative game state.
-- [x] Restart the browser's 30-second idle timer on destination check/uncheck, preserving selections;
-  keep the hand visible through ordinary focus changes and touches outside its controls.
+- [x] Remove the browser's inactivity timeout and private-view expiry, preserving cards and
+  destination selections while connected; keep the hand visible through ordinary focus changes
+  and touches outside its controls. Hide, backgrounding, disconnect and turn changes still cover it.
 - [x] Confine save paths and reject linked/unsupported paths before filesystem operations.
 - [x] Check snapshot/journal/version integrity and prevent competing writers for supported saves.
 - [x] Keep unreadable saves visible, sanitize recovery errors, and block gameplay after uncertain writes.

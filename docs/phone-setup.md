@@ -20,7 +20,7 @@ shared phone or suitable network is unavailable.
    the phone and start hosting explicitly. It must have the **Private** network profile.
 3. Scan the displayed QR with the phone's camera, or type the displayed local address. It opens
    the game directly in the browser, normally `http://<laptop-address>:8080/companion/`.
-4. Enter the separate short-lived code shown on the laptop. Approve the matching connection on
+4. Enter the pairing code shown on the laptop. Approve the matching connection on
    the laptop, then return it to the game table.
 5. Pass the device to the named player. Reveal only that player's cards, make the choice, then
    hide the hand before passing it on. The laptop checks physical train placement.
@@ -30,10 +30,14 @@ phone loses the laptop connection, its hand is covered and actions stop; it cann
 game from remembered data. Stopping hosting revokes the controller. A changed laptop IP requires
 opening the new address and pairing again.
 
-Cards hide after 30 seconds without activity. Checking or unchecking a destination restarts that
-timer and preserves the current selection. Tapping elsewhere on the page or scrolling does not
-hide the hand. Leaving the page or putting the browser in the background still covers it; use
-**Hide** before passing the device.
+The pairing code stays valid while hosting is running, including after a phone joins. Reuse it
+after a browser reload or when connecting a replacement device. It changes only when hosting
+restarts or you choose **New pairing code**; each new connection still needs laptop approval.
+
+Cards stay visible without an inactivity timeout while the page remains open and connected.
+Destination selections are preserved, and tapping elsewhere on the page or scrolling does not
+hide the hand. Leaving the page, putting the browser in the background, losing the connection
+or changing turns still covers it; use **Hide** before passing the device.
 
 The QR carries only the local address, not the pairing code or private cards. No phone camera
 permission is needed inside the game: use the phone's existing QR scanner. ADB and USB are not

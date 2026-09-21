@@ -30,3 +30,22 @@ summary{cursor:pointer;min-height:44px;padding:10px 0;font-size:.9rem;font-weigh
 .curtain .fine-print{font-size:.77rem}
 @media(max-width:420px){#connect{padding:25px 20px}#pair-form{margin-top:24px}#pair-code{font-size:1.8rem}footer{font-size:.74rem}}
 @media(prefers-reduced-motion:no-preference){button{transition:background-color .15s,transform .15s}button:not(:disabled):active{transform:translateY(1px)}}
+
+/* Draw controls mirror the laptop table; hand cards retain their existing layout. */
+.draw-area{margin-top:26px}
+.draw-picker{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+.draw-panel{min-width:0;padding:12px;border:2px solid #b18c52;border-radius:13px;background:#1a2531}
+.draw-panel h3{margin:0 0 12px;color:#ffe7b0;font:600 1rem/1.25 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;text-align:center}
+.draw-pile-list{display:flex;justify-content:center;gap:20px}
+.draw-pile{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0;padding:0;border:0;border-radius:5px;background:transparent;color:#f8eedc;box-shadow:none;font-size:.68rem;line-height:1.2;font-weight:400}
+.pile-back{display:grid;place-items:center;width:54px;height:61px;border:2px solid #e6c891;border-radius:4px;color:#ffe7b0;font-size:29px;font-weight:700}
+.train-pile .pile-back{background:#9b613c}.destination-pile .pile-back{background:#648aa7}
+.pile-label{white-space:nowrap}
+.draw-market{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.market-card{display:flex;flex-direction:column;justify-content:flex-end;width:100%;min-width:0;min-height:86px;aspect-ratio:1.08;padding:0;border:2px solid #e6c891;border-radius:7px;overflow:hidden;box-shadow:none;background:#f2f0e8}
+.market-card[data-color=Pink]{background:#c9558e}.market-card[data-color=White]{background:#f2f0e8}.market-card[data-color=Blue]{background:#2e6da4}.market-card[data-color=Yellow]{background:#e3b825}.market-card[data-color=Orange]{background:#de7f2b}.market-card[data-color=Black]{background:#2b2b2b}.market-card[data-color=Red]{background:#c0392b}.market-card[data-color=Green]{background:#3e8e52}.market-card[data-color=Locomotive]{background:#8e7cc3}
+.market-card-label{display:block;width:100%;padding:3px 1px;background:#faedd1;color:#1a2531;font-size:clamp(.65rem,1.7vw,.8125rem);font-weight:700;line-height:1.25;white-space:nowrap}
+.draw-market .empty{grid-column:1/-1;margin:12px 0;text-align:center}
+.draw-help{margin-top:14px;color:#e7deca;font-size:.9rem}.draw-help p{margin:6px 0}
+@media(min-width:700px){.draw-picker{grid-template-columns:190px minmax(0,1fr)}}
+@media(max-width:480px){.draw-market{grid-template-columns:repeat(3,minmax(0,1fr))}.market-card-label{font-size:.72rem}}

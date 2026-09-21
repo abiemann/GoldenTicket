@@ -8,8 +8,7 @@
   const tab = randomId();
   let csrf = null, snapshot = null, privateData = null, grant = null;
   let revealGeneration = 0, handoffGeneration = -1, paired = false, pending = false;
-  let busy = false, polling = false, lastHeartbeat = 0, revealDeadline = 0, lastInteraction = 0;
-  let activityRequest = null, lastRenewalAt = 0, renewedInteraction = 0;
+  let busy = false, polling = false, lastHeartbeat = 0;
   let connectionGeneration = 0;
   const maxResultBytes = 16 * 1024 * 1024;
   let resultKey = null, resultGeneration = 0, resultUrl = null, resultAbort = null;
@@ -18,8 +17,7 @@
   function notice(message) { byId("notice").textContent = message; }
   function clearPrivate() {
     revealGeneration++;
-    privateData = null; grant = null; revealDeadline = 0;
-    activityRequest = null;
+    privateData = null; grant = null;
     byId("private").replaceChildren(); byId("private").hidden = true;
     byId("curtain").hidden = !paired || resultKey !== null;
   }
@@ -50,32 +48,6 @@
     } finally { clearTimeout(timeout); }
   }
   function currentIdentity(value) { return value?.game ? `${value.game.sessionId}:${value.game.stateVersion}:${value.revealSeatId}:${value.canControl}` : "none"; }
-  function recordInteraction() {
-    if (!grant || !privateData || document.hidden) return;
-    const now = Date.now();
-    if (now >= revealDeadline || now - lastInteraction >= 30000 || now - lastHeartbeat >= 6000) { hide(); return; }
-    lastInteraction = now;
-    renewActivity();
-  }
-  async function renewActivity() {
-    const now = Date.now();
-    if (!grant || !privateData || busy || document.hidden || activityRequest || lastInteraction <= renewedInteraction || now - lastRenewalAt < 5000) return;
-    if (now >= revealDeadline || now - lastInteraction >= 30000 || now - lastHeartbeat >= 6000) { hide(); return; }
-    // Renew authorization without re-rendering the hand or losing checked destinations.
-    // Coalesce touch/key events so a gesture cannot flood the laptop with requests.
-    const request = { generation: revealGeneration, identity: currentIdentity(snapshot) };
-    activityRequest = request; lastRenewalAt = now; renewedInteraction = lastInteraction;
-    try {
-      const result = await api("/api/activity", { seat: privateData.view.seatId, sessionId: privateData.view.public.sessionId, version: privateData.view.public.stateVersion, grant, handoffGeneration });
-      if (activityRequest !== request || request.generation !== revealGeneration || document.hidden || request.identity !== currentIdentity(snapshot)) return;
-      if (result.handoffGeneration !== handoffGeneration || Date.now() - lastHeartbeat >= 6000 || Date.now() - lastInteraction >= 30000) { hide(); return; }
-      const deadline = Date.parse(result.expiresAt);
-      if (!Number.isFinite(deadline) || deadline <= Date.now()) { hide(); return; }
-      revealDeadline = deadline;
-    } catch (error) {
-      if (activityRequest === request) { hide(); notice(error.message); }
-    } finally { if (activityRequest === request) activityRequest = null; }
-  }
   async function poll() {
     if (polling || document.hidden) return;
     polling = true;
@@ -84,14 +56,14 @@
       const result = await api("/api/session");
       if (generation !== connectionGeneration || document.hidden) return;
       if (!result.paired) {
-        if (paired) { clearPrivate(); notice("This controller was revoked or replaced. Request a fresh code on the laptop."); }
+        if (paired) { clearPrivate(); notice("This controller was revoked or replaced. Join again using the code shown on the laptop."); }
         clearResultImage(); snapshot = null;
         paired = false; csrf = null; handoffGeneration = -1; pending = result.pending;
         byId("connect").hidden = false; byId("curtain").hidden = true; byId("public").hidden = true;
         byId("connection").textContent = pending ? "Waiting for the laptop" : "Connected to your game";
         updatePairForm(); return;
       }
-      if (result.apiVersion !== "1" || result.assetsVersion !== "5") { disconnect("The companion needs an update. Reload from the laptop before playing."); return; }
+      if (result.apiVersion !== "1" || result.assetsVersion !== "6") { disconnect("The companion needs an update. Reload from the laptop before playing."); return; }
       if (currentIdentity(snapshot) !== currentIdentity(result.snapshot) || (grant && result.handoffGeneration > handoffGeneration)) clearPrivate();
       paired = true; pending = false; csrf = result.csrf; snapshot = result.snapshot;
       updatePairForm();
@@ -198,14 +170,12 @@
       const result = await api("/api/reveal", { seat: snapshot.revealSeatId, sessionId: snapshot.game.sessionId, version: snapshot.game.stateVersion, handoffGeneration });
       if (generation !== revealGeneration || document.hidden || identity !== currentIdentity(snapshot) || Date.now() - lastHeartbeat >= 6000 || result.handoffGeneration < handoffGeneration) return;
       grant = result.grant; privateData = result.data; handoffGeneration = result.handoffGeneration;
-      revealDeadline = Date.parse(result.expiresAt); lastInteraction = Date.now();
-      lastRenewalAt = lastInteraction; renewedInteraction = lastInteraction;
       byId("curtain").hidden = true; renderPrivate(); notice("");
     } catch (error) { clearPrivate(); notice(error.message); }
     finally { busy = false; if (snapshot) byId("reveal").disabled = !snapshot.canControl || !lastHeartbeat; }
   }
   async function submit(kind, details = {}) {
-    if (busy || !privateData || !grant || document.hidden || Date.now() >= revealDeadline || Date.now() - lastHeartbeat >= 6000) { hide(); return; }
+    if (busy || !privateData || !grant || document.hidden || Date.now() - lastHeartbeat >= 6000) { hide(); return; }
     busy = true;
     const payload = { seat: privateData.view.seatId, grant, command: { commandId: randomId(), sessionId: privateData.view.public.sessionId, expectedStateVersion: privateData.view.public.stateVersion, kind, ...details } };
     // Remove private DOM immediately, but do not revoke the grant authorizing this in-flight choice.
@@ -224,7 +194,7 @@
   function renderPrivate() {
     const target = byId("private"); target.replaceChildren();
     const own = privateData.view.public.seats.find(s => s.seatId === privateData.view.seatId);
-    target.append(element("p", "ONLY FOR YOU", "eyebrow"), element("h2", `${own.displayName}'s cards`), element("p", "Cards hide after 30 seconds without activity. Use Hide before passing the device.", "fine-print"));
+    target.append(element("p", "ONLY FOR YOU", "eyebrow"), element("h2", `${own.displayName}'s cards`), element("p", "Use Hide before passing the device.", "fine-print"));
     const cards = element("div", undefined, "cards");
     for (const kind of ["Pink", "White", "Blue", "Yellow", "Orange", "Black", "Red", "Green", "Locomotive"]) {
       const count = privateData.view.hand.filter(c => c.kind === kind).length;
@@ -258,7 +228,7 @@
     for (const ticket of offered) {
       const label = element("label", undefined, "ticket ticket-choice");
       const check = document.createElement("input"); check.type = "checkbox";
-      check.addEventListener("change", () => { recordInteraction(); if (!privateData) return; check.checked ? selected.add(ticket.id) : selected.delete(ticket.id); update(); });
+      check.addEventListener("change", () => { if (!privateData) return; check.checked ? selected.add(ticket.id) : selected.delete(ticket.id); update(); });
       label.append(check, element("span", `${ticket.label} · ${ticket.points} points`)); list.append(label);
     }
     const actions = element("div", undefined, "actions"); actions.append(kept, button("Reverse return order", () => { reversed = !reversed; update(); }, "secondary"));
@@ -266,16 +236,7 @@
   }
   function renderActions(target) {
     const actions = privateData.actions;
-    if (actions.canDrawBlindTrainCard || actions.drawableFaceUpSlots.length) {
-      target.append(element("h3", "Draw train cards"));
-      if (privateData.view.public.turnPhase === "AwaitingSecondTrainCard") target.append(element("p", "Choose your second card. A visible locomotive cannot be the second draw."));
-      else target.append(element("p", "Take two cards, one at a time. A visible locomotive uses the whole turn."));
-      const market = element("div", undefined, "market");
-      for (const slot of actions.drawableFaceUpSlots) { const kind = privateData.view.public.faceUp[slot]; const option = button(`${kind} · slot ${slot + 1}`, () => submit("drawTrain", { slot }), "card"); option.dataset.color = kind; market.append(option); }
-      target.append(market);
-      if (actions.canDrawBlindTrainCard) target.append(button("Draw a blind card", () => submit("drawTrain", { slot: null }), "secondary"));
-    }
-    if (actions.canRequestTicketOffer) { target.append(element("h3", "Find a new destination"), element("p", "Draw destination tickets. You must keep at least one."), button("Draw destination tickets", () => submit("drawTickets"), "secondary")); }
+    if (actions.canDrawBlindTrainCard || actions.drawableFaceUpSlots.length || actions.canRequestTicketOffer) renderDrawPicker(target, actions);
     if (actions.claims.length) {
       target.append(element("h3", "Claim a route"), element("p", "Choose the route and exact payment. The laptop will then ask for physical train placement."));
       const route = document.createElement("select"); route.setAttribute("aria-label", "Route to claim");
@@ -298,6 +259,49 @@
       target.append(route, payment, review, button("Authorize this route and payment", () => submit("planClaim", { routeId: route.value, payment: choices[Number(payment.value)] })));
     }
     target.append(element("div", "", "actions"));
+  }
+  function renderDrawPicker(target, actions) {
+    const area = element("div", undefined, "draw-area");
+    const picker = element("div", undefined, "draw-picker");
+    const piles = element("section", undefined, "draw-panel draw-piles");
+    const pileTitle = element("h3", "DRAW PILES"); pileTitle.id = "draw-piles-title";
+    piles.setAttribute("aria-labelledby", pileTitle.id);
+    const pileButtons = element("div", undefined, "draw-pile-list");
+    for (const pile of [
+      { letter: "T", label: "TRAIN", name: "Draw a blind card", className: "train-pile", enabled: actions.canDrawBlindTrainCard, help: "train-draw-help", draw: () => submit("drawTrain", { slot: null }) },
+      { letter: "D", label: "DESTINATIONS", name: "Draw destination tickets", className: "destination-pile", enabled: actions.canRequestTicketOffer, help: "destination-draw-help", draw: () => submit("drawTickets") }
+    ]) {
+      const option = button(undefined, pile.draw, `draw-pile ${pile.className}`);
+      option.setAttribute("aria-label", pile.name);
+      if (pile.enabled) option.setAttribute("aria-describedby", pile.help);
+      option.disabled = !pile.enabled;
+      option.append(element("span", pile.letter, "pile-back"), element("span", pile.label, "pile-label"));
+      pileButtons.append(option);
+    }
+    piles.append(pileTitle, pileButtons);
+    const faceUp = element("section", undefined, "draw-panel face-up-panel");
+    const marketTitle = element("h3", "FACE-UP TRAIN CARDS"); marketTitle.id = "face-up-title";
+    faceUp.setAttribute("aria-labelledby", marketTitle.id);
+    const market = element("div", undefined, "draw-market");
+    for (const [slot, kind] of privateData.view.public.faceUp.entries()) {
+      const option = button(undefined, () => submit("drawTrain", { slot }), "market-card");
+      option.dataset.color = kind; option.disabled = !actions.drawableFaceUpSlots.includes(slot);
+      option.setAttribute("aria-label", `${kind} · slot ${slot + 1}`);
+      option.setAttribute("aria-describedby", "train-draw-help");
+      option.append(element("span", kind, "market-card-label")); market.append(option);
+    }
+    if (!market.children.length) market.append(element("p", "No face-up cards available.", "empty"));
+    faceUp.append(marketTitle, market); picker.append(piles, faceUp);
+    const help = element("div", undefined, "draw-help");
+    const trainHelp = element("p", privateData.view.public.turnPhase === "AwaitingSecondTrainCard"
+      ? "Choose your second card. A visible locomotive cannot be the second draw."
+      : "Take two cards, one at a time. A visible locomotive uses the whole turn.");
+    trainHelp.id = "train-draw-help"; help.append(trainHelp);
+    if (actions.canRequestTicketOffer) {
+      const destinationHelp = element("p", "Draw destination tickets. You must keep at least one.");
+      destinationHelp.id = "destination-draw-help"; help.append(destinationHelp);
+    }
+    area.append(picker, help); target.append(area);
   }
   function updatePairForm() {
     byId("pair-form").hidden = pending || paired;
@@ -323,12 +327,9 @@
   window.addEventListener("offline", () => disconnect("Reconnect to the laptop before continuing."));
   // Tapping outside a control, native pickers and scrolling can blur/cancel a
   // pointer without leaving the page. Only actual backgrounding covers it.
-  document.addEventListener("pointerdown", recordInteraction);
-  document.addEventListener("keydown", event => { if (event.key === "Escape") hide(); else recordInteraction(); });
+  document.addEventListener("keydown", event => { if (event.key === "Escape") hide(); });
   setInterval(() => {
-    if (grant && (Date.now() >= revealDeadline || Date.now() - lastInteraction >= 30000)) hide();
     if (lastHeartbeat && Date.now() - lastHeartbeat >= 6000) disconnect();
-    renewActivity();
   }, 500);
   setInterval(poll, 2000);
   clearPrivate(); updatePairForm(); poll();
