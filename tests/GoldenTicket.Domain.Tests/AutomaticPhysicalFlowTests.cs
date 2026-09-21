@@ -209,7 +209,7 @@ public sealed partial class AutomaticPhysicalFlowTests
             await model.CommitTicketsAsync();
             var coordinator = GetCoordinator(model);
             var active = coordinator.Public.ActiveSeatId;
-            var route = (await coordinator.GetLegalActionsAsync(active)).Claims.First(claim =>
+            var route = (await coordinator.GetLegalActionsAsync(active, cancellationToken: TestContext.Current.CancellationToken)).Claims.First(claim =>
                 RoutePlacementVerifier.Supports(claim.RouteId.Value, claim.Length));
             model.Camera.IsGameTablePreviewUpright = true;
             var at = DateTimeOffset.UtcNow;
@@ -230,7 +230,7 @@ public sealed partial class AutomaticPhysicalFlowTests
 
             if (change.EndsWith("-during-write", StringComparison.Ordinal))
             {
-                var raceHand = await coordinator.GetSeatViewAsync(active);
+                var raceHand = await coordinator.GetSeatViewAsync(active, cancellationToken: TestContext.Current.CancellationToken);
                 var raceScore = coordinator.Public.SeatOf(active).RouteScore;
                 store.DelayNextCommit = true;
                 var confirming = model.ConfirmBoardFirstClaimCommand.ExecuteAsync(null);
@@ -245,7 +245,7 @@ public sealed partial class AutomaticPhysicalFlowTests
                 Assert.NotNull(coordinator.Public.PendingClaim);
                 Assert.False(coordinator.Public.RouteOwners.ContainsKey(route.RouteId));
                 Assert.Equal(raceScore, coordinator.Public.SeatOf(active).RouteScore);
-                var afterRace = await coordinator.GetSeatViewAsync(active);
+                var afterRace = await coordinator.GetSeatViewAsync(active, cancellationToken: TestContext.Current.CancellationToken);
                 Assert.Equal(raceHand.Hand, afterRace.Hand);
                 Assert.Equal(raceHand.TrainsRemaining, afterRace.TrainsRemaining);
                 return;
@@ -253,7 +253,7 @@ public sealed partial class AutomaticPhysicalFlowTests
 
             if (change == "orientation") model.Camera.IsGameTablePreviewUpright = false;
             else if (change == "state")
-                Assert.True((await coordinator.SubmitAsync(new SelectTrainCard(coordinator.NewEnvelope(active), null))).IsAccepted);
+                Assert.True((await coordinator.SubmitAsync(new SelectTrainCard(coordinator.NewEnvelope(active), null), cancellationToken: TestContext.Current.CancellationToken)).IsAccepted);
             else PublishTrains(model.Camera, route.RouteId.Value, 5,
                 change == "stale" ? DateTimeOffset.UtcNow.AddSeconds(-3) : at.AddSeconds(4.4),
                 change == "wrong-color" ? MarkerColor.Red : MarkerColor.Blue,
@@ -261,14 +261,14 @@ public sealed partial class AutomaticPhysicalFlowTests
                 cropRevision: change == "crop" ? 2 : 1,
                 modelRevision: change == "model" ? 2 : 1,
                 epoch: change == "epoch" ? 2 : 1, extraTrain: change == "extra");
-            var before = await coordinator.ComputeStateHashAsync();
-            var beforeHand = await coordinator.GetSeatViewAsync(active);
+            var before = await coordinator.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken);
+            var beforeHand = await coordinator.GetSeatViewAsync(active, cancellationToken: TestContext.Current.CancellationToken);
             await model.ConfirmBoardFirstClaimCommand.ExecuteAsync(null);
 
-            Assert.Equal(before, await coordinator.ComputeStateHashAsync());
+            Assert.Equal(before, await coordinator.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken));
             Assert.Null(coordinator.Public.PendingClaim);
             Assert.False(coordinator.Public.RouteOwners.ContainsKey(route.RouteId));
-            var afterHand = await coordinator.GetSeatViewAsync(active);
+            var afterHand = await coordinator.GetSeatViewAsync(active, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal(beforeHand.Hand, afterHand.Hand);
             Assert.Equal(beforeHand.TrainsRemaining, afterHand.TrainsRemaining);
         }
@@ -290,7 +290,7 @@ public sealed partial class AutomaticPhysicalFlowTests
             await model.CommitTicketsAsync();
             var coordinator = GetCoordinator(model);
             var active = coordinator.Public.ActiveSeatId;
-            var route = (await coordinator.GetLegalActionsAsync(active)).Claims.First(claim =>
+            var route = (await coordinator.GetLegalActionsAsync(active, cancellationToken: TestContext.Current.CancellationToken)).Claims.First(claim =>
                 RoutePlacementVerifier.Supports(claim.RouteId.Value, claim.Length));
             model.Camera.IsGameTablePreviewUpright = true;
             var at = DateTimeOffset.UtcNow;
@@ -336,8 +336,8 @@ public sealed partial class AutomaticPhysicalFlowTests
             await confirmation;
             Assert.Contains("Move", model.Game.GuidanceInstruction);
             Assert.Equal("Scoring", model.Game.GuidanceTurn);
-            Assert.Equal(placement.SeatId,
-                GetCoordinator(model).TurnTiming.Turns.Single(turn => !turn.Completed).SeatId);
+            var scoringTurn = GetCoordinator(model).TurnTiming.Turns.Single(turn => !turn.Completed);
+            Assert.Equal(placement.SeatId, scoringTurn.SeatId);
             clock.Advance(TimeSpan.FromSeconds(17));
 
             var target = model.Table.Seats.Single(seat => seat.SeatId == placement.SeatId).Score % 100 + 1;
@@ -349,7 +349,8 @@ public sealed partial class AutomaticPhysicalFlowTests
             PublishScore(model.Camera, 2, firstAt.AddSeconds(1.1), color, target);
             await WaitUntilAsync(() => model.Game.GuidanceTurn != "Scoring");
             Assert.NotEqual(placement.OperationId, model.Table.Placement?.OperationId);
-            var timedTurn = GetCoordinator(model).TurnTiming.Turns.First();
+            // Computers can draw cards on earlier turns before the first physical placement.
+            var timedTurn = GetCoordinator(model).TurnTiming.Turns.Single(turn => turn.TurnNumber == scoringTurn.TurnNumber);
             Assert.Equal(placement.SeatId, timedTurn.SeatId);
             Assert.True(timedTurn.Completed);
             Assert.Equal(TimeSpan.FromSeconds(28).Ticks, timedTurn.ElapsedTicks);

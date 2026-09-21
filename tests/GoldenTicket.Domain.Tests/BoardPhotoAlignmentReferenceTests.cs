@@ -20,7 +20,7 @@ public sealed class BoardPhotoAlignmentReferenceTests
             [new(.103, .099), new(.901, .102), new(.903, .898), new(.101, .896)];
         var initial = BoardRegistration.Create(live, displaced);
 
-        var refined = reference.Refine(live, initial);
+        var refined = reference.Refine(live, initial, token: TestContext.Current.CancellationToken);
 
         Assert.NotSame(initial, refined);
         foreach (var (expected, actual) in TrueCorners.Zip(refined.Corners))
@@ -50,7 +50,7 @@ public sealed class BoardPhotoAlignmentReferenceTests
         var inverted = CameraFrame.CopyFromBgra32(photo.Width, photo.Height, reversed);
 
         foreach (var reference in new[] { blank, unrelated, inverted })
-            Assert.Same(initial, new BoardPhotoAlignmentReference(reference).Refine(source, initial));
+            Assert.Same(initial, new BoardPhotoAlignmentReference(reference).Refine(source, initial, token: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public sealed class BoardPhotoAlignmentReferenceTests
         var initial = BoardRegistration.Create(source, TrueCorners);
         var reference = new BoardPhotoAlignmentReference(initial.Rectify(source, 640, 400));
 
-        Assert.Same(initial, reference.Refine(source, initial));
+        Assert.Same(initial, reference.Refine(source, initial, token: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class BoardPhotoAlignmentReferenceTests
         var shifted = TrueCorners.Select(point => new NormalizedPoint(point.X + .015, point.Y)).ToArray();
         var initial = BoardRegistration.Create(source, shifted);
 
-        var refined = reference.Refine(source, initial);
+        var refined = reference.Refine(source, initial, token: TestContext.Current.CancellationToken);
 
         foreach (var (before, after) in initial.Corners.Zip(refined.Corners))
         {
@@ -95,7 +95,7 @@ public sealed class BoardPhotoAlignmentReferenceTests
 
         Assert.Throws<OperationCanceledException>(() => reference.Refine(source, initial, cancelled.Token));
         var restarted = CameraFrame.CopyFromBgra32(source.Width, source.Height, source.Bgra32.Span, epoch: 2);
-        Assert.Throws<InvalidOperationException>(() => reference.Refine(restarted, initial));
+        Assert.Throws<InvalidOperationException>(() => reference.Refine(restarted, initial, token: TestContext.Current.CancellationToken));
     }
 
     private static CameraFrame Pattern(int seed = 1, bool brighter = false, bool movedPieces = false)

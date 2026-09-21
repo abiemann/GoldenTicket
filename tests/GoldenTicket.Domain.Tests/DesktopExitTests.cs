@@ -75,7 +75,7 @@ public sealed class DesktopExitTests
             if (withPhoto)
             {
                 await photos.AttachAsync(restored.State.Checkpoint!);
-                await model.CheckpointPhoto.LoadCheckpointAsync(restored.State.Checkpoint);
+                await model.CheckpointPhoto.LoadCheckpointAsync(restored.State.Checkpoint, cancellationToken: TestContext.Current.CancellationToken);
                 Assert.Null(model.BeginExitRequest());
             }
             else Assert.Contains("required board photo", Assert.IsType<ExitPrompt>(model.BeginExitRequest()).Message);
@@ -91,7 +91,7 @@ public sealed class DesktopExitTests
             if (!withPhoto)
             {
                 await photos.AttachAsync(restored.State.Checkpoint!);
-                await model.CheckpointPhoto.LoadCheckpointAsync(restored.State.Checkpoint);
+                await model.CheckpointPhoto.LoadCheckpointAsync(restored.State.Checkpoint, cancellationToken: TestContext.Current.CancellationToken);
             }
             model.Table.RebuildAcknowledged = true;
             await model.AttestRebuildAsync();

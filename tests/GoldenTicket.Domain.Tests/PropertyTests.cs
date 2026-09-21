@@ -21,7 +21,7 @@ public class PropertyTests
     public async Task ACompleteMatchHoldsItsInvariantsAndReplaysToTheSameState(int seatCount, ulong seed)
     {
         var runner = new MatchRunner(TestManifest.Manifest, TestManifest.Catalog);
-        var report = await runner.RunAsync(seed, seatCount, AiDifficulty.Standard);
+        var report = await runner.RunAsync(seed, seatCount, AiDifficulty.Standard, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(report.Completed, $"The match stopped early: {report.StoppedBecause}");
         Assert.Empty(report.InvariantProblems);
@@ -46,7 +46,8 @@ public class PropertyTests
 
     private static async Task<string> Play(MatchRunner runner, ulong seed)
     {
-        var report = await runner.RunAsync(seed, 3, AiDifficulty.Standard);
+        var report = await runner.RunAsync(seed, 3, AiDifficulty.Standard,
+            cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(report.Completed, report.StoppedBecause);
 
         // Compare the outcome, not the session id, which is new for every run.
@@ -76,21 +77,21 @@ public class PropertyTests
             SessionId.New(), [.. seats], seats[0].SeatId, VerificationMode.Manual);
 
         var coordinator = await GameCoordinator.CreateAsync(
-            rules, store, setup, DeterministicRandom.SeedFrom(88));
+            rules, store, setup, DeterministicRandom.SeedFrom(88), cancellationToken: TestContext.Current.CancellationToken);
 
         var driver = new ComputerSeatDriver(coordinator, new HeuristicAiPolicy(), aiSeed: 88);
 
         var guard = 0;
         while (coordinator.Public.Lifecycle != SessionLifecycle.Finished && guard++ < 500)
         {
-            await driver.AdvanceAsync();
-            Assert.Empty(await coordinator.CheckInvariantsAsync());
+            await driver.AdvanceAsync(cancellationToken: TestContext.Current.CancellationToken);
+            Assert.Empty(await coordinator.CheckInvariantsAsync(cancellationToken: TestContext.Current.CancellationToken));
 
             if (coordinator.Public.PendingClaim is not { } pending) continue;
 
             await coordinator.SubmitAsync(new SubmitClaimEvidence(
                 coordinator.NewEnvelope(pending.SeatId), pending.OperationId,
-                EvidenceKind.ManualAttestation, "test", "board matches"));
+                EvidenceKind.ManualAttestation, "test", "board matches"), cancellationToken: TestContext.Current.CancellationToken);
         }
 
         Assert.Equal(SessionLifecycle.Finished, coordinator.Public.Lifecycle);
@@ -114,11 +115,11 @@ public class PropertyTests
         var runner = new MatchRunner(TestManifest.Manifest, TestManifest.Catalog);
         var store = new InMemorySessionStore();
 
-        var report = await runner.RunAsync(seed, seatCount, AiDifficulty.Standard, store);
+        var report = await runner.RunAsync(seed, seatCount, AiDifficulty.Standard, store, cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(report.Completed, report.StoppedBecause);
 
         var restored = await store.RestoreAsync(
-            report.SessionId, TestManifest.Manifest, TestManifest.Catalog, CancellationToken.None);
+            report.SessionId, TestManifest.Manifest, TestManifest.Catalog, TestContext.Current.CancellationToken);
 
         foreach (var score in report.Result!.Scores)
         {

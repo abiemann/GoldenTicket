@@ -22,7 +22,7 @@ function page(options = {}) {
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, new Node()); return nodes.get(id); };
   const state = {
-    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '7', handoffGeneration: 1,
+    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '8', handoffGeneration: 1,
     snapshot: { canControl: true, revealSeatId: 1, message: 'Pass this device to Alex.', profileId: 'classic-us', manifestHash: 'hash', routes: [],
       game: { sessionId: 'match', stateVersion: 1, activeSeatId: 1, turnNumber: 1, turnPhase: 'TurnStart', seats: [{ seatId: 1, displayName: 'Alex', symbol: 'A', color: 'Blue', routeScore: 0, trainsRemaining: 45 }], pendingClaim: null } }
   };
@@ -151,6 +151,51 @@ test('private reveal renders only the permitted view and Hide clears DOM and mem
   await p.click('hide'); assert.equal(p.get('private').hidden, true); assert.equal(p.get('private').children.length, 0);
   assert.equal(p.client.state().privateData, null); assert.equal(p.client.state().grant, null);
   assert.ok(p.requests.some(r => r.url === '/api/hide'));
+});
+
+test('public placement, correction and scoring instructions update while cards remain covered', async () => {
+  const p=page(); await flush(); await p.client.reveal();
+  p.state.snapshot.canControl=false; p.state.snapshot.revealSeatId=null;
+  p.state.snapshot.message='Follow the current instructions on the laptop.';
+  const version=p.state.snapshot.game.stateVersion, reveals=p.requests.filter(r=>r.url==='/api/reveal').length;
+  for(const instruction of [
+    "Place Computer 1's 1 Green train on Dallas - Houston (lane A). The camera will check its position and continue automatically.",
+    "Remove the extra Green train from Dallas - Oklahoma City (lane A).",
+    "Move Computer 1's Green score marker to 1."
+  ]) {
+    p.state.snapshot.guidance={title:'Computer 1',instruction}; await p.client.poll();
+    assert.equal(p.state.snapshot.game.stateVersion,version,'Camera guidance can change without a game revision');
+    assert.equal(p.get('handoff').textContent,'Computer 1');
+    assert.equal(p.get('curtain-detail').textContent,instruction);
+    assert.equal(p.get('public-instruction').textContent,instruction);
+    assert.equal(p.get('private').children.length,0); assert.equal(p.client.state().grant,null);
+    assert.equal(p.get('reveal').disabled,true); await p.client.reveal();
+  }
+  assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,reveals);
+  assert.equal(p.requests.filter(r=>r.url==='/api/command').length,0);
+  p.state.snapshot.guidance=null; p.state.snapshot.canControl=true; p.state.snapshot.revealSeatId=1;
+  p.state.snapshot.message='Pass this device to Alex.'; await p.client.poll();
+  assert.equal(p.get('handoff').textContent,'Pass this device to Alex.');
+  assert.match(p.get('curtain-detail').textContent,/Reveal only when it is your turn/);
+  assert.equal(p.get('public-instruction').textContent,'Turn 1 · Turn Start');
+  assert.equal(p.get('private').children.length,0); assert.equal(p.get('reveal').disabled,false);
+  await p.client.reveal(); assert.equal(p.get('private').hidden,false);
+});
+
+test('shared guidance updates pending placement without rebuilding or revealing private cards', async () => {
+  const p=page(); await flush();
+  p.state.snapshot.guidance={title:'Alex',instruction:'Place 2 Blue trains on Calgary - Helena.'};
+  await p.client.poll(); await p.client.reveal();
+  const node=descendants(p.get('private')).find(node=>node.textContent===p.state.snapshot.guidance.instruction);
+  assert.ok(node); const hand=p.get('private').children[3];
+  p.state.snapshot.guidance.instruction='Restore the Blue trains to Calgary - Helena.'; await p.client.poll();
+  assert.equal(node.textContent,p.state.snapshot.guidance.instruction); assert.equal(p.get('private').children[3],hand);
+  assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,1);
+  delete p.state.snapshot.guidance; await p.client.poll();
+  assert.equal(node.textContent,'Follow the placement instructions on the laptop.');
+  await p.click('hide');
+  p.state.snapshot.guidance={title:'Alex',instruction:'Move the Blue score marker.'}; await p.client.poll();
+  assert.equal(p.get('private').children.length,0); assert.equal(p.get('curtain-detail').textContent,'Move the Blue score marker.');
 });
 test('delayed private response cannot uncover a hand after Hide', async () => {
   const reply = deferred(); const p = page({fetch:url => url === '/api/reveal' ? reply.promise : undefined}); await flush();

@@ -486,13 +486,13 @@ public class DesktopPackAwayFlowTests
             SessionId.New(), seats, seats[0].SeatId, VerificationMode.Manual);
 
         var coordinator = await Application.GameCoordinator.CreateAsync(
-            rules, store, setup, Domain.Randomness.DeterministicRandom.SeedFrom(5));
+            rules, store, setup, Domain.Randomness.DeterministicRandom.SeedFrom(5), cancellationToken: TestContext.Current.CancellationToken);
 
         var driver = new Application.ComputerSeatDriver(coordinator, new AI.HeuristicAiPolicy(), aiSeed: 5);
-        await driver.AdvanceAsync();
+        await driver.AdvanceAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         await coordinator.SubmitAsync(
-            new Domain.Engine.SaveAndPackAway(coordinator.NewEnvelope(), "Interrupted"));
+            new Domain.Engine.SaveAndPackAway(coordinator.NewEnvelope(), "Interrupted"), cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(SessionLifecycle.PreparingPackAway, coordinator.Public.Lifecycle);
 

@@ -20,11 +20,12 @@ public class ApplicationAuditTests
             new Seat(new SeatId(1), "First", PlayerColor.Blue,
                 computer ? SeatKind.Computer : SeatKind.Human, AiDifficulty.Relaxed),
             new Seat(new SeatId(2), "Second", PlayerColor.Red, SeatKind.Human, AiDifficulty.Relaxed),
-        ], new SeatId(1), VerificationMode.Manual), DeterministicRandom.SeedFrom(91));
+        ], new SeatId(1), VerificationMode.Manual), DeterministicRandom.SeedFrom(91),
+            TestContext.Current.CancellationToken);
 
     private static async Task<CommitTicketSelection> OpeningChoiceAsync(GameCoordinator coordinator)
     {
-        var view = await coordinator.GetSeatViewAsync(new SeatId(1));
+        var view = await coordinator.GetSeatViewAsync(new SeatId(1), TestContext.Current.CancellationToken);
         return new CommitTicketSelection(coordinator.NewEnvelope(view.SeatId), [.. view.SetupOffer.Take(2)], []);
     }
 
@@ -35,10 +36,10 @@ public class ApplicationAuditTests
         var current = await CreateAsync(store);
         var other = await CreateAsync(store);
         var command = await OpeningChoiceAsync(other);
-        Assert.True((await other.SubmitAsync(command)).IsAccepted);
+        Assert.True((await other.SubmitAsync(command, TestContext.Current.CancellationToken)).IsAccepted);
         store.Lookups = store.Rejections = 0;
 
-        var result = await current.SubmitAsync(command);
+        var result = await current.SubmitAsync(command, TestContext.Current.CancellationToken);
 
         Assert.Equal("WrongSession", result.Result.Rejection?.Code);
         Assert.False(result.WasDuplicate);
@@ -55,24 +56,24 @@ public class ApplicationAuditTests
         var store = new FaultStore();
         var coordinator = await CreateAsync(store);
         var command = await OpeningChoiceAsync(coordinator);
-        var before = await coordinator.ComputeStateHashAsync();
+        var before = await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken);
         store.FailCommit = true;
         store.CommitBeforeFailure = committedBeforeFailure;
 
-        await Assert.ThrowsAsync<IOException>(() => coordinator.SubmitAsync(command));
+        await Assert.ThrowsAsync<IOException>(() => coordinator.SubmitAsync(command, TestContext.Current.CancellationToken));
         Assert.True(coordinator.StorageFaulted);
-        Assert.Equal(before, await coordinator.ComputeStateHashAsync());
-        Assert.Equal("StorageFaulted", (await coordinator.SubmitAsync(command)).Result.Rejection?.Code);
+        Assert.Equal(before, await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("StorageFaulted", (await coordinator.SubmitAsync(command, TestContext.Current.CancellationToken)).Result.Rejection?.Code);
         Assert.Equal(1, store.Commits);
 
         store.FailCommit = false;
-        var restored = await GameCoordinator.RestoreAsync(Rules(), store, coordinator.SessionId);
+        var restored = await GameCoordinator.RestoreAsync(Rules(), store, coordinator.SessionId, TestContext.Current.CancellationToken);
         Assert.False(restored.StorageFaulted);
-        var retry = await restored.SubmitAsync(command);
+        var retry = await restored.SubmitAsync(command, TestContext.Current.CancellationToken);
         Assert.True(retry.IsAccepted);
         Assert.Equal(committedBeforeFailure, retry.WasDuplicate);
-        Assert.Empty((await restored.GetSeatViewAsync(new SeatId(1))).SetupOffer);
-        Assert.Empty(await restored.CheckInvariantsAsync());
+        Assert.Empty((await restored.GetSeatViewAsync(new SeatId(1), TestContext.Current.CancellationToken)).SetupOffer);
+        Assert.Empty(await restored.CheckInvariantsAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -80,13 +81,14 @@ public class ApplicationAuditTests
     {
         var coordinator = await CreateAsync(new InMemorySessionStore());
         string? observed = null;
-        coordinator.Updated += (_, _) => observed = coordinator.ComputeStateHashAsync().GetAwaiter().GetResult();
+        coordinator.Updated += (_, _) => observed = coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         var command = await OpeningChoiceAsync(coordinator);
 
-        var outcome = await Task.Run(() => coordinator.SubmitAsync(command)).WaitAsync(TimeSpan.FromSeconds(5));
+        var outcome = await Task.Run(() => coordinator.SubmitAsync(command, TestContext.Current.CancellationToken),
+            TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.True(outcome.IsAccepted);
-        Assert.Equal(await coordinator.ComputeStateHashAsync(), observed);
+        Assert.Equal(await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken), observed);
     }
 
     [Fact]
@@ -98,11 +100,11 @@ public class ApplicationAuditTests
         coordinator.Updated += (_, _) => observed = true;
         var command = await OpeningChoiceAsync(coordinator);
 
-        var outcome = await coordinator.SubmitAsync(command);
+        var outcome = await coordinator.SubmitAsync(command, TestContext.Current.CancellationToken);
 
         Assert.True(outcome.IsAccepted);
         Assert.True(observed);
-        Assert.True((await coordinator.SubmitAsync(command)).WasDuplicate);
+        Assert.True((await coordinator.SubmitAsync(command, TestContext.Current.CancellationToken)).WasDuplicate);
         Assert.False(coordinator.StorageFaulted);
     }
 
@@ -111,15 +113,16 @@ public class ApplicationAuditTests
     {
         var store = new InMemorySessionStore();
         var first = await CreateAsync(store);
-        var second = await GameCoordinator.RestoreAsync(Rules(), store, first.SessionId);
+        var second = await GameCoordinator.RestoreAsync(Rules(), store, first.SessionId, TestContext.Current.CancellationToken);
         var oldCommand = await OpeningChoiceAsync(second);
-        Assert.True((await first.SubmitAsync(await OpeningChoiceAsync(first))).IsAccepted);
+        Assert.True((await first.SubmitAsync(await OpeningChoiceAsync(first), TestContext.Current.CancellationToken)).IsAccepted);
 
-        await Assert.ThrowsAsync<SessionIntegrityException>(() => second.SubmitAsync(oldCommand));
+        await Assert.ThrowsAsync<SessionIntegrityException>(() => second.SubmitAsync(oldCommand, TestContext.Current.CancellationToken));
 
         Assert.True(second.StorageFaulted);
-        var restored = await GameCoordinator.RestoreAsync(Rules(), store, first.SessionId);
-        Assert.Equal(await first.ComputeStateHashAsync(), await restored.ComputeStateHashAsync());
+        var restored = await GameCoordinator.RestoreAsync(Rules(), store, first.SessionId, TestContext.Current.CancellationToken);
+        Assert.Equal(await first.ComputeStateHashAsync(TestContext.Current.CancellationToken),
+            await restored.ComputeStateHashAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -128,15 +131,15 @@ public class ApplicationAuditTests
         var coordinator = await CreateAsync(new InMemorySessionStore(), computer: true);
         var policy = new ControlledPolicy();
         var driver = new ComputerSeatDriver(coordinator, policy, 1);
-        var before = await coordinator.ComputeStateHashAsync();
-        using var cancellation = new CancellationTokenSource();
+        var before = await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         var run = driver.AdvanceAsync(cancellation.Token);
-        await policy.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await policy.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         cancellation.Cancel();
         try
         {
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.WaitAsync(TimeSpan.FromSeconds(5)));
-            Assert.Equal(before, await coordinator.ComputeStateHashAsync());
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+            Assert.Equal(before, await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken));
             Assert.Empty(driver.Reports);
         }
         finally
@@ -151,15 +154,15 @@ public class ApplicationAuditTests
         var coordinator = await CreateAsync(new InMemorySessionStore(), computer: true);
         var policy = new ControlledPolicy();
         var driver = new ComputerSeatDriver(coordinator, policy, 1);
-        var run = driver.AdvanceAsync();
+        var run = driver.AdvanceAsync(TestContext.Current.CancellationToken);
         try
         {
-            Assert.Equal(1, await run.WaitAsync(TimeSpan.FromSeconds(5)));
-            Assert.Empty((await coordinator.GetSeatViewAsync(new SeatId(1))).SetupOffer);
+            Assert.Equal(1, await run.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+            Assert.Empty((await coordinator.GetSeatViewAsync(new SeatId(1), TestContext.Current.CancellationToken)).SetupOffer);
             Assert.Contains(driver.Reports, report => report.UsedFallback);
             var version = coordinator.Public.StateVersion;
             policy.Release.TrySetResult(new AiDrawTrainCard(null));
-            Assert.Equal(0, await driver.AdvanceAsync());
+            Assert.Equal(0, await driver.AdvanceAsync(TestContext.Current.CancellationToken));
             Assert.Equal(version, coordinator.Public.StateVersion);
         }
         finally
@@ -174,13 +177,13 @@ public class ApplicationAuditTests
         var coordinator = await CreateAsync(new InMemorySessionStore(), computer: true);
         var policy = new ControlledPolicy();
         var driver = new ComputerSeatDriver(coordinator, policy, 1);
-        var view = await coordinator.GetSeatViewAsync(new SeatId(1));
-        var first = driver.AdvanceAsync();
-        await policy.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var second = driver.AdvanceAsync();
+        var view = await coordinator.GetSeatViewAsync(new SeatId(1), TestContext.Current.CancellationToken);
+        var first = driver.AdvanceAsync(TestContext.Current.CancellationToken);
+        await policy.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var second = driver.AdvanceAsync(TestContext.Current.CancellationToken);
         policy.Release.TrySetResult(new AiKeepTickets([.. view.SetupOffer.Take(2)]));
 
-        var results = await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
+        var results = await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.Equal(1, results.Sum());
         Assert.Equal(1, policy.Calls);
@@ -193,11 +196,11 @@ public class ApplicationAuditTests
         var driver = new ComputerSeatDriver(coordinator, new ConstantPolicy(new AiClaimRoute(
             new RouteId("not-a-route"), new PaymentOption(TrainCardKind.Red, 999, 0))), 1);
 
-        Assert.Equal(1, await driver.AdvanceAsync());
+        Assert.Equal(1, await driver.AdvanceAsync(TestContext.Current.CancellationToken));
 
-        Assert.Empty((await coordinator.GetSeatViewAsync(new SeatId(1))).SetupOffer);
+        Assert.Empty((await coordinator.GetSeatViewAsync(new SeatId(1), TestContext.Current.CancellationToken)).SetupOffer);
         Assert.Contains(driver.Reports, report => report.UsedFallback);
-        Assert.Empty(await coordinator.CheckInvariantsAsync());
+        Assert.Empty(await coordinator.CheckInvariantsAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -207,7 +210,7 @@ public class ApplicationAuditTests
         var coordinator = await CreateAsync(new InMemorySessionStore(), computer: true);
         var driver = new ComputerSeatDriver(coordinator, new ConstantPolicy(new AiNoDecision(secret)), 1);
 
-        await driver.AdvanceAsync();
+        await driver.AdvanceAsync(TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain(secret, string.Join(";", driver.Reports));
     }

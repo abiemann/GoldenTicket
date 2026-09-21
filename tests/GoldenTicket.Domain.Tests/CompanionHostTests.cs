@@ -225,14 +225,15 @@ public class CompanionHostTests
     private static Task<GameCoordinator> CreateGame(bool secondAi = false) => GameCoordinator.CreateAsync(
         new GameRules(TestManifest.Manifest, TestManifest.Catalog), new InMemorySessionStore(),
         new SessionSetup(SessionId.New(), [new Seat(new(1), "Alex", PlayerColor.Blue, SeatKind.Human, AiDifficulty.Standard),
-            new Seat(new(2), "Player two", PlayerColor.Red, secondAi ? SeatKind.Computer : SeatKind.Human, AiDifficulty.Standard)], new(1), VerificationMode.Manual), DeterministicRandom.SeedFrom(91));
+            new Seat(new(2), "Player two", PlayerColor.Red, secondAi ? SeatKind.Computer : SeatKind.Human, AiDifficulty.Standard)], new(1), VerificationMode.Manual),
+        DeterministicRandom.SeedFrom(91), TestContext.Current.CancellationToken);
     [Fact]
     public async Task BridgeRevealsOnlyNextHumanSetupSeatAndNeverAi()
     {
         var game = await CreateGame(true); var bridge = new CoordinatorCompanionBridge(() => game);
-        var snapshot = await bridge.ReadPublicAsync(); Assert.Equal(1, snapshot.RevealSeatId);
-        Assert.Null(await bridge.ReadPrivateAsync(new(2), snapshot.Game!.StateVersion));
-        var own = await bridge.ReadPrivateAsync(new(1), snapshot.Game.StateVersion);
+        var snapshot = await bridge.ReadPublicAsync(cancellationToken: TestContext.Current.CancellationToken); Assert.Equal(1, snapshot.RevealSeatId);
+        Assert.Null(await bridge.ReadPrivateAsync(new(2), snapshot.Game!.StateVersion, cancellationToken: TestContext.Current.CancellationToken));
+        var own = await bridge.ReadPrivateAsync(new(1), snapshot.Game.StateVersion, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(own); Assert.Equal(3, own.OfferedTickets.Count); Assert.Equal(4, own.View.Hand.Length);
         var publicJson = JsonSerializer.Serialize(snapshot);
         Assert.DoesNotContain("TrainHands", publicJson); Assert.DoesNotContain("SetupOffers", publicJson); Assert.DoesNotContain("RandomState", publicJson);
@@ -243,20 +244,20 @@ public class CompanionHostTests
         var game = await CreateGame(); var bridge = new CoordinatorCompanionBridge(() => game);
         foreach (var seat in new[] { 1, 2 })
         {
-            var data = (await bridge.ReadPrivateAsync(new(seat), game.Public.StateVersion))!;
+            var data = (await bridge.ReadPrivateAsync(new(seat), game.Public.StateVersion, cancellationToken: TestContext.Current.CancellationToken))!;
             var selection = new CompanionCommand(Guid.NewGuid().ToString("n"), game.SessionId.Value, game.Public.StateVersion,
                 "keepTickets", KeptTickets: data.OfferedTickets.Take(2).Select(t => t.Id).ToArray());
-            Assert.True((await bridge.ExecuteAsync(new(seat), selection)).Accepted);
+            Assert.True((await bridge.ExecuteAsync(new(seat), selection, cancellationToken: TestContext.Current.CancellationToken)).Accepted);
         }
-        var count = (await game.GetSeatViewAsync(new(1))).Hand.Length;
+        var count = (await game.GetSeatViewAsync(new(1), cancellationToken: TestContext.Current.CancellationToken)).Hand.Length;
         var draw = new CompanionCommand(Guid.NewGuid().ToString("n"), game.SessionId.Value, game.Public.StateVersion, "drawTrain");
-        Assert.True((await bridge.ExecuteAsync(new(1), draw)).Accepted);
-        Assert.Equal(count + 1, (await game.GetSeatViewAsync(new(1))).Hand.Length);
-        Assert.False((await bridge.ExecuteAsync(new(1), draw)).Accepted); // stale version cannot redraw.
+        Assert.True((await bridge.ExecuteAsync(new(1), draw, cancellationToken: TestContext.Current.CancellationToken)).Accepted);
+        Assert.Equal(count + 1, (await game.GetSeatViewAsync(new(1), cancellationToken: TestContext.Current.CancellationToken)).Hand.Length);
+        Assert.False((await bridge.ExecuteAsync(new(1), draw, cancellationToken: TestContext.Current.CancellationToken)).Accepted); // stale version cannot redraw.
         var forbidden = draw with { CommandId = Guid.NewGuid().ToString("n"), ExpectedStateVersion = game.Public.StateVersion, Kind = "SubmitClaimEvidence" };
-        Assert.False((await bridge.ExecuteAsync(new(1), forbidden)).Accepted);
-        Assert.False((await bridge.ExecuteAsync(new(2), forbidden with { Kind = "drawTrain" })).Accepted);
-        Assert.Empty(await game.CheckInvariantsAsync());
+        Assert.False((await bridge.ExecuteAsync(new(1), forbidden, cancellationToken: TestContext.Current.CancellationToken)).Accepted);
+        Assert.False((await bridge.ExecuteAsync(new(2), forbidden with { Kind = "drawTrain" }, cancellationToken: TestContext.Current.CancellationToken)).Accepted);
+        Assert.Empty(await game.CheckInvariantsAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
     [Fact]
     public async Task DetectedRoutePaymentsCannotBypassTheDesktopCameraAuthorization()
@@ -290,11 +291,11 @@ public class CompanionHostTests
     {
         var game = await CreateGame(); var allowed = true;
         var bridge = new CoordinatorCompanionBridge(() => game, canControl: () => allowed);
-        Assert.NotNull(await bridge.ReadPrivateAsync(new(1), game.Public.StateVersion));
+        Assert.NotNull(await bridge.ReadPrivateAsync(new(1), game.Public.StateVersion, cancellationToken: TestContext.Current.CancellationToken));
         allowed = false;
-        Assert.False((await bridge.ReadPublicAsync()).CanControl);
-        Assert.Null(await bridge.ReadPrivateAsync(new(1), game.Public.StateVersion));
+        Assert.False((await bridge.ReadPublicAsync(cancellationToken: TestContext.Current.CancellationToken)).CanControl);
+        Assert.Null(await bridge.ReadPrivateAsync(new(1), game.Public.StateVersion, cancellationToken: TestContext.Current.CancellationToken));
         var command = new CompanionCommand(Guid.NewGuid().ToString("n"), game.SessionId.Value, game.Public.StateVersion, "drawTrain");
-        Assert.False((await bridge.ExecuteAsync(new(1), command)).Accepted);
+        Assert.False((await bridge.ExecuteAsync(new(1), command, cancellationToken: TestContext.Current.CancellationToken)).Accepted);
     }
 }

@@ -22,16 +22,17 @@ public sealed class PersistenceAuditTests : IDisposable
     {
         var rules = new GameRules(TestManifest.Manifest, TestManifest.Catalog);
         var store = new SqliteSessionStore(_root);
-        var coordinator = await GameCoordinator.CreateAsync(rules, store, Setup(), DeterministicRandom.SeedFrom(42));
+        var coordinator = await GameCoordinator.CreateAsync(rules, store, Setup(), DeterministicRandom.SeedFrom(42),
+            TestContext.Current.CancellationToken);
         return (rules, store, coordinator);
     }
 
     private static async Task<SubmitOutcome> SelectOpeningTicketsAsync(GameCoordinator coordinator)
     {
         var seat = new SeatId(1);
-        var view = await coordinator.GetSeatViewAsync(seat);
+        var view = await coordinator.GetSeatViewAsync(seat, TestContext.Current.CancellationToken);
         return await coordinator.SubmitAsync(new CommitTicketSelection(
-            coordinator.NewEnvelope(seat), [.. view.SetupOffer.Take(2)], []));
+            coordinator.NewEnvelope(seat), [.. view.SetupOffer.Take(2)], []), TestContext.Current.CancellationToken);
     }
 
     private static async Task MutateAsync(SqliteSessionStore store, SessionId sessionId, string sql)
@@ -40,10 +41,10 @@ public sealed class PersistenceAuditTests : IDisposable
         {
             DataSource = store.DatabasePath(sessionId), Mode = SqliteOpenMode.ReadWrite,
         }.ToString());
-        await connection.OpenAsync();
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
-        await command.ExecuteNonQueryAsync();
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
     }
 
     [Theory]
@@ -59,7 +60,7 @@ public sealed class PersistenceAuditTests : IDisposable
     public async Task UntrustedSessionIdsCannotReachTheFilesystem(string value)
     {
         var store = new SqliteSessionStore(_root);
-        await Assert.ThrowsAsync<ArgumentException>(() => store.DeleteSessionAsync(new SessionId(value), CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentException>(() => store.DeleteSessionAsync(new SessionId(value), TestContext.Current.CancellationToken));
         Assert.Throws<ArgumentException>(() => store.DatabasePath(new SessionId(value)));
         Assert.False(Directory.Exists(_root));
     }
@@ -71,7 +72,7 @@ public sealed class PersistenceAuditTests : IDisposable
         var sessionId = SessionId.New();
         Directory.CreateDirectory(store.SessionDirectory(sessionId));
 
-        await Assert.ThrowsAsync<SqliteException>(() => store.FindCommandOutcomeAsync(sessionId, CommandId.New(), CancellationToken.None));
+        await Assert.ThrowsAsync<SqliteException>(() => store.FindCommandOutcomeAsync(sessionId, CommandId.New(), TestContext.Current.CancellationToken));
 
         Assert.False(File.Exists(store.DatabasePath(sessionId)));
     }
@@ -87,7 +88,7 @@ public sealed class PersistenceAuditTests : IDisposable
         var (_, store, coordinator) = await CreateAsync();
         await MutateAsync(store, coordinator.SessionId, mutation);
 
-        var summary = Assert.Single(await store.ListSessionsAsync(CancellationToken.None));
+        var summary = Assert.Single(await store.ListSessionsAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(coordinator.SessionId, summary.SessionId);
         Assert.NotNull(summary.UnavailableReason);
@@ -104,14 +105,14 @@ public sealed class PersistenceAuditTests : IDisposable
         var sessionId = SessionId.New();
         Directory.CreateDirectory(store.SessionDirectory(sessionId));
         var damagedBytes = "This is not a SQLite database."u8.ToArray();
-        await File.WriteAllBytesAsync(store.DatabasePath(sessionId), damagedBytes);
+        await File.WriteAllBytesAsync(store.DatabasePath(sessionId), damagedBytes, TestContext.Current.CancellationToken);
         Directory.CreateDirectory(Path.Combine(_root, "sessions", "unrelated"));
 
-        var summary = Assert.Single(await store.ListSessionsAsync(CancellationToken.None));
+        var summary = Assert.Single(await store.ListSessionsAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(sessionId, summary.SessionId);
         Assert.NotNull(summary.UnavailableReason);
-        Assert.Equal(damagedBytes, await File.ReadAllBytesAsync(store.DatabasePath(sessionId)));
+        Assert.Equal(damagedBytes, await File.ReadAllBytesAsync(store.DatabasePath(sessionId), TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -120,17 +121,18 @@ public sealed class PersistenceAuditTests : IDisposable
         var rules = new GameRules(TestManifest.Manifest, TestManifest.Catalog);
         var store = new SqliteSessionStore(_root);
         var setup = Setup();
-        var original = await GameCoordinator.CreateAsync(rules, store, setup, DeterministicRandom.SeedFrom(42));
-        var expectedHash = await original.ComputeStateHashAsync();
+        var original = await GameCoordinator.CreateAsync(rules, store, setup, DeterministicRandom.SeedFrom(42), TestContext.Current.CancellationToken);
+        var expectedHash = await original.ComputeStateHashAsync(TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            GameCoordinator.CreateAsync(rules, store, setup, DeterministicRandom.SeedFrom(123)));
+            GameCoordinator.CreateAsync(rules, store, setup, DeterministicRandom.SeedFrom(123), TestContext.Current.CancellationToken));
 
-        var restored = await GameCoordinator.RestoreAsync(rules, store, setup.SessionId);
-        Assert.Equal(expectedHash, await restored.ComputeStateHashAsync());
+        var restored = await GameCoordinator.RestoreAsync(rules, store, setup.SessionId, TestContext.Current.CancellationToken);
+        Assert.Equal(expectedHash, await restored.ComputeStateHashAsync(TestContext.Current.CancellationToken));
         Assert.True((await SelectOpeningTicketsAsync(original)).IsAccepted);
-        restored = await GameCoordinator.RestoreAsync(rules, new SqliteSessionStore(_root), setup.SessionId);
-        Assert.Equal(await original.ComputeStateHashAsync(), await restored.ComputeStateHashAsync());
+        restored = await GameCoordinator.RestoreAsync(rules, new SqliteSessionStore(_root), setup.SessionId, TestContext.Current.CancellationToken);
+        Assert.Equal(await original.ComputeStateHashAsync(TestContext.Current.CancellationToken),
+            await restored.ComputeStateHashAsync(TestContext.Current.CancellationToken));
     }
 
     [Theory]
@@ -151,40 +153,40 @@ public sealed class PersistenceAuditTests : IDisposable
         await MutateAsync(store, coordinator.SessionId, mutation);
 
         await Assert.ThrowsAsync<SessionIntegrityException>(() =>
-            GameCoordinator.RestoreAsync(rules, store, coordinator.SessionId));
+            GameCoordinator.RestoreAsync(rules, store, coordinator.SessionId, TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task ASecondCoordinatorCannotOverwriteAnAlreadyAdvancedSave()
     {
         var (rules, store, first) = await CreateAsync();
-        var second = await GameCoordinator.RestoreAsync(rules, new SqliteSessionStore(_root), first.SessionId);
+        var second = await GameCoordinator.RestoreAsync(rules, new SqliteSessionStore(_root), first.SessionId, TestContext.Current.CancellationToken);
 
         Assert.True((await SelectOpeningTicketsAsync(first)).IsAccepted);
-        var expectedHash = await first.ComputeStateHashAsync();
+        var expectedHash = await first.ComputeStateHashAsync(TestContext.Current.CancellationToken);
 
         await Assert.ThrowsAsync<SessionIntegrityException>(() => SelectOpeningTicketsAsync(second));
 
-        var restored = await GameCoordinator.RestoreAsync(rules, new SqliteSessionStore(_root), first.SessionId);
-        Assert.Equal(expectedHash, await restored.ComputeStateHashAsync());
-        Assert.Empty(await restored.CheckInvariantsAsync());
+        var restored = await GameCoordinator.RestoreAsync(rules, new SqliteSessionStore(_root), first.SessionId, TestContext.Current.CancellationToken);
+        Assert.Equal(expectedHash, await restored.ComputeStateHashAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await restored.CheckInvariantsAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task FailedRestoreDoesNotExposePrivateTicketsInItsError()
     {
         var (rules, store, coordinator) = await CreateAsync();
-        var restored = await store.RestoreAsync(coordinator.SessionId, rules.Manifest, rules.Catalog, CancellationToken.None);
+        var restored = await store.RestoreAsync(coordinator.SessionId, rules.Manifest, rules.Catalog, TestContext.Current.CancellationToken);
         var secretTicket = restored.State.SetupOffers[new SeatId(2)][0];
         // Simulate a past engine bug whose persisted state and hash agree, but violate conservation.
         var invalid = new Transition([new TicketSelectionCommitted(new SeatId(1), [secretTicket], [], true)]);
         GameReducer.ApplyTransition(restored.State, invalid.Events);
         await store.CommitAsync(restored.State,
             new StoredCommandOutcome(CommandId.New(), true, restored.State.StateVersion, null, null),
-            invalid, StateHash.Compute(restored.State), CancellationToken.None);
+            invalid, StateHash.Compute(restored.State), TestContext.Current.CancellationToken);
 
         var error = await Assert.ThrowsAsync<SessionIntegrityException>(() =>
-            GameCoordinator.RestoreAsync(rules, store, coordinator.SessionId));
+            GameCoordinator.RestoreAsync(rules, store, coordinator.SessionId, TestContext.Current.CancellationToken));
 
         Assert.Contains("integrity checks", error.Message);
         Assert.DoesNotContain(secretTicket.Value, error.Message);
@@ -196,13 +198,13 @@ public sealed class PersistenceAuditTests : IDisposable
     {
         var (rules, store, coordinator) = await CreateAsync();
         Assert.True((await SelectOpeningTicketsAsync(coordinator)).IsAccepted);
-        var restored = await store.RestoreAsync(coordinator.SessionId, rules.Manifest, rules.Catalog, CancellationToken.None);
+        var restored = await store.RestoreAsync(coordinator.SessionId, rules.Manifest, rules.Catalog, TestContext.Current.CancellationToken);
 
         await using var connection = new SqliteConnection($"Data Source={store.DatabasePath(coordinator.SessionId)}");
-        await connection.OpenAsync();
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT JournalSequence FROM Snapshot ORDER BY StateVersion DESC LIMIT 1;";
-        var sequence = (long)(await command.ExecuteScalarAsync())!;
+        var sequence = (long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
 
         Assert.Equal(restored.State.JournalSequence, sequence);
         Assert.Equal(restored.Journal.Count, sequence);

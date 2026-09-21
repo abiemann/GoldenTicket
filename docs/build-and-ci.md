@@ -11,6 +11,10 @@ laptop and local network. GitHub is not a game server and is not consulted at ap
 2. Open `GoldenTicket.sln` and select **GoldenTicket.Desktop** as the startup project.
 3. Build/run normally. Test Explorer can run the .NET regression suite.
 
+The desktop application, Windows integration tests and WPF smoke runner target x64, including
+when the solution configuration is **Any CPU**. The core libraries and portable tests remain
+platform-neutral.
+
 The SDK/build prerequisites are development tools. For a framework-dependent installation on
 another laptop, install the matching .NET 10 Windows Desktop and ASP.NET Core runtimes first.
 An eventual installer must bundle or provision prerequisites during installation; installed gameplay

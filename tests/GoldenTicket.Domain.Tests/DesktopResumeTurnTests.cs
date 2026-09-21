@@ -57,10 +57,10 @@ public sealed class DesktopResumeTurnTests
                 Assert.Equal(expectedVersion, resumed.Public.StateVersion);
                 Assert.True(model.CanRevealPrivateSeat);
             }
-            var afterAcknowledgment = await resumed.ComputeStateHashAsync();
+            var afterAcknowledgment = await resumed.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken);
             Assert.False(model.AcknowledgeResumeTurnCommand.CanExecute(null));
             await model.AcknowledgeResumeTurnCommand.ExecuteAsync(null);
-            Assert.Equal(afterAcknowledgment, await resumed.ComputeStateHashAsync());
+            Assert.Equal(afterAcknowledgment, await resumed.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken));
         }
         finally { await model.DisposeToolsAsync(); }
     }
@@ -76,8 +76,8 @@ public sealed class DesktopResumeTurnTests
         await PlanClaimAsync(saved);
         var expected = Assert.IsType<GoldenTicket.Domain.Projections.PublicPendingClaim>(saved.Public.PendingClaim);
         var turn = saved.Public.TurnNumber;
-        Assert.True((await saved.SaveAndPackAwayAsync("Unfinished turn")).SafeToPack);
-        await photos.AttachAsync((await saved.GetCheckpointAsync())!);
+        Assert.True((await saved.SaveAndPackAwayAsync("Unfinished turn", cancellationToken: TestContext.Current.CancellationToken)).SafeToPack);
+        await photos.AttachAsync((await saved.GetCheckpointAsync(cancellationToken: TestContext.Current.CancellationToken))!);
         var model = await ReloadAsync(store, photos);
         try
         {
@@ -122,8 +122,8 @@ public sealed class DesktopResumeTurnTests
         Assert.True(ClassicUsRouteGeometry.TryGetSlots(pending.RouteId.Value, out var slots));
         var metadata = new CheckpointPendingPlacement(pending.OperationId, pending.RouteId,
             pending.SeatId, PlayerColor.Blue, pending.TrainCount, 1);
-        Assert.True((await saved.SaveAndPackAwayAsync("Partial computer placement")).SafeToPack);
-        await photos.AttachAsync((await saved.GetCheckpointAsync())!, metadata);
+        Assert.True((await saved.SaveAndPackAwayAsync("Partial computer placement", cancellationToken: TestContext.Current.CancellationToken)).SafeToPack);
+        await photos.AttachAsync((await saved.GetCheckpointAsync(cancellationToken: TestContext.Current.CancellationToken))!, metadata);
         var model = await ReloadAsync(store, photos);
         try
         {
@@ -181,8 +181,8 @@ public sealed class DesktopResumeTurnTests
             await model.ConfirmBoardReconciledAsync();
             Assert.False(model.IsResumeTurnAnnouncementOpen);
             Assert.Equal("Player 2", model.Game.GuidanceSeat);
-            Assert.Empty((await Coordinator(model).GetSeatViewAsync(new(1))).SetupOffer);
-            Assert.NotEmpty((await Coordinator(model).GetSeatViewAsync(new(2))).SetupOffer);
+            Assert.Empty((await Coordinator(model).GetSeatViewAsync(new(1), cancellationToken: TestContext.Current.CancellationToken)).SetupOffer);
+            Assert.NotEmpty((await Coordinator(model).GetSeatViewAsync(new(2), cancellationToken: TestContext.Current.CancellationToken)).SetupOffer);
         }
         finally { await model.DisposeToolsAsync(); }
     }
@@ -190,30 +190,32 @@ public sealed class DesktopResumeTurnTests
     private static async Task<GameCoordinator> CreateAsync(ISessionStore store, bool computer,
         bool completeSetup = true)
     {
+        var token = TestContext.Current.CancellationToken;
         var game = await GameCoordinator.CreateAsync(new GameRules(TestManifest.Manifest, TestManifest.Catalog),
             store, new SessionSetup(SessionId.New(),
                 [new Seat(new(1), computer ? "Computer 1" : "Player 1", PlayerColor.Blue,
                     computer ? SeatKind.Computer : SeatKind.Human, AiDifficulty.Standard),
                  new Seat(new(2), "Player 2", PlayerColor.Yellow, SeatKind.Human, AiDifficulty.Standard)],
-                new(1), VerificationMode.Manual), DeterministicRandom.SeedFrom(91));
+                new(1), VerificationMode.Manual), DeterministicRandom.SeedFrom(91), token);
         if (completeSetup)
             foreach (var seat in game.Seats)
             {
-                var hand = await game.GetSeatViewAsync(seat.SeatId);
+                var hand = await game.GetSeatViewAsync(seat.SeatId, token);
                 Assert.True((await game.SubmitAsync(new CommitTicketSelection(game.NewEnvelope(seat.SeatId),
-                    [.. hand.SetupOffer.Take(2)], []))).IsAccepted);
+                    [.. hand.SetupOffer.Take(2)], []), token)).IsAccepted);
             }
         return game;
     }
 
     private static async Task PlanClaimAsync(GameCoordinator game, int minimumLength = 1)
     {
+        var token = TestContext.Current.CancellationToken;
         var seat = game.Public.ActiveSeatId;
-        var actions = await game.GetLegalActionsAsync(seat);
+        var actions = await game.GetLegalActionsAsync(seat, token);
         var choice = actions.Claims.First(claim => TestManifest.Manifest.Route(claim.RouteId).Length >= minimumLength);
-        var hand = await game.GetSeatViewAsync(seat);
+        var hand = await game.GetSeatViewAsync(seat, token);
         Assert.True((await game.SubmitAsync(new PlanClaim(game.NewEnvelope(seat), choice.RouteId,
-            LegalActionCalculator.ResolveCards(hand, choice.Payments[0])))).IsAccepted);
+            LegalActionCalculator.ResolveCards(hand, choice.Payments[0])), token)).IsAccepted);
     }
 
     private static async Task<MainViewModel> ReloadAsync(ISessionStore store, TestCheckpointPhotos? photos = null)

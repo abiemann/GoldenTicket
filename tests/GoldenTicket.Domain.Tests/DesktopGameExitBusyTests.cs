@@ -30,7 +30,7 @@ public sealed class DesktopGameExitBusyTests
             model.Camera.IsGameTablePreviewUpright = true;
             var firstDraw = model.DrawSoloBlindCommand.ExecuteAsync(null);
             ConfirmEmptyBoard(model.Camera, firstSequence: 1);
-            await firstDraw.WaitAsync(TimeSpan.FromSeconds(10));
+            await firstDraw.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal("Taking a second train card", model.Table.PhaseText);
             var session = Assert.Single(await store.ListSessionsAsync(CancellationToken.None));
             var before = (await store.RestoreAsync(session.SessionId, manifest, catalog,
@@ -39,13 +39,13 @@ public sealed class DesktopGameExitBusyTests
             store.DelayCommitAfter(commitsBeforeDelay);
             drawing = model.DrawSoloBlindCommand.ExecuteAsync(null);
             ConfirmEmptyBoard(model.Camera, firstSequence: 3);
-            await store.CommitStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await store.CommitStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken: TestContext.Current.CancellationToken);
 
             model.OpenGameExitMenu();
             Assert.False(model.IsGameExitMenuOpen);
 
             store.ReleaseCommit.TrySetResult();
-            await drawing.WaitAsync(TimeSpan.FromSeconds(10));
+            await drawing.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken: TestContext.Current.CancellationToken);
 
             var after = (await store.RestoreAsync(session.SessionId, manifest, catalog,
                 CancellationToken.None)).State;
@@ -67,8 +67,16 @@ public sealed class DesktopGameExitBusyTests
         finally
         {
             store.ReleaseCommit.TrySetResult();
-            if (drawing is not null) await drawing.WaitAsync(TimeSpan.FromSeconds(10));
-            await model.DisposeToolsAsync();
+            try
+            {
+                // Drain the released save even if the test was cancelled, before disposing its tools.
+                if (drawing is not null)
+                    await drawing.WaitAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
+            }
+            finally
+            {
+                await model.DisposeToolsAsync();
+            }
         }
     }
 

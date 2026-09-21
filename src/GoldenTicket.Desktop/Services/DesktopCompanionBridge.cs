@@ -15,7 +15,8 @@ internal sealed class DesktopCompanionBridge(
     Action beforePrivateRead,
     Action commandFaulted,
     Func<CompanionBoardInteraction?>? boardInteraction = null,
-    Func<SeatId, CompanionCommand, CancellationToken, Task<CompanionCommandReceipt?>>? interceptCommand = null) : ICompanionGameBridge
+    Func<SeatId, CompanionCommand, CancellationToken, Task<CompanionCommandReceipt?>>? interceptCommand = null,
+    Func<CompanionGuidance?>? guidance = null) : ICompanionGameBridge
 {
     private readonly SemaphoreSlim _serial = new(1, 1);
 
@@ -23,7 +24,7 @@ internal sealed class DesktopCompanionBridge(
         OnDispatcherAsync(async () =>
         {
             var snapshot = await inner.ReadPublicAsync(cancellationToken);
-            return snapshot with { BoardInteraction = boardInteraction?.Invoke() };
+            return snapshot with { BoardInteraction = boardInteraction?.Invoke(), Guidance = guidance?.Invoke() };
         }, cancellationToken);
 
     public Task<CompanionResultImage?> ReadResultImageAsync(string id, CancellationToken cancellationToken = default) =>

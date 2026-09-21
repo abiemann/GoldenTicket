@@ -86,15 +86,15 @@ public sealed class DesktopContinuationAuditTests
         foreach (var seat in setup.Setup.Seats) seat.IsComputer = true;
         var coordinator = await GameCoordinator.CreateAsync(
             new GameRules(TestManifest.Manifest, TestManifest.Catalog), store,
-            setup.Setup.TryBuildSetup()!, DeterministicRandom.SeedFrom(42));
+            setup.Setup.TryBuildSetup()!, DeterministicRandom.SeedFrom(42), cancellationToken: TestContext.Current.CancellationToken);
         foreach (var seat in coordinator.Seats)
         {
-            var view = await coordinator.GetSeatViewAsync(seat.SeatId);
+            var view = await coordinator.GetSeatViewAsync(seat.SeatId, cancellationToken: TestContext.Current.CancellationToken);
             Assert.True((await coordinator.SubmitAsync(new CommitTicketSelection(
-                coordinator.NewEnvelope(seat.SeatId), [.. view.SetupOffer.Take(2)], []))).IsAccepted);
+                coordinator.NewEnvelope(seat.SeatId), [.. view.SetupOffer.Take(2)], []), cancellationToken: TestContext.Current.CancellationToken)).IsAccepted);
         }
-        Assert.True((await coordinator.SaveAndPackAwayAsync("AI turn")).SafeToPack);
-        await photos.AttachAsync((await coordinator.GetCheckpointAsync())!);
+        Assert.True((await coordinator.SaveAndPackAwayAsync("AI turn", cancellationToken: TestContext.Current.CancellationToken)).SafeToPack);
+        await photos.AttachAsync((await coordinator.GetCheckpointAsync(cancellationToken: TestContext.Current.CancellationToken))!);
 
         var model = new MainViewModel(TestManifest.Manifest, store, photos.Store);
         await model.LoadSavedSessionsAsync();

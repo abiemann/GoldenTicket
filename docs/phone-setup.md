@@ -47,6 +47,10 @@ Card draws stay blocked while unclaimed or misplaced trains need attention. Paym
 remain private on the phone, and detecting a route never uncovers a hidden hand automatically.
 Camera-free technical play retains the manual route selector.
 
+When a computer needs trains placed or a score marker moved, the browser shows the same current
+instruction as the laptop. Both displays update as the board is checked; cards stay covered until
+the next human can play.
+
 The QR carries only the local address, not the pairing code or private cards. No phone camera
 permission is needed inside the game: use the phone's existing QR scanner. ADB and USB are not
 required. There is no installation step, offline app cache or home-screen requirement.

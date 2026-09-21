@@ -35,7 +35,7 @@ public sealed class DesktopAuditTests
         store.DelayNextCommit();
 
         var drawing = model.DrawBlindCardAsync();
-        await store.CommitStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await store.CommitStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken: TestContext.Current.CancellationToken);
         Assert.Null(model.PrivateSeat);
         if (deactivate) model.SetWindowActive(false);
         else model.HidePrivateSeat();
@@ -101,15 +101,15 @@ public sealed class DesktopAuditTests
         foreach (var seat in setupModel.Setup.Seats) seat.IsComputer = true;
         var setup = setupModel.Setup.TryBuildSetup()!;
         var rules = new GameRules(TestManifest.Manifest, TestManifest.Catalog);
-        var coordinator = await GameCoordinator.CreateAsync(rules, store, setup, DeterministicRandom.SeedFrom(42));
+        var coordinator = await GameCoordinator.CreateAsync(rules, store, setup, DeterministicRandom.SeedFrom(42), cancellationToken: TestContext.Current.CancellationToken);
         foreach (var seat in coordinator.Seats)
         {
-            var view = await coordinator.GetSeatViewAsync(seat.SeatId);
+            var view = await coordinator.GetSeatViewAsync(seat.SeatId, cancellationToken: TestContext.Current.CancellationToken);
             Assert.True((await coordinator.SubmitAsync(new CommitTicketSelection(
-                coordinator.NewEnvelope(seat.SeatId), [.. view.SetupOffer.Take(2)], []))).IsAccepted);
+                coordinator.NewEnvelope(seat.SeatId), [.. view.SetupOffer.Take(2)], []), cancellationToken: TestContext.Current.CancellationToken)).IsAccepted);
         }
 
-        var before = await coordinator.ComputeStateHashAsync();
+        var before = await coordinator.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken);
         var model = new MainViewModel(TestManifest.Manifest, store);
         await model.LoadSavedSessionsAsync();
         model.Setup.SelectedSavedSession = model.Setup.SavedSessions.Single();

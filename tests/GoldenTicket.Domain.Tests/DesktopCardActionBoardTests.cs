@@ -122,7 +122,7 @@ public sealed class DesktopCardActionBoardTests
         await using var fixture = await Fixture.CreateAsync(payableRoute: true);
         var model = fixture.Model;
         Assert.Contains((await fixture.Coordinator.GetLegalActionsAsync(
-            fixture.Coordinator.Public.ActiveSeatId)).Claims,
+            fixture.Coordinator.Public.ActiveSeatId, cancellationToken: TestContext.Current.CancellationToken)).Claims,
             claim => claim.RouteId.Value == "little-rock--saint-louis");
         fixture.PublishCleanBaseline();
         var before = await fixture.SnapshotAsync();
@@ -194,7 +194,7 @@ public sealed class DesktopCardActionBoardTests
         Assert.Equal(before.Turn, fixture.Coordinator.Public.TurnNumber);
         Assert.Equal(before.Seat, fixture.Coordinator.Public.ActiveSeatId);
         Assert.Equal(TurnPhase.AwaitingSecondTrainCard, fixture.Coordinator.Public.TurnPhase);
-        Assert.NotEqual(before.Hash, await fixture.Coordinator.ComputeStateHashAsync());
+        Assert.NotEqual(before.Hash, await fixture.Coordinator.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -295,6 +295,7 @@ public sealed class DesktopCardActionBoardTests
 
         public static async Task<Fixture> CreateAsync(bool payableRoute = false, bool claimedCalgary = false)
         {
+            var token = TestContext.Current.CancellationToken;
             var manifest = ManifestLoader.LoadClassicUs();
             var store = new InMemorySessionStore();
             var model = new MainViewModel(manifest, store);
@@ -309,12 +310,12 @@ public sealed class DesktopCardActionBoardTests
                 // Seed 42 starts with a legal two-pink-card payment for Little Rock-Saint Louis.
                 var game = await GameCoordinator.CreateAsync(new GameRules(manifest,
                         CardCatalog.FromManifest(manifest)), store, model.Setup.TryBuildSetup()!,
-                    DeterministicRandom.SeedFrom(42));
+                    DeterministicRandom.SeedFrom(42), token);
                 foreach (var seat in game.Seats)
                 {
-                    var view = await game.GetSeatViewAsync(seat.SeatId);
+                    var view = await game.GetSeatViewAsync(seat.SeatId, token);
                     Assert.True((await game.SubmitAsync(new CommitTicketSelection(
-                        game.NewEnvelope(seat.SeatId), [.. view.SetupOffer.Take(2)], []))).IsAccepted);
+                        game.NewEnvelope(seat.SeatId), [.. view.SetupOffer.Take(2)], []), token)).IsAccepted);
                 }
                 if (claimedCalgary) await ClaimCalgaryAsync(game);
                 await model.LoadSavedSessionsAsync();
@@ -338,43 +339,45 @@ public sealed class DesktopCardActionBoardTests
 
         private static async Task ClaimCalgaryAsync(GameCoordinator game)
         {
+            var token = TestContext.Current.CancellationToken;
             var human = game.Public.ActiveSeatId;
             var routeId = new RouteId("calgary--helena");
             LegalClaim? choice = null;
             for (var attempt = 0; attempt < 20; attempt++)
             {
-                choice = (await game.GetLegalActionsAsync(human)).Claims.FirstOrDefault(claim => claim.RouteId == routeId);
+                choice = (await game.GetLegalActionsAsync(human, token)).Claims.FirstOrDefault(claim => claim.RouteId == routeId);
                 if (choice is not null) break;
                 do { await DrawTurnAsync(game); } while (game.Public.ActiveSeatId != human);
             }
             Assert.NotNull(choice);
-            var hand = await game.GetSeatViewAsync(human);
+            var hand = await game.GetSeatViewAsync(human, token);
             Assert.True((await game.SubmitAsync(new PlanClaim(game.NewEnvelope(human), routeId,
-                LegalActionCalculator.ResolveCards(hand, choice.Payments[0])))).IsAccepted);
+                LegalActionCalculator.ResolveCards(hand, choice.Payments[0])), token)).IsAccepted);
             Assert.True((await game.SubmitAsync(new SubmitClaimEvidence(game.NewEnvelope(human),
                 game.Public.PendingClaim!.OperationId, EvidenceKind.CameraAutomatic, "synthetic-test",
-                "All four black Calgary-Helena trains were verified."))).IsAccepted);
+                "All four black Calgary-Helena trains were verified."), token)).IsAccepted);
             while (game.Public.ActiveSeatId != human) await DrawTurnAsync(game);
             Assert.Equal(7, game.Public.SeatOf(human).RouteScore);
         }
 
         private static async Task DrawTurnAsync(GameCoordinator game)
         {
+            var token = TestContext.Current.CancellationToken;
             var seat = game.Public.ActiveSeatId;
-            Assert.True((await game.SubmitAsync(new SelectTrainCard(game.NewEnvelope(seat), null))).IsAccepted);
-            Assert.True((await game.SubmitAsync(new SelectTrainCard(game.NewEnvelope(seat), null))).IsAccepted);
+            Assert.True((await game.SubmitAsync(new SelectTrainCard(game.NewEnvelope(seat), null), token)).IsAccepted);
+            Assert.True((await game.SubmitAsync(new SelectTrainCard(game.NewEnvelope(seat), null), token)).IsAccepted);
         }
 
         public async Task<Snapshot> SnapshotAsync() => new(Coordinator.Public.StateVersion,
             Coordinator.Public.TurnNumber, Coordinator.Public.ActiveSeatId,
-            await Coordinator.ComputeStateHashAsync());
+            await Coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken));
 
         public async Task AssertUnchangedAsync(Snapshot before)
         {
             Assert.Equal(before.Version, Coordinator.Public.StateVersion);
             Assert.Equal(before.Turn, Coordinator.Public.TurnNumber);
             Assert.Equal(before.Seat, Coordinator.Public.ActiveSeatId);
-            Assert.Equal(before.Hash, await Coordinator.ComputeStateHashAsync());
+            Assert.Equal(before.Hash, await Coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken));
         }
 
         public void PublishCleanBaseline()

@@ -288,7 +288,7 @@ public sealed class CameraCornerLearningFlowTests
         fixture.Camera.EndGameBoardFraming();
         await fixture.WaitForGameTableAlignmentAsync();
         for (var attempt = 0; attempt < 50 && fixture.Camera.GameTablePreview is null; attempt++)
-            await Task.Delay(20);
+            await Task.Delay(20, cancellationToken: TestContext.Current.CancellationToken);
         BitmapSource previous = Assert.IsAssignableFrom<BitmapSource>(fixture.Camera.GameTablePreview);
 
         var flags = BindingFlags.Instance | BindingFlags.NonPublic;
@@ -322,7 +322,7 @@ public sealed class CameraCornerLearningFlowTests
         typeof(CameraViewModel).GetMethod("QueueGameTablePreview", flags)!
             .Invoke(fixture.Camera, [fixture.Frame]);
         for (var attempt = 0; attempt < 50 && fixture.Camera.GameTablePreview is null; attempt++)
-            await Task.Delay(20);
+            await Task.Delay(20, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(fixture.Camera.GameTablePreview);
         Assert.Equal(string.Empty, fixture.Camera.GameTablePreviewStatus);
     }

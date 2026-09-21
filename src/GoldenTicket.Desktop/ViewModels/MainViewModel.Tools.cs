@@ -30,7 +30,7 @@ public sealed partial class MainViewModel
         CompanionBridge = new DesktopCompanionBridge(inner,
             () => System.Windows.Application.Current?.Dispatcher,
             BeginRemoteCommand, EndRemoteCommand, () => { if (CanCompanionControl) HideLaptopPrivateViewOnly(); }, RequireReload,
-            CurrentCompanionBoardInteraction, InterceptCompanionCommandAsync);
+            CurrentCompanionBoardInteraction, InterceptCompanionCommandAsync, CurrentCompanionGuidance);
         Connection = new ConnectionViewModel(CompanionBridge);
         Connection.PropertyChanged += ConnectionPresentationChanged;
         PropertyChanged += (_, args) =>

@@ -17,6 +17,7 @@ public sealed class DesktopCompanionBridgeTests
         var completed = 0;
         var privateReads = 0;
         var guidance = new CompanionBoardInteraction(true, false, null);
+        CompanionGuidance? physicalGuidance = new("Computer 1", "Place 2 Green trains on Duluth - Omaha (lane A).");
         var receipt = new CompanionCommandReceipt(false, false, 1, "BoardCheckRequired", "Check the board.");
         var bridge = Bridge(inner, () => null, () => true,
             () => completed++, () => privateReads++, () => Assert.Fail("The command must not fault."),
@@ -25,7 +26,7 @@ public sealed class DesktopCompanionBridgeTests
                 entered.TrySetResult();
                 await release.Task.WaitAsync(cancellationToken);
                 return receipt;
-            });
+            }, () => physicalGuidance);
 
         var command = bridge.ExecuteAsync(new SeatId(1), Command(), token);
         try
@@ -35,9 +36,17 @@ public sealed class DesktopCompanionBridgeTests
 
             var snapshot = await bridge.ReadPublicAsync(token).WaitAsync(TimeSpan.FromSeconds(5), token);
             Assert.Same(guidance, snapshot.BoardInteraction);
+            Assert.Same(physicalGuidance, snapshot.Guidance);
             Assert.Equal("Public fixture", snapshot.Message);
+            Assert.False(snapshot.CanControl);
+            Assert.Null(snapshot.RevealSeatId);
+            physicalGuidance = new("Computer 1", "Move Computer 1's Green scoring marker to 3.");
+            var changed = await bridge.ReadPublicAsync(token).WaitAsync(TimeSpan.FromSeconds(5), token);
+            Assert.Same(physicalGuidance, changed.Guidance);
+            physicalGuidance = null;
+            Assert.Null((await bridge.ReadPublicAsync(token)).Guidance);
             Assert.False(command.IsCompleted);
-            Assert.Equal(1, inner.PublicReads);
+            Assert.Equal(3, inner.PublicReads);
             Assert.Equal(0, inner.PrivateReads);
             Assert.Equal(0, privateReads);
             Assert.Equal(0, inner.Commands);
@@ -109,14 +118,15 @@ public sealed class DesktopCompanionBridgeTests
     private static ICompanionGameBridge Bridge(ICompanionGameBridge inner, Func<Dispatcher?> dispatcher,
         Func<bool> beginCommand, Action endCommand, Action beforePrivateRead, Action commandFaulted,
         Func<CompanionBoardInteraction?>? boardInteraction = null,
-        Func<SeatId, CompanionCommand, CancellationToken, Task<CompanionCommandReceipt?>>? interceptCommand = null)
+        Func<SeatId, CompanionCommand, CancellationToken, Task<CompanionCommandReceipt?>>? interceptCommand = null,
+        Func<CompanionGuidance?>? guidance = null)
     {
         var type = typeof(MainViewModel).Assembly.GetType(
             "GoldenTicket.Desktop.Services.DesktopCompanionBridge", throwOnError: true)!;
         return (ICompanionGameBridge)Activator.CreateInstance(type,
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, binder: null,
             args: [inner, dispatcher, beginCommand, endCommand, beforePrivateRead, commandFaulted,
-                boardInteraction, interceptCommand], culture: null)!;
+                boardInteraction, interceptCommand, guidance], culture: null)!;
     }
 
     private sealed class ProbeBridge(Func<int, CancellationToken, Task>? privateRead = null) : ICompanionGameBridge

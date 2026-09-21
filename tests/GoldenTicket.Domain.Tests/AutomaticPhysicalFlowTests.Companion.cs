@@ -28,6 +28,7 @@ public sealed partial class AutomaticPhysicalFlowTests
             Assert.Null(model.PrivateSeat);
             var snapshot = await bridge.ReadPublicAsync(TestContext.Current.CancellationToken);
             Assert.True(snapshot.CanControl);
+            Assert.Null(snapshot.Guidance);
             Assert.True(snapshot.BoardInteraction!.UseCameraClaims);
             Assert.True(snapshot.BoardInteraction.CardActionsBlocked);
             var detected = Assert.IsType<CompanionDetectedRoute>(snapshot.BoardInteraction.DetectedRoute);
@@ -53,7 +54,11 @@ public sealed partial class AutomaticPhysicalFlowTests
             Assert.Equal("Scoring", model.Game.GuidanceTurn);
             Assert.Null(model.PrivateSeat);
             Assert.Null(model.BoardFirstProposal);
-            Assert.False((await bridge.ReadPublicAsync(TestContext.Current.CancellationToken)).CanControl);
+            var scoring = await bridge.ReadPublicAsync(TestContext.Current.CancellationToken);
+            Assert.False(scoring.CanControl);
+            Assert.Null(scoring.RevealSeatId);
+            Assert.Equal(new CompanionGuidance(model.Game.GuidanceSeat, model.Game.GuidanceInstruction),
+                scoring.Guidance);
 
             var committed = await game.ComputeStateHashAsync(TestContext.Current.CancellationToken);
             Assert.False((await bridge.ExecuteAsync(active, pay, TestContext.Current.CancellationToken)).Accepted);

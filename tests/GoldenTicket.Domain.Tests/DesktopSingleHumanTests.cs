@@ -207,12 +207,12 @@ public sealed class DesktopSingleHumanTests
             // This deterministic deal gives the human two pink, one white and one yellow card.
             var game = await GameCoordinator.CreateAsync(
                 new GameRules(TestManifest.Manifest, TestManifest.Catalog), store,
-                model.Setup.TryBuildSetup()!, DeterministicRandom.SeedFrom(42));
+                model.Setup.TryBuildSetup()!, DeterministicRandom.SeedFrom(42), cancellationToken: TestContext.Current.CancellationToken);
             foreach (var seat in game.Seats)
             {
-                var view = await game.GetSeatViewAsync(seat.SeatId);
+                var view = await game.GetSeatViewAsync(seat.SeatId, cancellationToken: TestContext.Current.CancellationToken);
                 Assert.True((await game.SubmitAsync(new CommitTicketSelection(
-                    game.NewEnvelope(seat.SeatId), [.. view.SetupOffer.Take(2)], []))).IsAccepted);
+                    game.NewEnvelope(seat.SeatId), [.. view.SetupOffer.Take(2)], []), cancellationToken: TestContext.Current.CancellationToken)).IsAccepted);
             }
             await model.LoadSavedSessionsAsync();
             model.Setup.SelectedSavedSession = Assert.Single(model.Setup.SavedSessions);
@@ -223,8 +223,8 @@ public sealed class DesktopSingleHumanTests
             var coordinator = (GameCoordinator)typeof(MainViewModel)
                 .GetField("_coordinator", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(model)!;
             var human = model.Game.TableSeats.Single(tile => tile.Seat.Operator == "human");
-            var before = await coordinator.GetSeatViewAsync(human.Seat.SeatId);
-            var hashBeforePreview = await coordinator.ComputeStateHashAsync();
+            var before = await coordinator.GetSeatViewAsync(human.Seat.SeatId, cancellationToken: TestContext.Current.CancellationToken);
+            var hashBeforePreview = await coordinator.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             await model.ToggleSoloTrainCardsCommand.ExecuteAsync(human);
 
@@ -234,9 +234,9 @@ public sealed class DesktopSingleHumanTests
                 card => { Assert.Equal(TrainCardKind.White, card.Kind); Assert.Equal(1, card.Count); },
                 card => { Assert.Equal(TrainCardKind.Yellow, card.Kind); Assert.Equal(1, card.Count); });
             Assert.Equal(before.Hand.Length, model.SoloTrainCards.Sum(card => card.Count));
-            Assert.Equal(hashBeforePreview, await coordinator.ComputeStateHashAsync());
+            Assert.Equal(hashBeforePreview, await coordinator.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken));
             Assert.Equal(before.Hand.ToArray(),
-                (await coordinator.GetSeatViewAsync(human.Seat.SeatId)).Hand.ToArray());
+                (await coordinator.GetSeatViewAsync(human.Seat.SeatId, cancellationToken: TestContext.Current.CancellationToken)).Hand.ToArray());
 
             // A matching face-up draw must update the existing yellow preview, not add a duplicate.
             var yellow = model.Table.Market.First(slot => slot.Kind == TrainCardKind.Yellow);
@@ -248,7 +248,7 @@ public sealed class DesktopSingleHumanTests
             Assert.Equal(3, model.SoloTrainCards.Count);
             Assert.Equal(2, Assert.Single(model.SoloTrainCards, card => card.Kind == TrainCardKind.Yellow).Count);
             Assert.Equal(5, model.SoloTrainCards.Sum(card => card.Count));
-            var after = await coordinator.GetSeatViewAsync(human.Seat.SeatId);
+            var after = await coordinator.GetSeatViewAsync(human.Seat.SeatId, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal(before.Hand.Length + 1, after.Hand.Length);
             Assert.All(before.Hand, card => Assert.Contains(card, after.Hand));
             Assert.Equal(5, after.Hand.Select(card => card.Id).Distinct().Count());

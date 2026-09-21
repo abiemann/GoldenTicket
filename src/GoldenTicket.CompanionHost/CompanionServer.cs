@@ -191,7 +191,7 @@ public sealed class CompanionServer(ICompanionGameBridge bridge, TimeProvider? t
             if (!snapshot.CanControl) _authority.InvalidatePrivateGrants();
             if (Credentials(context) != credentials) return Results.Unauthorized();
             return Results.Ok(new { paired = true, csrf = credentials.Csrf, controllerGeneration = credentials.Generation,
-                handoffGeneration = _authority.Generation, apiVersion = ApiVersion, assetsVersion = "7", snapshot });
+                handoffGeneration = _authority.Generation, apiVersion = ApiVersion, assetsVersion = "8", snapshot });
         });
         app.MapGet("/api/result-image/{id}", async (HttpContext context, string id) =>
         {

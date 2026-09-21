@@ -36,7 +36,7 @@ const requestHandler = async (request, response) => {
     let body = ''; for await(const chunk of request) body += chunk;
     body = body ? JSON.parse(body) : {};
     requests.push({url:url.pathname, body, headers:request.headers});
-    if(url.pathname === '/api/session') return send(response, paired ? { paired, csrf:'test-csrf', handoffGeneration:generation, controllerGeneration:1, apiVersion:'1', assetsVersion:'7', snapshot:fixture.snapshot } : {paired,pending});
+    if(url.pathname === '/api/session') return send(response, paired ? { paired, csrf:'test-csrf', handoffGeneration:generation, controllerGeneration:1, apiVersion:'1', assetsVersion:'8', snapshot:fixture.snapshot } : {paired,pending});
     if(url.pathname.startsWith('/api/result-image/')) {
       if(!paired || !resultImageBytes || url.pathname!==`/api/result-image/${fixture.snapshot.resultImage?.id}` || !request.headers['x-goldenticket-tab']) return send(response,{},404);
       response.writeHead(200,{'Content-Type':'image/png','Content-Length':resultImageBytes.length,'Cache-Control':'no-store'}); response.end(resultImageBytes); return;
@@ -290,8 +290,36 @@ async function main() {
         await page.getByRole('button',{name:'Authorize this route and payment'}).click(); await waitCovered(page);
         const command=requests.filter(r=>r.url==='/api/command').at(-1).body.command;
         assert.equal(command.kind,'planClaim'); assert.ok(command.routeId); assert.ok(command.payment.colorCards+command.payment.locomotives>0);
-        await reveal(page); await page.getByRole('heading',{name:'Follow the placement instructions on the laptop.'}).waitFor();
+        await reveal(page); await page.getByText('Follow the placement instructions on the laptop.',{exact:true}).waitFor();
         assert.equal(await page.getByRole('button',{name:/verify|confirm placement/i}).count(),0);
+      });
+      await record(viewport.name+': shared AI instructions update through placement, correction, scoring and human handoff',async()=>{
+        const reveals=requests.filter(r=>r.url==='/api/reveal').length, commands=requests.filter(r=>r.url==='/api/command').length;
+        fixture=structuredClone(fixtures.physicalPlacement);
+        fixture.snapshot.canControl=false; fixture.snapshot.revealSeatId=null;
+        fixture.snapshot.message='Follow the current instructions on the laptop.';
+        const version=fixture.snapshot.game.stateVersion;
+        for(const [name,instruction] of [
+          ['placement',"Place Computer 1's 1 Green train on Dallas - Houston (lane A). The camera will check its position and continue automatically."],
+          ['correction','Remove the extra Green train from Dallas - Oklahoma City (lane A).'],
+          ['scoring',"Move Computer 1's Green score marker to 1."]
+        ]) {
+          fixture.snapshot.guidance={title:'Computer 1',instruction};
+          await page.waitForFunction(expected=>document.getElementById('curtain-detail').textContent===expected,instruction);
+          assert.equal(await page.locator('#handoff').textContent(),'Computer 1');
+          assert.equal(await page.locator('#public-instruction').textContent(),instruction);
+          assert.equal(fixture.snapshot.game.stateVersion,version);
+          await waitCovered(page); assert.equal(await page.locator('#reveal').isDisabled(),true);
+          await noOverflow(page); await screenshot(page,viewport.name+'-ai-'+name);
+        }
+        assert.equal(requests.filter(r=>r.url==='/api/reveal').length,reveals);
+        assert.equal(requests.filter(r=>r.url==='/api/command').length,commands);
+        fixture=fixtures.nextHuman;
+        await page.getByText('Pass this device to Jordan.',{exact:true}).waitFor(); await waitCovered(page);
+        assert.equal(await page.locator('#reveal').isDisabled(),false);
+        assert.match(await page.locator('#curtain-detail').textContent(),/Reveal only when it is your turn/);
+        assert.doesNotMatch(await page.locator('#public-instruction').textContent(),/Move Computer 1/);
+        await reveal(page); assert.equal(await page.locator('#private').isVisible(),true);
       });
       await record(viewport.name+': detected camera route brings only its payments to the current hand',async()=>{
         fixtures.cameraTurn=structuredClone(fixtures.turnStart);

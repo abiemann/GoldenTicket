@@ -19,7 +19,10 @@ public interface ICompanionGameBridge
 
 public sealed record CompanionPublicSnapshot(PublicView? Game, int? RevealSeatId, bool CanControl,
     string Message, string? ProfileId, string? ManifestHash, IReadOnlyList<CompanionRoute> Routes,
-    CompanionResultImageInfo? ResultImage = null, CompanionBoardInteraction? BoardInteraction = null);
+    CompanionResultImageInfo? ResultImage = null, CompanionBoardInteraction? BoardInteraction = null,
+    CompanionGuidance? Guidance = null);
+/// <summary>The current public board instruction, shared with the laptop without revealing a hand.</summary>
+public sealed record CompanionGuidance(string Title, string Instruction);
 /// <summary>Public camera guidance only. Legal payments and cards remain in the revealed seat view.</summary>
 public sealed record CompanionBoardInteraction(bool UseCameraClaims, bool CardActionsBlocked,
     string? Message, CompanionDetectedRoute? DetectedRoute = null);

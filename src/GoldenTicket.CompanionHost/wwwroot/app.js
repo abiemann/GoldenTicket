@@ -10,6 +10,7 @@
   let revealGeneration = 0, handoffGeneration = -1, paired = false, pending = false;
   let busy = false, polling = false, lastHeartbeat = 0;
   let privateActionsTarget = null, ticketOfferControls = null, renderedBoardInteraction = null, detectedPayment = null;
+  let pendingClaimInstruction = null;
   let connectionGeneration = 0;
   const maxResultBytes = 16 * 1024 * 1024;
   let resultKey = null, resultGeneration = 0, resultUrl = null, resultAbort = null;
@@ -20,6 +21,7 @@
     revealGeneration++;
     privateData = null; grant = null;
     privateActionsTarget = null; ticketOfferControls = null; renderedBoardInteraction = null; detectedPayment = null;
+    pendingClaimInstruction = null;
     byId("private").replaceChildren(); byId("private").hidden = true;
     byId("curtain").hidden = !paired || resultKey !== null;
   }
@@ -65,7 +67,7 @@
         byId("connection").textContent = pending ? "Waiting for the laptop" : "Connected to your game";
         updatePairForm(); return;
       }
-      if (result.apiVersion !== "1" || result.assetsVersion !== "7") { disconnect("The companion needs an update. Reload from the laptop before playing."); return; }
+      if (result.apiVersion !== "1" || result.assetsVersion !== "8") { disconnect("The companion needs an update. Reload from the laptop before playing."); return; }
       if (currentIdentity(snapshot) !== currentIdentity(result.snapshot) || (grant && result.handoffGeneration > handoffGeneration)) clearPrivate();
       paired = true; pending = false; csrf = result.csrf; snapshot = result.snapshot;
       updatePairForm();
@@ -150,8 +152,10 @@
     } finally { clearTimeout(timeout); abort.abort(); if (generation === resultGeneration) resultAbort = null; }
   }
   function renderPublic() {
-    byId("handoff").textContent = snapshot.message;
-    byId("curtain-detail").textContent = snapshot.canControl ? "Keep this device private. Reveal only when it is your turn." : "Follow the public instructions on the laptop.";
+    const guidance = snapshot.guidance?.instruction ? snapshot.guidance : null;
+    byId("handoff").textContent = guidance?.title || snapshot.message;
+    byId("curtain-detail").textContent = guidance?.instruction || (snapshot.canControl ? "Keep this device private. Reveal only when it is your turn." : "Follow the public instructions on the laptop.");
+    if (pendingClaimInstruction) pendingClaimInstruction.textContent = guidance?.instruction || "Follow the placement instructions on the laptop.";
     byId("reveal").disabled = !snapshot.canControl || busy || !lastHeartbeat;
     byId("public").hidden = !snapshot.game;
     const scores = byId("scoreboard"); scores.replaceChildren();
@@ -161,7 +165,7 @@
       row.append(element("span", `${seat.symbol} ${seat.displayName} · ${seat.color}`), element("span", `${seat.routeScore} points · ${trainCount(seat.trainsRemaining)}`, "score-detail")); scores.append(row);
     }
     const claim = snapshot.game.pendingClaim;
-    byId("public-instruction").textContent = claim ? `${claim.awaitingRestore ? "Restore" : "Place"} the ${claim.trainCount === 1 ? "train" : "trains"} as shown on the laptop. Only the laptop can verify the physical board.` : `Turn ${snapshot.game.turnNumber} · ${snapshot.game.turnPhase.replace(/([a-z])([A-Z])/g, "$1 $2")}`;
+    byId("public-instruction").textContent = guidance?.instruction || (claim ? `${claim.awaitingRestore ? "Restore" : "Place"} the ${claim.trainCount === 1 ? "train" : "trains"} as shown on the laptop. Only the laptop can verify the physical board.` : `Turn ${snapshot.game.turnNumber} · ${snapshot.game.turnPhase.replace(/([a-z])([A-Z])/g, "$1 $2")}`);
   }
   async function reveal() {
     if (busy || !paired || !snapshot?.canControl || document.hidden || !lastHeartbeat) return;
@@ -208,6 +212,7 @@
   function renderPrivate() {
     const target = byId("private"); target.replaceChildren();
     privateActionsTarget = null; ticketOfferControls = null; detectedPayment = null;
+    pendingClaimInstruction = null;
     const own = privateData.view.public.seats.find(s => s.seatId === privateData.view.seatId);
     target.append(element("p", "ONLY FOR YOU", "eyebrow"), element("h2", `${own.displayName}'s cards`), element("p", "Use Hide before passing the device.", "fine-print"));
     const cards = element("div", undefined, "cards");
@@ -224,7 +229,10 @@
     if (!privateData.heldTickets.length) tickets.append(element("p", "Choose your opening tickets below.", "empty"));
     target.append(tickets);
     if (privateData.actions.mustCommitTicketSelection) renderOffer(target);
-    else if (privateData.actions.mustResolvePendingClaim) target.append(element("h3", "Follow the placement instructions on the laptop."));
+    else if (privateData.actions.mustResolvePendingClaim) {
+      pendingClaimInstruction = element("h3", snapshot.guidance?.instruction || "Follow the placement instructions on the laptop.");
+      target.append(pendingClaimInstruction);
+    }
     else {
       privateActionsTarget = element("div", undefined, "private-actions");
       target.append(privateActionsTarget); renderActions(privateActionsTarget);

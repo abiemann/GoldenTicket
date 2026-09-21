@@ -193,6 +193,8 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
 - [x] Send camera-detected routes to the revealed Quick play browser for private payment, with
   live rechecks/removal updates and proposal-bound authorization. Apply the laptop's board check
   to phone card draws; keep camera-free manual route selection as a technical fallback.
+- [x] Mirror current public placement, correction and score-marker instructions on the tablet
+  while preserving the laptop's guidance and existing private-card controls.
 - [x] Confine save paths and reject linked/unsupported paths before filesystem operations.
 - [x] Check snapshot/journal/version integrity and prevent competing writers for supported saves.
 - [x] Keep unreadable saves visible, sanitize recovery errors, and block gameplay after uncertain writes.

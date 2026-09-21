@@ -520,7 +520,8 @@ not a completed Save Game and does not grant permission to clear the physical bo
 
 6. For computer claims and routes selected digitally before placement, the public screen names
    the seat, its colour and symbol, both endpoint cities, the exact lane, and how many trains to
-   place. Place them in any order.
+   place. In Quick play, the tablet browser mirrors the laptop's current placement and scoring
+   instructions while cards remain covered. Place the trains in any order.
    The board shows one pulsing yellow cue in each requested train space. The camera checks those
    spaces and all earlier claimed trains automatically, shows “Thank you” for three seconds,
    then asks you to move that player's scoring marker. It waits until the marker appears at the new printed score before

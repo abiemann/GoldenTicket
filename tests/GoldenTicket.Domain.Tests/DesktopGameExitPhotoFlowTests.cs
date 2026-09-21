@@ -106,10 +106,10 @@ public sealed class DesktopGameExitPhotoFlowTests
             var save = model.SaveGameToMenuCommand.ExecuteAsync(null);
             for (var attempt = 0; !save.IsCompleted && attempt < 55; attempt++)
             {
-                await Task.Delay(250);
+                await Task.Delay(250, cancellationToken: TestContext.Current.CancellationToken);
                 camera.Publish();
             }
-            await save.WaitAsync(TimeSpan.FromSeconds(2));
+            await save.WaitAsync(TimeSpan.FromSeconds(2), cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.False(model.IsGameExitMenuOpen, model.GameExitStatus);
             Assert.Equal(GameScreenStage.Welcome, model.Game.Stage);
@@ -118,7 +118,7 @@ public sealed class DesktopGameExitPhotoFlowTests
                 CardCatalog.FromManifest(manifest), CancellationToken.None);
             var checkpoint = Assert.IsType<PackAwayCheckpoint>(restored.State.Checkpoint);
             Assert.True(checkpoint.IsSafeToPackAway);
-            var attachment = await new CheckpointPhotoStore(root).ReadReferenceAsync(checkpoint);
+            var attachment = await new CheckpointPhotoStore(root).ReadReferenceAsync(checkpoint, cancellationToken: TestContext.Current.CancellationToken);
             Assert.NotNull(attachment);
             try
             {
@@ -152,7 +152,7 @@ public sealed class DesktopGameExitPhotoFlowTests
             await model.CommitTicketsAsync();
             var coordinator = (GameCoordinator)typeof(MainViewModel).GetField("_coordinator",
                 BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(model)!;
-            var beforeHash = await coordinator.ComputeStateHashAsync();
+            var beforeHash = await coordinator.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken);
             var beforeVersion = coordinator.Public.StateVersion;
             var beforeTurn = coordinator.Public.TurnNumber;
             var beforeSeat = coordinator.Public.ActiveSeatId;
@@ -178,7 +178,7 @@ public sealed class DesktopGameExitPhotoFlowTests
             Assert.Equal(beforeTurn, coordinator.Public.TurnNumber);
             Assert.Equal(beforeSeat, coordinator.Public.ActiveSeatId);
             Assert.Empty(coordinator.Public.RouteOwners);
-            Assert.Equal(beforeHash, await coordinator.ComputeStateHashAsync());
+            Assert.Equal(beforeHash, await coordinator.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken));
             var blocked = await store.RestoreAsync(coordinator.SessionId, manifest,
                 CardCatalog.FromManifest(manifest), TestContext.Current.CancellationToken);
             Assert.Equal(beforeHash, StateHash.Compute(blocked.State));

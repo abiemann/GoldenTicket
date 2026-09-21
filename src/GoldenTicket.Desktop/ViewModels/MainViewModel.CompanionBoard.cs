@@ -10,6 +10,29 @@ public sealed partial class MainViewModel
     private bool UsesCompanionCameraClaims => CanConnectPhone && Connection.UseQuickPlay &&
         UsesCameraForCardActions;
 
+    private CompanionGuidance? CurrentCompanionGuidance()
+    {
+        if (!CanConnectPhone || !Connection.UseQuickPlay || _toolsDisposed || _exitRequested ||
+            IsGameInputPaused || !_systemAvailable || _mustReload || NeedsBoardReconciliation ||
+            IsCheckingResumedGame || !IsGameplayScreenActive(Screen.Table) ||
+            _coordinator is not { StorageFaulted: false } coordinator)
+            return null;
+
+        var view = coordinator.Public;
+        if (view.IsGameplaySuspended || view.TurnPhase == TurnPhase.RulesDecisionRequired)
+            return null;
+        // A final claim can finish the digital match before its physical marker has moved.
+        // Mirror the live laptop step, including its brief acknowledgment, until it completes.
+        var scoring = _scoreMarkerStep is { } step && step.SessionId == coordinator.SessionId &&
+            view.Lifecycle is SessionLifecycle.Active or SessionLifecycle.Finished;
+        var placing = view.Lifecycle == SessionLifecycle.Active && Table.Placement is { } placement &&
+            view.PendingClaim is { } pending && placement.OperationId == pending.OperationId &&
+            placement.StateVersion == view.StateVersion && placement.SeatId == pending.SeatId;
+        return scoring || placing
+            ? new(Game.GuidanceSeat, Game.GuidanceInstruction)
+            : null;
+    }
+
     private CompanionBoardInteraction? CurrentCompanionBoardInteraction()
     {
         if (!CanConnectPhone || !Connection.UseQuickPlay || _coordinator is not { } coordinator)

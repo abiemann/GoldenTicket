@@ -254,6 +254,12 @@ write boundary. The public laptop shows route guidance, never the phone's paymen
 Removed, replaced or unverified proposals cannot authorize a payment. Camera-free technical
 play retains manual selection.
 
+During physical placement and score-marker steps, the desktop also publishes the public game
+guidance title and instruction. The covered browser mirrors that text on each poll, including
+corrections and scoring transitions that do not change the game-state version. The laptop keeps
+its existing instructions. This projection carries no hand or payment data, grants no actions,
+and clears when the physical step ends or gameplay is suspended.
+
 If the player started a route during an already selected card action, explain the conflict and guide them to restore the physical board. Do not reinterpret the card action as a claim or discard an already revealed card to make the history fit.
 
 The desktop camera flow checks committed train inventory during `TurnStart`,
