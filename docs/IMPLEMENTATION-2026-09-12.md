@@ -1,5 +1,10 @@
 # September 12 implementation update and acceptance walkthrough
 
+> Historical record: the certificate and installed web-app approach described below was retired
+> on September 21, 2026. Current multi-human options are HTTP **Quick play** and **PRACTICAL**
+> laptop sharing. Use the [current setup](phone-setup.md) and
+> [device acceptance plan](companion-device-evidence.md).
+
 This dated record describes the original photo implementation. Current save requirements supersede
 its optional-photo guidance: a completed user Save Game now requires a verified logical checkpoint
 and a validated matching board image. Current photo sidecars are plaintext format v2, and checkpoint

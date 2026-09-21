@@ -186,8 +186,7 @@ try {
         'coreclr.dll', 'hostfxr.dll', 'hostpolicy.dll', 'clrjit.dll', 'System.Private.CoreLib.dll',
         'PresentationFramework.dll', 'WindowsBase.dll', 'Microsoft.AspNetCore.Server.Kestrel.Core.dll',
         'e_sqlite3.dll', 'WinRT.Runtime.dll', 'Microsoft.Windows.SDK.NET.dll', 'data/classic-us/classic-us-v1.json',
-        'companion-web/index.html', 'companion-web/app.js', 'companion-web/app.css', 'companion-web/sw.js',
-        'companion-web/manifest.webmanifest', 'companion-web/icon-192.png', 'companion-web/icon-512.png')
+        'companion-web/index.html', 'companion-web/app.js', 'companion-web/app.css', 'companion-web/icon.svg')
     foreach ($relative in $requiredFiles) {
         $path = Assert-Within (Join-Path $packageRoot $relative) $packageRoot
         if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0) {
@@ -351,7 +350,7 @@ Packages needing that notice-text review: $($needsNoticeReview -join ', ')
         headlessRuntimeChecksPassed = $true
         requiredManualAcceptance = @('Clean Windows 11 x64 without an installed .NET runtime',
             'Internet-disconnected launch and complete manual game', 'Camera permissions and reconnect',
-            'Trusted Private LAN and phone certificate/pairing setup', 'Photo save/restart/rebuild',
+            'Trusted Private LAN browser joining and PRACTICAL laptop handoffs', 'Photo save/restart/rebuild',
             'Notice-text completeness review before wider distribution')
         noticeTextReview = @($needsNoticeReview)
     }

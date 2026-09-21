@@ -1617,12 +1617,12 @@ internal static partial class Program
             await RenderSizes("shared-setup-synthetic", () => new SetupView { DataContext = shared }, view =>
             {
                 var text = VisibleText(view);
-                if (!text.Contains("set up one shared phone from the QR over the table", StringComparison.Ordinal) ||
-                    !text.Contains("Phone card handoff is planned for a later update", StringComparison.Ordinal) ||
+                if (!text.Contains("PRACTICAL to share this laptop", StringComparison.Ordinal) ||
+                    !text.Contains("Quick play opens in your browser without installation", StringComparison.Ordinal) ||
                     text.Contains("No phone connection is needed.", StringComparison.Ordinal))
-                    throw new InvalidOperationException("Multiple-human setup must explain shared-phone QR setup and the unfinished phone handoff.");
+                    throw new InvalidOperationException("Multiple-human setup must explain shared-phone QR setup and the recommended browser mode.");
             });
-            checks.Add("Multiple-human setup explains shared-phone QR setup and the forthcoming phone handoff.");
+            checks.Add("Multiple-human setup explains shared-phone QR setup and Quick play without installation.");
 
             await shared.StartMatchCommand.ExecuteAsync(null);
             if (!shared.ShowMultiHumanPhoneSetup || shared.Screen != Screen.Table)
@@ -1634,14 +1634,43 @@ internal static partial class Program
                 var panel = (Border)view.FindName("MultiHumanPhoneSetupPanel");
                 var table = Descendants<GameTableView>(view).Single();
                 var qr = Descendants<Image>(panel).Single(image =>
-                    AutomationProperties.GetName(image) == "Shared phone installation QR code");
+                    AutomationProperties.GetName(image) == "Shared phone connection QR code");
                 var start = Descendants<Button>(panel).Single(button => button.Content as string == "Start hosting");
                 if (!IsElementShown(panel) || !IsElementShown(table) ||
                     !VisibleText(panel).Contains("pass it to the active player", StringComparison.Ordinal) ||
                     qr.Source is not null || start.Command is null ||
                     !ReferenceEquals(start.Command, shared.Connection.StartCommand))
                     throw new InvalidOperationException("Multiple-human setup must cover the table, guide one shared phone, and bind the real local-host QR flow.");
+                var quick = Descendants<RadioButton>(panel).Single(button => AutomationProperties.GetName(button) == "Quick play, recommended");
+                var practical = Descendants<RadioButton>(panel).Single(button => AutomationProperties.GetName(button) == "Practical, no phone");
+                if (quick.IsChecked != true || practical.IsChecked == true || !shared.Connection.UseQuickPlay ||
+                    !VisibleText(panel).Contains("No installation or certificate needed.", StringComparison.Ordinal) ||
+                    shared.DismissMultiHumanPhoneSetupCommand.CanExecute(null))
+                    throw new InvalidOperationException("Quick play must be the recommended default, with no certificate setup in its player flow.");
             });
+            shared.Connection.UsePractical = true;
+            await RenderSizes("shared-practical-setup-synthetic", () => new GameScreenView { DataContext = shared }, view =>
+            {
+                var panel = (Border)view.FindName("MultiHumanPhoneSetupPanel");
+                var practical = Descendants<RadioButton>(panel).Single(button => AutomationProperties.GetName(button) == "Practical, no phone");
+                if (practical.IsChecked != true || IsElementShown((StackPanel)view.FindName("PhoneNetworkingSetup")) ||
+                    !VisibleText(panel).Contains("We'll look away when it's not our turn.", StringComparison.Ordinal) ||
+                    VisibleButtons(panel).Contains("Start hosting") || shared.Connection.IsRunning ||
+                    shared.Connection.StartCommand.CanExecute(null))
+                    throw new InvalidOperationException("Practical must hide networking, prevent hosting and explain laptop handoff.");
+                shared.Connection.IsBusy = true;
+                shared.Connection.UseQuickPlay = true;
+                if (!shared.Connection.UsePractical || practical.IsEnabled || shared.DismissMultiHumanPhoneSetupCommand.CanExecute(null))
+                    throw new InvalidOperationException("Mode changes and continuing must wait for a pending host operation.");
+                shared.Connection.IsBusy = false;
+            });
+            shared.Connection.UseQuickPlay = true;
+            var modeView = new GameScreenView { DataContext = shared };
+            await Arrange(modeView, 1280, 800);
+            if (!IsElementShown((StackPanel)modeView.FindName("PhoneNetworkingSetup")))
+                throw new InvalidOperationException("Returning to Quick play must restore the network setup.");
+            shared.Connection.UsePractical = true;
+            checks.Add("Quick play is recommended; Practical hides networking and allows laptop-only handoff; modes remain switchable.");
             shared.DismissMultiHumanPhoneSetupCommand.Execute(null);
             if (shared.ShowMultiHumanPhoneSetup)
                 throw new InvalidOperationException("Continuing from phone setup must reveal the table.");
@@ -1650,11 +1679,17 @@ internal static partial class Program
                 throw new InvalidOperationException("The phone setup must be reopenable from the table.");
             shared.DismissMultiHumanPhoneSetupCommand.Execute(null);
             checks.Add("Multiple-human table presents a shared-phone QR setup, without starting a listener during UI smoke.");
+            await RenderSizes("practical-handoff-synthetic", () => new GameScreenView { DataContext = shared }, view =>
+            {
+                var reveal = Descendants<Button>(view).Single(button => AutomationProperties.GetName(button) == "Show my cards on this laptop");
+                if (!IsElementShown(reveal) || !reveal.IsEnabled || !ReferenceEquals(reveal.Command, shared.RevealPrivateSeatCommand))
+                    throw new InvalidOperationException("Practical must expose a working reveal action on the themed game table.");
+            });
             await RenderSizes("shared-table-covered-synthetic", () => new TableView { DataContext = shared }, view =>
             {
                 var labels = VisibleButtons(view);
                 if (!labels.Contains("Reveal my private view") || labels.Contains("Your cards") ||
-                    !VisibleText(view).Contains("Pass the laptop to First human test player", StringComparison.Ordinal))
+                    !VisibleText(view).Contains("First human test player, it's your turn. Everyone else, look away.", StringComparison.Ordinal))
                     throw new InvalidOperationException("The multiple-human table must retain explicit private reveal and the current handoff prompt.");
             });
             checks.Add("Multiple-human match startup stays covered and retains the explicit reveal handoff.");
@@ -1666,13 +1701,20 @@ internal static partial class Program
             await RenderSizes("shared-first-private-synthetic", () => new PrivateSeatView { DataContext = shared },
                 view => VerifyPrivateLabels(view, shared, "First human test player", singleHuman: false));
             await shared.CommitTicketsCommand.ExecuteAsync(null);
-            if (shared.IsPrivateVisible || shared.PrivateSeat is not null)
+            if (shared.IsPrivateVisible || shared.PrivateSeat is not null || !shared.ShowPracticalHandoff ||
+                !shared.RevealPrompt.StartsWith("Second human test player", StringComparison.Ordinal))
                 throw new InvalidOperationException("Moving to another human's opening tickets must discard the prior private view.");
             await shared.RevealPrivateSeatCommand.ExecuteAsync(null);
             RequireHumanPrivateView(shared, "Second human test player", mustChooseTickets: true);
             await RenderSizes("shared-second-private-synthetic", () => new PrivateSeatView { DataContext = shared },
                 view => VerifyPrivateLabels(view, shared, "Second human test player", singleHuman: false));
             checks.Add("Each shared private view uses the explicitly revealed human's hand and ticket sources, with the prior view discarded at handoff.");
+            shared.Connection.UseQuickPlay = true;
+            if (shared.PrivateSeat is not null || shared.ShowPracticalHandoff)
+                throw new InvalidOperationException("Switching to phone play must cover the laptop's hand.");
+            shared.Connection.UsePractical = true;
+            if (!shared.ShowPracticalHandoff)
+                throw new InvalidOperationException("Returning to Practical must allow the current human to reveal again.");
 
             await File.WriteAllTextAsync(Path.Combine(Output, "human-presentation-interactions.json"), JsonSerializer.Serialize(new
             {
@@ -1806,7 +1848,8 @@ internal static partial class Program
         }
         else if (singleHuman
             ? !labels.Contains("Back to table") || labels.Contains("Hide (pass the laptop on)") || !text.Contains("Your cards", StringComparison.Ordinal)
-            : !labels.Contains("Hide (pass the laptop on)") || labels.Contains("Back to table") || !text.Contains(humanName + " - private view", StringComparison.Ordinal))
+            : !labels.Contains(model.Connection.UsePractical ? "Hide cards · back to table" : "Hide (pass the laptop on)") ||
+                labels.Contains("Back to table") || !text.Contains(humanName + " - private view", StringComparison.Ordinal))
             throw new InvalidOperationException("The private-view title and return action must match the human count.");
         var privateContexts = Descendants<FrameworkElement>(view).Select(element => element.DataContext)
             .OfType<PrivateSeatViewModel>().Distinct().ToArray();

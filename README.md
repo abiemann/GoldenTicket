@@ -16,10 +16,11 @@ The September 12, 2026 [implementation audit](docs/AUDIT-2026-09-12.md) found th
 the corrected bugs and security issues, and separates automated evidence from remaining device tests.
 [TODO.md](TODO.md) tracks the work needed to complete the product.
 
-The subsequent [September 12 implementation update](docs/IMPLEMENTATION-2026-09-12.md) adds the
-game phone companion, camera tools, and board reference photos. Use its morning
-acceptance checklist and [local phone setup](docs/phone-setup.md). Real-device acceptance remains
-in progress; automatic claim confirmation now has measured slots for all 100 classic-US routes.
+The [September 12 implementation update](docs/IMPLEMENTATION-2026-09-12.md) records the original
+phone, camera and reference-photo work. Its certificate and installed-app approach has since been
+retired. Use the current [local phone setup](docs/phone-setup.md) and
+[device acceptance plan](docs/companion-device-evidence.md). Real-device acceptance remains in
+progress; automatic claim confirmation now has measured slots for all 100 classic-US routes.
 
 The latest [camera processing update](docs/camera-processing.md) adds native 4K preference with
 source-resolution reporting, actual CPU/GPU image enhancement, and the original comparison baseline.
@@ -112,8 +113,8 @@ This build implements the core game plus initial phone, camera and photo workflo
   with the witness trail shown. Final standings appear over the board as horizontally scrolling
   portrait panels, with the full points breakdown, destination totals and a scrollable route trail.
 - In games with two or more humans, **Share to phone** on the final standings prepares a PNG with
-  the board and all players' full results. The approved shared phone PWA previews it and offers
-  **Share image** where file sharing is supported, plus **Save image**. The image stays on the
+  the board and all players' full results. The approved shared phone previews it and offers
+  **Save image** in Quick play. Share the downloaded PNG through the device's Files or Photos app. The image stays on the
   local connection until someone chooses to share it; single-human games do not show this action.
   The results screen is titled **The journey has come to an end**. Its bottom-right **Back to Menu**
   button returns to the welcome menu while preserving the completed game and results.
@@ -178,12 +179,16 @@ This build implements the core game plus initial phone, camera and photo workflo
   compact card previews. The unresolved opening choice has no **Back to table** action, and plain
   Escape does not dismiss it; the exit menu covers it until **Return to Game**. Later laptop private
   controls are not yet available on the main game layer, and **Connect phone** is hidden.
-  With multiple humans, the game table presents phone setup so one shared phone can be passed
-  between players. Hosting still requires an explicit start on a selected Private LAN connection;
-  the table shows the real connection QR only after the local host supplies an address.
-- A laptop-hosted HTTPS phone PWA foundation with pairing and private card controls. One shared
-  controller is paired and explicitly approved on the laptop. The complete pass-around card flow
-  still needs implementation and real-device validation; the laptop verifies physical moves.
+  With multiple humans, the table offers **Quick play** first and **PRACTICAL** second.
+  Quick play explicitly starts a local host on a selected Private LAN connection, then shows its
+  actual QR and separate pairing code. PRACTICAL uses the laptop while other players look away
+  during private card choices, with no phone or network setup.
+- **Quick play is the recommended connection:** scan the QR, join, and play in the browser on
+  HTTP port 8080. The shared device shows authorized private cards and is passed between humans.
+  **PRACTICAL** provides private laptop controls and deliberate handoffs. Neither mode asks players
+  to install an app or certificate. The laptop owns the match and verifies physical moves.
+  Real-phone and complete multi-human laptop acceptance remain pending.
+
 - A camera screen with Windows video-only capture, resolution selection, preview, ML-assisted four-corner
   board crop with manual selection and draggable corners, and conservative scene-reference
   change/recovery indication. Focus the preview and press **1–4**, then arrow keys, to adjust a
@@ -243,11 +248,12 @@ These are later milestones in `DESIGN.md`, and nothing here pretends they exist:
   The table says “Thank you” for three seconds, then asks for the scoring marker to move and waits
   for two fresh readings of its new printed position before play continues. Full-board
   reconciliation, gesture handling, and measured false-acceptance/abstention rates remain unfinished.
-- **Phone acceptance is incomplete.** The embedded companion is functional and tested with
-  automated HTTPS/browser cases, but Android certificate/install/offline acceptance and all Apple
-  device acceptance remain outstanding. This slice uses two-second snapshot polling and fresh
-  laptop pairing after page reload; WSS/event-cursor recovery and durable controller registration
-  remain design gaps. See [implementation details](docs/IMPLEMENTATION-2026-09-12.md).
+- **Phone acceptance is incomplete.** Automated transport/browser coverage exists, but physical
+  Android/iOS QR joining, private-hand controls, downloads and reconnect still need acceptance.
+  PRACTICAL also needs a full multi-human laptop session. The browser currently polls snapshots
+  every two seconds and requires fresh laptop pairing after reload; WS event-cursor recovery and
+  durable controller registration remain design gaps. See [device evidence](docs/companion-device-evidence.md).
+
 - **No machine-verified photo checkpoint.** The Escape save checks live train positions and colors
   against claimed routes and an authorized pending placement before and after its board photo.
   The image remains an operator-attested
@@ -296,15 +302,17 @@ time downloads NuGet packages.
 
 ## Installed operation stays on the LAN
 
-The Windows laptop is the game server. The phone connects directly to its selected trusted Private
-LAN address over local HTTPS. Cards, saves, photos, PWA scripts/styles/icons, pairing and game actions
-stay local. GoldenTicket has no cloud login, telemetry, Internet connectivity gate, remote font/CDN,
-cloud AI, updater or Internet API dependency. The phone needs the laptop and LAN to remain available;
-the router's Internet/WAN connection may be disconnected. Laptop-only play also works without a LAN.
+The Windows laptop is the game server. Quick play connects the phone directly to the selected
+trusted Private LAN address over HTTP. Cards, saves, photos, bundled browser assets, pairing and
+game actions stay local. GoldenTicket has no cloud login, telemetry, Internet connectivity gate,
+remote font/CDN, cloud AI, updater or Internet API dependency. The phone needs the laptop and LAN
+to remain available; the router's Internet/WAN connection may be disconnected. PRACTICAL and
+single-human laptop play also work without a LAN.
 
-CI and developer restores use the Internet to obtain build tools/dependencies. They are separate
-from installed gameplay. Automated browser tests block non-laptop origins while exercising the game;
-real phone certificate, home-screen installation and WAN-disconnected device acceptance remain open.
+CI and developer restores use the Internet for build dependencies, separately from installed
+gameplay. Automated browser tests block non-laptop origins; physical phone acceptance remains
+open. HTTP traffic is unencrypted by design for this trusted local game; laptop approval, turn
+validation and private-hand curtains do not encrypt it. There is no certificate or app setup.
 
 ## Build, test, run
 
@@ -330,7 +338,6 @@ The connectivity scripts also have behavioral regression tests using Node's buil
 (validated with Node 24.19.0; no npm packages). Node is a development test tool, not an app runtime:
 
 ```bash
-node --test tests/GoldenTicket.ConnectivitySpike.Tests/shell.test.cjs
 node --test tests/GoldenTicket.Domain.Tests/CompanionHostClient.test.cjs
 ```
 
@@ -347,9 +354,8 @@ projects also have `packages.win-x64.lock.json` for the self-contained package's
 Only an explicit `-p:GoldenTicketOfflinePackage=true` selects those locks; the
 [packaging workflow](docs/offline-package.md) sets it for both restore and publish and documents
 how to regenerate and verify both lock sets without changing normal development locks.
-Game-save, photo, and certificate-generation tests do not call DPAPI or need a loaded Windows user
-profile. The separate live HTTPS transport test needs Windows credentials for Schannel. The companion
-still protects its real TLS private keys with DPAPI when running normally.
+Game-save and photo tests use plaintext payloads and integrity checks. Current companion
+transport tests use local HTTP and do not require certificate generation, OS trust or Schannel.
 
 ### Headless matches
 
@@ -483,9 +489,9 @@ not a completed Save Game and does not grant permission to clear the physical bo
    A camera restart or format change requires checking
    and restoring the board crop through the technical Camera screen.
 4. With one human, opening destination choices appear directly on the laptop. With multiple
-   humans, the visible game table guides setup of one shared phone for private cards. Start hosting
-   on a selected Private LAN connection before scanning its QR. The phone's card display and
-   handoff still need real-device PWA validation.
+   humans, choose **Quick play** for a shared phone browser or **PRACTICAL** to take private turns
+   on the laptop while others look away. Quick play starts explicitly on a selected Private LAN
+   before showing its QR. Both controller paths still need physical-play acceptance.
 5. The laptop stays on **THE GAME TABLE** after turns and scoring-marker detection. In solo play,
    the T and D stacks show read-only mini cards on the table when clicked. These previews and the
    route-payment choices scroll sideways with the game's gold scrollbar; the mouse wheel also moves
@@ -505,8 +511,8 @@ not a completed Save Game and does not grant permission to clear the physical bo
    blocks train-card and destination draws, including through the technical private view. Opening
    a menu or hand does not dismiss it; correct the placement or remove the trains and let the
    camera verify the recorded board again.
-   With multiple humans, the shared phone is the intended private controller; actions do
-   not automatically reveal a private screen on the laptop.
+   With multiple humans in Quick play, private actions stay on the shared phone. In PRACTICAL,
+   the active human uses the laptop after the others look away, then covers their cards.
 
 6. For computer claims and routes selected digitally before placement, the public screen names
    the seat, its colour and symbol, both endpoint cities, the exact lane, and how many trains to
@@ -526,13 +532,13 @@ not a completed Save Game and does not grant permission to clear the physical bo
    are separate from the continuous total game timer shown during play. Unavailable player timing
    history is shown as unavailable.
 
-For multiple humans, follow the phone setup shown on **THE GAME TABLE**. Select a Private LAN
-connection and explicitly start the local host; only then can the table display a connection QR.
-Install/trust the laptop's public certificate, open the PWA, and approve the matching pairing
-identity. The phone is intended to pass between human players for private cards; its card and
-handoff flow remains unfinished and unverified on real devices. A single human needs no
-phone connection or local HTTPS setup. Use **Camera** for preview, board crop and a stable scene
-reference. **Save and pack away** saves the digital game; it does not automatically take a picture.
+For multiple humans, choose **Quick play** or **PRACTICAL** on **THE GAME TABLE**. Quick play
+needs an explicitly started host on a selected Private LAN connection; scan its QR, enter the
+separate code and approve the phone on the laptop. Pass the phone for private choices. PRACTICAL
+needs no networking UI: other players look away while the active human uses the laptop. A single
+human needs no connection mode selection. See [multi-human setup](docs/phone-setup.md).
+Use **Camera** for preview, board crop and a stable scene reference. **Save and pack away** saves
+the digital game; it does not automatically take a picture.
 **Export board photo** writes a PNG of the current crop and works without a scene reference, even
 when the scene has changed. It needs a fresh camera frame and valid corners; it does not save a match.
 Exports preserve the board's 8:5 shape at 3456 × 2160 and use the selected image processor.
@@ -574,9 +580,8 @@ src/GoldenTicket.AI/            heuristic opponents and route planning
 src/GoldenTicket.Persistence/   SQLite journal, checkpoint photos, restore
 src/GoldenTicket.Desktop/       WPF views and view models
 src/GoldenTicket.Vision/        capture, crop, CPU/GPU preprocessing, experimental piece candidates
-src/GoldenTicket.CompanionHost/ embedded local HTTPS game PWA and controller protocol
+src/GoldenTicket.CompanionHost/ embedded HTTP Quick play and controller protocol
 tools/GoldenTicket.Simulator/   headless matches and the data audit
-tools/GoldenTicket.ConnectivitySpike/ standalone local HTTPS/PWA feasibility tool; no game data
 tools/GoldenTicket.CameraDiagnostics/ shared-read-only native camera format inventory
 tools/GoldenTicket.MlPieceSmoke/ offline CPU/GPU model evaluation and outlined board images
 tools/piece-training/           local annotation, training, export and comparison tools
@@ -620,4 +625,4 @@ DESIGN §23.2 asks for measured results to stay distinguishable from design assu
 actually been run is in `docs/evidence/` and the current [camera processing report](docs/camera-processing.md).
 The preprocessing hardware probe is narrower than the full camera/model/provider acceptance gates.
 Camera recognition, companion devices and AI strength have not passed their required acceptance
-gates. Automated checks do not establish complete real-device PWA or camera support.
+gates. Automated checks do not establish complete real-device companion or camera support.

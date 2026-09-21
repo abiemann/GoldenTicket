@@ -9,7 +9,7 @@ const sourceDir = path.resolve(__dirname, '../../src/GoldenTicket.CompanionHost/
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
 function deferred() { let resolve; const promise = new Promise(r => resolve = r); return { promise, resolve }; }
 function page(options = {}) {
-  const nodes = new Map(), listeners = {}, intervals = [], timeouts = new Map(), requests = [], objectUrls = [], revokedUrls = [], shares = [];
+  const nodes = new Map(), listeners = {}, intervals = [], timeouts = new Map(), requests = [], objectUrls = [], revokedUrls = [];
   let nextTimer = 0, uuid = 0, now = Date.now();
   class Node {
     constructor(tag = 'div') { this.tag = tag; this.textContent = ''; this.hidden = false; this.value = ''; this.disabled = false; this.children = []; this.dataset = {}; this.events = {}; }
@@ -22,55 +22,73 @@ function page(options = {}) {
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, new Node()); return nodes.get(id); };
   const state = {
-    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '3', handoffGeneration: 1,
+    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '5', handoffGeneration: 1,
     snapshot: { canControl: true, revealSeatId: 1, message: 'Pass this device to Alex.', profileId: 'classic-us', manifestHash: 'hash', routes: [],
       game: { sessionId: 'match', stateVersion: 1, activeSeatId: 1, turnNumber: 1, turnPhase: 'TurnStart', seats: [{ seatId: 1, displayName: 'Alex', symbol: 'A', color: 'Blue', routeScore: 0, trainsRemaining: 45 }], pendingClaim: null } }
   };
   const data = { view: { seatId: 1, public: state.snapshot.game, hand: [{ id: 3, kind: 'Red' }], reservedCards: [] }, heldTickets: [{id:'secret', label:'PRIVATE_DESTINATION', points:20}], offeredTickets: [], actions: { mustCommitTicketSelection: false, mustResolvePendingClaim: true } };
   function response(value, ok = true, status = 200) { return { ok, status, json: async () => structuredClone(value) }; }
   const context = vm.createContext({
-    console, Promise, AbortController, Blob, File, Uint8Array, structuredClone,
+    console, Promise, AbortController, Blob, Uint8Array, structuredClone,
     URL: class extends URL { static createObjectURL(blob) { const url = `blob:results-${objectUrls.length}`; objectUrls.push({url, blob}); return url; } static revokeObjectURL(url) { revokedUrls.push(url); } },
     Date: class extends Date { static now() { return now; } },
-    crypto: { randomUUID: () => `${String(++uuid).padStart(8, '0')}-abcd-4321-aaaa-bbbbbbbbbbbb` },
-    matchMedia: () => ({ matches: !!options.standalone }),
+    // getRandomValues remains available in an insecure context; randomUUID does not.
+    crypto: { getRandomValues: bytes => { bytes.fill(++uuid); return bytes; } },
     setTimeout: (fn, ms) => { const id = ++nextTimer; timeouts.set(id, {fn, ms}); return id; }, clearTimeout: id => timeouts.delete(id),
     setInterval: (fn, ms) => intervals.push({fn, ms}),
     document: { hidden: false, getElementById: get, createElement: tag => new Node(tag), addEventListener: (name, fn) => listeners['document:' + name] = fn },
     window: { isSecureContext: options.secure !== false, addEventListener: (name, fn) => listeners['window:' + name] = fn },
-    navigator: { onLine: options.internetAvailable !== false, serviceWorker: { register: async () => ({}), ready: options.workerPending ? new Promise(() => {}) : Promise.resolve({}) },
-      ...(options.shareSupported ? {canShare: value => value.files?.length === 1 && value.files[0].type === 'image/png', share: async value => { shares.push(value); if(options.shareError) throw options.shareError; }} : {}) },
-    caches: { open: async () => ({ match: async asset => options.missingAsset === asset ? undefined : {ok:true} }) },
+    navigator: { onLine: options.internetAvailable !== false },
     fetch: async (url, request) => {
       requests.push({url, request});
       if (options.offline) throw new Error('Offline');
       if (options.fetch) { const result = options.fetch(url, request); if (result !== undefined) return await result; }
       if (url === '/api/session') return response(state);
       if (url === '/api/reveal') { state.handoffGeneration++; return response({grant:'private-grant', expiresAt:new Date(now + 30000).toISOString(), handoffGeneration: state.handoffGeneration, data}); }
+      if (url === '/api/activity') return response({expiresAt:new Date(now + 30000).toISOString(), handoffGeneration:state.handoffGeneration});
       if (url === '/api/command') return response({ accepted:true, message:'Choice saved on laptop.' });
       if (url === '/api/pair') return response({pending:true, identity:'1234'});
       return response({hidden:true});
     }
   });
   let source = fs.readFileSync(path.join(sourceDir, 'app.js'), 'utf8');
-  source = source.replace(/\}\)\(\);\s*$/, 'globalThis.clientTest = { poll, reveal, hide, submit, clearPrivate, state: () => ({paired, busy, privateData, grant, revealGeneration, handoffGeneration, shellReady, resultFile, resultKey, resultUrl}) }; })();');
+  source = source.replace(/\}\)\(\);\s*$/, 'globalThis.clientTest = { poll, reveal, hide, submit, clearPrivate, state: () => ({paired, busy, privateData, grant, revealGeneration, handoffGeneration, resultKey, resultUrl}) }; })();');
   vm.runInContext(source, context);
-  return { context, state, data, get, requests, options, timeouts, intervals, response, objectUrls, revokedUrls, shares, client: context.clientTest,
-    event: async (scope, name) => { await listeners[scope + ':' + name]?.(); await flush(); },
+  return { context, state, data, get, requests, options, timeouts, intervals, response, objectUrls, revokedUrls, client: context.clientTest,
+    event: async (scope, name, event = {}) => { await listeners[scope + ':' + name]?.(event); await flush(); },
     click: async id => { await get(id).events.click?.(); await flush(); },
     advance: ms => { now += ms; }, nodes };
 }
 
-test('pairing waits for a fully cached shell and chosen final launch context', async () => {
+// Keep the laptop connection fresh while exercising the independent private-view timer.
+async function elapse(p, ms) {
+  while (ms > 0) {
+    const step = Math.min(ms, 2000); p.advance(step); ms -= step;
+    await p.client.poll(); p.intervals.find(t => t.ms === 500).fn(); await flush();
+  }
+}
+function descendants(node) { return [node, ...node.children.flatMap(descendants)]; }
+async function ticketOffer(p) {
+  await flush();
+  p.data.offeredTickets = [{id:'first',label:'First destination',points:5},{id:'second',label:'Second destination',points:7}];
+  p.data.minimumKeep = 1; p.data.actions = {mustCommitTicketSelection:true};
+  await p.client.reveal();
+  return descendants(p.get('private')).filter(node => node.type === 'checkbox');
+}
+async function checkTicket(node, checked) { node.checked = checked; node.events.change(); await flush(); }
+
+test('joining is ready immediately and a pending request cannot be submitted again', async () => {
   const p = page({paired:false}); await flush();
-  assert.equal(p.client.state().shellReady, true); assert.equal(p.get('pair-form').hidden, true);
-  await p.click('browser-mode'); assert.equal(p.get('pair-form').hidden, false);
+  assert.equal(p.get('pair-form').hidden, false);
+  p.state.pending=true; await p.client.poll();
+  assert.equal(p.get('pair-form').hidden,true);
+  await p.get('pair-form').events.submit({preventDefault(){}});
+  assert.equal(p.requests.some(r=>r.url==='/api/pair'),false);
 });
 test('LAN gameplay remains available when the browser reports no Internet connection', async () => {
   // Browser/OS connectivity probes may report offline on a working Wi-Fi LAN without WAN access.
   // The laptop's successful responses, not navigator.onLine, decide whether gameplay is possible.
   const p = page({internetAvailable:false}); await flush();
-  assert.equal(p.client.state().shellReady,true);
   assert.equal(p.get('reveal').disabled,false);
   await p.client.reveal(); assert.equal(p.get('private').hidden,false);
   await p.event('window','offline'); assert.equal(p.get('private').hidden,true);
@@ -81,22 +99,37 @@ test('LAN gameplay remains available when the browser reports no Internet connec
   assert.equal(p.client.state().privateData,null);
 });
 test('the complete companion request flow stays on the laptop origin', async () => {
-  const p=page({paired:false,standalone:true}); await flush();
+  const p=page({paired:false}); await flush();
   p.get('pair-code').value='123456';
   await p.get('pair-form').events.submit({preventDefault(){}});
   p.state.paired=true; await p.client.poll(); await p.client.reveal();
   await p.client.submit('drawTrain',{slot:null}); await p.client.reveal(); await p.click('hide');
   assert.deepEqual([...new Set(p.requests.map(r=>r.url))].sort(),['/api/command','/api/hide','/api/pair','/api/reveal','/api/session']);
   for(const {url,request} of p.requests) {
-    const destination=new URL(url,'https://192.168.50.2:8443');
-    assert.equal(destination.origin,'https://192.168.50.2:8443');
+    const destination=new URL(url,'http://192.168.50.2:8080');
+    assert.equal(destination.origin,'http://192.168.50.2:8080');
     assert.equal(request.credentials,'same-origin'); assert.equal(request.cache,'no-store');
   }
 });
-test('missing cached asset and insecure contexts never offer pairing', async () => {
-  for (const options of [{missingAsset:'/companion/app.js'}, {secure:false}]) {
-    const p = page({...options, paired:false, standalone:true}); await flush();
-    assert.equal(p.client.state().shellReady, false); assert.equal(p.get('pair-form').hidden, true);
+test('HTTP Quick play offers joining immediately without secure-context APIs or installation', async () => {
+  for (const secure of [false, true]) {
+    const p = page({paired:false, secure}); await flush();
+    assert.equal(p.get('pair-form').hidden,false);
+    p.get('pair-code').value='123456';
+    await p.get('pair-form').events.submit({preventDefault(){}});
+    const request = p.requests.find(r=>r.url==='/api/pair');
+    assert.equal(JSON.parse(request.request.body).code,'123456');
+    assert.match(JSON.parse(request.request.body).tab,/^[a-f0-9]{32}$/);
+    p.state.paired=true; await p.client.poll(); await p.client.reveal();
+    assert.equal(p.get('private').hidden,false);
+    assert.equal(p.get('hide').hidden,false);
+    await p.client.submit('drawTrain',{slot:null});
+    const command = p.requests.find(r=>r.url==='/api/command');
+    assert.match(JSON.parse(command.request.body).command.commandId,/^[a-f0-9]{32}$/);
+    assert.notEqual(JSON.parse(command.request.body).command.commandId,JSON.parse(request.request.body).tab);
+    assert.equal(p.get('private').hidden,true);
+    await p.client.reveal(); await p.click('hide');
+    assert.equal(p.client.state().privateData,null);
   }
 });
 test('private reveal renders only the permitted view and Hide clears DOM and memory', async () => {
@@ -151,22 +184,78 @@ test('turn revision change, revoke, and connection failure clear private views',
     await p.client.poll(); assert.equal(p.client.state().privateData,null); assert.equal(p.get('private').hidden,true);
   }
 });
-test('an incompatible shell version covers cards and blocks reveal until reload', async () => {
+test('an incompatible client version covers cards and blocks reveal until reload', async () => {
   const p=page(); await flush(); await p.client.reveal(); p.state.assetsVersion='1'; await p.client.poll();
   assert.equal(p.client.state().privateData,null); assert.equal(p.get('reveal').disabled,true);
   assert.match(p.get('notice').textContent,/needs an update/);
 });
-test('blur and pointer cancellation clear privacy immediately', async () => {
-  for(const [scope,event] of [['window','blur'],['window','pagehide'],['document','pointercancel']]) {
+test('ordinary focus changes and scroll pointer cancellation keep the current hand visible', async () => {
+  for(const [scope,event] of [['window','blur'],['document','pointercancel']]) {
     const p = page(); await flush(); await p.client.reveal(); await p.event(scope,event);
-    assert.equal(p.get('private').children.length,0); assert.equal(p.client.state().grant,null);
+    assert.equal(p.get('private').hidden,false); assert.equal(p.client.state().grant,'private-grant');
+    assert.equal(p.requests.some(r=>r.url==='/api/hide'),false);
   }
 });
-test('heartbeat timeout and grant expiry cover without waiting for network', async () => {
-  for(const elapsed of [6000,30000]) {
-    const p=page(); await flush(); await p.client.reveal(); p.advance(elapsed);
-    p.intervals.find(t=>t.ms===500).fn(); assert.equal(p.client.state().privateData,null);
+test('leaving the page still clears the private view immediately', async () => {
+  const p=page(); await flush(); await p.client.reveal(); await p.event('window','pagehide');
+  assert.equal(p.get('private').children.length,0); assert.equal(p.client.state().grant,null);
+});
+
+test('checking and unchecking destinations renews idle time without rebuilding selections', async () => {
+  const p=page(), choices=await ticketOffer(p);
+  await elapse(p,25000); await checkTicket(choices[0],true); await checkTicket(choices[1],true);
+  await elapse(p,24000); await checkTicket(choices[0],false);
+  await elapse(p,6000);
+  assert.equal(p.get('private').hidden,false,'The original absolute expiry must not hide active choices');
+  const current=descendants(p.get('private')).filter(node=>node.type==='checkbox');
+  assert.equal(current[0],choices[0]); assert.equal(current[0].checked,false); assert.equal(current[1].checked,true);
+  assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,1,'Activity must not fetch/rebuild the private view');
+  const renewals=p.requests.filter(r=>r.url==='/api/activity'); assert.equal(renewals.length,2);
+  assert.deepEqual(JSON.parse(renewals[0].request.body),{seat:1,sessionId:'match',version:1,grant:'private-grant',handoffGeneration:2});
+  const keep=descendants(p.get('private')).find(node=>node.textContent==='Keep selected tickets');
+  assert.equal(keep.disabled,false); await keep.events.click(); await flush();
+  assert.deepEqual(JSON.parse(p.requests.find(r=>r.url==='/api/command').request.body).command.keptTickets,['second']);
+});
+
+test('a touch outside the private controls extends idle time and renewal requests are coalesced', async () => {
+  const p=page(); await flush(); await p.client.reveal();
+  await elapse(p,1000);
+  for(let i=0;i<50;i++) await p.event('document','pointerdown');
+  assert.equal(p.requests.filter(r=>r.url==='/api/activity').length,0);
+  await elapse(p,4000);
+  assert.equal(p.requests.filter(r=>r.url==='/api/activity').length,1);
+  // Server authorization lasts until t=35s; the actual last touch was at t=1s.
+  await elapse(p,25999); assert.equal(p.get('private').hidden,false);
+  await elapse(p,1); assert.equal(p.get('private').hidden,true,'Idle cover is 30s after activity, not the later network renewal');
+});
+
+test('an overdue timeout cannot be revived by touching before the next watchdog tick', async () => {
+  const p=page(); await flush(); await p.client.reveal(); p.advance(30000); await p.client.poll();
+  await p.event('document','pointerdown');
+  assert.equal(p.get('private').hidden,true); assert.equal(p.requests.some(r=>r.url==='/api/activity'),false);
+});
+
+test('delayed activity replies cannot uncover a hand after Hide or a turn change', async () => {
+  for(const change of ['hide','revision']) {
+    const reply=deferred(), p=page({fetch:url=>url==='/api/activity'?reply.promise:undefined});
+    await flush(); await p.client.reveal(); await elapse(p,6000); await p.event('document','pointerdown');
+    if(change==='hide') p.client.hide(); else { p.state.snapshot.game.stateVersion++; await p.client.poll(); }
+    reply.resolve(p.response({expiresAt:new Date(Date.now()+60000).toISOString(),handoffGeneration:2})); await flush();
+    assert.equal(p.get('private').hidden,true); assert.equal(p.client.state().grant,null);
   }
+});
+
+test('refused activity renewal covers the hand without submitting a choice', async () => {
+  const p=page({fetch:url=>url==='/api/activity'?Promise.resolve({ok:false,status:401}):undefined});
+  await flush(); await p.client.reveal(); await elapse(p,6000); await p.event('document','pointerdown');
+  assert.equal(p.get('private').hidden,true); assert.equal(p.requests.some(r=>r.url==='/api/command'),false);
+});
+
+test('heartbeat timeout and inactivity cover independently without waiting for network', async () => {
+  const disconnected=page(); await flush(); await disconnected.client.reveal(); disconnected.advance(6000);
+  disconnected.intervals.find(t=>t.ms===500).fn(); assert.equal(disconnected.client.state().privateData,null);
+  const idle=page(); await flush(); await idle.client.reveal(); await elapse(idle,30000);
+  assert.equal(idle.client.state().privateData,null); assert.equal(idle.requests.some(r=>r.url==='/api/activity'),false);
 });
 test('command clears private UI before transport and duplicate tap cannot submit twice', async () => {
   const result = deferred(); const p=page({fetch:url=>url==='/api/command'?result.promise:undefined}); await flush(); await p.client.reveal();
@@ -180,23 +269,8 @@ test('untrusted player text is assigned as text and never interpreted as HTML', 
   const p=page(); p.state.snapshot.game.seats[0].displayName='<img src=x onerror=alert(1)>'; await flush(); await p.client.reveal();
   assert.equal(p.get('private').hidden,false); // Node.innerHTML setter would throw on interpolation.
 });
-test('worker caches only named shell assets and never intercepts APIs or arbitrary navigation', async () => {
-  const handlers={}, calls=[], deleted=[];
-  const context=vm.createContext({URL, Promise,
-    self:{location:{origin:'https://local.test'},addEventListener:(name,fn)=>handlers[name]=fn,skipWaiting:async()=>{},clients:{claim:async()=>{}}},
-    caches:{open:async()=>({addAll:async paths=>calls.push(...paths),match:async()=>({cached:true})}),keys:async()=>['goldenticket-companion-shell-v1','goldenticket-companion-shell-v2','goldenticket-companion-shell-v3','other-app'],delete:async key=>deleted.push(key)},fetch:async()=>({network:true})});
-  vm.runInContext(fs.readFileSync(path.join(sourceDir,'sw.js'),'utf8'),context);
-  let installation; handlers.install({waitUntil:promise=>installation=promise}); await installation;
-  let activation; handlers.activate({waitUntil:promise=>activation=promise}); await activation;
-  assert.deepEqual(deleted,['goldenticket-companion-shell-v1','goldenticket-companion-shell-v2']);
-  assert.ok(calls.includes('/companion/app.js')); assert.equal(calls.some(p=>p.startsWith('/api')),false);
-  for(const [url,method] of [['https://local.test/api/reveal','POST'],['https://local.test/api/session','GET'],['https://local.test/api/result-image/image-1','GET'],['https://local.test/companion/private','GET'],['https://local.test/companion/?secret=1','GET'],['https://evil.test/companion/','GET']]) {
-    let intercepted=false; handlers.fetch({request:{url,method},respondWith:()=>intercepted=true}); assert.equal(intercepted,false,url);
-  }
-  let shell; handlers.fetch({request:{url:'https://local.test/companion/',method:'GET'},respondWith:p=>shell=p}); assert.equal((await shell).cached,true);
-});
-
-const resultPng = fs.readFileSync(path.join(sourceDir, 'icon-192.png'));
+// Synthetic one-pixel PNG; independent of product branding assets.
+const resultPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==','base64');
 const imageResponse = (bytes = resultPng, contentType = 'image/png') => new Response(bytes, {headers:{'Content-Type':contentType}});
 async function receiveResults(p, id = 'image-1') {
   p.state.snapshot.resultImage = {id, fileName:'golden-ticket-final-standings.png'};
@@ -209,22 +283,14 @@ test('standings stay absent until published and load once with authenticated unc
   const p=page({fetch:url=>url.startsWith('/api/result-image/')?imageResponse():undefined}); await flush();
   assert.equal(p.requests.some(r=>r.url.startsWith('/api/result-image/')),false);
   await receiveResults(p); assert.equal(p.get('result').hidden,false); assert.equal(p.get('curtain').hidden,true); assert.equal(p.get('public').hidden,true);
-  assert.equal(p.get('result-preview').hidden,false); assert.equal(p.get('result-save').hidden,false); assert.equal(p.get('result-share').hidden,true);
-  assert.equal(p.client.state().resultFile.name,'golden-ticket-final-standings.png');
-  assert.equal(p.client.state().resultFile.type,'image/png');
-  assert.deepEqual(Buffer.from(await p.client.state().resultFile.arrayBuffer()),resultPng);
+  assert.equal(p.get('result-preview').hidden,false); assert.equal(p.get('result-save').hidden,false);
+  assert.equal(p.get('result-save').download,'golden-ticket-final-standings.png');
+  assert.equal(p.objectUrls.at(-1).blob.type,'image/png');
+  assert.deepEqual(Buffer.from(await p.objectUrls.at(-1).blob.arrayBuffer()),resultPng);
   const request=p.requests.find(r=>r.url==='/api/result-image/image-1').request;
   assert.equal(request.cache,'no-store'); assert.equal(request.credentials,'same-origin'); assert.ok(request.headers['X-GoldenTicket-Tab']);
   await p.client.poll(); assert.equal(p.requests.filter(r=>r.url.startsWith('/api/result-image/')).length,1);
   await p.event('window','blur'); assert.equal(p.get('curtain').hidden,true); assert.equal(p.get('result-preview').hidden,false);
-});
-
-test('native sharing happens only on a tap, shares the PNG, and cancellation stays quiet', async () => {
-  const p=page({shareSupported:true,fetch:url=>url.startsWith('/api/result-image/')?imageResponse():undefined}); await flush(); await receiveResults(p);
-  assert.equal(p.shares.length,0); assert.equal(p.get('result-share').hidden,false);
-  await p.click('result-share'); assert.equal(p.shares.length,1); assert.equal(p.shares[0].files[0],p.client.state().resultFile); assert.equal(p.shares[0].url,undefined);
-  p.options.shareError={name:'AbortError'}; const before=p.get('result-status').textContent; await p.click('result-share'); assert.equal(p.get('result-status').textContent,before);
-  p.options.shareError={name:'NotAllowedError'}; await p.click('result-share'); assert.match(p.get('result-status').textContent,/Save image/); assert.equal(p.get('result-share').disabled,false);
 });
 
 test('replacement, revocation, game change, disconnect and page departure erase result URLs and files', async () => {
@@ -240,7 +306,7 @@ test('replacement, revocation, game change, disconnect and page departure erase 
     if(action==='timeout') {p.advance(6000);p.intervals.find(t=>t.ms===500).fn();}
     assert.ok(p.revokedUrls.includes(old),action);
     if(action!=='replacement') {
-      assert.equal(p.client.state().resultFile,null,action); assert.equal(p.get('result').hidden,true,action);
+      assert.equal(p.client.state().resultUrl,null,action); assert.equal(p.get('result').hidden,true,action);
       assert.equal(p.get('result-preview').src,undefined,action); assert.equal(p.get('result-save').href,undefined,action);
     } else assert.notEqual(p.client.state().resultUrl,old);
   }
@@ -253,22 +319,22 @@ test('late image response cannot restore results after revocation or session rep
     if(action==='new-game') {p.state.snapshot.game.sessionId='next';delete p.state.snapshot.resultImage;await p.client.poll();}
     if(action==='offline') await p.event('window','offline');
     pending.resolve(imageResponse()); await new Promise(resolve=>setImmediate(resolve)); await flush();
-    assert.equal(p.client.state().resultFile,null); assert.equal(p.objectUrls.length,0); assert.equal(p.get('result').hidden,true);
+    assert.equal(p.client.state().resultUrl,null); assert.equal(p.objectUrls.length,0); assert.equal(p.get('result').hidden,true);
   }
 });
 
-test('failed image download has a working retry and never starts sharing by itself', async () => {
+test('failed image download has a working retry without polling indefinitely', async () => {
   let attempts=0;
   const p=page({fetch:url=>url.startsWith('/api/result-image/')?(++attempts===1?new Response('',{status:404}):imageResponse()):undefined}); await flush(); await receiveResults(p);
-  assert.equal(p.get('result-retry').hidden,false); assert.equal(p.client.state().resultFile,null);
+  assert.equal(p.get('result-retry').hidden,false); assert.equal(p.client.state().resultUrl,null);
   await p.client.poll(); assert.equal(attempts,1,'Polling must not retry the failed image indefinitely.');
-  await p.click('result-retry'); assert.equal(attempts,2); assert.equal(p.get('result-save').hidden,false); assert.equal(p.get('result-retry').hidden,true); assert.equal(p.shares.length,0);
+  await p.click('result-retry'); assert.equal(attempts,2); assert.equal(p.get('result-save').hidden,false); assert.equal(p.get('result-retry').hidden,true);
 });
 
 test('result download rejects non-PNG, invalid signatures and oversized streamed bodies', async () => {
   for(const makeResponse of [()=>imageResponse(resultPng,'text/html'),()=>imageResponse('not-a-png'),()=>imageResponse(new Uint8Array(16*1024*1024+1)),()=>new Response(null,{headers:{'Content-Type':'image/png','Content-Length':String(16*1024*1024+1)}})]) {
     const p=page({fetch:url=>url.startsWith('/api/result-image/')?makeResponse():undefined}); await flush(); await receiveResults(p);
-    assert.equal(p.client.state().resultFile,null); assert.equal(p.objectUrls.length,0); assert.equal(p.get('result-retry').hidden,false);
+    assert.equal(p.client.state().resultUrl,null); assert.equal(p.objectUrls.length,0); assert.equal(p.get('result-retry').hidden,false);
   }
 });
 
@@ -276,5 +342,5 @@ test('result metadata cannot fetch external URLs and unsafe filenames use a PNG 
   const p=page({fetch:url=>url.startsWith('/api/result-image/')?imageResponse():undefined}); await flush(); await receiveResults(p,'https://elsewhere.test/private');
   assert.equal(p.requests.some(r=>r.url.startsWith('/api/result-image/')),false);
   p.state.snapshot.resultImage={id:'safe-id',fileName:'../../bad.html'};await p.client.poll();await new Promise(resolve=>setImmediate(resolve));await flush();
-  assert.equal(p.client.state().resultFile.name,'golden-ticket-final-standings.png');
+  assert.equal(p.get('result-save').download,'golden-ticket-final-standings.png');
 });

@@ -4,6 +4,22 @@ namespace GoldenTicket.Desktop.ViewModels;
 
 public sealed partial class MainViewModel
 {
+    public bool ShowPracticalHandoff => Connection.UsePractical && CanConnectPhone &&
+        IsGameplayScreenActive(Screen.Table) && !ShowMultiHumanPhoneSetup && !IsPrivateVisible && CanRevealPrivateSeat;
+
+    private void ConnectionPresentationChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(ConnectionViewModel.UsePractical))
+        {
+            HidePrivateSeat();
+            OnPropertyChanged(nameof(RevealPrompt));
+            OnPropertyChanged(nameof(ShowPracticalHandoff));
+        }
+        if (args.PropertyName is nameof(ConnectionViewModel.IsBusy) or nameof(ConnectionViewModel.UsePractical) or
+            nameof(ConnectionViewModel.HasApprovedController))
+            DismissMultiHumanPhoneSetupCommand.NotifyCanExecuteChanged();
+    }
+
     private void PresentMultiHumanPhoneSetup()
     {
         ShowMultiHumanPhoneSetup = CanConnectPhone && IsGameplayScreenActive(Screen.Table);
@@ -19,6 +35,9 @@ public sealed partial class MainViewModel
         ShowMultiHumanPhoneSetup = true;
     }
 
-    [RelayCommand]
+    private bool CanDismissMultiHumanPhoneSetup() => !Connection.IsBusy &&
+        (Connection.UsePractical || Connection.HasApprovedController);
+
+    [RelayCommand(CanExecute = nameof(CanDismissMultiHumanPhoneSetup))]
     private void DismissMultiHumanPhoneSetup() => ShowMultiHumanPhoneSetup = false;
 }

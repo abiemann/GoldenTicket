@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="GoldenTicket">
-  <rect width="192" height="192" rx="28" fill="#F1E7D2"/>
-  <rect x="26" y="58" width="140" height="76" rx="10" fill="#7A241C"/>
-  <circle cx="26" cy="96" r="12" fill="#F1E7D2"/>
-  <circle cx="166" cy="96" r="12" fill="#F1E7D2"/>
-  <path d="M60 96h72" stroke="#B28A48" stroke-width="6" stroke-linecap="round" stroke-dasharray="10 10"/>
-</svg>

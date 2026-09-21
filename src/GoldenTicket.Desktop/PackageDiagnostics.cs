@@ -88,10 +88,8 @@ internal static class PackageDiagnostics
         });
         await CheckSync("Bundled companion assets", () =>
         {
-            foreach (var asset in new[] { "index.html", "app.js", "app.css", "sw.js", "manifest.webmanifest", "icon-192.png", "icon-512.png" })
+            foreach (var asset in new[] { "index.html", "app.js", "app.css", "icon.svg" })
                 Require(new FileInfo(Path.Combine(AppContext.BaseDirectory, "companion-web", asset)).Length > 0);
-            using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "companion-web", "manifest.webmanifest")));
-            Require(manifest.RootElement.GetProperty("scope").GetString() == "/companion/");
         });
 
         var passed = checks.All(check => check.Passed);

@@ -281,11 +281,11 @@ public partial class GameScreenView : UserControl
         return FindButton(container);
     }
 
-    private static Button? FindButton(DependencyObject parent)
+    private static Button? FindButton(DependencyObject parent, string tag = "CharacterRole")
     {
-        if (parent is Button { Tag: "CharacterRole" } button) return button;
+        if (parent is Button button && Equals(button.Tag, tag)) return button;
         for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
-            if (FindButton(VisualTreeHelper.GetChild(parent, index)) is { } found) return found;
+            if (FindButton(VisualTreeHelper.GetChild(parent, index), tag) is { } found) return found;
         return null;
     }
 
@@ -301,20 +301,51 @@ public partial class GameScreenView : UserControl
 
         _faceFlipping = true;
         game.IsFaceFlipping = true;
+        var badge = button.Parent is DependencyObject container ? FindButton(container, "AiStyleBadge") : null;
+        var badgeWasEnabled = badge?.IsEnabled ?? false;
+        var halfDuration = TimeSpan.FromMilliseconds(115);
+        if (badge is not null)
+        {
+            badge.SetCurrentValue(IsEnabledProperty, false);
+            if (choice.IsComputer)
+                badge.BeginAnimation(OpacityProperty, new DoubleAnimation(badge.Opacity, 0, halfDuration)
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+                });
+            else
+                badge.SetCurrentValue(OpacityProperty, 0.0);
+        }
         var transform = new ScaleTransform(1, 1);
         button.RenderTransformOrigin = new Point(.5, .5);
         button.RenderTransform = transform;
-        var close = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(115));
+        var close = new DoubleAnimation(1, 0, halfDuration);
         close.Completed += (_, _) =>
         {
             transform.BeginAnimation(ScaleTransform.ScaleXProperty, null);
             transform.ScaleX = 0;
+            // The separate badge overlay must be transparent before the portrait switches roles.
+            if (badge is not null)
+            {
+                badge.BeginAnimation(OpacityProperty, null);
+                badge.SetCurrentValue(OpacityProperty, 0.0);
+            }
             game.CycleSeat(choice);
-            var open = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(115));
+            if (badge is not null && choice.IsComputer)
+                badge.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, halfDuration)
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                });
+            var open = new DoubleAnimation(0, 1, halfDuration);
             open.Completed += (_, _) =>
             {
                 transform.BeginAnimation(ScaleTransform.ScaleXProperty, null);
                 transform.ScaleX = 1;
+                if (badge is not null)
+                {
+                    badge.BeginAnimation(OpacityProperty, null);
+                    badge.SetCurrentValue(OpacityProperty, 1.0);
+                    badge.SetCurrentValue(IsEnabledProperty, badgeWasEnabled);
+                }
                 _faceFlipping = false;
                 game.IsFaceFlipping = false;
             };

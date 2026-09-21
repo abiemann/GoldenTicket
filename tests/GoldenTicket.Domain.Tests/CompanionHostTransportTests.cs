@@ -1,9 +1,6 @@
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
-using System.Net.Security;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using GoldenTicket.Application;
@@ -25,22 +22,16 @@ namespace GoldenTicket.Domain.Tests;
 public class CompanionHostTransportTests
 {
     [Fact]
-    public async Task RealHttpsTransportRequiresApprovalCsrfAndCurrentSeatGrantAndCommitsOnce()
+    public async Task HttpTransportRequiresApprovalCsrfAndCurrentSeatGrantAndCommitsOnce()
     {
         var token = TestContext.Current.CancellationToken;
         var game = await GameCoordinator.CreateAsync(new GameRules(TestManifest.Manifest, TestManifest.Catalog), new InMemorySessionStore(),
             new SessionSetup(SessionId.New(), [new Seat(new(1), "Alex", PlayerColor.Blue, SeatKind.Human, AiDifficulty.Standard),
                 new Seat(new(2), "Second", PlayerColor.Red, SeatKind.Human, AiDifficulty.Standard)], new(1), VerificationMode.Manual), DeterministicRandom.SeedFrom(91), token);
         await using var server = new CompanionServer(new CoordinatorCompanionBridge(() => game));
-        using var key = RSA.Create(2048);
-        var request = new CertificateRequest("CN=Golden Ticket transport test", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        var names = new SubjectAlternativeNameBuilder(); names.AddIpAddress(IPAddress.Loopback); request.CertificateExtensions.Add(names.Build());
-        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
-        using var generated = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddHours(1));
-        using var certificate = X509CertificateLoader.LoadPkcs12(generated.Export(X509ContentType.Pfx, "test-only"), "test-only", X509KeyStorageFlags.Exportable);
         var builder = WebApplication.CreateBuilder(); builder.Logging.ClearProviders();
         builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
-        builder.WebHost.ConfigureKestrel(k => { k.Limits.MaxRequestBodySize = 16384; k.Listen(IPAddress.Loopback, 0, o => o.UseHttps(certificate)); });
+        builder.WebHost.ConfigureKestrel(k => { k.Limits.MaxRequestBodySize = 16384; k.Listen(IPAddress.Loopback, 0); });
         await using var app = builder.Build();
         string[] origins = [];
         app.Use(async (context, next) =>
@@ -54,31 +45,26 @@ public class CompanionHostTransportTests
         await app.StartAsync(token);
         var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single(); origins = [address];
         using var handler = new HttpClientHandler { CookieContainer = new() };
-        handler.ServerCertificateCustomValidationCallback = (_, presented, _, errors) =>
-        {
-            if (presented is null || errors.HasFlag(SslPolicyErrors.RemoteCertificateNameMismatch)) return false;
-            using var chain = new X509Chain(); chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-            chain.ChainPolicy.CustomTrustStore.Add(certificate); chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-            chain.ChainPolicy.DisableCertificateDownloads = true;
-            return chain.Build(presented);
-        };
         using var client = new HttpClient(handler) { BaseAddress = new Uri(address), Timeout = TimeSpan.FromSeconds(10) };
         var tab = Guid.NewGuid().ToString("n"); client.DefaultRequestHeaders.Add("X-GoldenTicket-Tab", tab); client.DefaultRequestHeaders.Add("Origin", address);
         var shell = await client.GetAsync("/companion/", token); Assert.True(shell.IsSuccessStatusCode);
         Assert.Contains("Golden Ticket", await shell.Content.ReadAsStringAsync(token));
-        foreach (var asset in new[] { "app.js", "app.css", "manifest.webmanifest", "sw.js", "icon.svg", "icon-192.png", "icon-512.png" })
+        foreach (var asset in new[] { "app.js", "app.css", "icon.svg" })
             Assert.True((await client.GetAsync("/companion/" + asset, token)).IsSuccessStatusCode, asset);
         server.NewPairingCode();
         var pairing = await client.PostAsJsonAsync("/api/pair", new { code = server.Authority.PairingCode, tab, label = "Transport fixture" }, token);
         Assert.True(pairing.IsSuccessStatusCode);
         var cookie = string.Join(";", pairing.Headers.GetValues("Set-Cookie"));
-        Assert.Contains("secure", cookie); Assert.Contains("httponly", cookie); Assert.Contains("samesite=strict", cookie);
+        Assert.Contains("GoldenTicketQuickPlayController=", cookie);
+        Assert.DoesNotContain("secure", cookie);
+        Assert.DoesNotContain("__Host-", cookie);
+        Assert.Contains("httponly", cookie); Assert.Contains("samesite=strict", cookie);
         Assert.Contains("no-store", pairing.Headers.CacheControl!.ToString());
         var status = (await client.GetFromJsonAsync<JsonElement>("/api/session", token));
         Assert.False(status.GetProperty("paired").GetBoolean()); Assert.True(status.GetProperty("pending").GetBoolean());
         Assert.True(server.ApprovePendingController());
         status = await client.GetFromJsonAsync<JsonElement>("/api/session", token);
-        Assert.Equal("3", status.GetProperty("assetsVersion").GetString());
+        Assert.Equal("5", status.GetProperty("assetsVersion").GetString());
         var csrf = status.GetProperty("csrf").GetString()!;
         var generation = status.GetProperty("handoffGeneration").GetInt64();
         var reveal = new { seat = 1, sessionId = game.SessionId.Value, version = game.Public.StateVersion, handoffGeneration = generation };
@@ -103,4 +89,5 @@ public class CompanionHostTransportTests
         Assert.Empty(await game.CheckInvariantsAsync(token));
         await app.StopAsync(token);
     }
+
 }

@@ -3,30 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#702c38">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Golden Ticket">
+  <meta name="theme-color" content="#14232e">
   <title>Golden Ticket</title>
-  <link rel="manifest" href="/companion/manifest.webmanifest">
   <link rel="icon" href="/companion/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/companion/icon-192.png">
   <link rel="stylesheet" href="/companion/app.css">
   <script src="/companion/app.js" defer></script>
 </head>
 <body>
-  <header><span class="ticket-mark" aria-hidden="true">GT</span><div><p class="eyebrow">YOUR PRIVATE CARRIAGE</p><h1>Golden Ticket</h1></div><button id="hide" class="hide-button" type="button">Hide</button></header>
+  <header><span class="ticket-mark" aria-hidden="true">GT</span><div><p class="eyebrow">YOUR PRIVATE CARRIAGE</p><h1>Golden Ticket</h1></div><button id="hide" class="hide-button" type="button" hidden>Hide</button></header>
   <main>
     <p id="connection" role="status" class="connection">Connecting to your laptop…</p>
     <p id="notice" role="status" class="notice"></p>
     <section id="connect" class="panel">
-      <p class="eyebrow">WELCOME ABOARD</p><h2>Your journey starts here</h2>
-      <p>The game lives on the Windows laptop. This device shows one human player's cards at a time. Stay on the same private network.</p>
-      <p id="shell-status">Preparing the offline app shell…</p>
-      <div id="install-help"><p>For a home-screen app: on iPhone/iPad use Safari → Share → Add to Home Screen. On Android use the browser menu → Install app or Add to Home screen. Launch it there before pairing. An offline shortcut or this browser also works.</p><button id="install" hidden type="button">Install app</button><button id="browser-mode" type="button" class="secondary">Continue in this browser</button></div>
+      <p class="eyebrow">QUICK PLAY · NO INSTALL</p><h2>Your seat is waiting</h2>
+      <p id="connect-intro">Enter the code shown on the laptop to join your game.</p>
       <form id="pair-form" hidden>
-        <label for="device-label">Device name</label><input id="device-label" maxlength="64" autocomplete="off" value="Shared phone">
         <label for="pair-code">Code shown on the laptop</label><input id="pair-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="000000" required>
-        <button id="pair-button" type="submit">Request connection</button>
+        <button id="pair-button" type="submit">Join game <span aria-hidden="true">→</span></button>
+        <details class="device-options"><summary>Name this device</summary><label for="device-label">Device name</label><input id="device-label" maxlength="64" autocomplete="off" value="Shared phone"></details>
       </form>
       <p id="pair-status" role="status"></p>
     </section>
@@ -38,11 +32,10 @@
     </section>
     <section id="result" class="panel result-panel" hidden aria-labelledby="result-title">
       <p class="eyebrow">A JOURNEY TO REMEMBER</p><h2 id="result-title">The final standings</h2>
-      <p>Your table's results, sent from the laptop. Share the image or save it to keep.</p>
+      <p>Your table's results, sent from the laptop. Save the image to keep or share.</p>
       <p id="result-status" role="status">Receiving the image…</p>
       <img id="result-preview" class="result-preview" alt="Final standings with the game board, player scores and turn times" hidden>
       <div class="actions result-actions">
-        <button id="result-share" type="button" hidden>Share image</button>
         <a id="result-save" class="save-image" download="golden-ticket-final-standings.png" target="_blank" rel="noopener" hidden>Save image</a>
         <button id="result-retry" class="secondary" type="button" hidden>Try again</button>
       </div>

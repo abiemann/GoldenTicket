@@ -137,13 +137,13 @@ public class CompanionHostTests
         Assert.Null(authority.RequestPair(authority.PairingCode, new string('a', 32), label));
     }
     [Theory]
-    [InlineData("192.168.20.7", "192.168.20.2:8443", "https://192.168.20.2:8443", true, 200)]
-    [InlineData("192.168.21.7", "192.168.20.2:8443", "https://192.168.20.2:8443", true, 403)]
-    [InlineData("8.8.8.8", "192.168.20.2:8443", "https://192.168.20.2:8443", true, 403)]
-    [InlineData("192.168.20.7", "attacker.example", "https://192.168.20.2:8443", true, 421)]
-    [InlineData("192.168.20.7", "192.168.20.2:8443", "https://evil.example", true, 403)]
-    [InlineData("192.168.20.7", "192.168.20.2:8443", "", true, 403)]
-    [InlineData("127.0.0.1", "192.168.20.2:8443", "https://192.168.20.2:8443", false, 403)]
+    [InlineData("192.168.20.7", "192.168.20.2:8080", "http://192.168.20.2:8080", true, 200)]
+    [InlineData("192.168.21.7", "192.168.20.2:8080", "http://192.168.20.2:8080", true, 403)]
+    [InlineData("8.8.8.8", "192.168.20.2:8080", "http://192.168.20.2:8080", true, 403)]
+    [InlineData("192.168.20.7", "attacker.example", "http://192.168.20.2:8080", true, 421)]
+    [InlineData("192.168.20.7", "192.168.20.2:8080", "http://evil.example", true, 403)]
+    [InlineData("192.168.20.7", "192.168.20.2:8080", "", true, 403)]
+    [InlineData("127.0.0.1", "192.168.20.2:8080", "http://192.168.20.2:8080", false, 403)]
     public void HostOriginPrivateProfileAndSubnetAreRequired(string peer, string host, string origin, bool isPrivate, int expected)
     {
         var context = new DefaultHttpContext(); context.Connection.RemoteIpAddress = IPAddress.Parse(peer);
@@ -151,7 +151,7 @@ public class CompanionHostTests
         context.Request.Headers.Origin = origin;
         Assert.Equal(expected, CompanionServer.RequestAllowed(context,
             new LanInterface("test", "test", IPAddress.Parse("192.168.20.2"), 24, Guid.NewGuid()),
-            ["https://192.168.20.2:8443"], () => isPrivate));
+            ["http://192.168.20.2:8080"], () => isPrivate));
     }
     private static Task<GameCoordinator> CreateGame(bool secondAi = false) => GameCoordinator.CreateAsync(
         new GameRules(TestManifest.Manifest, TestManifest.Catalog), new InMemorySessionStore(),

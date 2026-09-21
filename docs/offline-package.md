@@ -5,7 +5,7 @@ workflow is [Visual Studio and GitHub CI](build-and-ci.md); routine personal ZIP
 requested, and CI does not invoke this packaging script.
 
 GoldenTicket's packaging script prepares a self-contained Windows 11 x64 ZIP. It includes the
-application, local companion PWA assets, board data, .NET/WPF/ASP.NET runtimes, documentation,
+application, local companion browser assets, board data, .NET/WPF/ASP.NET runtimes, documentation,
 dependency notices, source provenance, and SHA256 checksums. Players extract the complete
 `GoldenTicket` folder and run `GoldenTicket.exe`; installing .NET or paying for a service is not
 part of that workflow.
@@ -101,7 +101,7 @@ Before archiving, the builder runs `GoldenTicket.exe --check-package <new-report
 or saved game. It checks that CoreCLR is loaded from the package, validates the shipped board data,
 renders the WPF theme, executes native SQLite in memory, encodes/decodes a synthetic PNG through
 Windows and WPF, constructs the ASP.NET host without
-listening, and checks PWA assets. Existing report files are never overwritten. A failed component
+listening, and checks bundled browser assets. Existing report files are never overwritten. A failed component
 or framework-dependent runtime blocks packaging. These developer-machine checks supplement the
 clean-machine/device acceptance table below.
 
@@ -120,19 +120,19 @@ not a completed license audit. Existing project notices, if present, are retaine
    beside the executable. Run `GoldenTicket.exe` from the extracted directory.
 3. The portable application uses `%LOCALAPPDATA%\GoldenTicket` for this user's state. Extracting
    a newer package beside the old one does not migrate saves to another account or delete them.
-   Current game and board-photo payloads are plaintext with integrity checks; companion TLS private
-   keys remain DPAPI-protected and tied to the Windows account/machine. Preserve each saved game's
+   Current game and board-photo payloads are plaintext with integrity checks. Preserve each saved game's
    matching board-photo attachment: completed saves require it, and reload validates it before play.
 4. Windows may show its normal unsigned-application or camera-permission prompts. The package
    does not disable those protections. A signed installer is still outstanding.
 5. For the companion, follow [phone setup](phone-setup.md). Laptop-only play does not require
    administrator rights. Authorizing the scoped Windows firewall rule or changing a managed
    network profile can require additional Windows permissions; the package does not bypass them.
-   The phone must trust this laptop's local CA and connect over the chosen trusted Private LAN.
+   Quick play connects over unencrypted HTTP on the chosen trusted Private LAN. PRACTICAL
+   uses the laptop and needs neither a phone nor networking.
 
-The PWA is served by the laptop. Disconnecting internet access is supported; switching off the
-laptop host or losing the LAN disconnects live companion play. Cached UI alone is not a running
-game server. The current implementation and physical-verification limits are recorded in
+The browser game is served by the laptop. Disconnecting Internet access is supported; switching
+off the laptop host or losing the LAN disconnects Quick play. The phone has no independent game
+state or offline app cache. The current implementation and physical-verification limits are recorded in
 [README](../README.md), [TODO](../TODO.md), and [DESIGN](../DESIGN.md).
 
 ## Acceptance before distributing a particular build
@@ -148,7 +148,8 @@ acceptance tasks, not claims made by successful publication:
 | Complete simulated/manual match and final scoring | No missing data, dependency, native DLL, or runtime errors. |
 | Physical camera permission, stop/reconnect and scene change | Preview/crop controls work and stale frames cannot produce a saved reference. |
 | Photo attachment, application restart and board rebuild | Stored reference survives with the correct checkpoint; digital state and explicit whole-board confirmation remain authoritative. |
-| Android/iOS trusted LAN and local CA setup | HTTPS pairing and private-seat workflow work with internet disconnected; lost connectivity covers private information and does not commit queued actions. |
+| Android/iOS trusted LAN joining | HTTP Quick play pairing, private-seat controls, downloads and reconnect work with Internet disconnected; loss of connection covers cards and does not commit queued actions. |
+| PRACTICAL with networking unavailable | Multiple humans complete private laptop turns and deliberate handoffs; no phone setup is required. |
 | Separate new package folder and rollback to previous folder | Existing saves remain intact; incompatible save formats stop with an actionable message. |
 | Dependency notices and artifact hashes | Inventory matches shipped versions, notice-text gaps are resolved before wider distribution, and extracted payload hashes match. |
 

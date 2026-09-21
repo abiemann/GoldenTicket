@@ -101,6 +101,9 @@
                                     <DataTrigger Binding="{Binding DataContext.IsSingleHumanGame, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
                                         <Setter Property="Content" Value="Back to table" />
                                     </DataTrigger>
+                                    <DataTrigger Binding="{Binding DataContext.Connection.UsePractical, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                        <Setter Property="Content" Value="Hide cards · back to table" />
+                                    </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </Button.Style>

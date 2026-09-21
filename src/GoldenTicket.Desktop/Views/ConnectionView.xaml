@@ -1,26 +1,38 @@
 <UserControl x:Class="GoldenTicket.Desktop.Views.ConnectionView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:GoldenTicket.Desktop">
+             xmlns:local="clr-namespace:GoldenTicket.Desktop"
+             xmlns:views="clr-namespace:GoldenTicket.Desktop.Views">
     <UserControl.Resources>
         <local:NullToVisibilityConverter x:Key="NullToVisibility" />
+        <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
     </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24">
         <StackPanel MaxWidth="1120" HorizontalAlignment="Left">
-            <TextBlock Text="Connect your phone or tablet" Style="{StaticResource Display}" />
-            <TextBlock Text="Keep both devices on the same trusted local network. All game data stays on this laptop; no internet connection or account is needed to play."
+            <TextBlock Text="How will you play?" Style="{StaticResource Display}" />
+            <TextBlock Text="Pass one phone around with Quick play, or choose PRACTICAL to take turns on this laptop."
                        Margin="0,0,0,16" />
+            <Border Background="#FF192733" CornerRadius="12" Padding="16" Margin="0,0,0,16">
+                <views:ConnectionModePicker />
+            </Border>
+            <Border Style="{StaticResource Card}" Visibility="{Binding UsePractical, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel>
+                    <TextBlock Text="Everyone at the same table" Style="{StaticResource Heading}" />
+                    <TextBlock Text="When it's your turn, show your cards on the laptop. Everyone else looks away. Your cards hide before the next player's turn. No phone or network setup needed." TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+            <StackPanel Visibility="{Binding UseQuickPlay, Converter={StaticResource BoolToVisibility}}">
             <TextBlock Text="{Binding Problem}" Foreground="{StaticResource Action.Primary}" FontWeight="SemiBold" Margin="0,0,0,12" />
             <Border Style="{StaticResource Card}">
                 <StackPanel>
                     <TextBlock Text="1 · Start the local host" Style="{StaticResource Heading}" />
                     <ComboBox ItemsSource="{Binding Interfaces}" SelectedItem="{Binding SelectedInterface}" MinWidth="460" HorizontalAlignment="Left"
+                              IsEnabled="{Binding CanChooseNetwork}"
                               AutomationProperties.Name="Private network connection" Margin="0,0,0,12" />
                     <WrapPanel Margin="0,0,0,12">
                         <Button Content="Refresh networks" Command="{Binding RefreshCommand}" Style="{StaticResource SecondaryButton}" />
                         <Button Content="Windows network settings" Command="{Binding OpenNetworkSettingsCommand}" Style="{StaticResource SecondaryButton}" />
                     </WrapPanel>
-                    <CheckBox Content="Temporarily share the public certificate for first-time phone setup" IsChecked="{Binding ShareCertificate}" Margin="0,0,0,12" />
                     <WrapPanel>
                         <Button Content="Start phone hosting" Command="{Binding StartCommand}" Style="{StaticResource PrimaryButton}" />
                         <Button Content="Stop hosting" Command="{Binding StopCommand}" Style="{StaticResource SecondaryButton}" />
@@ -32,32 +44,23 @@
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                    <TextBlock Grid.ColumnSpan="2" Text="2 · Trust this laptop and open the app" Style="{StaticResource Heading}" />
+                    <TextBlock Grid.ColumnSpan="2" Text="{Binding ConnectionHeading}" Style="{StaticResource Heading}" />
                     <Image Grid.Row="1" Source="{Binding ConnectionQr}" Width="246" Height="246" RenderOptions.BitmapScalingMode="NearestNeighbor" Margin="0,0,24,0"
                            VerticalAlignment="Top" Visibility="{Binding ConnectionQr, Converter={StaticResource NullToVisibility}}"
                            AutomationProperties.Name="Connection QR code containing only the local address" />
                     <StackPanel Grid.Row="1" Grid.Column="1">
-                        <TextBlock Text="Scan the code with the phone camera. On first setup, install this laptop's CA certificate and compare its fingerprint below. Android may warn about the HTTP download: use a verified USB transfer if needed. Never bypass an HTTPS connection error." />
-                        <TextBox Text="{Binding Address, Mode=OneWay}" IsReadOnly="True" Margin="0,12,0,6" AutomationProperties.Name="Secure phone address" />
-                        <TextBlock Text="If the .local name does not resolve, use this IP fallback. A changed laptop IP creates a new app origin and may require installing and pairing again." Style="{StaticResource Caption}" />
-                        <TextBox Text="{Binding IpAddress, Mode=OneWay}" IsReadOnly="True" Margin="0,6,0,6" AutomationProperties.Name="Phone IP fallback address" />
-                        <TextBlock Text="{Binding BootstrapAddress}" Style="{StaticResource Caption}" />
+                        <TextBlock Text="{Binding ScanInstruction}" />
+                        <TextBox Text="{Binding Address, Mode=OneWay}" IsReadOnly="True" Margin="0,12,0,6" AutomationProperties.Name="Phone game address" />
                         <WrapPanel Margin="0,10,0,0">
                             <Button Content="Copy app address" Command="{Binding CopyAddressCommand}" Style="{StaticResource SecondaryButton}" />
-                            <Button Content="Close certificate sharing" Command="{Binding CloseCertificateSharingCommand}" Style="{StaticResource SecondaryButton}" />
                         </WrapPanel>
-                        <TextBlock Text="SHA-256 certificate fingerprint" FontWeight="SemiBold" Margin="0,12,0,4" />
-                        <TextBox Text="{Binding Fingerprint, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" />
-                        <TextBlock Text="Public certificate file (never copy a private key)" Style="{StaticResource Caption}" Margin="0,8,0,0" />
-                        <TextBox Text="{Binding PublicCertificatePath, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" />
-                        <TextBlock Text="Android: Security &amp; privacy → More security &amp; privacy → Encryption &amp; credentials → Install a certificate → CA certificate. iPhone/iPad: install the profile, then enable full trust in General → About → Certificate Trust Settings. Remove this dedicated CA when you stop using this laptop." Style="{StaticResource Caption}" Margin="0,8,0,0" />
                     </StackPanel>
                 </Grid>
             </Border>
             <Border Style="{StaticResource Card}">
                 <StackPanel>
-                    <TextBlock Text="3 · Install, pair, and approve" Style="{StaticResource Heading}" />
-                    <TextBlock Text="Use Add to Home Screen on the phone, open it there, then enter this code. If installation is unavailable offline, use the browser option shown on the phone. Return to Game table after approving." />
+                    <TextBlock Text="Join the game" Style="{StaticResource Heading}" />
+                    <TextBlock Text="{Binding PairInstruction}" />
                     <TextBlock Text="{Binding PairingCode}" FontSize="30" FontWeight="Bold" Margin="0,10,0,10" />
                     <Button Content="New pairing code" Command="{Binding NewCodeCommand}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" />
                     <TextBlock Text="{Binding PendingIdentity}" Margin="0,14,0,10" FontWeight="SemiBold" />
@@ -75,6 +78,7 @@
                     <Button Content="Copy scoped firewall command" Command="{Binding CopyFirewallCommandCommand}" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" />
                 </StackPanel>
             </Expander>
+            </StackPanel>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

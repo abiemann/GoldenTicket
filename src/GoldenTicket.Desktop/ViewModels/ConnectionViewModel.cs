@@ -39,18 +39,42 @@ public sealed partial class ConnectionViewModel : ObservableObject, IAsyncDispos
     [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(StartCommand))]
     private LanInterface? _selectedInterface;
     [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(StartCommand))]
+    [NotifyCanExecuteChangedFor(nameof(StopCommand))]
+    [NotifyPropertyChangedFor(nameof(CanChooseMode))]
+    [NotifyPropertyChangedFor(nameof(CanChooseNetwork))]
     private bool _isRunning;
     [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(StartCommand))]
+    [NotifyCanExecuteChangedFor(nameof(StopCommand))]
+    [NotifyPropertyChangedFor(nameof(CanChooseMode))]
+    [NotifyPropertyChangedFor(nameof(CanChooseNetwork))]
     private bool _isBusy;
-    [ObservableProperty] private bool _shareCertificate = true;
+    private bool _usePractical;
+    public bool UsePractical
+    {
+        get => _usePractical;
+        set
+        {
+            if (!CanChooseMode || !SetProperty(ref _usePractical, value)) return;
+            OnPropertyChanged(nameof(UseQuickPlay));
+            StartCommand.NotifyCanExecuteChanged();
+            if (value)
+            {
+                _server.RevokeController();
+                if (IsRunning) _ = StopAsync();
+            }
+            else RefreshInterfaces();
+        }
+    }
+    public bool UseQuickPlay { get => !UsePractical; set { if (value) UsePractical = false; } }
+    public bool CanChooseMode => !IsBusy;
+    public bool CanChooseNetwork => !IsRunning && !IsBusy;
+    public string ConnectionHeading => "Scan QR → join → play";
+    public string ScanInstruction => "Scan the QR with your phone camera. The game opens in your browser. No installation or certificate needed.";
+    public string PairInstruction => "Enter this code on the phone, then approve its connection below.";
     [ObservableProperty] private string _status = "Phone hosting is off. Choose a trusted Private network to begin.";
     [ObservableProperty] private string? _problem;
     [ObservableProperty] private string _address = "";
-    [ObservableProperty] private string _bootstrapAddress = "";
-    [ObservableProperty] private string _ipAddress = "";
     [ObservableProperty] private string _pairingCode = "";
-    [ObservableProperty] private string _fingerprint = "";
-    [ObservableProperty] private string _publicCertificatePath = "";
     [ObservableProperty] private string _pendingIdentity = "No phone is waiting for approval.";
     [ObservableProperty] private string _controller = "No phone connected.";
     [ObservableProperty] private bool _hasApprovedController;
@@ -61,7 +85,7 @@ public sealed partial class ConnectionViewModel : ObservableObject, IAsyncDispos
 
     public void RefreshInterfaces()
     {
-        if (IsRunning) return;
+        if (IsRunning || UsePractical) return;
         try
         {
             var previous = SelectedInterface?.Address;
@@ -79,7 +103,7 @@ public sealed partial class ConnectionViewModel : ObservableObject, IAsyncDispos
     }
 
     [RelayCommand] private void Refresh() => RefreshInterfaces();
-    private bool CanStart() => !_disposed && !IsRunning && !IsBusy && SelectedInterface is not null;
+    private bool CanStart() => !_disposed && UseQuickPlay && !IsRunning && !IsBusy && SelectedInterface is not null;
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartAsync()
     {
@@ -88,12 +112,12 @@ public sealed partial class ConnectionViewModel : ObservableObject, IAsyncDispos
         Problem = null;
         try
         {
-            await _server.StartAsync(new CompanionHostOptions(selected.Address, EnableBootstrap: ShareCertificate));
+            await _server.StartAsync(new CompanionHostOptions(selected.Address));
             FirewallCommand = BuildFirewallCommand(selected, Environment.ProcessPath ?? "GoldenTicket.exe");
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException or System.Net.Sockets.SocketException)
         {
-            Problem = "Phone hosting could not start. Check the Private network profile, port availability, and local certificate files. " + ex.Message;
+            Problem = "Phone hosting could not start. Check the Private network profile and port availability. " + ex.Message;
         }
         catch (Exception)
         {
@@ -102,7 +126,8 @@ public sealed partial class ConnectionViewModel : ObservableObject, IAsyncDispos
         finally { IsBusy = false; UpdateStatus(); }
     }
 
-    [RelayCommand]
+    private bool CanStop() => IsRunning && !IsBusy;
+    [RelayCommand(CanExecute = nameof(CanStop))]
     private async Task StopAsync()
     {
         if (IsBusy) return;
@@ -121,12 +146,6 @@ public sealed partial class ConnectionViewModel : ObservableObject, IAsyncDispos
         UpdateStatus();
     }
     [RelayCommand] private void Revoke() { _server.RevokeController(); UpdateStatus(); }
-    [RelayCommand] private async Task CloseCertificateSharingAsync()
-    {
-        try { await _server.CloseBootstrapAsync(); }
-        catch (Exception) { Problem = "Certificate sharing could not close. Stop phone hosting and try again."; }
-        UpdateStatus();
-    }
     [RelayCommand] private void OpenNetworkSettings()
     {
         try { Process.Start(new ProcessStartInfo("ms-settings:network-status") { UseShellExecute = true }); }
@@ -134,7 +153,6 @@ public sealed partial class ConnectionViewModel : ObservableObject, IAsyncDispos
     }
     [RelayCommand] private void CopyAddress() => CopyText(Address);
     [RelayCommand] private void CopyFirewallCommand() => CopyText(FirewallCommand);
-    [RelayCommand] private void CopyCertificatePath() => CopyText(PublicCertificatePath);
     private void CopyText(string value)
     {
         try { if (!string.IsNullOrWhiteSpace(value)) Clipboard.SetText(value); }
@@ -158,18 +176,14 @@ public sealed partial class ConnectionViewModel : ObservableObject, IAsyncDispos
         IsRunning = state.Running;
         Status = state.Message;
         Address = state.Address ?? "";
-        BootstrapAddress = state.BootstrapAddress ?? "";
-        IpAddress = state.IpAddress ?? "";
         PairingCode = state.PairingCode ?? "";
-        Fingerprint = state.CertificateFingerprint ?? "";
-        PublicCertificatePath = state.PublicCertificatePath ?? "";
         HasPendingApproval = state.PendingApproval is not null;
         PendingIdentity = state.PendingApproval is { } pending
             ? $"{pending.DeviceLabel} · identity {pending.Identity}. Compare this with the phone before approving."
             : "No phone is waiting for approval.";
         Controller = state.ControllerLabel is { } label ? $"Controller: {label}" : "No phone connected.";
         HasApprovedController = state.Running && state.ControllerLabel is not null;
-        var landing = state.BootstrapAddress ?? state.Address;
+        var landing = state.ConnectionAddress;
         if (_qrAddress != landing)
         {
             _qrAddress = landing;
@@ -199,7 +213,7 @@ public sealed partial class ConnectionViewModel : ObservableObject, IAsyncDispos
     {
         static string Quote(string text) => "'" + text.Replace("'", "''", StringComparison.Ordinal) + "'";
         return "New-NetFirewallRule -DisplayName 'GoldenTicket private LAN' -Direction Inbound -Action Allow " +
-            "-Profile Private -Protocol TCP -LocalPort 8080,8443 -LocalAddress " + selected.Address +
+            "-Profile Private -Protocol TCP -LocalPort 8080 -LocalAddress " + selected.Address +
             " -RemoteAddress LocalSubnet -InterfaceAlias " + Quote(selected.Name) + " -Program " + Quote(program);
     }
 

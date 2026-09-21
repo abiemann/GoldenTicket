@@ -138,7 +138,8 @@ These six features remain unfinished. The milestone tasks below define their imp
 validation requirements; mark each feature complete only after those checks pass.
 
 - [ ] **Camera tracking and recovery** — board recognition, move verification, and automatic recovery after camera movement (M3–M5).
-- [ ] **Phone/tablet PWA** — private pass-and-hide on Android and iOS/iPadOS, with laptop-hosted data
+- [ ] **Phone/tablet companion** — recommended browser Quick play and PRACTICAL laptop sharing,
+  with private pass-and-hide on Android and iOS/iPadOS and laptop-hosted data
   and QR-assisted initial synchronization entirely within the LAN (M0/M2). No iPhone or iPad is
   available, so **iOS cannot be claimed as supported at release**; see
   [companion device evidence](docs/companion-device-evidence.md) for the honest wording and the
@@ -167,18 +168,27 @@ earlier; perform final release checks and package refresh after the narrative fe
 Development now uses Visual Studio and GitHub [Windows CI](.github/workflows/windows-ci.yml).
 Do not generate a personal app ZIP as a routine handoff. CI builds/tests and keeps diagnostic
 evidence only; future installer/distribution work remains a separate requirement. Installed
-Windows/PWA gameplay must operate on the LAN without Internet access; see [the build/runtime contract](docs/build-and-ci.md).
+Quick play must operate on the LAN without Internet access; PRACTICAL needs no network; see [the build/runtime contract](docs/build-and-ci.md).
 
 ## Audit fixes implemented
 
-- [x] Harden the connectivity spike's network boundary, request limits, session lifetime and local
-  certificate handling; keep the full game companion and real-device evidence outstanding.
+- [x] Make **Quick play** the recommended default: direct HTTP game QR, no app or certificate
+  installation, with the same card/ticket actions and handoff controls.
+- [x] Replace the second connection option with **PRACTICAL**: private laptop turns while other
+  players look away, without phone-host or network setup. Remove the former PWA, certificate,
+  service-worker and connectivity-experiment implementation.
+- [ ] Validate Quick play on real Android/iOS devices: QR scanning, joining, handoff, reload,
+  focus loss, WAN-disconnected play and image saving. Verify PRACTICAL through a complete
+  multi-human laptop game with networking absent. Automated tests are not physical acceptance.
+
 - [x] Compare complete checkpoint readback data, include supply policies in new logical hashes,
   require a fresh rebuild attestation after restart, and permit safe readback retry.
 - [x] Keep packed/rebuilding games behind the privacy gate, scope operator acknowledgements to the
   current decision, and continue eligible AI turns after resolving a pause or rebuild.
-- [x] Bound browser installation/network checks, prevent false reload/cache success reports, and
-  constrain the service worker to its own explicitly allowed shell assets.
+- [x] Bound browser network checks, clear private data on page backgrounding/disconnect, and keep the
+  browser dependent on the laptop for authoritative game state.
+- [x] Restart the browser's 30-second idle timer on destination check/uncheck, preserving selections;
+  keep the hand visible through ordinary focus changes and touches outside its controls.
 - [x] Confine save paths and reject linked/unsupported paths before filesystem operations.
 - [x] Check snapshot/journal/version integrity and prevent competing writers for supported saves.
 - [x] Keep unreadable saves visible, sanitize recovery errors, and block gameplay after uncertain writes.
@@ -196,31 +206,32 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
 - [x] **GitHub CI configuration.** Windows build, locked .NET/npm restores, .NET/JavaScript tests,
   simulation and WPF/browser UI checks run for pushes to `main`, PRs and manual dispatch. Actions
   have read-only repository access; application archives and releases are not generated.
-- [x] **LAN-only runtime regression gates.** Validate bundled browser resources and local certificates;
+- [x] **LAN-only runtime regression gates.** Validate bundled browser resources and the HTTP network boundary;
   exercise phone gameplay with Internet-unavailable browser state and block external browser origins.
   Physical WAN-disconnected phone acceptance remains outstanding.
-- [x] **Embedded companion first slice.** Local HTTPS host, controller approval/CSRF/private grants,
-  shared human card/ticket actions, public-only shell cache and privacy/reconnect handling are
-  integrated into the Windows shell. Actual device gates and the remaining protocol requirements
-  below are still open.
+- [x] **Embedded companion first slice.** HTTP Quick play, laptop approval/CSRF/private grants,
+  shared human card/ticket actions and privacy/reconnect handling are integrated into Windows.
+  Actual-device gates and remaining protocol requirements below are open.
+
 - [x] **Single-human laptop play.** One human's card and ticket choices open directly on the laptop,
   with no **Back to table** action or plain-Escape dismissal during the unresolved opening choice.
   Later turns keep the public table visible; clicking T or D shows mini cards in place, while
   **Shift+Escape** exposes the technical private controls for taking a turn. There is no
   **Connect phone** step. The active or resumed roster determines this behavior. With multiple
-  humans, keep the laptop on the public table and present setup for one shared companion phone;
+  humans, choose Quick play for a shared phone or PRACTICAL for private laptop handoffs. Phone
   hosting starts only after an explicit choice of Private LAN connection. Board verification and
   AI secrecy remain in force.
-- [x] **Multi-human phone setup on the table.** Show setup over the public board for games with
-  more than one human. After an explicit local-host start, display its actual connection QR and
-  a separate pairing code; keep the setup available from the game table.
-- [ ] **Multi-human phone handoff acceptance.** Complete and verify installation, pairing,
-  private cards, and pass-and-hide on a real shared phone before claiming the PWA workflow is finished.
-- [x] **Final standings to the shared phone.** Multi-human games can send an image of the board
-  and all standings to the approved PWA for preview, file sharing or download. Exports contain only
-  public final results and stay outside the shell cache; session/version and controller checks apply.
-- [ ] **Standings sharing on real phones.** Verify Android and iOS installation, native share sheets,
-  image saving and return from the share sheet using the laptop-hosted PWA.
+- [x] **Multi-human controls on the table.** Present Quick play first and PRACTICAL second.
+  Quick play shows an actual connection QR/code after explicit host startup; PRACTICAL stays on
+  the laptop and has no network setup requirement.
+- [ ] **Multi-human acceptance.** Verify Quick play QR joining, pairing, private cards and handoff
+  on a real shared phone, and PRACTICAL laptop handoffs without networking.
+- [x] **Final standings to the shared phone.** Multi-human games can send the board and standings
+  image to an approved Quick play browser for preview and saving. Exports contain only public
+  final results; session/version and controller checks apply.
+- [ ] **Standings saving on real phones.** Verify Android/iOS PNG downloads, readability and
+  subsequent sharing through Files/Photos, including return to the game.
+
 - [x] **Camera and photo foundation.** Windows video-only capture, selectable formats, manual
   four-corner crop and conservative scene-reference checks; optional plaintext, checksummed,
   operator-attested checkpoint photos with integrity/readback and stale-capture protection.
@@ -439,20 +450,14 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
 - [x] **First portable package built and checked.** Normal and cache-only offline builds passed;
   the published executable passed eight component checks and every archived payload hash matched.
   Source/artifact identities are in [package evidence](docs/evidence/offline-package-2026-09-12/README.md).
-- [ ] Replace companion snapshot polling with WSS/event-cursor synchronization; persist protected
+- [ ] Replace companion snapshot polling with WS event-cursor synchronization; persist a protected
   approved-device registry, implement reconnect/lease recovery without pairing after every reload,
-  and add hold-to-peek plus full accessibility/device acceptance. Current plain-JS client is a
+  and add hold-to-peek plus full accessibility/device acceptance. The plain-JS client remains a
   bundled implementation deviation from the planned TypeScript build.
-- [x] **Record first Pixel setup requirements.** Document the Windows Public-to-Private change,
-  Administrator/UAC requirement, scoped firewall rule, successful LAN bootstrap, and verified USB
-  certificate transfer in [phone setup](docs/phone-setup.md). Android certificate approval and the
-  remaining PWA acceptance checks are still pending.
-- [x] **M0/M2: guided connection setup first slice.** Detect the actual Windows network profile, explain a
-  Public-profile block, guide consent for a trusted-network change and scoped firewall access,
-  and verify each step. Handle Chrome's HTTP certificate-download warning with a verified local
-  transfer path; explain Android's CA confirmation and record the outcome without treating it as
-  successful HTTPS trust. Preserve laptop-only play if the user declines. The UI displays a scoped
-  firewall command and links Windows network settings; applying OS changes remains explicit.
+- [x] **M0/M2: guided connection setup first slice.** Detect the Windows network profile, explain a
+  Public-profile block, and show a scoped firewall command and the relevant Windows settings.
+  Applying OS changes stays explicit. PRACTICAL does not need these network steps.
+
 - [ ] **M0/M1: data and platform evidence.** Review every city connection, lane, color, train length,
   and all 30 tickets against the supported physical edition. Record reviewer/provenance. Supply
   measured route-cell geometry and board landmarks; retain the current unaudited status until done.
@@ -461,26 +466,16 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
   and holds for the match. The pass policy terminates: a full round of passes goes to final scoring.
   Documented in [docs/rules-policies.md](docs/rules-policies.md). Remaining: confirm each policy
   against an official clarification where one exists, rather than shipping them as house policy.
-- [x] **M0: connectivity spike built.** `tools/GoldenTicket.ConnectivitySpike` generates a
-  per-installation DPAPI-protected CA and a hostname/IP-matching leaf, serves a trusted same-origin
-  HTTPS host bound to a chosen private interface, advertises `gt-<id>.local` over mDNS with an IP
-  fallback, offers a closable plain-HTTP certificate bootstrap, and runs a single-use rate-limited
-  pairing round-trip. It draws a locally generated connection QR on the console and to an SVG file,
-  carrying only the landing address; the device page refuses to run inside an in-app browser and
-  hands off to Chrome or Safari, puts installation before pairing, and tells players not to tap
-  through a certificate warning. Verified laptop-side; **still needs the real-device runs** in
-  [docs/companion-device-evidence.md](docs/companion-device-evidence.md), and the QR has never been
-  scanned by a camera.
-- [ ] **M0/M2: companion completion.** Extend the embedded HTTPS host and game PWA with the remaining
-  WSS/recovery/registry protocol and accessibility requirements. Keep the implemented certificate,
-  pairing, grants, CSRF, idempotent commands, shell-only cache and QR behavior covered by regression
-  tests. Synchronize public data/snapshots directly from the local host after pairing and
-  handle changes during synchronization without losing events. Require no inputs or services outside
-  the LAN, including during first setup. Prove QR setup, local certificate trust, and initial sync
-  with WAN disconnected on real devices before claiming support. Android is testable throughout;
-  iOS/iPadOS depends on a single borrowed-device session, so build the M0 connectivity spike as a
-  standalone fifteen-minute checklist that a borrowed device can be taken through without the game
-  UI (docs/companion-device-evidence.md).
+- [x] **Retire the connectivity experiment.** Remove its certificate/PWA tool and tests after
+  moving production joining and request-boundary coverage to the embedded HTTP companion.
+  Earlier dated reports are historical, not current setup requirements.
+- [ ] **M0/M2: companion completion.** Extend HTTP hosting and the shared browser client with
+  remaining update/recovery/registry and accessibility requirements. Keep pairing, grants, CSRF,
+  idempotent commands and QR behaviour under regression tests. Prove initial synchronization,
+  private-hand controls, image saving and reconnect on real devices with the WAN disconnected.
+  Android is available throughout; iOS/iPadOS may be tested during a borrowed-device session.
+  Use [the device checklist](docs/companion-device-evidence.md) and record limitations honestly.
+
 - [ ] **M3: camera completion.** Validate the implemented WinRT acquisition, bounded frame ownership,
   camera choice, native-format fallback, preview, CPU/GPU preprocessing and manual crop against
   the real board. Evaluate the experimental empty-board detector. Add printable markers, board
@@ -554,14 +549,12 @@ Windows/PWA gameplay must operate on the LAN without Internet access; see [the b
 dotnet restore GoldenTicket.sln --locked-mode --configfile NuGet.config
 dotnet build GoldenTicket.sln --no-restore
 dotnet test GoldenTicket.sln --no-restore
-node --test tests/GoldenTicket.ConnectivitySpike.Tests/shell.test.cjs
+node --test tests/GoldenTicket.Domain.Tests/CompanionHostClient.test.cjs
 dotnet run --project tools/GoldenTicket.Simulator --no-build --no-restore -- verify-data
 dotnet run --project tools/GoldenTicket.Simulator --no-build --no-restore -- simulate --games 25 --seats 4 --seed 400
 dotnet list GoldenTicket.sln package --vulnerable --include-transitive --no-restore
 ```
 
 Game-save and photo persistence tests exercise plaintext payloads and integrity checks without
-DPAPI. Certificate-generation tests use an in-memory test key vault, so they also run without a
-Windows user profile. The separate live HTTPS transport test still needs Windows credentials.
-Former encrypted saved matches are unsupported and may be deleted. The running companion's local
-TLS private keys still use DPAPI and require the user profile.
+DPAPI. Companion transport checks use local HTTP and need no certificate or OS trust setup.
+Former encrypted saved matches are unsupported and may be deleted.

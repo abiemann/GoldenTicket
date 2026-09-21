@@ -38,6 +38,7 @@ public sealed partial class MainViewModel
     private async Task SendFinalStandingsToPhoneAsync()
     {
         if (!CanShareFinalStandings || _coordinator is not { } game) return;
+        Connection.UseQuickPlay = true;
         if (!Connection.IsRunning || !Connection.HasApprovedController)
         {
             FinalStandingsShareStatus = "Connect and approve the shared phone, then select Share to phone.";

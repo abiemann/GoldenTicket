@@ -208,7 +208,9 @@ public sealed partial class MainViewModel : ObservableObject
         && _coordinator.Public.TurnPhase != TurnPhase.RulesDecisionRequired;
 
     public string RevealPrompt => _revealable is { } seat
-        ? IsSingleHumanGame
+        ? Connection.UsePractical && CanConnectPhone
+            ? $"{seat.Name}, it's your turn. Everyone else, look away."
+            : IsSingleHumanGame
             ? $"{seat.Name}, your cards are shown on this laptop. Open your cards when you are ready."
             : $"Pass the laptop to {seat.Name}, then reveal their private view."
         : "No human seat needs the screen right now.";

@@ -30,7 +30,6 @@
     <ProjectReference Include="..\..\src\GoldenTicket.Persistence\GoldenTicket.Persistence.csproj" />
     <ProjectReference Include="..\..\tools\GoldenTicket.Simulator\GoldenTicket.Simulator.csproj" />
     <ProjectReference Include="..\..\src\GoldenTicket.Desktop\GoldenTicket.Desktop.csproj" />
-    <ProjectReference Include="..\..\tools\GoldenTicket.ConnectivitySpike\GoldenTicket.ConnectivitySpike.csproj" />
     <ProjectReference Include="..\..\src\GoldenTicket.CompanionHost\GoldenTicket.CompanionHost.csproj" />
     <ProjectReference Include="..\..\src\GoldenTicket.Vision\GoldenTicket.Vision.csproj" />
   </ItemGroup>

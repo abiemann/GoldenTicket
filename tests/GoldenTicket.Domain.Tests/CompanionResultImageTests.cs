@@ -208,7 +208,7 @@ public class CompanionResultImageTests
         {
             server.NewPairingCode();
             var pairing = server.Authority.RequestPair(server.Authority.PairingCode, Tab, "Standings fixture")!.Value;
-            client.DefaultRequestHeaders.Add("Cookie", "__Host-GoldenTicketController=" + pairing.Session);
+            client.DefaultRequestHeaders.Add("Cookie", "GoldenTicketQuickPlayController=" + pairing.Session);
             client.DefaultRequestHeaders.Add("X-GoldenTicket-Tab", Tab);
             if (approve) Assert.True(server.ApprovePendingController());
         }

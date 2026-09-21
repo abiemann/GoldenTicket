@@ -83,12 +83,38 @@ internal static partial class Program
             if (choiceToToggle.IsAggressive || choiceToToggle.Role != CharacterRole.Computer ||
                 !model.Game.SeatChoices[2].IsAggressive)
                 throw new InvalidOperationException("Accessible activation must toggle only the selected computer's style.");
-            model.Game.CycleSeat(choiceToToggle);
-            await Arrange(view, 1000, 620);
-            if (IsElementShown(button) || choiceToToggle.Difficulty != AiDifficulty.Standard)
-                throw new InvalidOperationException("Removing a computer must hide its badge and clear its aggressive style.");
+            var roleButton = Descendants<Button>(view).Single(candidate => candidate.Tag as string == "CharacterRole" &&
+                candidate.DataContext == choiceToToggle);
+            model.Game.ToggleAiStyle(choiceToToggle);
+            foreach (var expectedRole in new[] { CharacterRole.Unselected, CharacterRole.Human, CharacterRole.Computer })
+            {
+                double? opacityWhenRoleChanges = null;
+                void ObserveRoleChange(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+                {
+                    if (args.PropertyName == nameof(GameSeatChoice.IsComputer)) opacityWhenRoleChanges = button.Opacity;
+                }
+                choiceToToggle.PropertyChanged += ObserveRoleChange;
+                try
+                {
+                    roleButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                    if (SystemParameters.ClientAreaAnimation && (!model.Game.IsFaceFlipping || button.IsEnabled))
+                        throw new InvalidOperationException("The badge must not accept clicks while its portrait is changing.");
+                    var deadline = DateTime.UtcNow.AddSeconds(3);
+                    while (model.Game.IsFaceFlipping && DateTime.UtcNow < deadline) await Task.Delay(20);
+                    await Arrange(view, 1000, 620);
+                    if (SystemParameters.ClientAreaAnimation && opacityWhenRoleChanges != 0)
+                        throw new InvalidOperationException($"The badge must be transparent as the portrait becomes {expectedRole}; opacity was {opacityWhenRoleChanges}.");
+                    if (model.Game.IsFaceFlipping || choiceToToggle.Role != expectedRole ||
+                        IsElementShown(button) != choiceToToggle.IsComputer || button.Opacity != 1 || !button.IsEnabled ||
+                        button.HasAnimatedProperties || choiceToToggle.Difficulty != AiDifficulty.Standard ||
+                        !model.Game.SeatChoices[2].IsAggressive)
+                        throw new InvalidOperationException("Portrait changes must restore badge visibility and interaction without affecting other players.");
+                }
+                finally { choiceToToggle.PropertyChanged -= ObserveRoleChange; }
+            }
             Results.Add(new { screen = "computer-style-interaction", passed = true,
-                spin = SystemParameters.ClientAreaAnimation, accessibleActivation = true });
+                spin = SystemParameters.ClientAreaAnimation, badgeFade = SystemParameters.ClientAreaAnimation,
+                accessibleActivation = true });
         }
         finally { await model.DisposeToolsAsync(); }
     }

@@ -30,6 +30,13 @@ public sealed partial class MainViewModel
             () => System.Windows.Application.Current?.Dispatcher,
             BeginRemoteCommand, EndRemoteCommand, () => { if (CanCompanionControl) HideLaptopPrivateViewOnly(); }, RequireReload);
         Connection = new ConnectionViewModel(bridge);
+        Connection.PropertyChanged += ConnectionPresentationChanged;
+        PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is nameof(CanRevealPrivateSeat) or nameof(IsPrivateVisible) or
+                nameof(ShowMultiHumanPhoneSetup) or nameof(GameplayScreen) or nameof(CanConnectPhone))
+                OnPropertyChanged(nameof(ShowPracticalHandoff));
+        };
         CheckpointPhoto = new CheckpointPhotoViewModel(_checkpointPhotoStore, async token =>
         {
             var coordinator = _coordinator;
@@ -50,7 +57,7 @@ public sealed partial class MainViewModel
         }, Camera, ShowCameraCommand) { CaptureAllowed = false };
     }
 
-    private bool CanCompanionControl => CanConnectPhone && !_toolsDisposed && !_exitRequested &&
+    private bool CanCompanionControl => CanConnectPhone && Connection.UseQuickPlay && !_toolsDisposed && !_exitRequested &&
         !IsGameInputPaused && _systemAvailable && !_mustReload &&
         (!_operationInProgress || _handlingRemoteCommand) && !NeedsBoardReconciliation &&
         IsGameplayScreenActive(Screen.Table) && _coordinator is { StorageFaulted: false };
@@ -161,6 +168,7 @@ public sealed partial class MainViewModel
         UpdateTurnClock();
         await PersistTurnClockAsync();
         HidePrivateSeat();
+        Connection.PropertyChanged -= ConnectionPresentationChanged;
         try { await Connection.DisposeAsync(); }
         finally { await Camera.DisposeAsync(); }
     }

@@ -6,7 +6,6 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\GoldenTicket.Application\GoldenTicket.Application.csproj" />
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
     <InternalsVisibleTo Include="GoldenTicket.Domain.Tests" />
   </ItemGroup>
   <ItemGroup>

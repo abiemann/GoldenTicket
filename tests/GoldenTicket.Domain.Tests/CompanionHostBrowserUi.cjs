@@ -1,5 +1,5 @@
-// Actual Chromium rendering/lifecycle test, with the shipped PWA and synthetic .NET bridge data.
-// This localhost fixture is not evidence of LAN/certificate/phone installation acceptance.
+// Actual Chromium rendering/lifecycle tests for HTTP Quick play on phone-size viewports.
+// Synthetic hosts and .NET payloads do not prove real-device/LAN acceptance.
 // First run CompanionHostBrowserFixtures with GOLDENTICKET_COMPANION_FIXTURE_DIRECTORY set.
 // NODE_PATH must point to the existing bundled node_modules containing Playwright. No npm install.
 const fs = require('node:fs');
@@ -8,51 +8,60 @@ const http = require('node:http');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '../..');
-const shell = path.join(root, 'src/GoldenTicket.CompanionHost/wwwroot');
+const assets = path.join(root, 'src/GoldenTicket.CompanionHost/wwwroot');
 const fixturePath = process.env.GOLDENTICKET_COMPANION_FIXTURES || path.join(root, 'artifacts/companion-browser/fixtures.json');
 const output = process.env.GOLDENTICKET_BROWSER_EVIDENCE || path.join(root, 'docs/evidence/companion-browser-2026-09-12');
 const fixtures = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
 fs.mkdirSync(output, { recursive: true });
-const mime = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.webmanifest':'application/manifest+json', '.svg':'image/svg+xml', '.png':'image/png' };
+const mime = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.svg':'image/svg+xml' };
 const results = [];
 let fixture = fixtures.setup, paired = false, pending = false, generation = 1, requests = [], offline = false, delayedReveal = null;
-let resultImageBytes = null;
+let resultImageBytes = null, activeGrant = null, controlledNow = null;
+const serverNow = () => controlledNow ?? Date.now();
 const send = (response, body, status=200) => { response.writeHead(status, {'Content-Type':'application/json', 'Cache-Control':'no-store'}); response.end(JSON.stringify(body)); };
-const server = http.createServer(async (request, response) => {
+const requestHandler = async (request, response) => {
   const url = new URL(request.url, 'http://localhost');
   if (url.pathname.startsWith('/api/')) {
     if (offline) { request.socket.destroy(); return; }
     let body = ''; for await(const chunk of request) body += chunk;
     body = body ? JSON.parse(body) : {};
     requests.push({url:url.pathname, body, headers:request.headers});
-    if(url.pathname === '/api/session') return send(response, paired ? { paired, csrf:'test-csrf', handoffGeneration:generation, controllerGeneration:1, apiVersion:'1', assetsVersion:'3', snapshot:fixture.snapshot } : {paired,pending});
+    if(url.pathname === '/api/session') return send(response, paired ? { paired, csrf:'test-csrf', handoffGeneration:generation, controllerGeneration:1, apiVersion:'1', assetsVersion:'5', snapshot:fixture.snapshot } : {paired,pending});
     if(url.pathname.startsWith('/api/result-image/')) {
       if(!paired || !resultImageBytes || url.pathname!==`/api/result-image/${fixture.snapshot.resultImage?.id}` || !request.headers['x-goldenticket-tab']) return send(response,{},404);
       response.writeHead(200,{'Content-Type':'image/png','Content-Length':resultImageBytes.length,'Cache-Control':'no-store'}); response.end(resultImageBytes); return;
     }
     if(url.pathname === '/api/pair') { pending=true; return send(response, {pending:true,identity:'2468'}); }
-    if(url.pathname === '/api/hide') { generation++; return send(response,{hidden:true}); }
+    if(url.pathname === '/api/hide') { generation++; activeGrant=null; return send(response,{hidden:true}); }
     if(url.pathname === '/api/reveal') {
-      const reply = {grant:'test-private-grant', expiresAt:new Date(Date.now()+30000).toISOString(), handoffGeneration:++generation, data:fixture.data};
+      const reply = {grant:'test-private-grant', expiresAt:new Date(serverNow()+30000).toISOString(), handoffGeneration:++generation, data:fixture.data};
+      activeGrant={seat:body.seat,sessionId:body.sessionId,version:body.version,grant:reply.grant,handoffGeneration:reply.handoffGeneration,expiresAt:reply.expiresAt};
       if(delayedReveal) { delayedReveal.response=response; delayedReveal.reply=reply; return; }
       return send(response, reply);
+    }
+    if(url.pathname === '/api/activity') {
+      if(!paired || !activeGrant || generation!==activeGrant.handoffGeneration || serverNow()>=Date.parse(activeGrant.expiresAt) ||
+        ['seat','sessionId','version','grant','handoffGeneration'].some(key=>body[key]!==activeGrant[key])) return send(response,{},409);
+      activeGrant.expiresAt=new Date(serverNow()+30000).toISOString();
+      return send(response,{expiresAt:activeGrant.expiresAt,handoffGeneration:generation});
     }
     if(url.pathname === '/api/command') {
       if(body.command.kind === 'keepTickets') fixture = fixtures.secondHumanSetup;
       if(body.command.kind === 'drawTrain') fixture = fixture === fixtures.turnStart ? fixtures.secondDraw : fixtures.nextHuman;
       if(body.command.kind === 'drawTickets') fixture = fixtures.ticketOffer;
       if(body.command.kind === 'planClaim') fixture = fixtures.physicalPlacement;
-      generation++;
+      generation++; activeGrant=null;
       return send(response,{accepted:true,duplicate:false,stateVersion:fixture.snapshot.game.stateVersion,message:'Choice saved on the laptop.'});
     }
     return send(response,{},404);
   }
   const asset = url.pathname === '/companion/' ? 'index.html' : url.pathname.startsWith('/companion/') ? url.pathname.slice('/companion/'.length) : '';
-  if(!['index.html','app.js','app.css','sw.js','manifest.webmanifest','icon.svg','icon-192.png','icon-512.png'].includes(asset)) { response.writeHead(404); response.end(); return; }
-  response.writeHead(200, {'Content-Type':mime[path.extname(asset)],'Cache-Control':'no-store','Service-Worker-Allowed':'/companion/',
-    'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"});
-  response.end(fs.readFileSync(path.join(shell,asset)));
-});
+  if(!['index.html','app.js','app.css','icon.svg'].includes(asset)) { response.writeHead(404); response.end(); return; }
+  response.writeHead(200, {'Content-Type':mime[path.extname(asset)],'Cache-Control':'no-store',
+    'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"});
+  response.end(fs.readFileSync(path.join(assets,asset)));
+};
+const server = http.createServer(requestHandler);
 async function record(name, action) { const start=Date.now(); await action(); results.push({name,passed:true,milliseconds:Date.now()-start}); console.log('PASS '+name); }
 async function waitCovered(page) { await page.locator('#curtain').waitFor({state:'visible'}); assert.equal(await page.locator('#private').textContent(),''); }
 async function reveal(page) { await page.locator('#reveal').waitFor({state:'visible'}); await page.locator('#reveal').click(); await page.locator('#private').waitFor({state:'visible'}); }
@@ -93,14 +102,16 @@ async function syntheticStandingsPng(page) {
 }
 async function main() {
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-  const origin='http://127.0.0.1:'+server.address().port;
+  const origin='http://goldenticket.test:'+server.address().port;
   const executable=process.env.GOLDENTICKET_BROWSER_EXECUTABLE ||
     ['C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',chromium.executablePath()].find(file=>fs.existsSync(file));
-  const browser=await chromium.launch({headless:true,executablePath:executable});
+  const browser=await chromium.launch({headless:true,executablePath:executable,args:[
+    '--host-resolver-rules=MAP goldenticket.test 127.0.0.1','--no-proxy-server'
+  ]});
   const browserVersion=browser.version();
   try {
     for(const viewport of [{name:'pixel',width:448,height:900},{name:'small-phone',width:320,height:740},{name:'tablet',width:768,height:1024}]) {
-      fixture=fixtures.setup; paired=false; pending=false; generation=1; requests=[]; offline=false; delayedReveal=null;
+      fixture=fixtures.setup; paired=false; pending=false; generation=1; requests=[]; offline=false; delayedReveal=null; activeGrant=null; controlledNow=null;
       const context=await browser.newContext({viewport:{width:viewport.width,height:viewport.height},deviceScaleFactor:1,isMobile:viewport.name!=='tablet',hasTouch:true});
       const outsideLaptop=new Set(), browserRequests=[];
       // Keep the local host reachable while denying Internet destinations. Full browser offline
@@ -115,32 +126,51 @@ async function main() {
         if(destination.origin!==origin) { outsideLaptop.add(destination.href); await route.abort('blockedbyclient'); }
         else await route.continue();
       });
-      // An OS Internet probe can fail even while local Wi-Fi and HTTPS remain available.
+      // An OS Internet probe can fail even while the local network remains available.
       await context.addInitScript(()=>{
         Object.defineProperty(navigator,'onLine',{configurable:true,value:false});
-        window.testShares=[];
-        Object.defineProperty(navigator,'canShare',{configurable:true,value:data=>data.files?.length===1&&data.files[0].type==='image/png'});
-        Object.defineProperty(navigator,'share',{configurable:true,value:async data=>window.testShares.push({name:data.files[0].name,size:data.files[0].size,type:data.files[0].type,active:navigator.userActivation.isActive,hasUrl:!!data.url})});
       });
       const page=await context.newPage(); const errors=[]; page.on('pageerror',error=>errors.push(error.message));
-      await record(viewport.name+': offline shell and browser-context pairing',async()=>{
+      await record(viewport.name+': joining immediately in an ordinary LAN browser',async()=>{
         await page.goto(origin+'/companion/');
-        await page.getByText('Offline app shell ready.',{exact:false}).waitFor();
-        assert.equal(await page.evaluate(()=>isSecureContext),true);
+        assert.equal(await page.evaluate(()=>isSecureContext),false);
+        await page.getByText('QUICK PLAY · NO INSTALL',{exact:true}).waitFor();
+        assert.equal(await page.evaluate(()=>typeof crypto.randomUUID),'undefined');
+        assert.equal(await page.evaluate(()=>typeof navigator.serviceWorker),'undefined');
+        assert.equal(await page.locator('link[rel=manifest]').count(),0);
+        assert.equal(browserRequests.includes('/companion/sw.js'),false);
         await noOverflow(page); await screenshot(page,viewport.name+'-connect');
-        await page.getByRole('button',{name:'Continue in this browser'}).click();
         await page.getByLabel('Code shown on the laptop').fill('123456');
-        await page.getByRole('button',{name:'Request connection'}).click();
-        await page.getByText('Pairing identity 2468.',{exact:false}).waitFor();
+        await page.getByRole('button',{name:'Join game'}).click();
+        await page.getByText('Approve this phone on the laptop to join.',{exact:false}).waitFor();
         assert.equal(requests.filter(r=>r.url==='/api/pair').length,1);
         paired=true; pending=false;
         await page.locator('#curtain').waitFor({state:'visible'}); await noOverflow(page);
         await screenshot(page,viewport.name+'-curtain');
       });
-      await record(viewport.name+': human opening tickets and pass-and-hide',async()=>{
+      await record(viewport.name+': destination checks and outside taps preserve the private hand',async()=>{
         await reveal(page); await noOverflow(page);
         const choices=page.locator('#private input[type=checkbox]'); assert.equal(await choices.count(),3);
         assert.equal(await page.getByRole('button',{name:'Keep selected tickets'}).isDisabled(),true);
+        const initialGrant={...activeGrant}, hideCount=requests.filter(r=>r.url==='/api/hide').length;
+        const renewed=page.waitForResponse(r=>r.url().endsWith('/api/activity') && r.ok());
+        await choices.nth(0).check(); await choices.nth(1).check();
+        await choices.nth(0).uncheck();
+        await page.getByRole('heading',{name:'Golden Ticket',exact:true}).tap();
+        await page.evaluate(()=>{window.dispatchEvent(new Event('blur'));document.dispatchEvent(new PointerEvent('pointercancel',{bubbles:true}));});
+        const response=await renewed;
+        assert.ok(Date.parse((await response.json()).expiresAt)>Date.parse(initialGrant.expiresAt));
+        assert.equal(activeGrant.handoffGeneration,initialGrant.handoffGeneration);
+        assert.equal(activeGrant.grant,initialGrant.grant);
+        assert.equal(await page.locator('#private').isVisible(),true);
+        assert.deepEqual(await choices.evaluateAll(nodes=>nodes.map(node=>node.checked)),[false,true,false]);
+        assert.equal(requests.filter(r=>r.url==='/api/hide').length,hideCount);
+        const activity=requests.filter(r=>r.url==='/api/activity').at(-1);
+        assert.deepEqual(activity.body,Object.fromEntries(['seat','sessionId','version','grant','handoffGeneration'].map(key=>[key,initialGrant[key]])));
+        assert.equal(activity.headers['x-goldenticket-csrf'],'test-csrf');
+      });
+      await record(viewport.name+': human opening tickets and pass-and-hide',async()=>{
+        const choices=page.locator('#private input[type=checkbox]');
         await choices.nth(0).check(); await choices.nth(1).check();
         await screenshot(page,viewport.name+'-opening-tickets');
         await page.getByRole('button',{name:'Keep selected tickets'}).click();
@@ -187,9 +217,9 @@ async function main() {
         await reveal(page); await page.getByRole('heading',{name:'Follow the placement instructions on the laptop.'}).waitFor();
         assert.equal(await page.getByRole('button',{name:/verify|confirm placement/i}).count(),0);
       });
-      await record(viewport.name+': Hide, focus loss and stale reveal cover private DOM',async()=>{
+      await record(viewport.name+': Hide, leaving the page and stale reveal cover private DOM',async()=>{
         await page.locator('#hide').click(); await waitCovered(page); await reveal(page);
-        await page.evaluate(()=>window.dispatchEvent(new Event('blur'))); await waitCovered(page);
+        await page.evaluate(()=>window.dispatchEvent(new Event('pagehide'))); await waitCovered(page);
         delayedReveal={};
         const clicked=page.locator('#reveal').click(); await clicked;
         while(!delayedReveal.response) await new Promise(resolve=>setTimeout(resolve,20));
@@ -231,15 +261,12 @@ async function main() {
         const downloaded=page.waitForEvent('download');await page.locator('#result-save').click();const file=await downloaded;
         assert.equal(file.suggestedFilename(),'golden-ticket-final-standings.png');const filePath=path.join(output,viewport.name+'-download.png');await file.saveAs(filePath);assert.deepEqual(fs.readFileSync(filePath),resultImageBytes);
       });
-      await record(viewport.name+': file sharing preserves user activation and download fallback',async()=>{
-        assert.deepEqual(await page.evaluate(()=>window.testShares),[]);
-        await page.locator('#result-share').click();
-        assert.deepEqual(await page.evaluate(()=>window.testShares),[{name:'golden-ticket-final-standings.png',size:resultImageBytes.length,type:'image/png',active:true,hasUrl:false}]);
-        await page.evaluate(()=>Object.defineProperty(navigator,'canShare',{configurable:true,value:()=>false}));
+      await record(viewport.name+': replaced standings remain downloadable without native sharing APIs',async()=>{
+        assert.equal(await page.evaluate(()=>typeof navigator.share),'undefined');
         fixture.snapshot.resultImage.id='finished-image-2';
         await page.waitForResponse(r=>r.url().endsWith('/api/result-image/finished-image-2'));
         await page.getByText('Your results are ready.',{exact:true}).waitFor();
-        assert.equal(await page.locator('#result-share').isVisible(),false);assert.equal(await page.locator('#result-save').isVisible(),true);
+        assert.equal(await page.locator('#result-share').count(),0);assert.equal(await page.locator('#result-save').isVisible(),true);
         await page.getByText('On iPhone, downloaded images may be in Files.',{exact:false}).waitFor();
       });
       await record(viewport.name+': revocation removes standings and a new game starts covered',async()=>{
@@ -249,27 +276,53 @@ async function main() {
         fixture=fixtures.turnStart;paired=true;
         await page.locator('#curtain').waitFor({state:'visible'});assert.equal(await page.locator('#result').isVisible(),false);await waitCovered(page);
       });
-      await record(viewport.name+': disconnected cover and cached reconnect shell',async()=>{
+      await record(viewport.name+': disconnected cover and browser reconnect',async()=>{
         await page.waitForResponse(r=>r.url().endsWith('/api/session')); await reveal(page);
         offline=true;
         await page.getByText('Laptop connection unavailable',{exact:true}).waitFor({timeout:10000}); await waitCovered(page);
         await screenshot(page,viewport.name+'-disconnected');
-        await context.setOffline(true); await page.reload();
-        await page.getByRole('heading',{name:'Your journey starts here'}).waitFor();
-        assert.equal(await page.locator('#private').textContent(),'');
-        const caches=await page.evaluate(async()=>{
-          const keys=await window.caches.keys(); const entries=[];
-          for(const key of keys) for(const req of await (await window.caches.open(key)).keys()) entries.push(new URL(req.url).pathname);
-          return entries;
-        });
-        assert.equal(caches.some(url=>url.startsWith('/api/')),false); assert.equal(caches.length,7);
+        assert.equal(await page.evaluate(()=>typeof window.caches),'undefined');
+        assert.equal(browserRequests.includes('/companion/sw.js'),false);
+        offline=false;
+        await page.waitForResponse(r=>r.url().endsWith('/api/session')&&r.ok());
+        await waitCovered(page);
+        await reveal(page);
         assert.equal(await page.evaluate(()=>localStorage.length+sessionStorage.length),0);
         assert.deepEqual([...outsideLaptop],[]);
         assert.deepEqual(errors,[]);
       });
+      if(viewport.name==='pixel') await record('pixel: destination activity renews idle time, then inactivity covers the hand',async()=>{
+        await changeFixture(page,'ticketOffer'); await reveal(page);
+        const choices=page.locator('#private input[type=checkbox]');
+        const initialDeadline=Date.parse(activeGrant.expiresAt), initialGeneration=activeGrant.handoffGeneration;
+        const start=Date.now(); controlledNow=start; await page.clock.setFixedTime(start);
+        // Only Date is controlled: real Chromium input, the 500 ms watchdog, polling and
+        // HTTP requests still run. Advance in five-second steps so heartbeat checks remain
+        // meaningful, awaiting a fresh poll before changing each actual checkbox.
+        for(let step=1;step<=7;step++) {
+          controlledNow=start+step*5000; await page.clock.setFixedTime(controlledNow);
+          await page.waitForResponse(r=>r.url().endsWith('/api/session') && r.ok());
+          const renewed=page.waitForResponse(r=>r.url().endsWith('/api/activity') && r.ok());
+          await choices.nth(0).setChecked(step%2===1); await renewed;
+          assert.equal(await choices.nth(0).isChecked(),step%2===1);
+          assert.equal(await page.locator('#private').isVisible(),true);
+        }
+        assert.ok(controlledNow>initialDeadline,'Selections must remain visible beyond the original reveal deadline.');
+        assert.equal(activeGrant.handoffGeneration,initialGeneration);
+        const renewals=requests.filter(r=>r.url==='/api/activity').length;
+        for(let step=8;step<=12;step++) {
+          controlledNow=start+step*5000; await page.clock.setFixedTime(controlledNow);
+          await page.waitForResponse(r=>r.url().endsWith('/api/session') && r.ok());
+          assert.equal(await choices.nth(0).isChecked(),true);
+          assert.equal(await page.locator('#private').isVisible(),true);
+        }
+        assert.equal(requests.filter(r=>r.url==='/api/activity').length,renewals,'Polling must not renew idle time.');
+        controlledNow=start+65000; await page.clock.setFixedTime(controlledNow); await waitCovered(page);
+        assert.deepEqual(errors,[]);
+      });
       await context.close();
     }
-    fs.writeFileSync(path.join(output,'browser-ui-results.json'),JSON.stringify({browser:'Chromium '+browserVersion,fixtureTransport:'HTTP loopback secure context; synthetic .NET bridge payloads; no certificate bypass',internetIsolation:'Page requests outside the laptop fixture origin are blocked and recorded; service-worker requests are also observed; navigator.onLine is false. Browser/OS background traffic is outside this harness.',viewports:['448×900','320×740','768×1024'],screenshots:'Synthetic player data only',results},null,2));
+    fs.writeFileSync(path.join(output,'browser-ui-results.json'),JSON.stringify({browser:'Chromium '+browserVersion,fixtureTransport:'Real insecure HTTP goldenticket.test origin mapped to loopback; no browser security overrides or certificate dependencies; no real-phone acceptance claim.',internetIsolation:'Page requests outside the laptop fixture origin are blocked and recorded; navigator.onLine is false. Browser/OS background traffic is outside this harness.',viewports:['448×900','320×740','768×1024'],screenshots:'Synthetic player data only',results},null,2));
     console.log(`${results.length} browser UI scenarios passed.`);
   } finally { await browser.close(); await new Promise(resolve=>server.close(resolve)); }
 }

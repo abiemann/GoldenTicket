@@ -39,9 +39,6 @@ public sealed partial class GameSeatChoice(int number) : ObservableObject
     public bool IsComputer => Role == CharacterRole.Computer;
     public bool IsAggressive => Difficulty == AiDifficulty.Aggressive;
     public string AiStyleAccessibleName => $"{Label}, {(IsAggressive ? "aggressive" : "standard")} computer. Switch to {(IsAggressive ? "standard" : "aggressive")}.";
-    public string AiStyleToolTip => IsAggressive
-        ? "Aggressive: competes for routes to block human players and their longest railway. Click for Standard."
-        : "Standard: the original computer play style. Click for Aggressive.";
     public string Label => Role switch
     {
         CharacterRole.Human => $"Player {RoleNumber}",
@@ -82,7 +79,6 @@ public sealed partial class GameSeatChoice(int number) : ObservableObject
     {
         OnPropertyChanged(nameof(IsAggressive));
         OnPropertyChanged(nameof(AiStyleAccessibleName));
-        OnPropertyChanged(nameof(AiStyleToolTip));
     }
 
     partial void OnRoleNumberChanged(int value)

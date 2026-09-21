@@ -107,6 +107,20 @@ internal sealed class ControllerAuthority(TimeProvider? timeProvider = null)
                 g.Version == version && g.Generation == _generation && _time.GetUtcNow() < g.ExpiresAt;
         }
     }
+    /// <summary>Explicit activity extends only the current live view. It cannot reveal a hand,
+    /// replace a grant, or revive one invalidated by Hide, expiry, heartbeat loss or revocation.</summary>
+    internal PrivateGrant? RenewPrivateGrant(ControllerCredentials credentials, string? grant, int seat,
+        string? sessionId, long version, long expectedGeneration)
+    {
+        lock (_sync)
+        {
+            if (expectedGeneration != _generation || !ValidateGrant(credentials, grant, seat, sessionId, version)) return null;
+            var now = _time.GetUtcNow();
+            _heartbeat = now;
+            _grant = _grant! with { ExpiresAt = now.AddSeconds(30) };
+            return _grant;
+        }
+    }
     /// <summary>Validation and cancellation capture are one atomic authorization decision. A hide
     /// immediately after this returns cancels this exact token, never a replacement grant's token.</summary>
     internal CommandAuthorization? AuthorizeCommand(ControllerCredentials credentials, string? grant,

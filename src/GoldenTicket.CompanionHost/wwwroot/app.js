@@ -1,22 +1,25 @@
 "use strict";
 (() => {
   const byId = id => document.getElementById(id);
-  const tab = crypto.randomUUID().replaceAll("-", "");
-  const shellPaths = ["/companion/", "/companion/app.js", "/companion/app.css", "/companion/manifest.webmanifest", "/companion/icon.svg", "/companion/icon-192.png", "/companion/icon-512.png"];
+  function randomId() {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+  }
+  const tab = randomId();
   let csrf = null, snapshot = null, privateData = null, grant = null;
   let revealGeneration = 0, handoffGeneration = -1, paired = false, pending = false;
-  let shellReady = false, browserMode = false, installPrompt = null;
   let busy = false, polling = false, lastHeartbeat = 0, revealDeadline = 0, lastInteraction = 0;
+  let activityRequest = null, lastRenewalAt = 0, renewedInteraction = 0;
   let connectionGeneration = 0;
   const maxResultBytes = 16 * 1024 * 1024;
-  let resultKey = null, resultGeneration = 0, resultFile = null, resultUrl = null, resultAbort = null, sharingResult = false;
-  const standalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  let resultKey = null, resultGeneration = 0, resultUrl = null, resultAbort = null;
   const trainCount = count => `${count} train${count === 1 ? "" : "s"}`;
 
   function notice(message) { byId("notice").textContent = message; }
   function clearPrivate() {
     revealGeneration++;
     privateData = null; grant = null; revealDeadline = 0;
+    activityRequest = null;
     byId("private").replaceChildren(); byId("private").hidden = true;
     byId("curtain").hidden = !paired || resultKey !== null;
   }
@@ -47,6 +50,32 @@
     } finally { clearTimeout(timeout); }
   }
   function currentIdentity(value) { return value?.game ? `${value.game.sessionId}:${value.game.stateVersion}:${value.revealSeatId}:${value.canControl}` : "none"; }
+  function recordInteraction() {
+    if (!grant || !privateData || document.hidden) return;
+    const now = Date.now();
+    if (now >= revealDeadline || now - lastInteraction >= 30000 || now - lastHeartbeat >= 6000) { hide(); return; }
+    lastInteraction = now;
+    renewActivity();
+  }
+  async function renewActivity() {
+    const now = Date.now();
+    if (!grant || !privateData || busy || document.hidden || activityRequest || lastInteraction <= renewedInteraction || now - lastRenewalAt < 5000) return;
+    if (now >= revealDeadline || now - lastInteraction >= 30000 || now - lastHeartbeat >= 6000) { hide(); return; }
+    // Renew authorization without re-rendering the hand or losing checked destinations.
+    // Coalesce touch/key events so a gesture cannot flood the laptop with requests.
+    const request = { generation: revealGeneration, identity: currentIdentity(snapshot) };
+    activityRequest = request; lastRenewalAt = now; renewedInteraction = lastInteraction;
+    try {
+      const result = await api("/api/activity", { seat: privateData.view.seatId, sessionId: privateData.view.public.sessionId, version: privateData.view.public.stateVersion, grant, handoffGeneration });
+      if (activityRequest !== request || request.generation !== revealGeneration || document.hidden || request.identity !== currentIdentity(snapshot)) return;
+      if (result.handoffGeneration !== handoffGeneration || Date.now() - lastHeartbeat >= 6000 || Date.now() - lastInteraction >= 30000) { hide(); return; }
+      const deadline = Date.parse(result.expiresAt);
+      if (!Number.isFinite(deadline) || deadline <= Date.now()) { hide(); return; }
+      revealDeadline = deadline;
+    } catch (error) {
+      if (activityRequest === request) { hide(); notice(error.message); }
+    } finally { if (activityRequest === request) activityRequest = null; }
+  }
   async function poll() {
     if (polling || document.hidden) return;
     polling = true;
@@ -59,12 +88,13 @@
         clearResultImage(); snapshot = null;
         paired = false; csrf = null; handoffGeneration = -1; pending = result.pending;
         byId("connect").hidden = false; byId("curtain").hidden = true; byId("public").hidden = true;
-        byId("connection").textContent = pending ? "Waiting for laptop approval" : "Connected securely · Pair to play";
+        byId("connection").textContent = pending ? "Waiting for the laptop" : "Connected to your game";
         updatePairForm(); return;
       }
-      if (result.apiVersion !== "1" || result.assetsVersion !== "3") { disconnect("The app shell needs an update. Reload from the laptop before playing."); return; }
+      if (result.apiVersion !== "1" || result.assetsVersion !== "5") { disconnect("The companion needs an update. Reload from the laptop before playing."); return; }
       if (currentIdentity(snapshot) !== currentIdentity(result.snapshot) || (grant && result.handoffGeneration > handoffGeneration)) clearPrivate();
       paired = true; pending = false; csrf = result.csrf; snapshot = result.snapshot;
+      updatePairForm();
       handoffGeneration = Math.max(handoffGeneration, result.handoffGeneration); lastHeartbeat = Date.now();
       byId("connect").hidden = true; byId("curtain").hidden = privateData !== null;
       byId("connection").textContent = "Synchronized with laptop · Private LAN";
@@ -85,17 +115,13 @@
   }
   function clearResultImage() {
     resultGeneration++; resultAbort?.abort(); resultAbort = null;
-    resultKey = null; resultFile = null; sharingResult = false;
+    resultKey = null;
     byId("result-preview").removeAttribute("src");
     byId("result-save").removeAttribute("href");
     if (resultUrl) URL.revokeObjectURL(resultUrl);
     resultUrl = null;
-    for (const id of ["result", "result-preview", "result-save", "result-share", "result-retry", "result-help"]) byId(id).hidden = true;
+    for (const id of ["result", "result-preview", "result-save", "result-retry", "result-help"]) byId(id).hidden = true;
     byId("result-status").textContent = "";
-  }
-  function canShareResult() {
-    try { return resultFile && typeof navigator.share === "function" && typeof navigator.canShare === "function" && navigator.canShare({ files: [resultFile] }); }
-    catch { return false; }
   }
   function syncResultImage() {
     const metadata = resultMetadata();
@@ -138,10 +164,9 @@
       if (signature.length !== 8 || signature.some((byte, index) => byte !== [137, 80, 78, 71, 13, 10, 26, 10][index])) throw new Error("The image could not be read. Try sending it again from the laptop.");
       if (generation !== resultGeneration || abort.signal.aborted || !paired) return;
       const fileName = /^[a-zA-Z0-9_-]+\.png$/.test(metadata.fileName) ? metadata.fileName : "golden-ticket-final-standings.png";
-      resultFile = new File([blob], fileName, { type: "image/png" }); resultUrl = URL.createObjectURL(blob);
+      resultUrl = URL.createObjectURL(blob);
       byId("result-preview").src = resultUrl; byId("result-preview").hidden = false;
       byId("result-save").href = resultUrl; byId("result-save").download = fileName; byId("result-save").hidden = false;
-      byId("result-share").hidden = !canShareResult(); byId("result-share").disabled = false;
       byId("result-help").hidden = false;
       byId("result-status").textContent = "Your results are ready.";
     } catch (error) {
@@ -149,17 +174,6 @@
       byId("result-status").textContent = error.name === "AbortError" ? "The image took too long to arrive. Check the laptop connection and try again." : error instanceof TypeError ? "Could not receive the image. Check the laptop connection and try again." : error.message;
       byId("result-retry").hidden = false;
     } finally { clearTimeout(timeout); abort.abort(); if (generation === resultGeneration) resultAbort = null; }
-  }
-  async function shareResultImage() {
-    if (sharingResult || !canShareResult() || !lastHeartbeat || Date.now() - lastHeartbeat >= 6000) return;
-    const generation = resultGeneration;
-    sharingResult = true; byId("result-share").disabled = true;
-    try {
-      // The file is prepared before the tap, so the native share sheet keeps user activation.
-      await navigator.share({ files: [resultFile], title: "Golden Ticket · Final standings" });
-    } catch (error) {
-      if (generation === resultGeneration && error.name !== "AbortError") byId("result-status").textContent = "Sharing could not be opened. Try again, or use Save image instead.";
-    } finally { if (generation === resultGeneration) { sharingResult = false; byId("result-share").disabled = false; } }
   }
   function renderPublic() {
     byId("handoff").textContent = snapshot.message;
@@ -185,6 +199,7 @@
       if (generation !== revealGeneration || document.hidden || identity !== currentIdentity(snapshot) || Date.now() - lastHeartbeat >= 6000 || result.handoffGeneration < handoffGeneration) return;
       grant = result.grant; privateData = result.data; handoffGeneration = result.handoffGeneration;
       revealDeadline = Date.parse(result.expiresAt); lastInteraction = Date.now();
+      lastRenewalAt = lastInteraction; renewedInteraction = lastInteraction;
       byId("curtain").hidden = true; renderPrivate(); notice("");
     } catch (error) { clearPrivate(); notice(error.message); }
     finally { busy = false; if (snapshot) byId("reveal").disabled = !snapshot.canControl || !lastHeartbeat; }
@@ -192,7 +207,7 @@
   async function submit(kind, details = {}) {
     if (busy || !privateData || !grant || document.hidden || Date.now() >= revealDeadline || Date.now() - lastHeartbeat >= 6000) { hide(); return; }
     busy = true;
-    const payload = { seat: privateData.view.seatId, grant, command: { commandId: crypto.randomUUID().replaceAll("-", ""), sessionId: privateData.view.public.sessionId, expectedStateVersion: privateData.view.public.stateVersion, kind, ...details } };
+    const payload = { seat: privateData.view.seatId, grant, command: { commandId: randomId(), sessionId: privateData.view.public.sessionId, expectedStateVersion: privateData.view.public.stateVersion, kind, ...details } };
     // Remove private DOM immediately, but do not revoke the grant authorizing this in-flight choice.
     clearPrivate(); byId("reveal").disabled = true;
     notice("Saving your choice on the laptop…");
@@ -209,7 +224,7 @@
   function renderPrivate() {
     const target = byId("private"); target.replaceChildren();
     const own = privateData.view.public.seats.find(s => s.seatId === privateData.view.seatId);
-    target.append(element("p", "ONLY FOR YOU", "eyebrow"), element("h2", `${own.displayName}'s cards`), element("p", "Private view closes after 30 seconds. Use Hide before passing the device.", "fine-print"));
+    target.append(element("p", "ONLY FOR YOU", "eyebrow"), element("h2", `${own.displayName}'s cards`), element("p", "Cards hide after 30 seconds without activity. Use Hide before passing the device.", "fine-print"));
     const cards = element("div", undefined, "cards");
     for (const kind of ["Pink", "White", "Blue", "Yellow", "Orange", "Black", "Red", "Green", "Locomotive"]) {
       const count = privateData.view.hand.filter(c => c.kind === kind).length;
@@ -243,7 +258,7 @@
     for (const ticket of offered) {
       const label = element("label", undefined, "ticket ticket-choice");
       const check = document.createElement("input"); check.type = "checkbox";
-      check.addEventListener("change", () => { if (!privateData) return; check.checked ? selected.add(ticket.id) : selected.delete(ticket.id); update(); });
+      check.addEventListener("change", () => { recordInteraction(); if (!privateData) return; check.checked ? selected.add(ticket.id) : selected.delete(ticket.id); update(); });
       label.append(check, element("span", `${ticket.label} · ${ticket.points} points`)); list.append(label);
     }
     const actions = element("div", undefined, "actions"); actions.append(kept, button("Reverse return order", () => { reversed = !reversed; update(); }, "secondary"));
@@ -285,52 +300,36 @@
     target.append(element("div", "", "actions"));
   }
   function updatePairForm() {
-    byId("pair-form").hidden = !shellReady || (!standalone() && !browserMode) || pending || paired;
-    byId("install-help").hidden = standalone() || browserMode || paired;
+    byId("pair-form").hidden = pending || paired;
+    byId("hide").hidden = !paired;
     byId("pair-button").disabled = busy;
   }
-  async function setupShell() {
-    if (!window.isSecureContext || !("serviceWorker" in navigator)) { byId("shell-status").textContent = "Trusted HTTPS is required. Install the laptop certificate and reopen its HTTPS address. Do not bypass a browser warning."; return; }
-    try {
-      await navigator.serviceWorker.register("/companion/sw.js", { scope: "/companion/" });
-      let timeout;
-      try { await Promise.race([navigator.serviceWorker.ready, new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error("App shell activation timed out.")), 10000); })]); }
-      finally { clearTimeout(timeout); }
-      const cache = await caches.open("goldenticket-companion-shell-v3");
-      const cached = await Promise.all(shellPaths.map(path => cache.match(path)));
-      if (cached.some(value => !value)) throw new Error("Some app files have not been saved yet.");
-      shellReady = true; byId("shell-status").textContent = "Offline app shell ready. Gameplay still needs the laptop on your LAN."; updatePairForm();
-    } catch (error) { byId("shell-status").textContent = `${error.message} Reload while connected to the laptop to try again.`; }
-  }
   byId("pair-form").addEventListener("submit", async event => {
-    event.preventDefault(); if (busy || !shellReady || (!standalone() && !browserMode)) return;
+    event.preventDefault(); if (busy || paired || pending) return;
     busy = true; connectionGeneration++; updatePairForm();
     try {
       const result = await api("/api/pair", { code: byId("pair-code").value.trim(), tab, label: byId("device-label").value.trim() });
       byId("pair-code").value = ""; pending = true;
-      byId("pair-status").textContent = `Pairing identity ${result.identity}. Compare it with the laptop, then approve this device there.`;
+      byId("pair-status").textContent = `Approve this phone on the laptop to join. Device number: ${result.identity}.`;
     } catch (error) { notice(error.message); }
     finally { busy = false; updatePairForm(); await poll(); }
   });
   byId("hide").addEventListener("click", () => hide());
   byId("reveal").addEventListener("click", reveal);
-  byId("result-share").addEventListener("click", shareResultImage);
   byId("result-retry").addEventListener("click", loadResultImage);
-  byId("browser-mode").addEventListener("click", () => { browserMode = true; updatePairForm(); });
-  byId("install").addEventListener("click", async () => { if (installPrompt) { await installPrompt.prompt(); installPrompt = null; byId("install").hidden = true; } });
-  window.addEventListener("beforeinstallprompt", event => { event.preventDefault(); installPrompt = event; byId("install").hidden = false; });
   document.addEventListener("visibilitychange", () => { if (document.hidden) { connectionGeneration++; hide(); } else { clearPrivate(); poll(); } });
-  window.addEventListener("blur", () => hide());
   window.addEventListener("pagehide", () => { connectionGeneration++; hide(); clearResultImage(); });
   window.addEventListener("pageshow", () => { clearPrivate(); poll(); });
   window.addEventListener("offline", () => disconnect("Reconnect to the laptop before continuing."));
-  document.addEventListener("pointercancel", () => hide());
-  document.addEventListener("pointerdown", () => { lastInteraction = Date.now(); });
-  document.addEventListener("keydown", event => { lastInteraction = Date.now(); if (event.key === "Escape") hide(); });
+  // Tapping outside a control, native pickers and scrolling can blur/cancel a
+  // pointer without leaving the page. Only actual backgrounding covers it.
+  document.addEventListener("pointerdown", recordInteraction);
+  document.addEventListener("keydown", event => { if (event.key === "Escape") hide(); else recordInteraction(); });
   setInterval(() => {
     if (grant && (Date.now() >= revealDeadline || Date.now() - lastInteraction >= 30000)) hide();
     if (lastHeartbeat && Date.now() - lastHeartbeat >= 6000) disconnect();
+    renewActivity();
   }, 500);
   setInterval(poll, 2000);
-  clearPrivate(); updatePairForm(); setupShell(); poll();
+  clearPrivate(); updatePairForm(); poll();
 })();

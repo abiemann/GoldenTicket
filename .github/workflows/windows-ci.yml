@@ -98,11 +98,11 @@ jobs:
       - name: Build Windows application and solution
         run: dotnet build GoldenTicket.sln --configuration Release --no-restore -p:ContinuousIntegrationBuild=true
 
-      - name: Test rules, desktop, persistence and local HTTPS
+      - name: Test rules, desktop, persistence and local HTTP companion
         run: dotnet test GoldenTicket.sln --configuration Release --no-build --no-restore --logger "trx;LogFilePrefix=tests" --results-directory artifacts/ci/tests --blame-hang-timeout 2m
 
       - name: Test companion privacy and LAN-only behavior
-        run: node --test tests/GoldenTicket.ConnectivitySpike.Tests/shell.test.cjs tests/GoldenTicket.Domain.Tests/CompanionHostClient.test.cjs
+        run: node --test tests/GoldenTicket.Domain.Tests/CompanionHostClient.test.cjs
 
       - name: Check local ML dataset preparation tools
         run: |
@@ -122,7 +122,7 @@ jobs:
           dotnet run --project tools/GoldenTicket.VisionCheck --configuration Release --no-build --no-restore > artifacts/ci/frame-processing.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Exercise actual browser UI with Internet requests blocked
+      - name: Exercise Quick play browser UI with Internet requests blocked
         run: node tests/GoldenTicket.Domain.Tests/CompanionHostBrowserUi.cjs
 
       - name: Retain test reports and synthetic UI screenshots

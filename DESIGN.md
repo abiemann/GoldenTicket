@@ -1,11 +1,11 @@
 # GoldenTicket: Ticket to Ride Windows Companion
 
-**Status:** Product specification with a partial C# implementation. The manual desktop slice, state-only pack-away and standalone connectivity spike have automated validation; the full camera/PWA product is incomplete. See the [implementation audit](docs/AUDIT-2026-09-12.md) and [remaining work](TODO.md).
+**Status:** Product specification with a partial C# implementation. The manual desktop slice, state-only pack-away and standalone connectivity spike have automated validation; the full camera/companion product is incomplete. See the [implementation audit](docs/AUDIT-2026-09-12.md) and [remaining work](TODO.md).
 
 **Design date:** September 11, 2026.  
 **Working name:** GoldenTicket. This is a project codename, not an approved product name.  
 **Target:** Windows 11 x64; the classic English North America Ticket to Ride board shown in the user's photographs, product DO7201 / 7201.  
-**Companion:** For multiple human players, one shared iOS/iPadOS or Android PWA phone/tablet is passed between them. A single human uses the laptop display. The multi-human phone flow awaits real-device acceptance.
+**Multi-human play:** Recommended **Quick play** uses one shared iOS/iPadOS or Android phone/tablet browser on the local network. **PRACTICAL** uses the laptop while other players look away during private choices. Neither needs an installed app or certificates. A single human uses the laptop. Physical-device acceptance remains pending.
 
 **Primary experience:** Physical board and trains, digital cards, human operators, camera verification, and local computer opponents.
 
@@ -45,7 +45,7 @@ GoldenTicket supplies missing players for a physical game of Ticket to Ride. A l
 
 The board and plastic trains remain physical. Train cards, destination tickets, decks, discards, and card selection are digital for every seat. This eliminates routine card scanning, preserves AI secrets, and makes card-only turns observable through application commands.
 
-The Windows laptop stays beside the board as the game display, camera processor, referee, AI host, and save owner. When there is exactly one human, that player's cards and destinations appear directly on the laptop; no phone, pairing or local HTTPS setup is required. With multiple humans, the public game table presents QR-assisted setup for one shared phone or tablet running the companion PWA. Players pass that device to view private cards and submit choices. Companion devices communicate over a local network without requiring internet access. The laptop retains technical controls for recovery.
+The Windows laptop stays beside the board as the game display, camera processor, referee, AI host, and save owner. When there is exactly one human, that player's cards and destinations appear directly on the laptop; no phone or pairing is required. With multiple humans, the public game table offers recommended **Quick play: scan QR → join → play** for one shared phone/tablet browser, or **PRACTICAL** to use the laptop while everyone else looks away. Both keep private choices with the active player. Companion devices communicate over a local network without requiring internet access. The laptop retains technical controls for recovery.
 
 The computer is an opponent and a referee. These are separate responsibilities: the referee holds the full game state; each opponent receives only that seat's permitted information.
 
@@ -58,7 +58,7 @@ Ticket to Ride is a route-claiming game. Trains are placed to occupy the spaces 
 | R01 | Ticket to Ride only; no other board games | No game-plugin platform or generic board-game interpreter. |
 | R02 | The classic North America edition pictured by the user | One versioned board and rules profile; no Europe, expansions, or automatic substitution of the 2025 refresh. |
 | R03 | Windows 11; automatically use a supported GPU at launch, otherwise CPU, with a visible status icon | Default Auto selection validates the packaged GPU inference path before using it. Retain CPU/GPU overrides, a complete CPU path, and automatic CPU fallback. Show the effective backend with a chip/CPU or GPU/lightning indicator. |
-| R04 | Offline operation with no subscriptions or server costs; no PWA inputs required from outside the LAN | The Windows app locally hosts the companion, its assets, and game data. QR-assisted connection and initial synchronization use the LAN only; no account, hosted server, internet dependency, or recurring infrastructure cost. |
+| R04 | Offline operation with no subscriptions or server costs; no companion inputs required from outside the LAN | The Windows app locally hosts the companion, its assets, and game data. QR-assisted connection and initial synchronization use the LAN only; no account, hosted server, internet dependency, or recurring infrastructure cost. |
 | R05 | Human places trains while the camera watches | Durable pending actions, visual/audio instructions, and verified physical completion. |
 | R06 | Printed alignment markers are acceptable | A printable marker layout beside the board supports orientation and recovery. |
 | R07 | Pause after a camera jog; detect return to a suitable position automatically | Preserve state and pending action, reacquire geometry, compare the board, and resume automatically when consistent. |
@@ -67,9 +67,9 @@ Ticket to Ride is a route-claiming game. Trains are placed to occupy the spaces 
 | R10 | Developer trains with their pieces and ships the model if ML is needed | No consumer labeling, training, model accounts, or model downloads during setup. |
 | R11 | Voice, visual-only, or both | Separate presentation modes with identical underlying game state and accessible controls. |
 | R12 | Optional story mode with train and congratulation sounds; Training mode uses the same story without sound effects | One local narrative layer with presentation presets and no changes to rules or hidden information. Voice/story/audio are the final feature work, after photographed save-and-rebuild. |
-| R13 | Multiple humans with pass-and-hide | Pass the companion phone/tablet between human seats; keep AI information isolated and the laptop's normal display public. |
+| R13 | Multiple humans with private choices | Pass one companion phone/tablet between human seats in Quick play, or share the laptop in PRACTICAL while others look away. Keep AI information isolated. |
 | R14 | Use the game's box color scheme for the app | Parchment surfaces, burgundy actions, antique-gold accents, dark-brown text, and muted-blue secondary accents as specified in section 4.8. |
-| R15 | The passed-around phone/tablet app must be a PWA for iOS and Android | Responsive browser client with home-screen launch, local shell caching, secure local pairing, and no native app-store dependency. |
+| R15 | Quick play first, PRACTICAL second; remove PWA completely (updated September 21, 2026) | Direct HTTP browser game with QR and pairing, or local laptop handoffs. No installed app, certificate flow, service worker or network requirement for PRACTICAL. |
 | R16 | Photograph and save the game so the board can be cleared and rebuilt later | Explicit Save and pack away workflow: version-matched board photo, complete digital checkpoint, cleanup-safe pause, and guided physical restoration. |
 | R17 | A single human uses the main monitor for their cards without connecting a phone | Count human seats in the current match, hide Connect phone for one human, and present that human's card choices on the laptop. Preserve AI secrecy and physical-placement instructions. |
 
@@ -81,10 +81,10 @@ These are implementation choices, not additional statements attributed to the us
 - English is the first UI and narration language, matching the supplied edition reference. Text and speech resources remain separable for later translation.
 - Normal matches have at least one human and at least one AI. Local all-human play can reuse the same referee and privacy screens. All-AI play belongs to simulation and testing.
 - The physical board, train molds, and colors must match a validated classic-edition profile. Replacement miniatures and other editions are outside the initial recognition guarantee.
-- Voice means spoken guidance. Free-form speech recognition is not required. A single human selects cards on the laptop; multiple humans use the shared companion touchscreen.
-- One shared companion device is the first-release controller for multiple humans. Separate simultaneous devices per human are outside the initial scope. No additional device is required for a single human or for AI seats.
-- Offline means no internet connection is required. Companion play does require a working local link to the laptop, normally the same private Wi-Fi network. A disconnected PWA cannot take authoritative turns independently.
-- Strictly offline PWA setup uses guided device trust for local HTTPS. This adds a one-time manual step per companion device; trust installation and actual browser behavior must pass M0 before mobile support is claimed.
+- Voice means spoken guidance. Free-form speech recognition is not required. A single human selects cards on the laptop; multiple humans choose Quick play on a shared touchscreen or PRACTICAL on the laptop.
+- Quick play uses one shared companion device. Separate simultaneous devices per human are outside the initial scope. PRACTICAL, single-human play and AI seats need no extra device.
+- Offline means no internet connection is required. Companion play does require a working local link to the laptop, normally the same private Wi-Fi network. A disconnected phone cannot take authoritative turns independently. PRACTICAL also works without a LAN.
+- Quick play intentionally accepts unencrypted transport on a trusted LAN to minimize setup. PRACTICAL provides laptop-only play. Neither mode uses certificate installation or an installed web app.
 - Speech-only **guidance** still needs a screen for private cards and interactive choices. Shared speakers must not read hidden hands aloud. This limitation is explained when selecting the mode.
 - Optional sound effects and narration are shipped recordings, synthesized effects, or locally installed Windows speech. No language model or online speech service is required.
 - Save/resume, correction history, camera failure recovery, and replay tooling from the original idea remain in scope.
@@ -98,7 +98,7 @@ The earlier document is background, not a second set of implementation orders. I
 
 ### 2.1 Complete first product
 
-The implementation plan must reach a complete local game, including setup, companion installation/pairing, seat assignment, digital dealing, mobile pass-and-hide, computer decisions, physical route verification, card-only turns, camera recovery, final scoring, story presentation, and photo-assisted save, pack away, and board restoration.
+The implementation plan must reach a complete local game, including setup, browser joining/pairing or PRACTICAL laptop handoffs, seat assignment, digital dealing, mobile pass-and-hide and PRACTICAL laptop handoffs, computer decisions, physical route verification, card-only turns, camera recovery, final scoring, story presentation, and photo-assisted save, pack away, and board restoration.
 
 Early milestones deliberately use manual input and recorded imagery, but they are development steps rather than a substitute for the final camera-assisted product.
 
@@ -155,7 +155,7 @@ Prefer a mat or corner guides that fix the board's relationship to the markers. 
 8. Capture an empty-board reference, with all trains off the mapped routes. This is automatic calibration, not consumer training.
 9. Select seats, human/AI assignments, physical train colors, clockwise order, starting player, and AI difficulty.
 10. Ask players to prepare the correct starting stock of trains. Do not pretend the camera can count an overlapping pile outside its view.
-11. With one human, use the laptop automatically and omit Connect phone. With multiple humans, present the phone setup on the visible game table. Require an explicit start on a selected Private LAN interface, then show the real local connection QR and guide installation, pairing, and approval as described in section 18.5. Pass the one shared phone between humans for private choices. Create the saved match, perform digital setup, and visit each human's destination-selection screen on the companion once its flow is complete.
+11. With one human, use the laptop automatically and omit Connect phone. With multiple humans, offer Quick play or PRACTICAL on the visible game table. For Quick play, require an explicit start on a selected Private LAN interface, then show the direct game QR and guide pairing and approval as described in section 18.5. Offer **PRACTICAL** for private laptop choices while others look away. In Quick play, pass the shared phone between humans for private choices. Create the saved match, perform digital setup, and visit each human's destination-selection screen on the companion. The implemented shared-phone flow still needs real-device acceptance.
 12. Return to public view and begin the first turn only after the physical board is consistent.
 
 No user has to label a train, photograph one color at a time, install Python, or teach the model their set. If the set falls outside the shipped recognizer's support, offer manual verification or explain the compatibility issue.
@@ -297,7 +297,7 @@ For exactly one human, show the three opening destination tickets in a compact *
 
 The compact solo T/D preview is available only on the human's turn. During a computer turn, its stack targets cannot be clicked, and a preview closes as play advances.
 
-With multiple humans, display the phone setup prompt on the public game table and show a QR only after the local host has a reachable address on the selected Private LAN interface. At a human handoff, first show a neutral curtain on the companion: “Pass this device to Alex.” Reveal the active seat's private view only after an explicit action and a fresh laptop-issued private-view grant. The user can hold a touch target to peek at their hand; releasing it returns to the curtain. A persistent reveal option is permitted with a visible Hide control and inactivity timeout. The laptop remains on the public board view; Shift+Escape exposes technical recovery controls without changing the normal table presentation. The PWA card and handoff experience still needs completion and real-device validation.
+With multiple humans, display the phone setup prompt on the public game table and show a QR only after the local host has a reachable address on the selected Private LAN interface. At a human handoff, first show a neutral curtain on the companion: “Pass this device to Alex.” Reveal the active seat's private view only after an explicit action and a fresh laptop-issued private-view grant. The planned hold-to-peek option returns to the curtain when released; it is not implemented yet. The current explicit reveal uses a visible Hide control and inactivity timeout. The laptop remains on the public board view; Shift+Escape exposes technical recovery controls without changing the normal table presentation. Cards and pass-and-hide are implemented in the shared client and await real-device acceptance in both connection modes.
 
 The unresolved solo opening destination choice stays visible through ordinary laptop focus changes and idle time. Other private views hide on deactivation and idle timeout. Always hide on seat changes, device lock, sleep, connection loss, recovery dialogs that leave the private workflow, and entry into public mode. Clear private DOM/view models, tooltips, search results, accessible labels, and pending narration at the same transition. The public scoreboard cannot acquire focus behind an unhidden private window. Mobile lifecycle and operating-system snapshot limitations are addressed in section 4.9.
 
@@ -329,7 +329,7 @@ These sRGB values are implementation choices visually matched to the supplied ph
 - Primary buttons use `Burgundy` with `Paper` labels; hover/pressed uses `BurgundyHover` with a visible state change. Secondary actions use `RailBlue` text and borders on a light surface. Selected items combine `AgedPaper` with an explicit border/checkmark.
 - Use `AntiqueGold` sparingly for ornament and story presentation. It must not be the sole indicator of focus, route selection, a required boundary, or small text on parchment. A gold-filled badge uses `Ink` text.
 - The privacy curtain and camera surround use `RailCharcoal` with `Paper` text. Keep the curtain fully opaque. Recovery, success, and error states include clear words and icons, rather than relying on a theme color alone.
-- Maintain canonical theme tokens and generate a WPF resource dictionary and PWA CSS custom properties from them. Map colors to semantic roles such as `Surface.Window`, `Surface.Card`, `Text.Primary`, `Action.Primary`, and `Focus.Outline`. Both clients use the same box-derived palette rather than scattering literal hex values.
+- Maintain canonical theme tokens and generate a WPF resource dictionary and browser CSS custom properties from them. Map colors to semantic roles such as `Surface.Window`, `Surface.Card`, `Text.Primary`, `Action.Primary`, and `Focus.Outline`. Both clients use the same box-derived palette rather than scattering literal hex values.
 
 #### Gameplay colors and readability
 
@@ -343,9 +343,9 @@ Use project targets of at least 4.5:1 for normal text and 3:1 for essential boun
 
 ### 4.9 Mobile companion screens and behavior
 
-The PWA is a private controller for the existing Windows game, not a second game engine. Its screens are:
+The browser companion is a private controller for the existing Windows game, not a second game engine. Its screens are:
 
-1. **Connect:** Laptop identity, local connection status, setup/install help, and pairing controls.
+1. **Connect:** Laptop identity, local connection status, connection help, and pairing controls.
 2. **Pass:** Opaque curtain identifying the next human; no hidden cards loaded in advance.
 3. **Private turn:** This human's hand, tickets, legal choices, visible market, and payment selection.
 4. **Placement:** Public instructions for an authorized route, mirrored from the laptop, with Recheck and Hide controls. The laptop remains the principal camera-overlay display.
@@ -354,11 +354,13 @@ The PWA is a private controller for the existing Windows game, not a second game
 
 Use a responsive layout for phones and tablets in portrait and landscape, with a single-column phone view, grouped card counts, large ticket-selection controls, and a sticky Hide action. Initial usability targets are 48 CSS-pixel touch targets and operation at 360 CSS pixels of width. Honor safe-area insets, dynamic viewport height, text enlargement, reduced motion, and device/browser contrast settings. Interaction must not depend on hover, dragging precisely, or a physical keyboard.
 
-On `visibilitychange` to hidden, `pagehide`, pointer cancellation, a dropped connection, or an expired private-view grant, synchronously cover the view and remove private data from application memory/DOM. On `pageshow`, foregrounding, reload, or restored history, start covered and request a new grant only after an explicit reveal action. A held-to-peek view hides on release and on `pointercancel`; it must not remain revealed when scrolling interrupts the gesture.
+On `visibilitychange` to hidden, `pagehide`, a dropped connection, or an expired private-view grant, synchronously cover the view and remove private data from application memory/DOM. On `pageshow`, foregrounding, reload, or restored history, start covered and request a new grant only after an explicit reveal action. The current tap-to-reveal view stays open through ordinary focus changes, outside-control touches and scrolling, including `pointercancel`; these are not page departures. A future held-to-peek view would hide on release or pointer cancellation.
+
+The browser's 30-second idle timer restarts on touch, keyboard interaction and destination checkbox changes. Explicit activity renews the existing server grant through `/api/activity`, coalesced to at most one request per five seconds, without re-fetching private cards or rebuilding selected destinations. Public polling alone does not renew a grant. Renewal must match the current seat, session, state version and handoff generation, and cannot revive an expired, hidden or revoked view. Hide, page backgrounding and real inactivity still clear the hand immediately.
 
 Maintain a client-local `revealGeneration`, incremented on every Hide, background event, peek release/cancellation, handoff, and disconnect. Every asynchronous private request captures it. Apply a private response only if its generation still matches, the document is visible, the reveal/peek state is still active, and the server grant/controller/handoff remain valid. Discard stale responses even when they concern the same human seat; a delayed response must never uncover a hidden hand.
 
-These events are best-effort browser signals. The PWA cannot guarantee that iOS/Android never takes a task-switcher snapshot before its handlers run, prevent screenshots, or securely erase browser process memory. Encourage Hide before passing the device; never claim operating-system-level screenshot protection. Do not put private data into page titles, notification text, URLs, browser history state, application icons, or shared-device audio.
+These events are best-effort browser signals. The browser companion cannot guarantee that iOS/Android never takes a task-switcher snapshot before its handlers run, prevent screenshots, or securely erase browser process memory. Encourage Hide before passing the device; never claim operating-system-level screenshot protection. Do not put private data into page titles, notification text, URLs, browser history state, application icons, or shared-device audio.
 
 Narration and train sounds remain on the laptop by default. The companion is silent except for explicitly enabled non-private feedback. This avoids duplicate narration and dependence on background audio or mobile autoplay permissions. No push service or notification permission is needed.
 
@@ -483,11 +485,10 @@ from a detached copy of the themed board/results view. The export includes every
 route descriptions, regardless of the live horizontal scroll position, without window chrome,
 private cards or pairing overlays. Missing phone approval opens the existing shared-phone setup.
 The capture is held in memory for the current completed session and revision; an approved controller
-fetches it through a no-store, tab-authenticated endpoint. The PWA previews the image and exposes
-file sharing from an explicit tap where supported, with an image download fallback. No image or
-game payload enters the service-worker shell cache. Single-human and unfinished games cannot expose
-the image. Desktop/browser checks cover this flow; native Android/iOS share-sheet acceptance remains
-a real-device check.
+fetches it through a no-store, tab-authenticated endpoint. The phone previews the image and offers
+**Save image**. Players share the downloaded PNG through Files/Photos. No offline browser cache
+is maintained. Single-human and unfinished games cannot expose the image. Desktop/browser checks
+cover the flow; actual Android/iOS saving and subsequent sharing remain real-device checks.
 
 A monotonic counter records each player's full turn, including decisions, physical train placement
 and scoring-marker movement. A committed route advances the digital turn before its marker moves;
@@ -1204,7 +1205,7 @@ Run the same public event sequence in Training and Story: narrative progression 
 
 ### 17.1 Selected baseline
 
-Use C# on .NET 10 LTS with WPF and MVVM for the Windows application. Add an embedded ASP.NET Core/Kestrel host for the mobile PWA and its local API, sharing the existing coordinator in the same process. The companion uses TypeScript, HTML, and CSS built with Vite; its static output ships inside the Windows distribution. No Electron shell, Python runtime service, hosted backend, or separate user-managed web server is required.
+Use C# on .NET 10 LTS with WPF and MVVM for the Windows application. Add an embedded ASP.NET Core/Kestrel host for the mobile browser companion and its local API, sharing the existing coordinator in the same process. The companion uses TypeScript, HTML, and CSS built with Vite; its static output ships inside the Windows distribution. No Electron shell, Python runtime service, hosted backend, or separate user-managed web server is required.
 
 Target `net10.0-windows10.0.26100.0` with `win-x64`. Officially validate Windows 11 24H2 and later releases while they are supported by the selected .NET runtime. A `SupportedOSPlatformVersion` of `10.0.22000.0` may retain a technical compatibility floor for older Windows 11 builds, but is not a support promise. Guard newer APIs and align installer checks with the actual release support matrix. [Windows version targeting](https://learn.microsoft.com/en-us/windows/apps/get-started/versioning-overview), [.NET 10 supported operating systems](https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md)
 
@@ -1218,7 +1219,7 @@ The versions below are researched design baselines, not a tested lockfile. M0 mu
 |---|---|---|---|
 | Runtime, compiler, CLI | .NET 10 SDK/runtime | Free development/runtime; core code MIT. [.NET terms](https://dotnet.microsoft.com/en-us/platform/free) | Self-contained clean-machine launch; serviced patch pin |
 | Desktop UI | WPF | MIT. [License](https://github.com/dotnet/wpf/blob/main/LICENSE.TXT) | DPI, keyboard, accessibility, dispatcher responsiveness |
-| Local companion host | ASP.NET Core 10 / Kestrel, included in the self-contained Windows publish | MIT framework; no hosting fee. [License](https://github.com/dotnet/aspnetcore/blob/main/LICENSE.txt), [HTTPS endpoints](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/endpoints?view=aspnetcore-10.0) | Trusted local HTTPS, same-origin API/WSS, firewall scope, clean-machine deployment |
+| Local companion host | ASP.NET Core 10 / Kestrel, included in the self-contained Windows publish | MIT framework; no hosting fee. [License](https://github.com/dotnet/aspnetcore/blob/main/LICENSE.txt), [Kestrel endpoints](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/endpoints?view=aspnetcore-10.0) | HTTP Quick play, same-origin API, firewall scope, clean-machine deployment |
 | Companion UI and build | TypeScript, Vite, HTML/CSS, standard browser APIs; Node.js LTS only on the development machine | TypeScript Apache-2.0; Vite and Node.js MIT with component notices. [TypeScript](https://github.com/microsoft/TypeScript/blob/main/LICENSE.txt), [Vite](https://github.com/vitejs/vite/blob/main/LICENSE), [Node.js](https://github.com/nodejs/node/blob/main/LICENSE) | Exact locked versions, no CDN/runtime Node dependency, Safari/Chrome and real-device testing |
 | MVVM helpers | CommunityToolkit.Mvvm 8.x | MIT. [Project license](https://github.com/CommunityToolkit/dotnet/blob/main/License.md) | Lock tested patch; no paid toolkit dependency |
 | Camera | Windows `MediaCapture` / `MediaFrameReader` | Included Windows APIs; no separate service. [Capture guide](https://learn.microsoft.com/en-us/windows/apps/develop/camera/process-media-frames-with-mediaframereader) | WPF initialization, consent, negotiated formats, sleep/reconnect |
@@ -1421,7 +1422,7 @@ If the Windows ML integration fails M0, the bounded fallback is one pinned `Micr
 
 Enumerate enabled local speech voices. If an appropriate voice is absent or fails, use the packaged English prompt/city/color/number recordings. Story and essential instructions must remain available on a clean offline machine without extra voice installation.
 
-Place native libraries, models, story packs, help, print assets, and the complete companion PWA build inside the application distribution. Include the ASP.NET Core runtime needed by the embedded host in the self-contained publish. Inspect whether the selected native binaries need a Microsoft VC runtime and include permitted app-local redistributables or an offline prerequisite installer if necessary. A development machine's installed runtimes do not prove self-contained delivery.
+Place native libraries, models, story packs, help, print assets, and the complete companion browser assets inside the application distribution. Include the ASP.NET Core runtime needed by the embedded host in the self-contained publish. Inspect whether the selected native binaries need a Microsoft VC runtime and include permitted app-local redistributables or an offline prerequisite installer if necessary. A development machine's installed runtimes do not prove self-contained delivery.
 
 Begin with a per-user installer and a ZIP artifact. Storefronts, paid code-signing services, and publisher agreements are separate distribution choices, not implementation/runtime dependencies. The app must be usable locally without them.
 
@@ -1438,7 +1439,7 @@ Use one desktop process initially, with the embedded companion host calling the 
 
 Serialize authoritative commands through a single coordinator queue. That queue performs version checks and database transactions; do not hold it while waiting for a human, GPU execution, speech, or a search result. Workers return results tied to the state/operation that requested them.
 
-Native process crashes remain a risk when capture and CV share a process. Durable operation journaling limits recovery loss. Move a demonstrably unstable component into a local helper process only if measured failures justify the complexity. The PWA enters reconnect mode if the Windows process exits; it never becomes the referee. Any future helper remains local and does not require a hosted endpoint.
+Native process crashes remain a risk when capture and CV share a process. Durable operation journaling limits recovery loss. Move a demonstrably unstable component into a local helper process only if measured failures justify the complexity. The browser companion enters reconnect mode if the Windows process exits; it never becomes the referee. Any future helper remains local and does not require a hosted endpoint.
 
 ### 18.2 Service interfaces
 
@@ -1497,7 +1498,7 @@ src/
   GoldenTicket.Persistence/     SQLite journal, replay, integrity checks
   GoldenTicket.Desktop/         WPF views and view models, composition root
   GoldenTicket.CompanionHost/   embedded Kestrel, pairing, device/seat grants, API
-companion/                     TypeScript PWA, manifest, service worker, touch UI
+companion/                     responsive browser touch UI and shared theme assets
 shared/theme/                  canonical tokens generating WPF and CSS resources
 tools/
   GoldenTicket.Simulator/       headless matches and AI evaluation
@@ -1525,96 +1526,87 @@ suite. CI includes a portable-core Ubuntu job and full Windows validation. Captu
 
 Use `dotnet test` with a pinned free test framework, such as xUnit, and a small seeded property/fault generator. WPF UI integration may use a pinned Windows UI Automation wrapper after its license is verified; do not make a commercial UI-test runner mandatory.
 
-Test runners can execute on the developer's laptop or a local Windows machine. GPU tests require actual compatible hardware; simulation cannot establish driver compatibility. Companion browser tests cover rendering, protocol, and service-worker behavior, but real iPhone/iPad and Android installation/lifecycle tests remain mandatory.
+Test runners can execute on the developer's laptop or a local Windows machine. GPU tests require actual compatible hardware; simulation cannot establish driver compatibility. Companion browser tests cover rendering, protocol, and private-view lifecycle, but real iPhone/iPad and Android joining/lifecycle tests remain mandatory.
 
-### 18.5 PWA hosting, installation, and local transport
+### 18.5 Multi-human play and local browser transport
 
 #### Responsibility and network boundary
 
 ```mermaid
 flowchart LR
-    P[Shared phone or tablet PWA] -->|HTTPS commands and WSS updates| H[Embedded local Kestrel host]
-    H -->|Authenticated versioned commands| C[Windows coordinator]
+    P[Shared phone or tablet browser] -->|HTTP Quick play| H[Embedded local Kestrel host]
+    L[PRACTICAL laptop private view] --> C[Windows coordinator]
+    H -->|Authorized versioned commands| C
     C --> R[Rules and private projections]
     C --> V[Camera verification]
     C --> S[Local authoritative save]
     C --> U[Public laptop UI and narration]
 ```
 
-The laptop serves the PWA shell and API from one origin. Use ordinary same-origin HTTPS requests for commands and a WSS connection for updates. No cloud signaling, TURN relay, internet DNS dependency, CDN assets, analytics, or paid certificate service is required. “No server costs” means no hosted infrastructure; the Windows app's embedded local endpoint is part of the product.
+The September 21 product decision removes installed-app and certificate setup completely.
+Multi-human games offer **Quick play** first and **PRACTICAL** second. Quick play uses a normal
+phone/tablet browser; PRACTICAL uses the laptop and asks other players to look away during private
+choices. Both call the same rules and durable command path. PRACTICAL needs no networking UI,
+phone host or extra device.
 
-The user explicitly confirmed that all PWA data may be hosted on the laptop, without inputs from outside the LAN. Apply this to initial setup and synchronization as well as subsequent play: bundle application assets, public board/card definitions, help, and any QR-generation code with the Windows installation. The phone obtains them directly from the laptop. No external website, QR redirect service, account lookup, download, or Internet response may be required to complete the supported local setup path. This is the application's network boundary; it does not claim to control unrelated operating-system or browser traffic.
+Quick play serves its bundled browser client and API from the selected trusted Private LAN IP on
+HTTP port 8080. The user explicitly starts hosting. Bind only that interface and loopback, check
+the actual Windows network profile and local subnet, and validate request Host and Origin. The
+network is intentionally unencrypted to avoid setup barriers; pairing and private-view grants
+control application access but do not protect traffic from a network observer. No TLS authority,
+certificate profile, bootstrap host, installed PWA, manifest, service-worker cache or mDNS is
+required or offered. Native browser sharing is replaced by saving the result image and using the
+device's Files/Photos sharing controls.
 
-Enable companion hosting through an explicit laptop setting. Bind only the selected private LAN interface and a stable configured port, initially 8443. Configure a narrowly scoped Windows Firewall rule for the app, selected private network, and local subnet, with normal OS consent where required. Do not disable the firewall, open a router port, enable UPnP, or expose the game on a public network interface. Validate request `Host` and `Origin` against the current allowlist.
+All phone assets, public definitions, help and QR generation ship with the Windows app. First
+connection and subsequent play need no account, external website, CDN, hosted server, cloud
+signaling, Internet DNS or runtime download. The current host uses two-second public snapshot
+polling; a future event-cursor channel uses local WS. This boundary does not control unrelated
+operating-system or browser background traffic.
 
-Setup must inspect the actual Windows network profile; a private-range IP address does not prove
-that Windows classifies the connection as Private. Explain a Public/unknown-profile block and
-guide the user through changing only a trusted connection, including Administrator/UAC prompts
-where required. Show the proposed firewall scope before applying it and verify the resulting
-profile and reachability. Ethernet on the laptop and Wi-Fi on the phone may share the same LAN.
-Record setup outcomes and actionable failures. The first Pixel session exposed these requirements;
-see [phone setup and the September 12 event](docs/phone-setup.md).
+Configure only a narrowly scoped Windows Firewall rule for the selected Private interface, local
+subnet and TCP port 8080 with normal OS consent. Do not disable the firewall, expose a public
+interface, open a router port or use UPnP. Explain Public/unknown profile blocks and show the
+appropriate Windows settings. A private-range address alone is insufficient. Ethernet on the
+laptop and Wi-Fi on the phone may share the same LAN; isolated guest networks may prevent access.
+See [phone setup](docs/phone-setup.md).
 
-#### Trusted HTTPS is a required setup step
+#### Joining and handoff
 
-Service workers require a secure context. A phone opening `http://192.168.x.x` on the laptop does not receive the phone's `localhost` exception. A plain HTTP bookmark or dismissing a certificate error is not an acceptable substitute for the trusted offline PWA design. [W3C secure contexts](https://www.w3.org/TR/secure-contexts/)
+1. Join the laptop and shared phone/tablet to the same trusted Private LAN.
+2. Choose **Quick play**, select the connection and explicitly start hosting.
+3. Scan the QR to open `/companion/`, or type the displayed address.
+4. Enter the separate short-lived code and approve the matching device identity on the laptop.
+5. Synchronize the public match view and keep private cards covered until the active human
+   explicitly reveals their authorized hand.
+6. Hide cards before passing the device to the next human.
 
-For first installation without internet, generate a unique local CA and matching server certificate per Windows installation, using the operating system's cryptographic APIs. Protect private keys on the laptop with current-user access and DPAPI-backed storage. Ship no shared private key. Export only the public CA certificate/profile for the companion. Certificate subject alternative names must match the actual local hostname or IP used; do not disable TLS validation in any client.
+The QR contains only the local address, never reusable credentials, card hands, deck order or a
+game save. Pairing codes are single-use, short-lived, rate-limited and scoped to the laptop.
+Phone reload currently requires fresh pairing. Host restart or switching to PRACTICAL revokes
+the controller; the same authoritative match remains on the laptop. A changed IP needs a new
+address and pairing, not save migration. No device-installation or cache-readiness gate precedes
+play.
 
-The user installs and trusts that certificate on each companion device. On iOS/iPadOS, manually installed certificates require explicit full SSL/TLS trust in Settings. Android trust installation and browser behavior need device-specific instructions and validation; installing a Wi-Fi authentication certificate is not automatically the same as trusting a web-server CA. [Apple trust setup](https://support.apple.com/en-us/102390), [Chromium local certificate trust](https://chromium.googlesource.com/chromium/src/+/main/net/data/ssl/chrome_root_store/faq.md)
+In PRACTICAL, only the active human reveals the laptop's private controls. Other players look
+away; covering the view precedes the next reveal. This is an explicit social convention, not
+authentication of the person at the keyboard. AI hands remain hidden. The public board and
+physical-placement/recovery rules are shared with Quick play.
 
-Provide local illustrated setup/removal instructions and show the certificate fingerprint on the laptop for verification. Certificate trust is an OS-level user decision and cannot be silently granted by JavaScript or a QR code. If the user declines, offer laptop-only play.
+#### Initial synchronization and browser data
 
-A temporary local HTTP bootstrap, if needed for certificate transfer, serves only the public certificate and static setup instructions, carries no game credentials or private data, and closes after setup. Verify the transferred certificate's fingerprint through the laptop's trusted display or an explicit offline file-transfer workflow. Final pairing and all game operations occur over trusted HTTPS.
+Capture the public projection and its version/event cursor consistently on the coordinator.
+Initial synchronization validates compatible API/profile/asset versions. Planned event-cursor
+updates apply only later ordered events and request a new public snapshot after gaps. The phone
+never reshuffles, starts a second game or reconstructs an earlier seat's secrets.
 
-Handle browsers that warn about downloading the public certificate over HTTP. Explain the
-provisioning step and offer a verified local file-transfer alternative, such as USB, without
-copying private keys. Distinguish the OS confirmation to add a CA from a browser HTTPS error:
-the former is an explicit user trust decision, while bypassing the latter never counts as
-successful connection setup. Include device-specific CA installation and removal instructions.
-
-Manage certificate expiration, device-clock errors, and renewal explicitly. Renew hostname-matching leaf certificates locally before expiry; keep the installation's CA stable. CA replacement requires new device trust. Removing the Windows app must provide instructions for removing its dedicated trust entry from companions. Prefer HTTPS over TCP and WSS; HTTP/3 is not required for this workflow.
-
-#### Stable local origin
-
-Prefer a unique installation hostname such as `gt-<installation-id>.local`, advertised through a validated local mDNS implementation, and keep the port stable. Test name resolution on every supported phone/tablet and network configuration. The pairing screen also shows the current reachable address for diagnostics.
-
-If local name resolution fails, permit an IP-based HTTPS origin with a matching certificate and explain that changing the IP can require installing/pairing the companion at a new origin. A router DHCP reservation can stabilize that fallback. Do not promise that a QR update automatically migrates service-worker caches, cookies, or installed home-screen links to a new origin. Match state always remains on the laptop.
-
-The M0 connectivity spike must prove the chosen name-discovery and certificate method with WAN access disabled. If it does not work on a target device, record the blocker and revise the connection approach before presenting mobile support as complete.
-
-#### Installation and pairing sequence
-
-1. Join the laptop and companion to the same reachable private network.
-2. Establish local HTTPS trust through the guided setup and confirm that the browser reports a secure context.
-3. Load `/companion/`, register the service worker, cache the complete public shell, and report installation readiness only after verification succeeds.
-4. On iPhone/iPad, guide the user through Safari's Add to Home Screen flow. On Android, offer the supported install/shortcut flow and a browser-launch fallback. No native store account is required. [Apple web-app installation](https://support.apple.com/guide/iphone/open-as-web-app-iphea86e5236/ios)
-5. Launch the installed home-screen app where available and pair inside that final context. Do not assume an initial browser tab and a home-screen web app share all session storage or cookies.
-6. Enter the laptop's short-lived pairing code in that launched PWA. A QR scanned with the device's existing scanner can open the initial connection/install page, but must not be assumed to target an already installed PWA. The first release does not require an in-PWA camera scanner.
-7. Show the same pairing identity on the phone and laptop; confirm the device on the laptop. Issue a revocable device session and the current controller lease.
-8. Synchronize initial data directly from the laptop: verify compatible application/API/profile versions, obtain public board/card definitions and the current public match snapshot, then subscribe to current updates. Keep private hands covered until the normal active-seat reveal authorization succeeds.
-
-Android's native-like WebAPK installation may use a cloud minting service. Strictly offline setup must remain usable through a home-screen shortcut or browser launch when that is unavailable; do not promise app-drawer/Settings integration in every offline environment. Test secure shell caching and gameplay separately from install UI. [Google PWA installation behavior](https://web.dev/learn/pwa/installation)
-
-Pairing secrets are single-use, short-lived, rate-limited, and scoped to this laptop. The connection QR contains only the local landing address; the readable code is consumed inside the final PWA context with an attempt limit. Never put reusable game credentials in query strings, browser history, or a manifest `start_url`. Pairing establishes a device, not unrestricted access to every seat's secrets.
-
-#### QR-assisted initial synchronization
-
-In a multi-human game, **THE GAME TABLE** presents phone setup without hiding the board. The user explicitly starts the local host on a selected Private LAN interface; once the host reports its address, the table displays a locally generated QR, that address as readable text, and a separate short-lived pairing code. The technical **Connect phone or tablet** screen retains connection controls. QR is the chosen barcode format for opening the setup page with the phone's existing scanner. Scanning starts connection/setup; the actual initial data is transferred over the LAN after pairing. The QR is not a serialized game save and carries no hands, destination choices, deck order, private keys, or reusable credentials. Manual address/code entry remains available if scanning fails.
-
-Reuse the stable local origin and the trust/installation sequence above. A QR does not replace certificate trust or guarantee that the operating system opens the installed PWA instead of a browser tab. The setup page guides the player into the final installed context before pairing there. Generate the code from the selected reachable LAN address; report a local connection problem if the phone is on an isolated guest network rather than redirecting to an external service.
-
-Expose an authenticated bootstrap response containing the current public projection, profile identifier and manifest hash, API/asset versions, controller/handoff generations, `stateVersion`, and public event cursor. Capture the projection and cursor consistently on the coordinator. Reconcile the update subscription against that cursor: apply only later ordered events, and request a fresh public snapshot if updates were missed. Mark the phone **Synchronized** only after the versions and event stream agree. Never start a second game, reshuffle, or replay old private views to fill an event gap. Private state is fetched separately through a current seat grant, and the authoritative save remains on Windows.
-
-#### Manifest and cache policy
-
-Ship `manifest.webmanifest`, an original app icon with appropriate normal/maskable variants, Apple touch icon metadata, a stable `id`, `start_url: /companion/`, `scope: /companion/`, `display: standalone`, and box-derived theme/background colors. Keep the URL free of match IDs, player names, and private information.
-
-Use a small explicit service worker with a versioned allowlist of local HTML, hashed JavaScript/CSS, icons, and public help. It may provide a cached reconnect screen when the laptop is unavailable. It must never cache `/api/`, authenticated responses, ticket selections, card hands, WebSocket payloads, or game commands. Mark private/API HTTP responses `Cache-Control: no-store`; the fetch handler must bypass those paths even if a generic cache helper is added later.
-
-The browser holds private hand data only in the active view's memory. No hidden cards, ticket offers, or private pending command bodies go into Cache Storage, IndexedDB, localStorage, or persisted browser history. A device-authentication cookie may be `Secure`, `HttpOnly`, and `SameSite=Strict`; protect POST requests with origin validation and a CSRF token. Reauthentication/re-pairing is acceptable after browser storage eviction.
-
-Cache persistence is not guaranteed. If storage is evicted, reload the shell from the laptop and reconstruct the current view after authorization. Game progress is unaffected because the PWA owns no authoritative save. [WebKit storage policy](https://webkit.org/blog/14403/updates-to-storage-policy/)
+Private hands, offers, pending private command bodies and grants live only in active browser
+memory. Do not put them in Cache Storage, IndexedDB, localStorage, URLs or persisted browser
+history. Responses use `Cache-Control: no-store`. The HTTP controller cookie is `HttpOnly` and
+`SameSite=Strict`, with POST Origin/CSRF checks; it cannot use HTTPS-only cookie flags. Clear
+private state on Hide, page backgrounding, idle timeout, disconnect and controller changes. No service worker
+is registered and no offline app shell is maintained. If the laptop is unavailable, cover/disable
+the loaded view; a fresh page load needs the laptop again.
 
 #### Device, controller, and private-view authorization
 
@@ -1636,22 +1628,22 @@ All remote commands go through the same validation and durable transaction path 
 | `POST /api/v1/private-view` | Obtain a current active-seat view/grant | Controller and handoff checks; no arbitrary seat query |
 | `POST /api/v1/commands` | Submit a versioned card, ticket, claim choice, Recheck, or Save and pack away request | Validate command/state/controller/operation; private choices also require the active seat grant |
 | `GET /api/v1/commands/{id}` | Resolve an uncertain result after reconnection | Only the owning authorized controller; private result details require a current matching seat grant |
-| `WSS /api/v1/events` | Public updates and explicitly authorized private responses | Filter per connection/grant; include sequence/state version |
+| `WS /api/v1/events` (planned) | Public updates and explicitly authorized private responses over the selected LAN connection | Filter per connection/grant; include sequence/state version |
 | `POST /api/v1/hide` | Revoke private view and complete a handoff | Local covering occurs before waiting for the network |
 
 Use a versioned JSON envelope with bounded payload size, a message ID, session ID, state version, controller/handoff generation, and message type. Validate schemas and authorize each operation on the laptop. Reject unknown message types, stale market card IDs, and incompatible clients. Keep secrets out of server access logs and exception payloads.
 
-The controlling companion may request `SaveAndPackAway` without revealing a private hand. Only the laptop can capture the board, create the checkpoint, and confirm it durable. A request acknowledgment means saving has started; the PWA displays permission to pack away only after the host reports the verified completed checkpoint and its current lifecycle is `PackedAway` for that same checkpoint. Resolve an uncertain save result through the command-result endpoint, including a fresh public lifecycle/version projection. Reject out-of-order responses and clear pack-away permission on disconnect or lifecycle change. An old successful receipt remains a historical save result; it cannot authorize clearing a game that has since resumed. Starting a rebuild, changing its target, and resuming a packed game remain laptop controls in the first release. The companion receives public progress and stays covered; no save or board-photo recovery cache is added to the phone.
+The controlling companion may request `SaveAndPackAway` without revealing a private hand. Only the laptop can capture the board, create the checkpoint, and confirm it durable. A request acknowledgment means saving has started; the phone displays permission to pack away only after the host reports the verified completed checkpoint and its current lifecycle is `PackedAway` for that same checkpoint. Resolve an uncertain save result through the command-result endpoint, including a fresh public lifecycle/version projection. Reject out-of-order responses and clear pack-away permission on disconnect or lifecycle change. An old successful receipt remains a historical save result; it cannot authorize clearing a game that has since resumed. Starting a rebuild, changing its target, and resuming a packed game remain laptop controls in the first release. The companion receives public progress and stays covered; no save or board-photo recovery cache is added to the phone.
 
 On disconnection, cover the hand, disable commands, and show reconnect guidance. Do not implement background synchronization of purchases or optimistic card dealing. If a submitted command's acknowledgment was lost, query its ID after reauthorization; the laptop returns its durable outcome. If the turn has already changed, return a non-private completion receipt and the current handoff, not the previous seat's revealed cards. After a page termination that loses the command ID, obtain a fresh authoritative phase/view before offering another action.
 
 Use bounded reconnect attempts with backoff and foreground retry. On any missed event sequence, request a fresh permitted projection rather than replaying a stream that could contain an earlier seat's secrets. Fresh private authorization is required after backgrounding, controller changes, or laptop restart. Phone and laptop timers cannot confer an extra turn.
 
-A PWA disconnect does not cancel an authorized physical claim. While the session lifecycle is `Active`, the laptop may verify and commit that exact placement normally, then pause before beginning another turn until the companion reconnects or an operator explicitly selects laptop-only control. Pack-away and rebuilding gates suppress that completion path. Preserve partially completed digital actions. Never reroll cards or launch a second autonomous game on the phone.
+A phone disconnect does not cancel an authorized physical claim. While the session lifecycle is `Active`, the laptop may verify and commit that exact placement normally, then pause before beginning another turn until the companion reconnects or an operator explicitly selects laptop-only control. Pack-away and rebuilding gates suppress that completion path. Preserve partially completed digital actions. Never reroll cards or launch a second autonomous game on the phone.
 
 #### Updates and compatibility
 
-Version the PWA build, API protocol, asset cache, and data contract independently. Bundle compatible versions in each Windows release. A new service worker waits for a safe handoff or paused state; do not force-reload a private card choice or pending action. Keep the old shell assets until no active client needs them, and reject incompatible clients with reconnect/update guidance.
+Version the browser assets, API protocol and data contract independently. Bundle compatible versions in each Windows release. Do not force-reload a private card choice or pending action; reject incompatible clients with reconnect/update guidance. A reload obtains the current assets from the laptop and requires fresh authorization.
 
 Apply a restrictive content security policy with same-origin scripts/styles/connections, no third-party embeds, no inline private data in bootstrap HTML, and no external fonts. Serve untrusted player names as text. Keep the LAN API limited to game-controller operations, never arbitrary file access or execution.
 
@@ -1663,7 +1655,7 @@ Use `%LOCALAPPDATA%\GoldenTicket\` for settings and match storage, independent o
 
 ```text
 settings.json
-companion-host/                 local endpoint settings, protected TLS keys, pairing registry
+companion-host/                 local endpoint settings; future approved-device registry
 sessions/<session-id>/session.db
 sessions/<session-id>/checkpoint-photos/<checkpoint-id>.gtphoto
 sessions/<session-id>/backups/
@@ -1687,7 +1679,7 @@ Game images are board-only references, not desktop screenshots containing privat
 | `PresentationCheckpoint` | story version, last event, repetitions, settings | Resume without replaying stale narration |
 | `MigrationHistory` | version, timestamp, completion | Controlled save upgrades |
 
-Keep paired-device credentials and local TLS material in a separate protected host registry, not in portable match exports. Private-view grants and active controller leases are ephemeral and revoked on restart. The companion caches only its public shell; all match snapshots, deck state, and pending operations stay on Windows.
+Keep any future persisted paired-device credentials in a separate protected host registry, not in portable match exports. Current controller grants are ephemeral and revoked on restart. All match snapshots, deck state and pending operations stay on Windows; the phone has no offline cache.
 
 Local saves store event and checkpoint payloads in plaintext. Preserve the journal hash chain,
 state fingerprints, replay checks, checkpoint binding and readback validation for integrity. Current
@@ -1698,9 +1690,9 @@ cache, and rely on normal Windows file permissions for local access. Do not desc
 encrypted or promise secrecy from someone who can read the files.
 
 The former encrypted game-save and format-v1 photo formats are unsupported; users may delete those
-old saved matches. Creating and reading a current save must not require DPAPI. Keep the companion's
-TLS private keys separately protected as specified in section 18; the local game-save format does
-not change the companion's transport security.
+old saved matches. Creating and reading a current save must not require DPAPI. The HTTP companion
+does not create certificate keys; its application authorization remains separate from local save
+integrity checks.
 
 ### 19.3 Transaction discipline
 
@@ -1885,7 +1877,7 @@ Use measured train pixel dimensions and geometric residuals to define compatibil
 | Database corruption | Offer last valid local backup and preserve original files | No silent replacement with a fresh match |
 | Stale UI/card/AI result | Refresh the relevant action view | Reject by version and operation ID |
 | Companion disconnects or is suspended | Cover its hand and show reconnect guidance | Preserve laptop state; no queued offline turn commands |
-| Local HTTPS trust or certificate name fails | Show local setup/renewal instructions | No certificate bypass or fallback to unprotected private traffic |
+| Quick play local network unavailable | Show local connection guidance or allow an explicit switch to PRACTICAL | No discarded turn or automatic hidden-hand reveal |
 | Companion origin changes or cache is evicted | Reopen/install from the current laptop origin and pair if needed | No lost game state; do not claim automatic cache migration |
 | A second companion takes control | Cover/revoke the old controller; show explicit handoff | Reject stale controller generations and private-view grants |
 | Rare unresolved supply state | Save and explain the specific rules-resolution state | Preserve revealed cards and RNG continuation |
@@ -1992,7 +1984,7 @@ Test focus loss, screen lock, handoff, resize, restore, and app restart while ea
 | Pack away and rebuild | Full board removal and reconstruction restores identical digital state, pending operation, and final-round schedule; no cleanup/rebuild action changes scores |
 | Privacy | No secret-bearing public output in the automated sentinel suite and reviewed human handoffs |
 | Offline installation | Clean Windows machine completes a match with internet unavailable; shared LAN remains available for companion testing, while laptop-only mode also works with networking disabled |
-| iOS/iPadOS and Android PWA | Real phone/tablet tests prove trusted local HTTPS, shell caching, launch, pass-and-hide, reconnect, and command deduplication with WAN disconnected |
+| iOS/iPadOS and Android companion | Real devices prove HTTP Quick play joining/handoff, image saving, reconnect and command deduplication with WAN disconnected; PRACTICAL is verified separately on the laptop |
 | GPU | Each advertised hardware family tested against the same model/replay acceptance criteria |
 | Story | Full matches complete with story on/off and all guidance modes without state differences |
 
@@ -2006,19 +1998,18 @@ Keep a checklist and annotated event log. A feature is marked implemented only w
 
 ### 22.7 Companion-specific acceptance
 
-Test current stable iOS/iPadOS Safari and Android Chrome, plus the previous supported Safari major where feasible; record exact OS/browser versions and real hardware in the compatibility report. Desktop device emulation is useful but does not establish home-screen or background behavior.
+Test current stable iOS/iPadOS Safari and Android Chrome, plus the previous supported Safari major where feasible; record exact OS/browser versions and real hardware in the compatibility report. Desktop device emulation is useful but does not establish phone lifecycle or background behavior.
 
 | Scenario | Required result |
 |---|---|
-| Fresh setup with WAN disconnected | Guided trust, secure-context check, service-worker registration, and local play succeed without external downloads |
-| Scan the laptop QR on a fresh companion with WAN disconnected | Local landing page, trust guidance, pairing in the final app context, and initial public synchronization succeed entirely from laptop-hosted content |
+| Fresh Quick play setup with WAN disconnected | Direct browser game, pairing and local play succeed with no certificate/install/cache gate or external download |
+| Scan the laptop QR on a fresh companion with WAN disconnected | Quick play opens the browser game; pairing and initial public synchronization stay entirely on the LAN |
 | Game changes between initial snapshot and update subscription | Catch up from the snapshot cursor or resynchronize; no lost/duplicated action, stale hand, or new deal |
-| Android offline WebAPK service unavailable | Browser/shortcut operation remains functional; install status is reported honestly |
-| Browser tab versus home-screen launch | Correct pairing in the final context; no assumed shared credentials |
 | Phone and tablet, portrait/landscape, enlarged text | Card choices and Hide stay usable with the box palette and safe areas |
-| HTTP LAN address or invalid/expired/mismatched TLS | No private game traffic; actionable local setup guidance |
-| Guest Wi-Fi isolation, blocked port, hostname lookup failure | Diagnose connection layer without changing game state |
-| DHCP change or laptop restart | Stable-name recovery where validated; explicit new-origin workflow otherwise |
+| Explicit HTTP Quick play on LAN | Same authorized card actions and handoff behavior without certificate setup; image saving works |
+| Switch from Quick play to PRACTICAL | Phone controller revoked; same match continues with deliberate private laptop handoffs and no networking UI |
+| Guest Wi-Fi isolation or blocked port | Diagnose connection layer without changing game state |
+| DHCP change or laptop restart | Show the current direct address and QR; join and pair again without changing the saved match |
 | Handoff followed by delayed private response | Prior seat's response rejected by grant/handoff generation |
 | Hide or release peek while a private-view request is in flight | Client reveal generation rejects the late response; the same seat's hand stays covered |
 | Two tabs/devices submit an action | Only the current controller and command version can succeed |
@@ -2026,10 +2017,12 @@ Test current stable iOS/iPadOS Safari and Android Chrome, plus the previous supp
 | Network drops during physical placement | Laptop preserves/verifies the authorized operation; next turn waits for control recovery |
 | Lock, switch apps, back/forward cache, or process termination | Resume covered and require fresh private authorization |
 | Inspect browser caches/storage/history and public WebSocket messages | No hidden hands, tickets, reusable pairing secrets, or pending private command bodies |
-| Service-worker update during a private action | Defer activation/reload to a safe state; preserve the Windows operation |
-| Delete PWA cache or uninstall/reinstall shortcut | Recover from laptop without losing match progress |
+| Browser reload after a laptop application update | Re-pair and verify protocol compatibility; preserve the Windows operation |
+| Reload the browser or clear its site data | Re-pair and recover the current authorized state from the laptop without losing match progress |
 
-M0 must prove certificate trust, local-origin resolution, and offline installation behavior on actual iOS and Android before substantial companion UI work. These platform gates are currently unverified implementation tasks, not promises based solely on PWA standards.
+Real-device acceptance must prove Quick play QR joining, gameplay, image saving and reconnect on
+actual iOS and Android. PRACTICAL needs a full multi-human laptop session with networking absent.
+The implemented handoff and automated tests do not establish those platform results.
 
 ### 22.8 Save, pack away, and rebuild acceptance
 
@@ -2046,7 +2039,7 @@ M0 must prove certificate trust, local-origin resolution, and offline installati
 | Power loss before/after image finalize, checkpoint commit, and success response | Valid prior state or the exact completed checkpoint recovers; no premature safe-to-pack result, orphan reference, or duplicate save |
 | Result query or restart between checkpoint commit and photo validation | Incomplete save only; completed-save status requires both the verified checkpoint and its validated matching attachment |
 | Storage full, unreadable snapshot, or image readback failure | Remain paused with an actionable failure; never claim both state and photo were saved |
-| Save requested from PWA, then disconnect or lose acknowledgment | Laptop owns capture and durability; durable result query returns same checkpoint; no success from request acceptance alone |
+| Save requested from phone, then disconnect or lose acknowledgment | Laptop owns capture and durability; durable result query returns same checkpoint; no success from request acceptance alone |
 | Old successful save receipt arrives after the game has resumed | Show historical save status only; current lifecycle/checkpoint/version checks prevent permission to clear the active board |
 | Rebuild with a different valid camera pose, markers, or resolution | Fresh registration maps the same canonical target; no dependency on the old camera's pixel coordinates or an empty board |
 | Wrong parallel lane, missing old train, extra train, or hidden region during rebuilding | Highlight discrepancy and block normal Resume; no route transaction created |
@@ -2063,18 +2056,18 @@ Compare the checkpoint's logical-state hash with the restored state before gamep
 
 ## 23. Implementation milestones
 
-Each milestone ends with a runnable, reviewable artifact and relevant validation. The user's priority is explicit: complete camera/PWA/inference and photographed save-and-rebuild before voice/story/audio. Training belongs to the same final narrative feature pass. Finish other planned feature work and establish offline installer packaging before that pass; final integration, packaging refresh, and release verification still follow it. Milestone IDs remain work-package references: perform M7's packaging foundation before M6's narrative work, then close M7 after all features pass acceptance. Essential visual move and recovery guidance must already work throughout earlier milestones.
+Each milestone ends with a runnable, reviewable artifact and relevant validation. The user's priority is explicit: complete camera/companion/inference and photographed save-and-rebuild before voice/story/audio. Training belongs to the same final narrative feature pass. Finish other planned feature work and establish offline installer packaging before that pass; final integration, packaging refresh, and release verification still follow it. Milestone IDs remain work-package references: perform M7's packaging foundation before M6's narrative work, then close M7 after all features pass acceptance. Essential visual move and recovery guidance must already work throughout earlier milestones.
 
 | Milestone | Work | Exit evidence |
 |---|---|---|
-| M0: Platform and data feasibility | WPF shell; free CLI build; WinRT camera; CV/inference spikes; exact-edition data capture; local HTTPS PWA install/pairing spike on real iOS and Android; defer audio implementation to the final feature pass | Clean-machine offline spike; device trust/origin/launch evidence; actual package lock; native notices; camera/provider report; no paid service required |
+| M0: Platform and data feasibility | WPF shell; free CLI build; WinRT camera; CV/inference spikes; exact-edition data capture; direct HTTP browser pairing on real iOS and Android; PRACTICAL laptop handoffs; defer audio implementation to the final feature pass | Clean-machine offline spike; device joining and handoff evidence; actual package lock; native notices; camera/provider report; no paid service required |
 | M1: Deterministic game | Reviewed board/ticket manifest; complete rules actions/subphases; invariants; exact scoring; pending operations; versioned rare-case policies | Independent fixtures, seeded simulations, data audit, documented supply-case decisions |
-| M2: Full digital interaction | Seat assignment, PWA pass-and-hide and laptop fallback, digital market/hands/tickets, basic AI, manual physical confirmation, exact save/checkpoint/lifecycle persistence, diagram-based rebuild, reconnect protocol | Complete local mixed-seat match using the shared companion; privacy, duplicate-command, connection-loss, mid-turn save, and crash tests |
+| M2: Full digital interaction | Seat assignment, Quick play pass-and-hide and PRACTICAL laptop handoffs, digital market/hands/tickets, basic AI, manual physical confirmation, exact save/checkpoint/lifecycle persistence, diagram-based rebuild, reconnect protocol | Complete local mixed-seat match using the shared companion; privacy, duplicate-command, connection-loss, mid-turn save, and crash tests |
 | M3: Camera and replay | Calibration, print layout, board landmarks, capture quality, frame leases, recorder and annotation/replay tooling | Reproducible recordings with ground truth; jog/board-shift detection; no user training |
 | M4: Verification loop | Baseline recognition, full-board matcher, planned and board-first claims, correction UI, automatic recovery, wake gesture, verified pack-away photos and guided reconstruction | Recorded and live claim/recovery scenarios plus complete pack-away/rebuild with no incorrect commits or duplicate scoring |
 | M5: Recognition model if needed | Developer dataset expansion, small model, ONNX export, backend comparison, bundle versioning; Auto/CPU/GPU launch policy and effective-backend indicator for the selected inference path | Held-out evidence showing required improvement over baseline when training is needed; provider-selection/fallback tests, compatibility manifest and licenses |
 | M6: Game experience | Complete non-audio AI/theme/accessibility work first; implement Training/Story, voice/visual modes, original narration/sounds, and private-output filtering as the final feature pass after photographed save-and-rebuild and packaging foundation | Complete Training and Story mixed-seat matches; Training produces no sound effects; verified theme contrast and player-color distinction; no hidden-information leakage; measured AI completion/latency |
-| M7: Hardening and release candidate | Offline installer/PWA distribution, native dependencies, certificate renewal, mobile lifecycle/cache updates, suspend/reconnect, disk faults, photo/checkpoint crash recovery and retention, save-format validation, extended sessions, documentation | Full acceptance matrix, clean-machine/local-network install, real-device report, known limitations, reviewed release artifacts |
+| M7: Hardening and release candidate | Offline installer and bundled browser assets, native dependencies, mobile lifecycle and asset updates, suspend/reconnect, disk faults, photo/checkpoint crash recovery and retention, save-format validation, extended sessions, documentation | Full acceptance matrix, clean-machine/local-network install, real-device report, known limitations, reviewed release artifacts |
 
 M1 may proceed alongside M0's camera experiments because rules do not depend on capture. Dataset collection begins as soon as M3 tooling produces trustworthy synchronized labels. M5's model training is conditional on measured need; skipping training is acceptable only if M4's recognizer meets the same final criteria. Processor selection and truthful status remain required for whichever recognition path is implemented.
 
@@ -2092,7 +2085,12 @@ For every milestone, record what works, which checks ran, exact data/model/packa
 
 ### 24.1 Decisions already settled
 
-The game, physical/digital division, local operation, Windows host, iOS/Android companion PWA, selectable inference, automatic reorientation, developer-only model training, presentation modes, story mode, box palette, multiple-human handoff, and photo-assisted save/pack-away/rebuild are specified. No further product clarification is necessary to start M0 and M1. The local HTTPS trust workflow is the proposed implementation tradeoff for strictly offline PWA setup and needs real-device validation.
+The game, physical/digital division, local operation, Windows host, iOS/Android companion,
+selectable inference, automatic reorientation, developer-only model training, presentation modes,
+story mode, box palette, multiple-human handoff and photo-assisted save/pack-away/rebuild are
+specified. The September 21 decision removes installed-app and certificate setup. Quick play is
+the recommendation; PRACTICAL uses the laptop with other players looking away. Both need physical
+play-session validation, with Android/iOS testing for Quick play.
 
 ### 24.2 Evidence still to obtain during implementation
 
@@ -2102,7 +2100,7 @@ The game, physical/digital division, local operation, Windows host, iOS/Android 
 | Physical camera/mount reference configuration | Shared-read-only inspection confirms the connected Pixel UVC source currently advertises at most 1920×1080. The NEEWER DS009 arm/existing upright need mounted stability/lighting acceptance; native-4K physical input remains untested. Exact phone model is unrecorded | M0/M3 measured compatibility report and [current camera report](docs/camera-processing.md) |
 | Train appearance generalization | Training on the developer's pieces is permitted, but coverage is unmeasured | M4/M5 held-out evaluation |
 | Actual package/native compatibility | Version research is not a compiled integration test | M0 locked dependency report |
-| Local PWA installation and trust | Secure-context, CA provisioning, local naming, and offline home-screen behavior differ by platform | M0 iPhone/iPad and Android device evidence before declaring support |
+| Multi-human controllers | Real QR scans, HTTP browser behaviour, focus/handoff and downloads vary by device; laptop sharing also needs usability checks | M0/M2 Quick play Android/iOS and PRACTICAL laptop acceptance before declaring support |
 | Rare depleted-supply policies | Classic printed rules do not resolve every software boundary condition explicitly | M1 documented decisions and fixtures |
 | Narration pronunciation and recording inventory | Voice mode must work with no downloadable voice | M6 audio manifest and offline walkthrough |
 | Final public distribution rights and naming | Software-library permissions do not establish rights to game branding, copied artwork, ticket presentation, or audio | Distribution review before public packaging/marketing |
@@ -2115,7 +2113,9 @@ The rights item does not prevent designing or testing the application. Use origi
 - All required rule-policy decisions are explicit and tested; no placeholders remain in a shipped data manifest.
 - CPU operation, camera verification, privacy, digital deck restoration, and offline sound pass on a clean machine.
 - A photographed checkpoint survives complete board cleanup, restart, and guided reconstruction, including partial turns and injected save faults; required-photo validation, completed-save retention, and separate active-journal recovery pass.
-- The companion passes installation, certificate trust, pass-and-hide, cache, update, and reconnect checks on real iOS/iPadOS and Android devices without internet; local networking requirements are disclosed.
+- Quick play passes direct QR joining, pass-and-hide, image saving and reconnect checks on real
+  iOS/iPadOS and Android devices without Internet. PRACTICAL passes multi-human private laptop
+  choices and handoffs without networking. The trusted-LAN and unencrypted-HTTP limits are disclosed.
 - Every advertised GPU/camera configuration has supporting evidence; untested support is not implied.
 - The installer includes runtime/model/audio/native dependencies and exact license notices, with no first-launch downloads.
 - The supported physical edition is unmistakable in onboarding and packaging.
@@ -2134,18 +2134,25 @@ change the installed-runtime contract: Windows and the companion communicate onl
 LAN, using bundled assets and local game state, without Internet services or connectivity checks.
 The browser regression harness blocks non-laptop origins while exercising LAN play with an offline
 Internet indication. [Build/CI documentation](docs/build-and-ci.md) distinguishes these checks from
-remaining physical-device installation and disconnected-WAN acceptance.
+remaining physical-device joining, lifecycle and disconnected-WAN acceptance.
 
 The repository now contains Domain, Application, AI, Persistence, Desktop, Simulator, and test projects. The implemented desktop uses explicit manual physical verification and a private laptop view. It implements digital dealing/turns, route reservation and confirmation, exact scoring algorithms, heuristic opponents, SQLite event replay, and the box-derived palette. Audit fixes add stale-view protection, physical reconciliation before resumed play, strict save integrity and path checks, concurrent-write protection, bounded AI waiting, and regression tests.
 
-The subsequent work adds state-only named checkpoints, pack-away/rebuild lifecycles, disclosed supply-policy continuations and a standalone local HTTPS/QR/pairing/PWA connectivity spike. The September 12 audit corrects checkpoint verification and restart gates, policy/desktop continuation bugs, network/session/certificate security and browser diagnostic/cache behavior. The spike has no game commands or private-seat views and is not embedded in the desktop app.
+Earlier work added state-only named checkpoints, pack-away/rebuild lifecycles, supply-policy
+continuations and a certificate-based connectivity experiment. The September 12 audit and its
+evidence describe that historical approach. Its tool, certificate setup and installed web-app
+support were removed on September 21; those reports are not current setup requirements.
 
-The follow-up implementation adds `GoldenTicket.CompanionHost`, an embedded local HTTPS game PWA
-with laptop-approved controller pairing, short private-view grants and the four human digital
-actions; `GoldenTicket.Vision`, with real Windows capture, manual board cropping and scene-reference
-comparison; and the original checkpoint-reference photo foundation. The Windows shell now exposes
-camera, connection and photo screens. These changes are described in
-[the implementation record and acceptance checklist](docs/IMPLEMENTATION-2026-09-12.md).
+The embedded `GoldenTicket.CompanionHost` supplies the shared browser controller, while the
+Windows coordinator owns cards, turns, physical verification and durable saves.
+`GoldenTicket.Vision` supplies Windows camera capture, manual board cropping and scene-reference
+comparison, with board photos attached to verified checkpoints.
+
+The current implementation offers recommended HTTP Quick play and PRACTICAL laptop sharing.
+Quick play serves bundled browser assets on port 8080, with explicit laptop pairing, active-seat
+grants and handoff controls. PRACTICAL keeps all private choices on the laptop while other humans
+look away. There are no certificate downloads, installed-app prompts, service workers or cached
+shell gates. Both modes preserve the same Windows match. Physical phone acceptance remains open.
 
 Single-human play now uses the laptop's card view directly for opening destinations. The unresolved
 opening choice has no **Back to table** action; plain Escape covers it with the save/quit dialog.
@@ -2166,7 +2173,8 @@ On a confirmed opening drop, the rejected card and board highlight vanish togeth
 remaining cards panel slides down. Either opening choice returns to the public table. The draw
 panels animate to the centered bottom layout for two to five players.
 Setup changes update the proposed mode; an active or resumed match uses its own human-seat count.
-Multiple-human games present shared-phone setup on the visible game table; companion card and
+Multiple-human games choose Quick play phone setup or PRACTICAL laptop sharing on the visible
+game table; companion card and
 handoff acceptance remains outstanding. The solo workflow keeps
 the table available for placements and AI instructions, respects explicit covering, and retains
 the physical reconciliation gate before restored gameplay.
@@ -2230,10 +2238,10 @@ board crops; checkpoint evidence remains unsharpened. Locked restore/build, 546 
 bounded photo-pair/GPU evidence and remaining physical acceptance are described in
 [the current camera report](docs/camera-processing.md).
 
-Current deviations remain explicit: the PWA uses bundled plain JavaScript and two-second public
-snapshot polling instead of the specified TypeScript/WSS event cursor. Controller sessions are
+Current deviations remain explicit: the browser companion uses bundled plain JavaScript and two-second public
+snapshot polling instead of the specified TypeScript build and WS event cursor. Controller sessions are
 process-local and each page reload requires fresh laptop-approved pairing. The device uses a
-30-second reveal timeout and Hide, without hold-to-peek. Photos are operator-attested plaintext
+30-second inactivity timeout and Hide, without hold-to-peek. Photos are operator-attested plaintext
 sidecars with SHA-256 checksums for `LogicalStateOnly` checkpoints, not `VerifiedBoardPhoto` evidence.
 The local learned piece model supplies train candidates to a measured automatic claim check for
 all 100 classic-US routes and 309 printed train spaces. One pulsing cue marks each requested space.
@@ -2313,10 +2321,7 @@ Sources were consulted on September 11, 2026. They establish edition facts and p
 - [Installed local speech voices](https://learn.microsoft.com/en-us/dotnet/api/system.speech.synthesis.speechsynthesizer.getinstalledvoices?view=net-10.0) and [NAudio license](https://github.com/naudio/NAudio/blob/release/2.x/license.txt).
 - [NSIS license](https://nsis.sourceforge.io/License): installer baseline and component-specific review.
 
-### 25.4 Companion PWA and local hosting
+### 25.4 Browser companion and local hosting
 
-- [W3C Secure Contexts](https://www.w3.org/TR/secure-contexts/) and [service-worker guidance](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers): trusted contexts and local-origin limitations.
-- [Apple certificate trust](https://support.apple.com/en-us/102390) and [Chromium local trust handling](https://chromium.googlesource.com/chromium/src/+/main/net/data/ssl/chrome_root_store/faq.md): device trust must be established explicitly; no certificate-error bypass.
-- [Apple home-screen web apps](https://support.apple.com/guide/iphone/open-as-web-app-iphea86e5236/ios) and [Google PWA installation](https://web.dev/learn/pwa/installation): installation flows and Android shortcut fallback.
-- [WebKit storage policy](https://webkit.org/blog/14403/updates-to-storage-policy/): cache persistence and eviction must not own match progress.
-- [Kestrel HTTPS endpoints](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/endpoints?view=aspnetcore-10.0), [ASP.NET Core license](https://github.com/dotnet/aspnetcore/blob/main/LICENSE.txt), [TypeScript license](https://github.com/microsoft/TypeScript/blob/main/LICENSE.txt), [Vite license](https://github.com/vitejs/vite/blob/main/LICENSE), and [Node.js license](https://github.com/nodejs/node/blob/main/LICENSE): local hosting and development dependency basis.
+- [Kestrel endpoints](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/endpoints?view=aspnetcore-10.0) and [ASP.NET Core license](https://github.com/dotnet/aspnetcore/blob/main/LICENSE.txt): embedded local HTTP hosting and framework terms.
+- [TypeScript license](https://github.com/microsoft/TypeScript/blob/main/LICENSE.txt), [Vite license](https://github.com/vitejs/vite/blob/main/LICENSE), and [Node.js license](https://github.com/nodejs/node/blob/main/LICENSE): development dependency basis; no runtime Node or external web service is required.

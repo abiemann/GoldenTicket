@@ -39,7 +39,7 @@ flowchart TD
 | AI | Deterministic policy and route planning | Receives `SeatView`, never authoritative state or other players' private holdings |
 | Persistence | SQLite journal, replay integrity and checkpoint photos | Implements Application's `ISessionStore`; owns database/filesystem details |
 | Vision | Windows capture, processing, geometry and detection | Produces observations; does not change scores, spend cards or own game rules |
-| CompanionHost | Local HTTPS, pairing, phone assets and request adaptation | Uses Application contracts; is not a second referee |
+| CompanionHost | Local HTTP, pairing, phone assets and request adaptation | Uses Application contracts; is not a second referee |
 | Desktop | WPF presentation, device/session composition and physical/privacy workflows | Composes adapters; keeps controls and dispatcher concerns out of the core |
 
 Domain includes loading its versioned manifest from disk. The command/reducer path itself does not
@@ -102,9 +102,9 @@ updates and subscriptions; the core never receives controls or a dispatcher.
 - The simulator checks complete games, invariants and replay. Browser tests exercise the phone
   client separately; hardware and phone acceptance still require real devices.
 
-QR, LAN and certificate tests exercise the shipped `CompanionHost`. The old `ConnectivitySpike`
-remains an isolated experiment; its pairing/request-policy tests are explicitly spike tests.
-Production projects must not import code from that tool.
+QR, LAN and request-boundary tests exercise the shipped `CompanionHost`. The earlier certificate
+and installed-app experiment has been removed. PRACTICAL uses the same coordinator through local
+private views; it does not start a phone host.
 
 ## Decisions and tradeoffs
 
