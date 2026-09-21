@@ -41,7 +41,7 @@ public sealed record CompanionResultImage(string SessionId, long StateVersion, C
         bytes.AsSpan(8, 8).SequenceEqual(new byte[] { 0, 0, 0, 13, 73, 72, 68, 82 });
 }
 public sealed record CompanionRoute(string Id, string Label, int Length, string Color);
-public sealed record CompanionTicket(string Id, string Label, int Points);
+public sealed record CompanionTicket(string Id, string Label, int Points, string? From = null, string? To = null);
 public sealed record CompanionPrivateSnapshot(SeatView View, LegalActions Actions,
     IReadOnlyList<CompanionTicket> HeldTickets, IReadOnlyList<CompanionTicket> OfferedTickets,
     int MinimumKeep);
@@ -51,4 +51,7 @@ public sealed record CompanionCommand(string CommandId, string SessionId, long E
     string Kind, int? Slot = null, string? RouteId = null, PaymentOption? Payment = null,
     string[]? KeptTickets = null, string[]? ReturnedTickets = null, string? DetectedClaimId = null);
 public sealed record CompanionCommandReceipt(bool Accepted, bool Duplicate, long StateVersion,
-    string? Code, string Message);
+    string? Code, string Message, CompanionPrivateContinuation? Continuation = null);
+/// <summary>A refreshed private view for the already revealed human's uninterrupted turn.</summary>
+public sealed record CompanionPrivateContinuation(string Grant, long HandoffGeneration,
+    CompanionPublicSnapshot Snapshot, CompanionPrivateSnapshot Data);

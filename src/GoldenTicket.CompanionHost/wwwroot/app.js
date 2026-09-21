@@ -11,6 +11,8 @@
   let busy = false, polling = false, lastHeartbeat = 0;
   let privateActionsTarget = null, ticketOfferControls = null, renderedBoardInteraction = null, detectedPayment = null;
   let pendingClaimInstruction = null;
+  let pendingCommand = null, snapshotRevision = 0;
+  let privateHandTarget = null, drawControls = null;
   let connectionGeneration = 0;
   const maxResultBytes = 16 * 1024 * 1024;
   let resultKey = null, resultGeneration = 0, resultUrl = null, resultAbort = null;
@@ -22,6 +24,7 @@
     privateData = null; grant = null;
     privateActionsTarget = null; ticketOfferControls = null; renderedBoardInteraction = null; detectedPayment = null;
     pendingClaimInstruction = null;
+    pendingCommand = null; privateHandTarget = null; drawControls = null;
     byId("private").replaceChildren(); byId("private").hidden = true;
     byId("curtain").hidden = !paired || resultKey !== null;
   }
@@ -52,13 +55,15 @@
     } finally { clearTimeout(timeout); }
   }
   function currentIdentity(value) { return value?.game ? `${value.game.sessionId}:${value.game.stateVersion}:${value.revealSeatId}:${value.canControl}` : "none"; }
+  function turnIdentity(value) { return value?.game && value.canControl ? `${value.game.sessionId}:${value.game.turnNumber}:${value.game.activeSeatId}:${value.revealSeatId}` : "none"; }
   async function poll() {
     if (polling || document.hidden) return;
     polling = true;
     const generation = connectionGeneration;
+    const revision = snapshotRevision;
     try {
       const result = await api("/api/session");
-      if (generation !== connectionGeneration || document.hidden) return;
+      if (generation !== connectionGeneration || revision !== snapshotRevision || document.hidden) return;
       if (!result.paired) {
         if (paired) { clearPrivate(); notice("This controller was revoked or replaced. Join again using the code shown on the laptop."); }
         clearResultImage(); snapshot = null;
@@ -67,15 +72,16 @@
         byId("connection").textContent = pending ? "Waiting for the laptop" : "Connected to your game";
         updatePairForm(); return;
       }
-      if (result.apiVersion !== "1" || result.assetsVersion !== "8") { disconnect("The companion needs an update. Reload from the laptop before playing."); return; }
-      if (currentIdentity(snapshot) !== currentIdentity(result.snapshot) || (grant && result.handoffGeneration > handoffGeneration)) clearPrivate();
+      if (result.apiVersion !== "1" || result.assetsVersion !== "11") { disconnect("The companion needs an update. Reload from the laptop before playing."); return; }
+      const awaitingSameTurn = pendingCommand && pendingCommand.identity === turnIdentity(result.snapshot);
+      if (!awaitingSameTurn && (currentIdentity(snapshot) !== currentIdentity(result.snapshot) || (grant && result.handoffGeneration > handoffGeneration))) clearPrivate();
       paired = true; pending = false; csrf = result.csrf; snapshot = result.snapshot;
       updatePairForm();
       handoffGeneration = Math.max(handoffGeneration, result.handoffGeneration); lastHeartbeat = Date.now();
       byId("connect").hidden = true; byId("curtain").hidden = privateData !== null;
-      byId("connection").textContent = "Synchronized with laptop · Private LAN";
+      byId("connection").textContent = "Synchronized · Private LAN";
       renderPublic(); syncResultImage(); syncBoardActions();
-    } catch (error) { if (generation === connectionGeneration) disconnect(error.message); }
+    } catch (error) { if (generation === connectionGeneration && revision === snapshotRevision) disconnect(error.message); }
     finally { polling = false; }
   }
   function element(tag, text, className) {
@@ -181,7 +187,8 @@
     finally { busy = false; if (snapshot) byId("reveal").disabled = !snapshot.canControl || !lastHeartbeat; }
   }
   async function submit(kind, details = {}) {
-    if (busy || !privateData || !grant || document.hidden || Date.now() - lastHeartbeat >= 6000) { hide(); return; }
+    if (busy) return;
+    if (!privateData || !grant || document.hidden || Date.now() - lastHeartbeat >= 6000) { hide(); return; }
     const board = snapshot?.boardInteraction;
     if ((kind === "drawTrain" || kind === "drawTickets" || kind === "keepTickets") && board?.cardActionsBlocked) {
       notice(board.message || "Finish the train placement before drawing cards."); return;
@@ -196,36 +203,74 @@
     }
     busy = true;
     const payload = { seat: privateData.view.seatId, grant, command: { commandId: randomId(), sessionId: privateData.view.public.sessionId, expectedStateVersion: privateData.view.public.stateVersion, kind, ...details } };
-    // Remove private DOM immediately, but do not revoke the grant authorizing this in-flight choice.
-    clearPrivate(); byId("reveal").disabled = true;
-    notice("Saving your choice on the laptop…");
+    // Keep the current hand in place while saving. Only the host can renew it
+    // for this same player's turn; a handoff or an explicit Hide wins the race.
+    const operation = { identity: turnIdentity(snapshot) };
+    pendingCommand = operation;
+    byId("private").setAttribute("aria-busy", "true");
+    for (const control of byId("private").querySelectorAll("button:not(.private-hide), input, select")) control.disabled = true;
+    byId("reveal").disabled = true;
     try {
       const result = await api("/api/command", payload);
-      notice(result.message);
+      const next = result.continuation;
+      if (pendingCommand === operation && !document.hidden && Date.now() - lastHeartbeat < 6000 && result.accepted && next?.grant &&
+          next.handoffGeneration >= handoffGeneration && turnIdentity(next.snapshot) === operation.identity &&
+          turnIdentity(snapshot) === operation.identity && next.snapshot.game.stateVersion >= snapshot.game.stateVersion &&
+          next.data?.view.seatId === payload.seat && next.data.view.public.sessionId === payload.command.sessionId &&
+          next.data.view.public.stateVersion === next.snapshot.game.stateVersion) {
+        snapshotRevision++; snapshot = next.snapshot; privateData = next.data; grant = next.grant;
+        handoffGeneration = next.handoffGeneration; pendingCommand = null; busy = false;
+        if (kind === "drawTrain" && drawControls && !privateData.actions.mustCommitTicketSelection && !privateData.actions.mustResolvePendingClaim) {
+          renderHand(privateHandTarget); drawControls.update();
+        } else renderPrivate();
+        renderPublic();
+      } else {
+        clearPrivate(); notice(result.message);
+      }
     } catch (error) { disconnect("The result is not confirmed on this device. Check the current turn on the laptop before choosing again."); }
-    finally { busy = false; await poll(); }
+    finally { busy = false; pendingCommand = null; byId("private").removeAttribute("aria-busy"); await poll(); }
   }
   function card(kind, count) {
     const node = element("div", undefined, "card"); node.dataset.color = kind;
     node.append(element("span", kind), element("strong", String(count))); return node;
   }
+  function renderHand(cards) {
+    const previous = Array.from(cards.children), current = [];
+    for (const kind of ["Pink", "White", "Blue", "Yellow", "Orange", "Black", "Red", "Green", "Locomotive"]) {
+      const count = privateData.view.hand.filter(c => c.kind === kind).length;
+      if (!count) continue;
+      const node = previous.find(node => node.dataset.color === kind) || card(kind, count);
+      node.children[1].textContent = String(count); current.push(node);
+    }
+    if (!current.length) current.push(element("p", "Your train-card hand is empty.", "empty"));
+    cards.replaceChildren(...current);
+  }
   function renderPrivate() {
     const target = byId("private"); target.replaceChildren();
     privateActionsTarget = null; ticketOfferControls = null; detectedPayment = null;
     pendingClaimInstruction = null;
+    drawControls = null;
     const own = privateData.view.public.seats.find(s => s.seatId === privateData.view.seatId);
     target.append(element("p", "ONLY FOR YOU", "eyebrow"), element("h2", `${own.displayName}'s cards`), element("p", "Use Hide before passing the device.", "fine-print"));
     const cards = element("div", undefined, "cards");
-    for (const kind of ["Pink", "White", "Blue", "Yellow", "Orange", "Black", "Red", "Green", "Locomotive"]) {
-      const count = privateData.view.hand.filter(c => c.kind === kind).length;
-      if (count) cards.append(card(kind, count));
-    }
-    if (!privateData.view.hand.length) cards.append(element("p", "Your train-card hand is empty.", "empty"));
+    privateHandTarget = cards; renderHand(cards);
     target.append(cards);
     if (privateData.view.reservedCards.length) target.append(element("p", `${privateData.view.reservedCards.length} cards are reserved for the pending route. Complete placement on the laptop.`, "badge"));
     target.append(element("h3", "Your destination tickets"));
-    const tickets = element("div", undefined, "tickets");
-    for (const ticket of privateData.heldTickets) { const item = element("div", ticket.label, "ticket"); item.append(element("span", `${ticket.points} points`)); tickets.append(item); }
+    const tickets = element("div", undefined, "tickets held-tickets");
+    if (privateData.heldTickets.length) {
+      tickets.tabIndex = 0; tickets.setAttribute("role", "region"); tickets.setAttribute("aria-label", "Your destination tickets");
+    }
+    for (const ticket of privateData.heldTickets) {
+      const item = element("article", undefined, "ticket destination-ticket");
+      const cities = ticket.from && ticket.to ? [ticket.from, ticket.to] : ticket.label.split(" – ");
+      if (cities.length === 2 && cities.every(city => city.trim())) {
+        const arrow = element("span", "↓", "destination-arrow"); arrow.setAttribute("aria-hidden", "true");
+        item.setAttribute("aria-label", `${cities[0]} to ${cities[1]}`);
+        item.append(element("span", cities[0], "destination-city"), arrow, element("span", cities[1], "destination-city"));
+      } else item.append(element("span", ticket.label, "destination-label"));
+      item.append(element("span", `${ticket.points} points`, "destination-points")); tickets.append(item);
+    }
     if (!privateData.heldTickets.length) tickets.append(element("p", "Choose your opening tickets below.", "empty"));
     target.append(tickets);
     if (privateData.actions.mustCommitTicketSelection) renderOffer(target);
@@ -237,7 +282,7 @@
       privateActionsTarget = element("div", undefined, "private-actions");
       target.append(privateActionsTarget); renderActions(privateActionsTarget);
     }
-    target.append(button("Hide my cards", () => hide(), "secondary"));
+    target.append(button("Hide my cards", () => hide(), "secondary private-hide"));
     target.hidden = false;
   }
   function renderOffer(target) {
@@ -300,7 +345,7 @@
   }
   function syncBoardActions() {
     const boardKey = JSON.stringify(snapshot.boardInteraction || null);
-    if (!privateData || boardKey === renderedBoardInteraction) return;
+    if (!privateData || pendingCommand || boardKey === renderedBoardInteraction) return;
     if (ticketOfferControls) { ticketOfferControls.update(); renderedBoardInteraction = boardKey; }
     else if (privateActionsTarget) renderActions(privateActionsTarget);
   }
@@ -352,6 +397,7 @@
     const pileTitle = element("h3", "DRAW PILES"); pileTitle.id = "draw-piles-title";
     piles.setAttribute("aria-labelledby", pileTitle.id);
     const pileButtons = element("div", undefined, "draw-pile-list");
+    const pileOptions = [];
     for (const pile of [
       { letter: "T", label: "TRAIN", name: "Draw a blind card", className: "train-pile", enabled: actions.canDrawBlindTrainCard && !blocked, help: "train-draw-help", draw: () => submit("drawTrain", { slot: null }) },
       { letter: "D", label: "DESTINATIONS", name: "Draw destination tickets", className: "destination-pile", enabled: actions.canRequestTicketOffer && !blocked, help: "destination-draw-help", draw: () => submit("drawTickets") }
@@ -361,21 +407,14 @@
       if (pile.enabled) option.setAttribute("aria-describedby", pile.help);
       option.disabled = !pile.enabled;
       option.append(element("span", pile.letter, "pile-back"), element("span", pile.label, "pile-label"));
-      pileButtons.append(option);
+      pileButtons.append(option); pileOptions.push(option);
     }
     piles.append(pileTitle, pileButtons);
     const faceUp = element("section", undefined, "draw-panel face-up-panel");
     const marketTitle = element("h3", "FACE-UP TRAIN CARDS"); marketTitle.id = "face-up-title";
     faceUp.setAttribute("aria-labelledby", marketTitle.id);
     const market = element("div", undefined, "draw-market");
-    for (const [slot, kind] of privateData.view.public.faceUp.entries()) {
-      const option = button(undefined, () => submit("drawTrain", { slot }), "market-card");
-      option.dataset.color = kind; option.disabled = blocked || !actions.drawableFaceUpSlots.includes(slot);
-      option.setAttribute("aria-label", `${kind} · slot ${slot + 1}`);
-      option.setAttribute("aria-describedby", "train-draw-help");
-      option.append(element("span", kind, "market-card-label")); market.append(option);
-    }
-    if (!market.children.length) market.append(element("p", "No face-up cards available.", "empty"));
+    const marketOptions = [];
     faceUp.append(marketTitle, market); picker.append(piles, faceUp);
     const help = element("div", undefined, "draw-help");
     const trainHelp = element("p", privateData.view.public.turnPhase === "AwaitingSecondTrainCard"
@@ -386,6 +425,28 @@
       const destinationHelp = element("p", "Draw destination tickets. You must keep at least one.");
       destinationHelp.id = "destination-draw-help"; help.append(destinationHelp);
     }
+    function update() {
+      const current = privateData.actions, blocked = Boolean(snapshot.boardInteraction?.cardActionsBlocked);
+      pileOptions[0].disabled = blocked || !current.canDrawBlindTrainCard;
+      pileOptions[1].disabled = blocked || !current.canRequestTicketOffer;
+      const faceUp = privateData.view.public.faceUp;
+      for (const [slot, kind] of faceUp.entries()) {
+        if (!marketOptions[slot]) {
+          const option = button(undefined, () => submit("drawTrain", { slot }), "market-card");
+          option.setAttribute("aria-describedby", "train-draw-help");
+          option.append(element("span", kind, "market-card-label")); marketOptions.push(option); market.append(option);
+        }
+        const option = marketOptions[slot];
+        option.hidden = false; option.dataset.color = kind; option.disabled = blocked || !current.drawableFaceUpSlots.includes(slot);
+        option.setAttribute("aria-label", `${kind} · slot ${slot + 1}`); option.children[0].textContent = kind;
+      }
+      for (const option of marketOptions.slice(faceUp.length)) { option.hidden = true; option.disabled = true; }
+      trainHelp.textContent = privateData.view.public.turnPhase === "AwaitingSecondTrainCard"
+        ? "Choose your second card. A visible locomotive cannot be the second draw."
+        : "Take two cards, one at a time. A visible locomotive uses the whole turn.";
+    }
+    drawControls = { update }; update();
+    if (!market.children.length) market.append(element("p", "No face-up cards available.", "empty"));
     area.append(picker, help); target.append(area);
   }
   function updatePairForm() {

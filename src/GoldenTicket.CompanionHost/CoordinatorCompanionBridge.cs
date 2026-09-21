@@ -77,7 +77,9 @@ public sealed class CoordinatorCompanionBridge(
         CompanionTicket Ticket(TicketId id)
         {
             var ticket = manifest.Ticket(id);
-            return new(id.Value, $"{manifest.City(ticket.CityA).DisplayName} – {manifest.City(ticket.CityB).DisplayName}", ticket.Points);
+            var from = manifest.City(ticket.CityA).DisplayName;
+            var to = manifest.City(ticket.CityB).DisplayName;
+            return new(id.Value, $"{from} – {to}", ticket.Points, from, to);
         }
         var offer = !view.SetupOffer.IsEmpty ? view.SetupOffer : view.Offer?.Offered ?? [];
         return new(view, LegalActionCalculator.For(view, manifest), view.Tickets.Select(Ticket).ToArray(),

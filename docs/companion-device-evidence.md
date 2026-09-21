@@ -28,6 +28,7 @@ Run this on Android Chrome and repeat on iPhone/iPad Safari when hardware is ava
 | Pair and approve | Separate code is accepted, matching identity is approved on the laptop, and unapproved devices cannot reveal cards. |
 | Opening tickets | Each human sees only their own offer and can keep the required selection. |
 | Normal card/ticket/route choices | Correct active-seat options work; laptop retains train-placement verification and authoritative game state. |
+| First train-card draw | Hand stays visible, count and face-up market update, scroll position remains, and a second legal card can be drawn without another reveal. The second draw or a first face-up locomotive covers the hand for the next turn. |
 | Place trains before paying | The revealed phone updates to the camera-detected route, offers only its legal payments, and commits after Pay with current board evidence. The hidden phone and public laptop expose no payment choices. |
 | Computer placement and score markers | The browser and laptop show the same current placement, correction and score-marker instructions. Instructions update without a reload and clear for the next human; cards remain covered during the computer's turn. |
 | Move/remove trains while choosing payment | Pay pauses or the proposal clears; an old proposal cannot spend cards. Phone card draws also wait for the recorded board to match. |

@@ -1632,6 +1632,13 @@ Permit one active controlling companion tab/device for the match. Track `deviceS
 
 Before handoff, blank and clear the current private view locally, revoke its grant, and acknowledge handoff to the laptop. The next reveal obtains a fresh grant for the expected seat. The host projects and sends only that seat's allowed data. It never broadcasts all hands and relies on the UI to hide them. Reject cross-seat requests, expired grants, late messages from a prior handoff, and old controller generations.
 
+An accepted companion command within the same human's active turn may return a refreshed private
+view and a replacement grant for the new state version. The host checks the session, seat, turn
+number and current revision before rotating the still-valid original grant. The browser keeps
+the first train draw visible and updates its hand and market in place; commands remain disabled
+while awaiting the receipt. A Hide, turn change, revocation or lost connection prevents a late
+response from uncovering the view. Duplicate receipts contain no private continuation.
+
 Pairing and pass-and-hide do not authenticate the human holding the shared device. Players still follow the social handoff convention. No online account, per-person password, or remote identity service is introduced.
 
 All remote commands go through the same validation and durable transaction path as local commands. The companion cannot directly replace state, mark a camera claim verified, alter an AI's cards, or bypass the laptop's recovery gates. Administrative correction and switching to manual verification remain laptop controls in the first release.

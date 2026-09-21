@@ -109,6 +109,20 @@ internal sealed class ControllerAuthority(TimeProvider? timeProvider = null)
                 g.Version == version && g.Generation == _generation;
         }
     }
+    /// <summary>Carry an existing reveal to a newer revision only if nothing hid or revoked it
+    /// while the command and its refreshed view were being prepared.</summary>
+    internal PrivateGrant? ContinueGrant(ControllerCredentials credentials, string grant, int seat,
+        string sessionId, long previousVersion, long nextVersion)
+    {
+        lock (_sync)
+        {
+            if (nextVersion <= previousVersion ||
+                !ValidateGrant(credentials, grant, seat, sessionId, previousVersion)) return null;
+            InvalidateCore();
+            _grant = new(Token(), seat, sessionId, nextVersion, _generation);
+            return _grant;
+        }
+    }
     /// <summary>Validation and cancellation capture are one atomic authorization decision. A hide
     /// immediately after this returns cancels this exact token, never a replacement grant's token.</summary>
     internal CommandAuthorization? AuthorizeCommand(ControllerCredentials credentials, string? grant,

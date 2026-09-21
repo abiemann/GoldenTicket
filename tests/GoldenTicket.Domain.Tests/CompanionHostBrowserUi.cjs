@@ -27,7 +27,22 @@ const viewports=[{name:'pixel',width:448,height:900},{name:'small-phone',width:3
   .filter(viewport=>process.env.GOLDENTICKET_BROWSER_VIEWPORTS ? process.env.GOLDENTICKET_BROWSER_VIEWPORTS.split(',').includes(viewport.name) : viewport.name!=='wide-tablet');
 assert.ok(viewports.length,'GOLDENTICKET_BROWSER_VIEWPORTS must select an existing viewport.');
 let fixture = fixtures.setup, paired = false, pending = false, generation = 1, requests = [], offline = false, delayedReveal = null;
-let resultImageBytes = null, activeGrant = null;
+let resultImageBytes = null, activeGrant = null, delayedCommand = null;
+function sameTurnFixture(next, previous) {
+  const value=structuredClone(next), before=previous.snapshot.game;
+  for(const game of [value.snapshot.game,value.data.view.public]) {
+    game.sessionId=before.sessionId;
+    game.activeSeatId=before.activeSeatId;
+    game.turnNumber=before.turnNumber;
+    game.stateVersion=before.stateVersion+1;
+  }
+  value.snapshot.revealSeatId=previous.snapshot.revealSeatId;
+  value.snapshot.boardInteraction=structuredClone(previous.snapshot.boardInteraction);
+  value.data.view.seatId=previous.data.view.seatId;
+  value.data.actions.stateVersion=before.stateVersion+1;
+  value.data.heldTickets=structuredClone(previous.data.heldTickets);
+  return value;
+}
 const send = (response, body, status=200) => { response.writeHead(status, {'Content-Type':'application/json', 'Cache-Control':'no-store'}); response.end(JSON.stringify(body)); };
 const requestHandler = async (request, response) => {
   const url = new URL(request.url, 'http://localhost');
@@ -36,7 +51,7 @@ const requestHandler = async (request, response) => {
     let body = ''; for await(const chunk of request) body += chunk;
     body = body ? JSON.parse(body) : {};
     requests.push({url:url.pathname, body, headers:request.headers});
-    if(url.pathname === '/api/session') return send(response, paired ? { paired, csrf:'test-csrf', handoffGeneration:generation, controllerGeneration:1, apiVersion:'1', assetsVersion:'8', snapshot:fixture.snapshot } : {paired,pending});
+    if(url.pathname === '/api/session') return send(response, paired ? { paired, csrf:'test-csrf', handoffGeneration:generation, controllerGeneration:1, apiVersion:'1', assetsVersion:'11', snapshot:fixture.snapshot } : {paired,pending});
     if(url.pathname.startsWith('/api/result-image/')) {
       if(!paired || !resultImageBytes || url.pathname!==`/api/result-image/${fixture.snapshot.resultImage?.id}` || !request.headers['x-goldenticket-tab']) return send(response,{},404);
       response.writeHead(200,{'Content-Type':'image/png','Content-Length':resultImageBytes.length,'Cache-Control':'no-store'}); response.end(resultImageBytes); return;
@@ -52,7 +67,7 @@ const requestHandler = async (request, response) => {
     if(url.pathname === '/api/command') {
       if(!paired || !activeGrant || body.grant!==activeGrant.grant || body.seat!==activeGrant.seat || generation!==activeGrant.handoffGeneration ||
         body.command.sessionId!==activeGrant.sessionId || body.command.expectedStateVersion!==activeGrant.version) return send(response,{},409);
-      const board=fixture.snapshot.boardInteraction;
+      const previous=fixture, board=fixture.snapshot.boardInteraction;
       if(board?.cardActionsBlocked && ['drawTrain','drawTickets','keepTickets'].includes(body.command.kind)) return send(response,{},409);
       if(body.command.kind === 'payDetectedRoute') {
         const detected=board?.detectedRoute;
@@ -62,11 +77,26 @@ const requestHandler = async (request, response) => {
         fixture=fixtures.nextHuman;
       }
       if(body.command.kind === 'keepTickets') fixture = fixtures.secondHumanSetup;
-      if(body.command.kind === 'drawTrain') fixture = fixture === fixtures.turnStart ? fixtures.secondDraw : fixtures.nextHuman;
-      if(body.command.kind === 'drawTickets') fixture = fixtures.ticketOffer;
-      if(body.command.kind === 'planClaim') fixture = fixtures.physicalPlacement;
+      if(body.command.kind === 'drawTrain') {
+        fixture=previous.snapshot.game.turnPhase==='TurnStart' ? sameTurnFixture(fixtures.secondDraw,previous) : fixtures.nextHuman;
+        if(fixture!==fixtures.nextHuman && body.command.slot!==null) {
+          const kind=previous.snapshot.game.faceUp[body.command.slot];
+          fixture.data.view.hand=[...structuredClone(previous.data.view.hand),{id:999,kind}];
+          fixture.data.view.available=structuredClone(fixture.data.view.hand);
+          for(const game of [fixture.snapshot.game,fixture.data.view.public]) game.faceUp[body.command.slot]='Orange';
+        }
+      }
+      if(body.command.kind === 'drawTickets') fixture = sameTurnFixture(fixtures.ticketOffer,previous);
+      if(body.command.kind === 'planClaim') fixture = sameTurnFixture(fixtures.physicalPlacement,previous);
       generation++; activeGrant=null;
-      return send(response,{accepted:true,duplicate:false,stateVersion:fixture.snapshot.game.stateVersion,message:'Choice saved on the laptop.'});
+      const reply={accepted:true,duplicate:false,stateVersion:fixture.snapshot.game.stateVersion,message:'Choice saved on the laptop.',continuation:null};
+      if(fixture.snapshot.canControl && fixture.snapshot.revealSeatId===body.seat &&
+        fixture.snapshot.game.sessionId===previous.snapshot.game.sessionId && fixture.snapshot.game.turnNumber===previous.snapshot.game.turnNumber) {
+        reply.continuation={grant:`test-private-grant-${generation}`,handoffGeneration:generation,snapshot:fixture.snapshot,data:fixture.data};
+        activeGrant={seat:body.seat,sessionId:fixture.snapshot.game.sessionId,version:fixture.snapshot.game.stateVersion,grant:reply.continuation.grant,handoffGeneration:generation};
+      }
+      if(delayedCommand) { delayedCommand.response=response; delayedCommand.reply=reply; return; }
+      return send(response,reply);
     }
     return send(response,{},404);
   }
@@ -96,6 +126,13 @@ async function screenshot(page,name) {
 async function noOverflow(page) {
   const metrics=await page.evaluate(()=>({width:innerWidth,body:document.body.scrollWidth,html:document.documentElement.scrollWidth}));
   assert.ok(metrics.body<=metrics.width+1 && metrics.html<=metrics.width+1, JSON.stringify(metrics));
+}
+async function expectLastDestination(row) {
+  const last=row.locator('article').last();
+  assert.equal(await last.locator('.destination-city').first().textContent(),'Kansas City');
+  assert.equal(await last.locator('.destination-city').last().textContent(),'Nashville');
+  const bounds=await row.boundingBox(), card=await last.boundingBox();
+  assert.ok(card.x>=bounds.x && card.x+card.width<=bounds.x+bounds.width+1,'The last ticket must be reachable by horizontal scrolling.');
 }
 async function drawPicker(page, name) {
   const picker=page.locator('#private .draw-picker'); await picker.waitFor({state:'visible'});
@@ -166,7 +203,7 @@ async function main() {
   const browserVersion=browser.version();
   try {
     for(const viewport of viewports) {
-      fixture=fixtures.setup; paired=false; pending=false; generation=1; requests=[]; offline=false; delayedReveal=null; activeGrant=null;
+      fixture=fixtures.setup; paired=false; pending=false; generation=1; requests=[]; offline=false; delayedReveal=null; delayedCommand=null; activeGrant=null;
       const context=await browser.newContext({viewport:{width:viewport.width,height:viewport.height},deviceScaleFactor:1,isMobile:!viewport.name.includes('tablet'),hasTouch:true});
       const outsideLaptop=new Set(), browserRequests=[];
       // Keep the local host reachable while denying Internet destinations. Full browser offline
@@ -232,9 +269,9 @@ async function main() {
         await changeFixture(page,'turnStart'); await reveal(page); await noOverflow(page);
         await drawPicker(page,viewport.name);
         await screenshot(page,viewport.name+'-private-turn');
-        await page.getByRole('button',{name:'Draw a blind card'}).click(); await waitCovered(page); await reveal(page);
-        assert.equal(requests.filter(r=>r.url==='/api/command').at(-1).body.command.slot,null);
+        await page.getByRole('button',{name:'Draw a blind card'}).click();
         await page.getByText('Choose your second card.',{exact:false}).waitFor();
+        assert.equal(requests.filter(r=>r.url==='/api/command').at(-1).body.command.slot,null);
         await drawPicker(page,viewport.name+'-second-card');
         const locomotive=page.getByRole('button',{name:'Locomotive · slot 3',exact:true});
         assert.equal(await locomotive.isDisabled(),true);
@@ -246,13 +283,42 @@ async function main() {
         await page.getByRole('button',{name:'Draw a blind card'}).click(); await waitCovered(page);
         await page.getByText('Pass this device to Jordan.',{exact:true}).waitFor();
       });
+      await record(viewport.name+': destination cards remain one scrollable row as the hand grows',async()=>{
+        fixtures.manyDestinations=structuredClone(fixtures.turnStart);
+        const cityPairs=[['Denver','Pittsburgh'],['Portland','Phoenix'],['Winnipeg','Little Rock'],['Sault St. Marie','Oklahoma City'],['San Francisco','New York'],['Saint Louis','Los Angeles'],['Seattle','Vancouver'],['Montréal','Santa Fe'],['Boston','Miami'],['Calgary','Salt Lake City'],['Duluth','Houston'],['Kansas City','Nashville']];
+        const held=cityPairs.map(([from,to],index)=>({id:`many-${index}`,label:`${from} – ${to}`,from,to,points:index%3+11}));
+        fixtures.manyDestinations.data.heldTickets=held.slice(0,3);
+        await changeFixture(page,'manyDestinations'); await reveal(page);
+        const row=page.getByRole('region',{name:'Your destination tickets',exact:true});
+        const initialHeight=(await row.boundingBox()).height;
+        fixtures.manyDestinations.data.heldTickets=held;
+        await changeFixture(page,'manyDestinations'); await reveal(page);
+        assert.equal(await row.locator('article').count(),12);
+        const metrics=await row.evaluate(node=>({height:node.getBoundingClientRect().height,width:node.clientWidth,scrollWidth:node.scrollWidth,top:[...node.children].map(card=>card.getBoundingClientRect().top),firstWidth:node.firstElementChild.getBoundingClientRect().width,overflow:getComputedStyle(node).overflowX,scrollbar:getComputedStyle(node).scrollbarWidth}));
+        assert.ok(Math.abs(metrics.height-initialHeight)<1,'More tickets must not make the row taller.');
+        assert.ok(metrics.top.every(top=>Math.abs(top-metrics.top[0])<1),'All cards must remain on the same row.');
+        assert.ok(metrics.scrollWidth>metrics.width && metrics.firstWidth<metrics.width-20,'The next card peeks into the horizontal scrolling area.');
+        assert.equal(metrics.overflow,'auto'); assert.notEqual(metrics.scrollbar,'none');
+        await noOverflow(page); await screenshot(page,viewport.name+'-destination-cards');
+        await row.screenshot({path:path.join(output,viewport.name+'-destination-cards-row.png')});
+        await row.focus(); assert.equal(await row.evaluate(node=>node===document.activeElement),true);
+        await page.keyboard.press('ArrowRight'); await page.waitForFunction(()=>document.querySelector('.held-tickets').scrollLeft>0);
+        await row.evaluate(node=>node.scrollLeft=node.scrollWidth);
+        await expectLastDestination(row);
+        const savedScroll=await row.evaluate(node=>{node.dataset.identity='original-destination-row';return node.scrollLeft;});
+        fixture.snapshot.boardInteraction={useCameraClaims:true,cardActionsBlocked:true,message:'Keep the board still while the camera checks the trains.',detectedRoute:null};
+        await page.getByText('Keep the board still while the camera checks the trains.',{exact:true}).waitFor();
+        assert.equal(await row.getAttribute('data-identity'),'original-destination-row');
+        assert.ok(Math.abs(await row.evaluate(node=>node.scrollLeft)-savedScroll)<1,'Camera-only updates must preserve destination scroll position.');
+        await noOverflow(page);
+      });
       await record(viewport.name+': face-up card keeps its actual slot number',async()=>{
         await changeFixture(page,'turnStart'); await reveal(page);
         const slot=3, kind=fixture.data.view.public.faceUp[slot];
-        await page.getByRole('button',{name:`${kind} · slot ${slot+1}`,exact:true}).click(); await waitCovered(page);
+        await page.getByRole('button',{name:`${kind} · slot ${slot+1}`,exact:true}).click();
+        await page.getByText('Choose your second card.',{exact:false}).waitFor();
         const command=requests.filter(r=>r.url==='/api/command').at(-1).body.command;
         assert.equal(command.kind,'drawTrain'); assert.equal(command.slot,slot);
-        await reveal(page);
         // Slot 3 is a disabled locomotive; slot 5 must still send index 4 rather
         // than an index compressed around the disabled slot.
         const secondSlot=4, secondKind=fixture.data.view.public.faceUp[secondSlot];
@@ -261,9 +327,64 @@ async function main() {
         assert.equal(secondCommand.kind,'drawTrain'); assert.equal(secondCommand.slot,secondSlot);
         await page.getByText('Pass this device to Jordan.',{exact:true}).waitFor();
       });
+      await record(viewport.name+': first face-up draw keeps the hand and scroll positions undisturbed until the next turn',async()=>{
+        fixtures.continuousTurn=structuredClone(fixtures.turnStart);
+        fixtures.continuousTurn.data.heldTickets=structuredClone(fixtures.manyDestinations.data.heldTickets);
+        fixtures.continuousTurn.snapshot.boardInteraction={useCameraClaims:true,cardActionsBlocked:false,message:null,detectedRoute:null};
+        await changeFixture(page,'continuousTurn'); await reveal(page);
+        const row=page.getByRole('region',{name:'Your destination tickets',exact:true});
+        await row.evaluate(node=>{node.scrollLeft=node.scrollWidth;node.dataset.identity='same-turn-destinations';});
+        const slot=3, kind=fixture.snapshot.game.faceUp[slot];
+        const chosen=page.getByRole('button',{name:`${kind} · slot ${slot+1}`,exact:true});
+        await chosen.scrollIntoViewIfNeeded();
+        const originalCardColor=await chosen.evaluate(node=>getComputedStyle(node).backgroundColor);
+        const before=await page.evaluate(()=>{
+          const privateView=document.getElementById('private'), row=privateView.querySelector('.held-tickets');
+          const heading=privateView.querySelector('h2');
+          window.turnContinuityViolations=[];
+          window.turnContinuityObserver=new MutationObserver(()=>{
+            if(privateView.hidden || !document.getElementById('curtain').hidden) window.turnContinuityViolations.push('covered');
+            if(!row.isConnected || !heading.isConnected) window.turnContinuityViolations.push('replaced private content');
+          });
+          window.turnContinuityObserver.observe(privateView,{childList:true,attributes:true,subtree:true});
+          window.turnContinuityObserver.observe(document.getElementById('curtain'),{attributes:true});
+          return {y:scrollY,x:row.scrollLeft};
+        });
+        const reveals=requests.filter(r=>r.url==='/api/reveal').length, commands=requests.filter(r=>r.url==='/api/command').length;
+        const handCount=Number(await page.locator(`.card[data-color="${kind}"] strong`).textContent());
+        delayedCommand={}; await chosen.click();
+        await page.waitForFunction(()=>[...document.querySelectorAll('.market-card')].every(button=>button.disabled));
+        while(!delayedCommand.response) await new Promise(resolve=>setTimeout(resolve,20));
+        assert.equal(await page.locator('#private').isVisible(),true); assert.equal(await page.locator('#curtain').isVisible(),false);
+        await chosen.evaluate(node=>{node.click();node.click();});
+        assert.equal(requests.filter(r=>r.url==='/api/command').length,commands+1,'Repeated taps while submitting must not draw another card.');
+        // Let a public poll observe the advanced game while the continuation is still in flight.
+        await page.waitForResponse(r=>r.url().endsWith('/api/session') && r.ok());
+        assert.equal(await page.locator('#private').isVisible(),true);
+        const response=page.waitForResponse(r=>r.url().endsWith('/api/command'));
+        send(delayedCommand.response,delayedCommand.reply); delayedCommand=null; await response;
+        await page.getByText('Choose your second card.',{exact:false}).waitFor();
+        assert.equal(await page.locator(`.card[data-color="${kind}"] strong`).textContent(),String(handCount+1));
+        const replacement=page.getByRole('button',{name:`Orange · slot ${slot+1}`,exact:true});
+        assert.equal(await replacement.isDisabled(),false);
+        assert.equal(await replacement.getAttribute('data-color'),'Orange');
+        await page.waitForFunction(()=>getComputedStyle(document.querySelector('.market-card[data-color="Orange"]')).backgroundColor==='rgb(222, 127, 43)');
+        assert.notEqual(await replacement.evaluate(node=>getComputedStyle(node).backgroundColor),originalCardColor,'The replacement card must update its color as well as its label.');
+        assert.equal(await page.getByRole('button',{name:'Locomotive · slot 3',exact:true}).isDisabled(),true);
+        assert.equal(await row.getAttribute('data-identity'),'same-turn-destinations');
+        assert.ok(Math.abs(await row.evaluate(node=>node.scrollLeft)-before.x)<1,'Drawing a card must preserve horizontal destination scrolling.');
+        assert.ok(Math.abs(await page.evaluate(()=>scrollY)-before.y)<2,'Drawing a card must preserve vertical page scrolling.');
+        assert.equal(requests.filter(r=>r.url==='/api/reveal').length,reveals,'The first card must not require another reveal.');
+        assert.deepEqual(await page.evaluate(()=>{window.turnContinuityObserver.disconnect();return window.turnContinuityViolations;}),[]);
+        await noOverflow(page);
+        await page.screenshot({path:path.join(output,viewport.name+'-first-face-up-stays-open.png')});
+        await page.getByRole('button',{name:`Orange · slot ${slot+1}`,exact:true}).click(); await waitCovered(page);
+        await page.getByText('Pass this device to Jordan.',{exact:true}).waitFor();
+      });
       await record(viewport.name+': ticket offer return ordering',async()=>{
         await changeFixture(page,'turnStart'); await reveal(page);
-        await page.getByRole('button',{name:'Draw destination tickets'}).click(); await waitCovered(page); await reveal(page);
+        await page.getByRole('button',{name:'Draw destination tickets'}).click();
+        await page.locator('#private input[type=checkbox]').first().waitFor({state:'visible'});
         assert.equal(requests.filter(r=>r.url==='/api/command').at(-1).body.command.kind,'drawTickets');
         await page.locator('#private input[type=checkbox]').nth(0).check();
         const before=await page.getByText('Return order:',{exact:false}).textContent();
@@ -287,10 +408,10 @@ async function main() {
         const hideBox=await page.locator('#hide').boundingBox();
         assert.ok(hideBox.y>=0 && hideBox.y+hideBox.height<=viewport.height,'Hide must remain visible while scrolling private choices');
         await noOverflow(page); await screenshot(page,viewport.name+'-route-payment');
-        await page.getByRole('button',{name:'Authorize this route and payment'}).click(); await waitCovered(page);
+        await page.getByRole('button',{name:'Authorize this route and payment'}).click();
+        await page.getByText('Follow the placement instructions on the laptop.',{exact:true}).waitFor();
         const command=requests.filter(r=>r.url==='/api/command').at(-1).body.command;
         assert.equal(command.kind,'planClaim'); assert.ok(command.routeId); assert.ok(command.payment.colorCards+command.payment.locomotives>0);
-        await reveal(page); await page.getByText('Follow the placement instructions on the laptop.',{exact:true}).waitFor();
         assert.equal(await page.getByRole('button',{name:/verify|confirm placement/i}).count(),0);
       });
       await record(viewport.name+': shared AI instructions update through placement, correction, scoring and human handoff',async()=>{

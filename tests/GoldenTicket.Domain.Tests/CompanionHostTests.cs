@@ -235,6 +235,13 @@ public class CompanionHostTests
         Assert.Null(await bridge.ReadPrivateAsync(new(2), snapshot.Game!.StateVersion, cancellationToken: TestContext.Current.CancellationToken));
         var own = await bridge.ReadPrivateAsync(new(1), snapshot.Game.StateVersion, cancellationToken: TestContext.Current.CancellationToken);
         Assert.NotNull(own); Assert.Equal(3, own.OfferedTickets.Count); Assert.Equal(4, own.View.Hand.Length);
+        foreach (var ticket in own.OfferedTickets)
+        {
+            var destination = TestManifest.Manifest.Ticket(new TicketId(ticket.Id));
+            Assert.Equal(TestManifest.Manifest.City(destination.CityA).DisplayName, ticket.From);
+            Assert.Equal(TestManifest.Manifest.City(destination.CityB).DisplayName, ticket.To);
+            Assert.Equal($"{ticket.From} – {ticket.To}", ticket.Label);
+        }
         var publicJson = JsonSerializer.Serialize(snapshot);
         Assert.DoesNotContain("TrainHands", publicJson); Assert.DoesNotContain("SetupOffers", publicJson); Assert.DoesNotContain("RandomState", publicJson);
     }

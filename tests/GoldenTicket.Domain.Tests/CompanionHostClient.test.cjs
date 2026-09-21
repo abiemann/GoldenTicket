@@ -18,11 +18,12 @@ function page(options = {}) {
     replaceChildren(...children) { this.children = children; this.textContent = ''; if (this.tag === 'select') this.value = this.children[0]?.value || ''; }
     setAttribute(name, value) { this[name] = value; }
     removeAttribute(name) { delete this[name]; }
+    querySelectorAll() { return descendants(this).filter(node => ['button', 'input', 'select'].includes(node.tag) && !node.className?.includes('private-hide')); }
     set innerHTML(value) { throw new Error('Private UI must not interpolate HTML'); }
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, new Node()); return nodes.get(id); };
   const state = {
-    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '8', handoffGeneration: 1,
+    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '11', handoffGeneration: 1,
     snapshot: { canControl: true, revealSeatId: 1, message: 'Pass this device to Alex.', profileId: 'classic-us', manifestHash: 'hash', routes: [],
       game: { sessionId: 'match', stateVersion: 1, activeSeatId: 1, turnNumber: 1, turnPhase: 'TurnStart', seats: [{ seatId: 1, displayName: 'Alex', symbol: 'A', color: 'Blue', routeScore: 0, trainsRemaining: 45 }], pendingClaim: null } }
   };
@@ -298,6 +299,37 @@ test('heartbeat timeout still covers the hand without waiting for a network requ
   const disconnected=page(); await flush(); await disconnected.client.reveal(); disconnected.advance(6000);
   disconnected.intervals.find(t=>t.ms===500).fn(); assert.equal(disconnected.client.state().privateData,null);
 });
+test('held destination cards use explicit city names and safely support older labels', async () => {
+  const p=page(); await flush();
+  p.data.heldTickets=[
+    {id:'names',label:'Ignored display label',from:'Winston-Salem',to:'Sault St. Marie',points:11},
+    {id:'legacy',label:'Denver – Pittsburgh',points:12},
+    {id:'hyphen',label:'Winston-Salem',points:13},
+    {id:'html',label:'<img src=x onerror=bad()>',points:14}
+  ];
+  await p.client.reveal();
+  const row=descendants(p.get('private')).find(node=>node.className==='tickets held-tickets');
+  assert.equal(row.tabIndex,0); assert.equal(row.role,'region'); assert.equal(row['aria-label'],'Your destination tickets');
+  const cards=row.children;
+  assert.equal(cards.length,4); assert.equal(cards[0]['aria-label'],'Winston-Salem to Sault St. Marie');
+  assert.deepEqual(cards[0].children.map(node=>node.textContent),['Winston-Salem','↓','Sault St. Marie','11 points']);
+  assert.equal(cards[0].children[1]['aria-hidden'],'true');
+  assert.deepEqual(cards[1].children.map(node=>node.textContent),['Denver','↓','Pittsburgh','12 points']);
+  assert.deepEqual(cards[2].children.map(node=>node.textContent),['Winston-Salem','13 points']);
+  assert.deepEqual(cards[3].children.map(node=>node.textContent),['<img src=x onerror=bad()>','14 points']);
+  assert.equal(descendants(row).some(node=>node.tag==='img'),false);
+});
+test('offered destinations retain their checkbox list alongside held destination cards', async () => {
+  const p=page(), choices=await ticketOffer(p);
+  assert.equal(choices.length,2);
+  assert.equal(descendants(p.get('private')).filter(node=>node.className==='tickets held-tickets').length,1);
+  assert.equal(descendants(p.get('private')).filter(node=>node.className==='tickets').length,1);
+  await checkTicket(choices[1],true);
+  const keep=descendants(p.get('private')).find(node=>node.textContent==='Keep selected tickets');
+  assert.equal(keep.disabled,false); await keep.events.click(); await flush();
+  const command=JSON.parse(p.requests.find(r=>r.url==='/api/command').request.body).command;
+  assert.deepEqual(command.keptTickets,['second']); assert.deepEqual(command.returnedTickets,['first']);
+});
 test('camera claims wait for a detected route and polls never reveal a hidden hand', async () => {
   const p=page(); await flush(); cameraTurn(p); await p.client.poll(); await p.client.reveal();
   assert.equal(descendants(p.get('private')).some(node=>node.tag==='select'),false);
@@ -311,7 +343,7 @@ test('camera claims wait for a detected route and polls never reveal a hidden ha
 test('camera-only polls update payment choices while preserving the private hand and same-proposal selection', async () => {
   const p=page(); await flush(); cameraTurn(p); await p.client.poll(); await p.client.reveal();
   const hand=descendants(p.get('private')).find(node=>node.className==='cards');
-  const tickets=descendants(p.get('private')).find(node=>node.className==='tickets');
+  const tickets=descendants(p.get('private')).find(node=>node.className==='tickets held-tickets');
   detect(p); await p.client.poll();
   assert.equal(p.get('private').hidden,false); assert.ok(descendants(p.get('private')).includes(hand)); assert.ok(descendants(p.get('private')).includes(tickets));
   assert.equal(privateNode(p,'Pay with 1 Blue'),undefined,'Only payments for the detected route are offered');
@@ -368,14 +400,81 @@ test('a delayed private reveal uses the newest camera proposal without requestin
   assert.ok(privateNode(p,'Pay with 1 Blue')); assert.equal(privateNode(p,'Pay with 2 Red'),undefined);
   assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,1); assert.equal(p.get('private').hidden,false);
 });
-test('command clears private UI before transport and duplicate tap cannot submit twice', async () => {
+test('command keeps the hand visible during transport and duplicate tap cannot submit twice', async () => {
   const result = deferred(); const p=page({fetch:url=>url==='/api/command'?result.promise:undefined}); await flush(); await p.client.reveal();
   const sending=p.client.submit('drawTrain',{slot:null}); await flush();
   assert.ok([...p.timeouts.values()].some(timer=>timer.ms===8000),'Commands allow the laptop eight seconds for a camera check');
-  assert.equal(p.get('private').children.length,0); assert.equal(p.client.state().grant,null);
+  assert.equal(p.get('private').hidden,false); assert.ok(p.get('private').children.length); assert.equal(p.get('private')['aria-busy'],'true');
   await p.client.submit('drawTrain',{slot:null}); assert.equal(p.requests.filter(r=>r.url==='/api/command').length,1);
   result.resolve(p.response({accepted:true,message:'Saved.'})); await sending;
   assert.equal(p.client.state().busy,false); assert.equal(p.client.state().privateData,null);
+});
+
+function secondDrawContinuation(p) {
+  p.state.snapshot.game.stateVersion++;
+  p.state.snapshot.game.turnPhase='AwaitingSecondTrainCard';
+  p.state.snapshot.game.faceUp=['Blue','Green','Locomotive','Pink','Blue'];
+  p.state.handoffGeneration++;
+  p.data.view.public=p.state.snapshot.game;
+  p.data.view.hand.push({id:4,kind:'Red'});
+  p.data.actions.canRequestTicketOffer=false;
+  p.data.actions.drawableFaceUpSlots=[0,1,3,4];
+  p.data.actions.claims=[];
+  return {accepted:true,message:'Saved.',continuation:{grant:'second-draw-grant',handoffGeneration:p.state.handoffGeneration,snapshot:structuredClone(p.state.snapshot),data:structuredClone(p.data)}};
+}
+
+test('first face-up draw refreshes in place and the next draw uses the new version and grant', async () => {
+  const reply=deferred(), p=page({fetch:url=>url==='/api/command'?reply.promise:undefined});
+  await flush(); cameraTurn(p); await p.client.poll(); await p.client.reveal();
+  const hand=p.get('private').children[3], ticketRow=descendants(p.get('private')).find(n=>n.className==='tickets held-tickets');
+  const first=privateNode(p,'Red · slot 1'), locomotive=privateNode(p,'White · slot 3'); ticketRow.scrollLeft=87;
+  const sending=p.client.submit('drawTrain',{slot:0}); await flush();
+  assert.equal(first.disabled,true); assert.equal(p.get('curtain').hidden,true);
+  const result=secondDrawContinuation(p); await p.client.poll();
+  assert.equal(p.get('private').hidden,false,'The command revision may reach a poll before the receipt');
+  reply.resolve(p.response(result)); await sending;
+  assert.equal(p.get('private').hidden,false); assert.equal(p.get('curtain').hidden,true);
+  assert.equal(p.get('private').children[3],hand); assert.equal(hand.children[0].children[1].textContent,'2');
+  assert.equal(descendants(p.get('private')).find(n=>n.className==='tickets held-tickets'),ticketRow); assert.equal(ticketRow.scrollLeft,87);
+  assert.equal(privateNode(p,'Blue · slot 1'),first); assert.equal(first.disabled,false);
+  assert.equal(privateNode(p,'Locomotive · slot 3'),locomotive); assert.equal(locomotive.disabled,true);
+  assert.equal(privateNode(p,'Draw destination tickets').disabled,true);
+  assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,1);
+  p.options.fetch=url=>{if(url==='/api/command') {p.state.snapshot.game.turnNumber++;p.state.snapshot.game.activeSeatId=2;p.state.snapshot.revealSeatId=2;return p.response({accepted:true,message:'Next player.'});}};
+  await p.client.submit('drawTrain',{slot:0});
+  const command=JSON.parse(p.requests.filter(r=>r.url==='/api/command').at(-1).request.body);
+  assert.equal(command.grant,'second-draw-grant'); assert.equal(command.command.expectedStateVersion,2);
+  assert.equal(p.get('private').hidden,true); assert.equal(p.client.state().grant,null);
+});
+
+test('late continuation cannot uncover after Hide, background, revoke, disconnect, or a turn change', async () => {
+  for(const reason of ['hide','background','revoked','offline','turn','handoff']) {
+    const reply=deferred(),p=page({fetch:url=>url==='/api/command'?reply.promise:undefined});
+    await flush(); cameraTurn(p); await p.client.poll(); await p.client.reveal();
+    const sending=p.client.submit('drawTrain',{slot:0}); await flush(); const result=secondDrawContinuation(p);
+    if(reason==='hide') p.client.hide();
+    if(reason==='background') {p.context.document.hidden=true;await p.event('document','visibilitychange');}
+    if(reason==='revoked') {p.state.paired=false;await p.client.poll();}
+    if(reason==='offline') {p.options.offline=true;await p.client.poll();p.options.offline=false;}
+    if(reason==='turn') {p.state.snapshot.game.turnNumber++;p.state.snapshot.game.activeSeatId=2;p.state.snapshot.revealSeatId=2;await p.client.poll();}
+    if(reason==='handoff') {p.state.handoffGeneration++;await p.client.poll();}
+    reply.resolve(p.response(result)); await sending;
+    assert.equal(p.get('private').hidden,true,reason); assert.equal(p.client.state().grant,null,reason);
+  }
+});
+
+test('an old poll cannot replace the continuation with an earlier game revision', async () => {
+  const commandReply=deferred(),pollReply=deferred();
+  const p=page({fetch:url=>url==='/api/command'?commandReply.promise:undefined});
+  await flush();cameraTurn(p);await p.client.poll();await p.client.reveal();
+  const sending=p.client.submit('drawTrain',{slot:0});await flush();
+  const oldState=structuredClone(p.state);
+  p.options.fetch=url=>url==='/api/session'?pollReply.promise:undefined;
+  const polling=p.client.poll();await flush();
+  commandReply.resolve(p.response(secondDrawContinuation(p)));await sending;
+  pollReply.resolve(p.response(oldState));await polling;
+  assert.equal(p.get('private').hidden,false); assert.equal(p.client.state().grant,'second-draw-grant');
+  p.options.fetch=undefined;await p.client.poll();assert.equal(p.get('private').hidden,false);
 });
 test('untrusted player text is assigned as text and never interpreted as HTML', async () => {
   const p=page(); p.state.snapshot.game.seats[0].displayName='<img src=x onerror=alert(1)>'; await flush(); await p.client.reveal();

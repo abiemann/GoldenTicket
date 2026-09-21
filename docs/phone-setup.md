@@ -39,6 +39,14 @@ Destination selections are preserved, and tapping elsewhere on the page or scrol
 hide the hand. Leaving the page, putting the browser in the background, losing the connection
 or changing turns still covers it; use **Hide** before passing the device.
 
+After the first train-card draw, your hand stays open and the hand count and face-up cards
+update in place. Choose your second card without revealing again or losing your scroll position.
+Drawing destination tickets also opens the offer directly during your turn. When the turn ends,
+the cards are covered for the next player.
+
+Your destination tickets appear in one horizontal row. Swipe or scroll through the cards to see
+each starting city, destination city and point value without lengthening the page.
+
 To claim a route with the camera, place your trains on the board. Once the laptop verifies the
 route, the revealed browser view automatically shows its name and legal payment choices. Choose
 the cards to spend and press **Pay**. This is the route you placed, not a recommendation. If the

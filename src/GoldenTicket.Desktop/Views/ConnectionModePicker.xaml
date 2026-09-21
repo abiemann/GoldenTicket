@@ -54,7 +54,7 @@
                     <TextBlock Text="RECOMMENDED" FontSize="10" FontWeight="Bold" Foreground="#FFFFD576" />
                     <TextBlock Text="Quick play" FontSize="21" FontWeight="Bold" Margin="0,3,0,4" />
                     <TextBlock Text="Scan QR → join → play" FontSize="14" TextWrapping="Wrap" />
-                    <TextBlock Text="No installation. No certificate." FontSize="12" Foreground="#FFE6D9C3" TextWrapping="Wrap" />
+                    <TextBlock Text="No installation needed." FontSize="12" Foreground="#FFE6D9C3" TextWrapping="Wrap" />
                 </StackPanel>
             </RadioButton>
             <RadioButton x:Name="PracticalModeOption" Grid.Column="1" IsChecked="{Binding UsePractical}" Style="{StaticResource ModeChoice}"

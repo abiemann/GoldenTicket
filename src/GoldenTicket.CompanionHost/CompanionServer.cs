@@ -191,7 +191,7 @@ public sealed class CompanionServer(ICompanionGameBridge bridge, TimeProvider? t
             if (!snapshot.CanControl) _authority.InvalidatePrivateGrants();
             if (Credentials(context) != credentials) return Results.Unauthorized();
             return Results.Ok(new { paired = true, csrf = credentials.Csrf, controllerGeneration = credentials.Generation,
-                handoffGeneration = _authority.Generation, apiVersion = ApiVersion, assetsVersion = "8", snapshot });
+                handoffGeneration = _authority.Generation, apiVersion = ApiVersion, assetsVersion = "11", snapshot });
         });
         app.MapGet("/api/result-image/{id}", async (HttpContext context, string id) =>
         {
@@ -252,11 +252,16 @@ public sealed class CompanionServer(ICompanionGameBridge bridge, TimeProvider? t
                 if (authorization is null) return Results.Unauthorized();
                 using var cancel = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, authorization.Value.Cancellation);
                 cancel.CancelAfter(authorization.Value.ValidFor);
+                var before = await bridge.ReadPublicAsync(cancel.Token);
                 var receipt = await bridge.ExecuteAsync(new SeatId(request.Seat), command, cancel.Token);
-                _authority.InvalidatePrivateGrants();
+                var continuation = receipt.Accepted
+                    ? await ContinuePrivateViewAsync(credentials, request, before, receipt.StateVersion, context.RequestAborted)
+                    : null;
+                if (continuation is null) _authority.InvalidatePrivateGrants();
                 if (_receipts.Count >= 64) _receipts.Remove(_receipts.Keys.First());
+                // Retries may acknowledge a saved command, but never replay a private view.
                 _receipts[key] = (body, receipt);
-                return Results.Ok(receipt);
+                return Results.Ok(receipt with { Continuation = continuation });
             }
             finally { _requests.Release(); }
         });
@@ -264,6 +269,35 @@ public sealed class CompanionServer(ICompanionGameBridge bridge, TimeProvider? t
     private sealed record PairRequest(string Code, string Tab, string Label);
     private sealed record RevealRequest(int Seat, string SessionId, long Version, long HandoffGeneration);
     private sealed record ActionRequest(int Seat, string Grant, CompanionCommand Command);
+
+    private async Task<CompanionPrivateContinuation?> ContinuePrivateViewAsync(ControllerCredentials credentials,
+        ActionRequest request, CompanionPublicSnapshot before, long nextVersion, CancellationToken cancellationToken)
+    {
+        var command = request.Command;
+        bool SameTurn(CompanionPublicSnapshot snapshot) => before.Game is { } previous &&
+            before.CanControl && before.RevealSeatId == request.Seat &&
+            previous.SessionId.Value == command.SessionId && previous.StateVersion == command.ExpectedStateVersion &&
+            previous.Lifecycle == SessionLifecycle.Active && previous.ActiveSeatId.Value == request.Seat &&
+            snapshot.Game is { Lifecycle: SessionLifecycle.Active } current &&
+            snapshot.CanControl && snapshot.RevealSeatId == request.Seat &&
+            current.SessionId == previous.SessionId && current.TurnNumber == previous.TurnNumber &&
+            current.ActiveSeatId == previous.ActiveSeatId && current.StateVersion == nextVersion &&
+            current.SeatOf(current.ActiveSeatId).Kind == SeatKind.Human;
+
+        var after = await bridge.ReadPublicAsync(cancellationToken);
+        if (!SameTurn(after)) return null;
+        var data = await bridge.ReadPrivateAsync(new SeatId(request.Seat), nextVersion, cancellationToken);
+        if (data is null || data.View.SeatId.Value != request.Seat ||
+            data.View.Public.SessionId != after.Game!.SessionId || data.View.Public.StateVersion != nextVersion ||
+            data.View.Public.TurnNumber != after.Game.TurnNumber ||
+            data.View.Public.ActiveSeatId != after.Game.ActiveSeatId) return null;
+        // A hide, pause, turn change or load may race either awaited read.
+        after = await bridge.ReadPublicAsync(cancellationToken);
+        if (!SameTurn(after)) return null;
+        var grant = _authority.ContinueGrant(credentials, request.Grant, request.Seat, command.SessionId,
+            command.ExpectedStateVersion, nextVersion);
+        return grant is null ? null : new(grant.Token, grant.Generation, after, data);
+    }
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
