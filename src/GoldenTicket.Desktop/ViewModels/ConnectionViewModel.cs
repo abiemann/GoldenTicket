@@ -159,6 +159,10 @@ public sealed partial class ConnectionViewModel : ObservableObject, IAsyncDispos
         catch (Exception) { Problem = "Clipboard access is unavailable. Select and copy the displayed text instead."; }
     }
     public void InvalidatePrivateGrants() => _server.InvalidatePrivateGrants();
+    public void NotifyGameChanged()
+    {
+        if (!_disposed) _server.NotifyGameChanged();
+    }
 
     private void ServerStatusChanged(object? sender, EventArgs args)
     {

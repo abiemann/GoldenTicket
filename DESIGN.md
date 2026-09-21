@@ -255,7 +255,7 @@ Removed, replaced or unverified proposals cannot authorize a payment. Camera-fre
 play retains manual selection.
 
 During physical placement and score-marker steps, the desktop also publishes the public game
-guidance title and instruction. The covered browser mirrors that text on each poll, including
+guidance title and instruction. The covered browser mirrors that text on each SSE update, including
 corrections and scoring transitions that do not change the game-state version. The laptop keeps
 its existing instructions. This projection carries no hand or payment data, grants no actions,
 and clears when the physical step ends or gameplay is suspended.
@@ -1576,8 +1576,8 @@ device's Files/Photos sharing controls.
 
 All phone assets, public definitions, help and QR generation ship with the Windows app. First
 connection and subsequent play need no account, external website, CDN, hosted server, cloud
-signaling, Internet DNS or runtime download. The current host uses two-second public snapshot
-polling; a future event-cursor channel uses local WS. This boundary does not control unrelated
+signaling, Internet DNS or runtime download. The host pushes public snapshots when game or camera
+presentation changes through one same-origin HTTP SSE connection. This boundary does not control unrelated
 operating-system or browser background traffic.
 
 Configure only a narrowly scoped Windows Firewall rule for the selected Private interface, local
@@ -1628,7 +1628,17 @@ the loaded view; a fresh page load needs the laptop again.
 
 #### Device, controller, and private-view authorization
 
-Permit one active controlling companion tab/device for the match. Track `deviceSessionId`, `controllerLeaseId`, `controllerGeneration`, `handoffGeneration`, and a `privateViewGrant` for the active human seat that remains valid until the private view or controller is invalidated. A second tab or replacement phone cannot concurrently spend cards; taking control requires a deliberate laptop action and revokes the previous lease. Start with a foreground heartbeat every two seconds and hide/disable after six seconds without a valid response, then tune against real devices. Validate grants only while the correct controller and turn are current; reconnecting does not automatically reveal a hand.
+Permit one active controlling companion tab/device for the match. Track `deviceSessionId`, `controllerLeaseId`, `controllerGeneration`, `handoffGeneration`, and a `privateViewGrant` for the active human seat that remains valid until the private view or controller is invalidated. A second tab or replacement phone cannot concurrently spend cards; taking control requires a deliberate laptop action and revokes the previous lease. The SSE stream sends a heartbeat every two seconds without rereading the game; the browser hides/disables after six seconds without a valid update. Validate grants only while the correct controller and turn are current; reconnecting does not automatically reveal a hand.
+
+`GET /api/events` carries `session` events using the public session envelope and small `heartbeat`
+events. Streaming Fetch retains the existing tab header and controller cookie; no token is placed
+in a URL. Private hands still require an explicit reveal or an authorized same-turn command reply.
+Desktop notifications compare public presentation values, including same-version camera and
+guidance changes. Per-connection bounded signals coalesce bursts; unchanged payloads are suppressed.
+Each reconnect obtains a current snapshot with cards covered, so there is no replay history or
+offline command queue. The browser uses bounded retry backoff and suspends the stream in the
+background. The host cancels superseded/disconnected streams, bounds writes, and rechecks the
+selected Private network while streaming. `/api/session` remains a diagnostic endpoint only.
 
 Before handoff, blank and clear the current private view locally, revoke its grant, and acknowledge handoff to the laptop. The next reveal obtains a fresh grant for the expected seat. The host projects and sends only that seat's allowed data. It never broadcasts all hands and relies on the UI to hide them. Reject cross-seat requests, expired grants, late messages from a prior handoff, and old controller generations.
 
@@ -1653,7 +1663,7 @@ All remote commands go through the same validation and durable transaction path 
 | `POST /api/v1/private-view` | Obtain a current active-seat view/grant | Controller and handoff checks; no arbitrary seat query |
 | `POST /api/v1/commands` | Submit a versioned card, ticket, claim choice, Recheck, or Save and pack away request | Validate command/state/controller/operation; private choices also require the active seat grant |
 | `GET /api/v1/commands/{id}` | Resolve an uncertain result after reconnection | Only the owning authorized controller; private result details require a current matching seat grant |
-| `WS /api/v1/events` (planned) | Public updates and explicitly authorized private responses over the selected LAN connection | Filter per connection/grant; include sequence/state version |
+| `GET /api/events` (implemented SSE) | Initial and changed public snapshots, plus connection heartbeats | Controller/tab checks; private views stay on authorized request/reply paths; fresh covered snapshot on reconnect |
 | `POST /api/v1/hide` | Revoke private view and complete a handoff | Local covering occurs before waiting for the network |
 
 Use a versioned JSON envelope with bounded payload size, a message ID, session ID, state version, controller/handoff generation, and message type. Validate schemas and authorize each operation on the laptop. Reject unknown message types, stale market card IDs, and incompatible clients. Keep secrets out of server access logs and exception payloads.
@@ -2263,8 +2273,8 @@ board crops; checkpoint evidence remains unsharpened. Locked restore/build, 546 
 bounded photo-pair/GPU evidence and remaining physical acceptance are described in
 [the current camera report](docs/camera-processing.md).
 
-Current deviations remain explicit: the browser companion uses bundled plain JavaScript and two-second public
-snapshot polling instead of the specified TypeScript build and WS event cursor. Controller sessions are
+Current deviations remain explicit: the browser companion uses bundled plain JavaScript instead of the
+specified TypeScript build. Public synchronization uses SSE snapshots rather than a WS event cursor. Controller sessions are
 process-local and each page reload requires fresh laptop-approved pairing. The device uses a
 visible Hide control without an inactivity timeout or hold-to-peek. Photos are operator-attested plaintext
 sidecars with SHA-256 checksums for `LogicalStateOnly` checkpoints, not `VerifiedBoardPhoto` evidence.

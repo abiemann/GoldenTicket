@@ -251,9 +251,10 @@ These are later milestones in `DESIGN.md`, and nothing here pretends they exist:
   reconciliation, gesture handling, and measured false-acceptance/abstention rates remain unfinished.
 - **Phone acceptance is incomplete.** Automated transport/browser coverage exists, but physical
   Android/iOS QR joining, private-hand controls, downloads and reconnect still need acceptance.
-  PRACTICAL also needs a full multi-human laptop session. The browser currently polls snapshots
-  every two seconds and requires fresh laptop pairing after reload; WS event-cursor recovery and
-  durable controller registration remain design gaps. See [device evidence](docs/companion-device-evidence.md).
+  PRACTICAL also needs a full multi-human laptop session. The browser receives event-driven SSE
+  updates over HTTP, with connection heartbeats and a fresh covered snapshot on reconnect.
+  Reload still requires laptop pairing; durable controller registration remains unfinished.
+  See [device evidence](docs/companion-device-evidence.md).
 
 - **No machine-verified photo checkpoint.** The Escape save checks live train positions and colors
   against claimed routes and an authorized pending placement before and after its board photo.

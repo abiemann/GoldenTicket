@@ -99,6 +99,7 @@ public sealed partial class MainViewModel : ObservableObject
                 ResumeMatchCommand.NotifyCanExecuteChanged();
             }
         };
+        InitializeCompanionUpdates();
     }
 
     public SetupViewModel Setup { get; }
@@ -949,6 +950,7 @@ public sealed partial class MainViewModel : ObservableObject
             ShowGameplayScreen(Screen.FinalScore);
             PrivateSeat = null;
         }
+        NotifyCompanionPresentationChanged();
     }
 
     private void BuildFinalScores(FinalResult result)

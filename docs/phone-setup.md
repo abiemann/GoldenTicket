@@ -30,6 +30,12 @@ phone loses the laptop connection, its hand is covered and actions stop; it cann
 game from remembered data. Stopping hosting revokes the controller. A changed laptop IP requires
 opening the new address and pairing again.
 
+The laptop pushes game changes, camera-detected routes and instructions through a live SSE
+connection over the same local HTTP address. The browser no longer polls for game snapshots.
+Small heartbeat messages keep track of the connection; if it drops, cards cover and the browser
+reconnects automatically with the current game state. Reveal again to continue. No actions are
+replayed, and no HTTPS certificate or installation is needed.
+
 The pairing code stays valid while hosting is running, including after a phone joins. Reuse it
 after a browser reload or when connecting a replacement device. It changes only when hosting
 restarts or you choose **New pairing code**; each new connection still needs laptop approval.

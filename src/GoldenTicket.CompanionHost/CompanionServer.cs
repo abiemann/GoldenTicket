@@ -19,9 +19,9 @@ public sealed record CompanionServerStatus(bool Running, string? Address, string
     public string? ConnectionAddress => Address;
 }
 
-/// <summary>Embedded, same-origin, selected-Private-LAN game controller. Shell updates use bounded
-/// two-second public snapshot polling in this milestone; the phone never queues offline actions.</summary>
-public sealed class CompanionServer(ICompanionGameBridge bridge, TimeProvider? timeProvider = null) : IAsyncDisposable
+/// <summary>Embedded, same-origin, selected-Private-LAN game controller with event-driven
+/// public SSE updates. The phone never queues offline actions.</summary>
+public sealed partial class CompanionServer(ICompanionGameBridge bridge, TimeProvider? timeProvider = null) : IAsyncDisposable
 {
     public const string ApiVersion = "1";
     private const string CookieName = "GoldenTicketQuickPlayController";
@@ -39,14 +39,14 @@ public sealed class CompanionServer(ICompanionGameBridge bridge, TimeProvider? t
         PendingApproval = _authority.PendingApproval, ControllerLabel = _authority.ControllerLabel };
     public event EventHandler? StatusChanged;
     public static IReadOnlyList<LanInterface> GetAvailableInterfaces() => LanInterfaces.Discover();
-    public void InvalidatePrivateGrants() => _authority.InvalidatePrivateGrants();
+    public void InvalidatePrivateGrants() { _authority.InvalidatePrivateGrants(); NotifyGameChanged(); }
     public void NewPairingCode() { _authority.NewCode(); Notify(); }
     public bool ApprovePendingController() { var approved = _authority.Approve(); Notify(); return approved; }
     public void RevokeController() { _authority.Revoke(); Notify(); }
     public string CreateConnectionQrSvg() => CreateConnectionQrSvg(_status);
     internal static string CreateConnectionQrSvg(CompanionServerStatus status) => status.ConnectionAddress is { } address
         ? QrRenderer.ToSvg(QrCode.Encode(address), "Connect to Golden Ticket") : "";
-    private void Notify() => StatusChanged?.Invoke(this, EventArgs.Empty);
+    private void Notify() { NotifyGameChanged(); StatusChanged?.Invoke(this, EventArgs.Empty); }
 
     public Task StartAsync(CompanionHostOptions options, CancellationToken cancellationToken = default) =>
         StartOnInterfaceAsync(options, null, null, cancellationToken);
@@ -67,6 +67,7 @@ public sealed class CompanionServer(ICompanionGameBridge bridge, TimeProvider? t
             if (!selected.Address.Equals(options.Address) || !networkPrivate())
                 throw new InvalidOperationException("Choose an active Windows Private LAN connection. Public or unknown profiles are blocked.");
             var origins = new[] { $"http://{selected.Address}:{options.Port}", $"http://localhost:{options.Port}" };
+            _streamAllowed = context => RequestAllowed(context, selected, origins, networkPrivate) == 200;
             var app = CreateApplication();
             ConfigureKestrel(app, selected.Address, options.Port);
             var host = app.Build();
@@ -170,6 +171,7 @@ public sealed class CompanionServer(ICompanionGameBridge bridge, TimeProvider? t
 
     internal void MapApi(WebApplication app)
     {
+        app.MapGet("/api/events", StreamEventsAsync);
         ControllerCredentials? Credentials(HttpContext context, bool heartbeat = false) =>
             _authority.Authenticate(context.Request.Cookies[CookieName], context.Request.Headers["X-GoldenTicket-Tab"], heartbeat);
         app.MapPost("/api/pair", async (HttpContext context) =>
@@ -184,14 +186,8 @@ public sealed class CompanionServer(ICompanionGameBridge bridge, TimeProvider? t
         });
         app.MapGet("/api/session", async (HttpContext context) =>
         {
-            var credentials = Credentials(context, heartbeat: true);
-            if (credentials is null)
-                return Results.Json(new { pending = _authority.IsPending(context.Request.Cookies[CookieName], context.Request.Headers["X-GoldenTicket-Tab"]), paired = false }, statusCode: 200);
-            var snapshot = await bridge.ReadPublicAsync(context.RequestAborted);
-            if (!snapshot.CanControl) _authority.InvalidatePrivateGrants();
-            if (Credentials(context) != credentials) return Results.Unauthorized();
-            return Results.Ok(new { paired = true, csrf = credentials.Csrf, controllerGeneration = credentials.Generation,
-                handoffGeneration = _authority.Generation, apiVersion = ApiVersion, assetsVersion = "11", snapshot });
+            // Retained for diagnostics/compatibility; the shipped browser uses /api/events.
+            return Results.Ok(await ReadSessionAsync(context, context.RequestAborted));
         });
         app.MapGet("/api/result-image/{id}", async (HttpContext context, string id) =>
         {
@@ -210,7 +206,7 @@ public sealed class CompanionServer(ICompanionGameBridge bridge, TimeProvider? t
         {
             var credentials = Credentials(context);
             if (credentials is null || !Csrf(context, credentials)) return Results.Unauthorized();
-            _authority.InvalidatePrivateGrants();
+            InvalidatePrivateGrants();
             return Results.Ok(new { hidden = true });
         });
         app.MapPost("/api/reveal", async (HttpContext context) =>
@@ -228,6 +224,7 @@ public sealed class CompanionServer(ICompanionGameBridge bridge, TimeProvider? t
                 if (grant is null) return Results.Unauthorized();
                 var privateSnapshot = await bridge.ReadPrivateAsync(new SeatId(request.Seat), request.Version, context.RequestAborted);
                 if (privateSnapshot is null || !_authority.ValidateGrant(credentials, grant.Token, request.Seat, request.SessionId, request.Version)) return Results.Conflict();
+                NotifyGameChanged();
                 return Results.Ok(new { grant = grant.Token, handoffGeneration = grant.Generation, data = privateSnapshot });
             }
             finally { _requests.Release(); }
@@ -261,6 +258,7 @@ public sealed class CompanionServer(ICompanionGameBridge bridge, TimeProvider? t
                 if (_receipts.Count >= 64) _receipts.Remove(_receipts.Keys.First());
                 // Retries may acknowledge a saved command, but never replay a private view.
                 _receipts[key] = (body, receipt);
+                NotifyGameChanged();
                 return Results.Ok(receipt with { Continuation = continuation });
             }
             finally { _requests.Release(); }
@@ -308,6 +306,7 @@ public sealed class CompanionServer(ICompanionGameBridge bridge, TimeProvider? t
     private async Task StopCoreAsync()
     {
         _authority.Revoke();
+        _events.StopAll();
         if (_app is { } app) { _app = null; await ShutdownAsync(app); }
         _receipts.Clear();
         _status = new(false, null, null, null, null, "Companion is off."); Notify();

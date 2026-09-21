@@ -9,7 +9,7 @@ const sourceDir = path.resolve(__dirname, '../../src/GoldenTicket.CompanionHost/
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
 function deferred() { let resolve; const promise = new Promise(r => resolve = r); return { promise, resolve }; }
 function page(options = {}) {
-  const nodes = new Map(), listeners = {}, intervals = [], timeouts = new Map(), requests = [], objectUrls = [], revokedUrls = [];
+  const nodes = new Map(), listeners = {}, intervals = [], timeouts = new Map(), requests = [], objectUrls = [], revokedUrls = [], streams = [];
   let nextTimer = 0, uuid = 0, now = Date.now();
   class Node {
     constructor(tag = 'div') { this.tag = tag; this.textContent = ''; this.hidden = false; this.value = ''; this.disabled = false; this.children = []; this.dataset = {}; this.events = {}; }
@@ -23,14 +23,14 @@ function page(options = {}) {
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, new Node()); return nodes.get(id); };
   const state = {
-    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '11', handoffGeneration: 1,
+    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '12', controllerGeneration: 1, handoffGeneration: 1,
     snapshot: { canControl: true, revealSeatId: 1, message: 'Pass this device to Alex.', profileId: 'classic-us', manifestHash: 'hash', routes: [],
       game: { sessionId: 'match', stateVersion: 1, activeSeatId: 1, turnNumber: 1, turnPhase: 'TurnStart', seats: [{ seatId: 1, displayName: 'Alex', symbol: 'A', color: 'Blue', routeScore: 0, trainsRemaining: 45 }], pendingClaim: null } }
   };
   const data = { view: { seatId: 1, public: state.snapshot.game, hand: [{ id: 3, kind: 'Red' }], reservedCards: [] }, heldTickets: [{id:'secret', label:'PRIVATE_DESTINATION', points:20}], offeredTickets: [], actions: { mustCommitTicketSelection: false, mustResolvePendingClaim: true } };
   function response(value, ok = true, status = 200) { return { ok, status, json: async () => structuredClone(value) }; }
   const context = vm.createContext({
-    console, Promise, AbortController, Blob, Uint8Array, structuredClone,
+    console, Promise, AbortController, Blob, Uint8Array, TextDecoder, structuredClone,
     URL: class extends URL { static createObjectURL(blob) { const url = `blob:results-${objectUrls.length}`; objectUrls.push({url, blob}); return url; } static revokeObjectURL(url) { revokedUrls.push(url); } },
     Date: class extends Date { static now() { return now; } },
     // getRandomValues remains available in an insecure context; randomUUID does not.
@@ -44,17 +44,45 @@ function page(options = {}) {
       requests.push({url, request});
       if (options.offline) throw new Error('Offline');
       if (options.fetch) { const result = options.fetch(url, request); if (result !== undefined) return await result; }
-      if (url === '/api/session') return response(state);
+      if (url === '/api/events') {
+        let stream;
+        const body = new ReadableStream({start(controller) {
+          stream = {controller, request, closed:false}; streams.push(stream);
+          request.signal.addEventListener('abort', () => {
+            if (!stream.closed) { stream.closed=true; controller.error(new DOMException('Aborted','AbortError')); }
+          });
+          controller.enqueue(new TextEncoder().encode(`event: session\ndata: ${JSON.stringify(state)}\n\n`));
+        }, cancel() { stream.closed=true; }});
+        return new Response(body, {headers:{'Content-Type':'text/event-stream'}});
+      }
+      if (url === '/api/session') throw new Error('The browser must not poll /api/session');
       if (url === '/api/reveal') { state.handoffGeneration++; return response({grant:'private-grant', handoffGeneration: state.handoffGeneration, data}); }
       if (url === '/api/command') return response({ accepted:true, message:'Choice saved on laptop.' });
-      if (url === '/api/pair') return response({pending:true, identity:'1234'});
+      if (url === '/api/pair') { state.pending=true; return response({pending:true, identity:'1234'}); }
       return response({hidden:true});
     }
   });
   let source = fs.readFileSync(path.join(sourceDir, 'app.js'), 'utf8');
-  source = source.replace(/\}\)\(\);\s*$/, 'globalThis.clientTest = { poll, reveal, hide, submit, clearPrivate, state: () => ({paired, busy, privateData, grant, revealGeneration, handoffGeneration, resultKey, resultUrl}) }; })();');
+  source = source.replace(/\}\)\(\);\s*$/, 'globalThis.clientTest = { reveal, hide, submit, clearPrivate, state: () => ({paired, busy, privateData, grant, revealGeneration, handoffGeneration, resultKey, resultUrl, snapshot, eventsAbort, reconnectTimer, needsReload}) }; })();');
   vm.runInContext(source, context);
-  return { context, state, data, get, requests, options, timeouts, intervals, response, objectUrls, revokedUrls, client: context.clientTest,
+  async function retry() {
+    const timer=context.clientTest.state().reconnectTimer;
+    if (timer) {const task=timeouts.get(timer);timeouts.delete(timer);task.fn();await flush();}
+  }
+  async function bytes(value) {
+    const stream=streams.findLast(item=>!item.closed);
+    assert.ok(stream,'An active SSE connection is required');
+    stream.controller.enqueue(typeof value==='string'?new TextEncoder().encode(value):value); await flush();
+  }
+  async function push(value=state) {
+    if (options.offline) {
+      const stream=streams.findLast(item=>!item.closed);
+      if(stream) {stream.closed=true;stream.controller.error(new Error('Offline'));await flush();}
+      return;
+    }
+    await retry(); await bytes(`event: session\ndata: ${JSON.stringify(value)}\n\n`);
+  }
+  return { context, state, data, get, requests, options, timeouts, intervals, response, objectUrls, revokedUrls, streams, push, bytes, retry, client: context.clientTest,
     event: async (scope, name, event = {}) => { await listeners[scope + ':' + name]?.(event); await flush(); },
     click: async id => { await get(id).events.click?.(); await flush(); },
     advance: ms => { now += ms; }, nodes };
@@ -64,7 +92,7 @@ function page(options = {}) {
 async function elapse(p, ms) {
   while (ms > 0) {
     const step = Math.min(ms, 2000); p.advance(step); ms -= step;
-    await p.client.poll(); p.intervals.find(t => t.ms === 500).fn(); await flush();
+    await p.bytes('event: heartbeat\ndata: {}\n\n'); p.intervals.find(t => t.ms === 500).fn(); await flush();
   }
 }
 function descendants(node) { return [node, ...node.children.flatMap(descendants)]; }
@@ -93,10 +121,110 @@ function privateNode(p, name) { return descendants(p.get('private')).find(node=>
 test('joining is ready immediately and a pending request cannot be submitted again', async () => {
   const p = page({paired:false}); await flush();
   assert.equal(p.get('pair-form').hidden, false);
-  p.state.pending=true; await p.client.poll();
+  p.state.pending=true; await p.push();
   assert.equal(p.get('pair-form').hidden,true);
   await p.get('pair-form').events.submit({preventDefault(){}});
   assert.equal(p.requests.some(r=>r.url==='/api/pair'),false);
+});
+
+test('one authenticated SSE connection receives bursts without session polling or private view rebuilds', async () => {
+  const p=page(); await flush(); await p.client.reveal();
+  const hand=p.get('private').children[3];
+  const events=Array.from({length:40},(_,index)=>{
+    const next=structuredClone(p.state);next.snapshot.guidance={title:'Alex',instruction:`Camera update ${index}`};
+    return `event: session\ndata: ${JSON.stringify(next)}\n\n`;
+  }).join('');
+  await p.bytes(events); await elapse(p,120000);
+  assert.equal(p.get('curtain-detail').textContent,'Camera update 39');
+  assert.equal(p.get('private').children[3],hand);assert.equal(p.get('private').hidden,false);
+  assert.equal(p.requests.filter(r=>r.url==='/api/events').length,1);
+  assert.equal(p.requests.some(r=>r.url==='/api/session'),false);
+  assert.deepEqual(p.intervals.map(timer=>timer.ms),[500],'Only the local connection watchdog runs periodically');
+  const stream=p.requests.find(r=>r.url==='/api/events');
+  assert.equal(stream.request.headers.Accept,'text/event-stream');
+  assert.match(stream.request.headers['X-GoldenTicket-Tab'],/^[a-f0-9]{32}$/);
+  assert.equal(stream.url.includes('?'),false);
+});
+
+test('SSE parses fragmented CRLF, multiline JSON and split UTF-8 without partial rendering', async () => {
+  const p=page();await flush();
+  const next=structuredClone(p.state);next.snapshot.guidance={title:'Montréal 🚂',instruction:'Place the train → then continue.'};
+  const wire=`: keepalive\r\nid: ignored\r\nretry: 10\r\nevent: session\r\n${JSON.stringify(next,null,2).split('\n').map(line=>'data: '+line).join('\r\n')}\r\n\r\n`;
+  const encoded=new TextEncoder().encode(wire);
+  for(const byte of encoded.subarray(0,encoded.length-2)) await p.bytes(Uint8Array.of(byte));
+  assert.notEqual(p.get('handoff').textContent,'Montréal 🚂','Incomplete events are not rendered');
+  await p.bytes(encoded.subarray(encoded.length-2));
+  assert.equal(p.get('handoff').textContent,'Montréal 🚂');
+  assert.equal(p.get('curtain-detail').textContent,'Place the train → then continue.');
+  assert.equal(p.requests.filter(r=>r.url==='/api/events').length,1);
+});
+
+test('malformed or oversized SSE events cover cards and reconnect without accepting partial data', async () => {
+  for(const invalid of [
+    'event: session\ndata: {bad json}\n\n',
+    'event: session\ndata: {"paired":true,"pending":false,"apiVersion":"1","assetsVersion":"12"}\n\n',
+    'data: '+ 'x'.repeat(1024*1024+1),
+    Uint8Array.of(0xff)
+  ]) {
+    const p=page();await flush();await p.client.reveal();
+    await p.bytes(invalid);
+    assert.equal(p.get('private').hidden,true);assert.equal(p.client.state().grant,null);
+    assert.equal(p.streams[0].closed,true);
+    assert.equal(p.timeouts.get(p.client.state().reconnectTimer).ms,1000);
+    await p.retry();assert.equal(p.get('private').hidden,true);assert.equal(p.get('reveal').disabled,false);
+    assert.equal(p.streams.filter(stream=>!stream.closed).length,1);
+  }
+});
+
+test('pairing replaces the initial stream once and approval arrives without another request', async () => {
+  const p=page({paired:false});await flush();p.get('pair-code').value='123456';
+  await p.get('pair-form').events.submit({preventDefault(){}});await flush();
+  assert.equal(p.streams[0].request.signal.aborted,true);assert.equal(p.streams.filter(stream=>!stream.closed).length,1);
+  assert.equal(p.requests.filter(r=>r.url==='/api/events').length,2);assert.equal(p.get('pair-form').hidden,true);
+  p.state.paired=true;p.state.pending=false;await p.push();
+  assert.equal(p.get('connect').hidden,true);assert.equal(p.get('reveal').disabled,false);
+  assert.equal(p.requests.filter(r=>r.url==='/api/events').length,2);
+});
+
+test('closed stream reconnects covered with bounded backoff and accepts a restarted host', async () => {
+  const p=page();await flush();await p.client.reveal();
+  p.streams[0].closed=true;p.streams[0].controller.close();await flush();
+  assert.equal(p.get('private').hidden,true);assert.equal(p.get('reveal').disabled,true);
+  p.options.offline=true;
+  for(const delay of [1000,2000,4000,8000,10000,10000]) {
+    assert.equal(p.timeouts.get(p.client.state().reconnectTimer).ms,delay);await p.retry();
+    assert.equal(p.streams.filter(stream=>!stream.closed).length,0);
+  }
+  p.options.offline=false;p.state.controllerGeneration=0;p.state.handoffGeneration=0;
+  p.state.snapshot.game.sessionId='restarted';p.state.snapshot.game.stateVersion=0;
+  await p.retry();
+  assert.equal(p.get('reveal').disabled,false);assert.equal(p.get('private').hidden,true);
+  assert.equal(p.client.state().snapshot.game.sessionId,'restarted');
+  assert.equal(p.client.state().handoffGeneration,0);
+  assert.equal(p.streams.filter(stream=>!stream.closed).length,1);
+});
+
+test('background suspends streams and retries until visible; repeated lifecycle events never overlap streams', async () => {
+  const p=page();await flush();await p.client.reveal();
+  p.context.document.hidden=true;await p.event('document','visibilitychange');
+  assert.equal(p.streams.filter(stream=>!stream.closed).length,0);
+  assert.equal(p.client.state().reconnectTimer,null);assert.equal(p.get('private').hidden,true);
+  p.advance(30000);p.intervals[0].fn();await p.event('window','pageshow');
+  assert.equal(p.requests.filter(r=>r.url==='/api/events').length,1);
+  p.context.document.hidden=false;await p.event('document','visibilitychange');
+  await p.event('window','pageshow');await p.event('document','visibilitychange');
+  assert.equal(p.streams.filter(stream=>!stream.closed).length,1);
+  assert.equal(p.requests.filter(r=>r.url==='/api/events').length,2);
+  assert.equal(p.get('private').hidden,true);
+});
+
+test('missing heartbeat aborts the stream once; fresh heartbeats do not alter cards or request data', async () => {
+  const p=page();await flush();await p.client.reveal();
+  p.advance(5000);await p.bytes('event: heartbeat\ndata: {}\n\n');
+  p.advance(5000);p.intervals[0].fn();assert.equal(p.get('private').hidden,false);
+  p.advance(1000);p.intervals[0].fn();p.intervals[0].fn();await flush();
+  assert.equal(p.streams[0].request.signal.aborted,true);assert.equal(p.get('private').hidden,true);
+  assert.equal(p.timeouts.size,1);assert.equal(p.timeouts.get(p.client.state().reconnectTimer).ms,1000);
 });
 test('LAN gameplay remains available when the browser reports no Internet connection', async () => {
   // Browser/OS connectivity probes may report offline on a working Wi-Fi LAN without WAN access.
@@ -105,7 +233,7 @@ test('LAN gameplay remains available when the browser reports no Internet connec
   assert.equal(p.get('reveal').disabled,false);
   await p.client.reveal(); assert.equal(p.get('private').hidden,false);
   await p.event('window','offline'); assert.equal(p.get('private').hidden,true);
-  await p.client.poll(); assert.equal(p.get('reveal').disabled,false);
+  await p.push(); assert.equal(p.get('reveal').disabled,false);
   await p.client.reveal(); await p.client.submit('drawTrain',{slot:null});
   assert.equal(p.requests.filter(r=>r.url==='/api/command').length,1);
   assert.match(p.get('notice').textContent,/saved/i);
@@ -115,9 +243,9 @@ test('the complete companion request flow stays on the laptop origin', async () 
   const p=page({paired:false}); await flush();
   p.get('pair-code').value='123456';
   await p.get('pair-form').events.submit({preventDefault(){}});
-  p.state.paired=true; await p.client.poll(); await p.client.reveal();
+  p.state.paired=true; await p.push(); await p.client.reveal();
   await p.client.submit('drawTrain',{slot:null}); await p.client.reveal(); await p.click('hide');
-  assert.deepEqual([...new Set(p.requests.map(r=>r.url))].sort(),['/api/command','/api/hide','/api/pair','/api/reveal','/api/session']);
+  assert.deepEqual([...new Set(p.requests.map(r=>r.url))].sort(),['/api/command','/api/events','/api/hide','/api/pair','/api/reveal']);
   for(const {url,request} of p.requests) {
     const destination=new URL(url,'http://192.168.50.2:8080');
     assert.equal(destination.origin,'http://192.168.50.2:8080');
@@ -133,7 +261,7 @@ test('HTTP Quick play offers joining immediately without secure-context APIs or 
     const request = p.requests.find(r=>r.url==='/api/pair');
     assert.equal(JSON.parse(request.request.body).code,'123456');
     assert.match(JSON.parse(request.request.body).tab,/^[a-f0-9]{32}$/);
-    p.state.paired=true; await p.client.poll(); await p.client.reveal();
+    p.state.paired=true; await p.push(); await p.client.reveal();
     assert.equal(p.get('private').hidden,false);
     assert.equal(p.get('hide').hidden,false);
     await p.client.submit('drawTrain',{slot:null});
@@ -164,7 +292,7 @@ test('public placement, correction and scoring instructions update while cards r
     "Remove the extra Green train from Dallas - Oklahoma City (lane A).",
     "Move Computer 1's Green score marker to 1."
   ]) {
-    p.state.snapshot.guidance={title:'Computer 1',instruction}; await p.client.poll();
+    p.state.snapshot.guidance={title:'Computer 1',instruction}; await p.push();
     assert.equal(p.state.snapshot.game.stateVersion,version,'Camera guidance can change without a game revision');
     assert.equal(p.get('handoff').textContent,'Computer 1');
     assert.equal(p.get('curtain-detail').textContent,instruction);
@@ -175,7 +303,7 @@ test('public placement, correction and scoring instructions update while cards r
   assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,reveals);
   assert.equal(p.requests.filter(r=>r.url==='/api/command').length,0);
   p.state.snapshot.guidance=null; p.state.snapshot.canControl=true; p.state.snapshot.revealSeatId=1;
-  p.state.snapshot.message='Pass this device to Alex.'; await p.client.poll();
+  p.state.snapshot.message='Pass this device to Alex.'; await p.push();
   assert.equal(p.get('handoff').textContent,'Pass this device to Alex.');
   assert.match(p.get('curtain-detail').textContent,/Reveal only when it is your turn/);
   assert.equal(p.get('public-instruction').textContent,'Turn 1 · Turn Start');
@@ -186,16 +314,16 @@ test('public placement, correction and scoring instructions update while cards r
 test('shared guidance updates pending placement without rebuilding or revealing private cards', async () => {
   const p=page(); await flush();
   p.state.snapshot.guidance={title:'Alex',instruction:'Place 2 Blue trains on Calgary - Helena.'};
-  await p.client.poll(); await p.client.reveal();
+  await p.push(); await p.client.reveal();
   const node=descendants(p.get('private')).find(node=>node.textContent===p.state.snapshot.guidance.instruction);
   assert.ok(node); const hand=p.get('private').children[3];
-  p.state.snapshot.guidance.instruction='Restore the Blue trains to Calgary - Helena.'; await p.client.poll();
+  p.state.snapshot.guidance.instruction='Restore the Blue trains to Calgary - Helena.'; await p.push();
   assert.equal(node.textContent,p.state.snapshot.guidance.instruction); assert.equal(p.get('private').children[3],hand);
   assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,1);
-  delete p.state.snapshot.guidance; await p.client.poll();
+  delete p.state.snapshot.guidance; await p.push();
   assert.equal(node.textContent,'Follow the placement instructions on the laptop.');
   await p.click('hide');
-  p.state.snapshot.guidance={title:'Alex',instruction:'Move the Blue score marker.'}; await p.client.poll();
+  p.state.snapshot.guidance={title:'Alex',instruction:'Move the Blue score marker.'}; await p.push();
   assert.equal(p.get('private').children.length,0); assert.equal(p.get('curtain-detail').textContent,'Move the Blue score marker.');
 });
 test('delayed private response cannot uncover a hand after Hide', async () => {
@@ -216,22 +344,22 @@ test('a newer laptop handoff observed during reveal rejects the delayed old priv
   const reply=deferred(); const p=page({fetch:url=>url==='/api/reveal'?reply.promise:undefined}); await flush();
   const operation=p.client.reveal(); await flush();
   // Server granted generation2, then laptop Hide revoked it as generation3 before the response arrived.
-  p.state.handoffGeneration=3; await p.client.poll();
+  p.state.handoffGeneration=3; await p.push();
   reply.resolve(p.response({grant:'revoked',handoffGeneration:2,data:p.data})); await operation;
   assert.equal(p.client.state().privateData,null); assert.equal(p.get('private').hidden,true);
 });
-test('a poll observing this reveal own generation does not discard its valid response', async () => {
+test('a pushed update observing this reveal own generation does not discard its valid response', async () => {
   const reply=deferred(); const p=page({fetch:url=>url==='/api/reveal'?reply.promise:undefined}); await flush();
-  const operation=p.client.reveal(); await flush(); p.state.handoffGeneration=2; await p.client.poll();
+  const operation=p.client.reveal(); await flush(); p.state.handoffGeneration=2; await p.push();
   reply.resolve(p.response({grant:'valid',handoffGeneration:2,data:p.data})); await operation;
   assert.equal(p.get('private').hidden,false); assert.equal(p.client.state().grant,'valid');
 });
-test('an old poll cannot rewind handoff generation and re-pairing can reset it for a restarted host', async () => {
+test('an old pushed update cannot rewind handoff generation and re-pairing can reset it for a restarted host', async () => {
   const p=page(); await flush(); await p.client.reveal();
-  p.state.handoffGeneration=1; await p.client.poll();
+  p.state.handoffGeneration=1; await p.push();
   assert.equal(p.client.state().handoffGeneration,2); assert.equal(p.get('private').hidden,false);
-  p.state.paired=false; await p.client.poll(); assert.equal(p.client.state().handoffGeneration,-1);
-  p.state.paired=true; p.state.handoffGeneration=1; await p.client.poll();
+  p.state.paired=false; await p.push(); assert.equal(p.client.state().handoffGeneration,-1);
+  p.state.paired=true; p.state.handoffGeneration=1; await p.push();
   assert.equal(p.client.state().handoffGeneration,1); await p.client.reveal(); assert.equal(p.get('private').hidden,false);
 });
 test('turn revision change, revoke, and connection failure clear private views', async () => {
@@ -240,11 +368,11 @@ test('turn revision change, revoke, and connection failure clear private views',
     if(change === 'revision') p.state.snapshot.game.stateVersion++;
     if(change === 'revoked') p.state.paired = false;
     if(change === 'offline') p.options.offline = true;
-    await p.client.poll(); assert.equal(p.client.state().privateData,null); assert.equal(p.get('private').hidden,true);
+    await p.push(); assert.equal(p.client.state().privateData,null); assert.equal(p.get('private').hidden,true);
   }
 });
 test('an incompatible client version covers cards and blocks reveal until reload', async () => {
-  const p=page(); await flush(); await p.client.reveal(); p.state.assetsVersion='1'; await p.client.poll();
+  const p=page(); await flush(); await p.client.reveal(); p.state.assetsVersion='1'; await p.push();
   assert.equal(p.client.state().privateData,null); assert.equal(p.get('reveal').disabled,true);
   assert.match(p.get('notice').textContent,/needs an update/);
 });
@@ -267,7 +395,7 @@ test('untouched destination selections remain available after ten minutes and ca
   assert.equal(p.get('private').hidden,false,'Time alone must not hide the hand or discard ticket selections');
   const current=descendants(p.get('private')).filter(node=>node.type==='checkbox');
   assert.equal(current[0],choices[0]); assert.equal(current[0].checked,false); assert.equal(current[1].checked,true);
-  assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,1,'Polling must not fetch/rebuild the private view');
+  assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,1,'Heartbeats must not fetch/rebuild the private view');
   assert.equal(p.requests.some(r=>r.url==='/api/activity'),false,'Reading cards must not require activity renewals');
   const keep=descendants(p.get('private')).find(node=>node.textContent==='Keep selected tickets');
   assert.equal(keep.disabled,false); await keep.events.click(); await flush();
@@ -330,21 +458,21 @@ test('offered destinations retain their checkbox list alongside held destination
   const command=JSON.parse(p.requests.find(r=>r.url==='/api/command').request.body).command;
   assert.deepEqual(command.keptTickets,['second']); assert.deepEqual(command.returnedTickets,['first']);
 });
-test('camera claims wait for a detected route and polls never reveal a hidden hand', async () => {
-  const p=page(); await flush(); cameraTurn(p); await p.client.poll(); await p.client.reveal();
+test('camera claims wait for a detected route and pushes never reveal a hidden hand', async () => {
+  const p=page(); await flush(); cameraTurn(p); await p.push(); await p.client.reveal();
   assert.equal(descendants(p.get('private')).some(node=>node.tag==='select'),false);
   assert.ok(descendants(p.get('private')).some(node=>node.textContent.includes('Place your trains on the board.')));
   await p.client.submit('planClaim',{routeId:'first-route',payment:p.data.actions.claims[0].payments[0]});
   assert.equal(p.requests.some(r=>r.url==='/api/command'),false);
-  p.client.hide(); detect(p); await p.client.poll();
+  p.client.hide(); detect(p); await p.push();
   assert.equal(p.get('private').hidden,true); assert.equal(p.get('private').children.length,0);
   assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,1);
 });
-test('camera-only polls update payment choices while preserving the private hand and same-proposal selection', async () => {
-  const p=page(); await flush(); cameraTurn(p); await p.client.poll(); await p.client.reveal();
+test('camera-only pushes update payment choices while preserving the private hand and same-proposal selection', async () => {
+  const p=page(); await flush(); cameraTurn(p); await p.push(); await p.client.reveal();
   const hand=descendants(p.get('private')).find(node=>node.className==='cards');
   const tickets=descendants(p.get('private')).find(node=>node.className==='tickets held-tickets');
-  detect(p); await p.client.poll();
+  detect(p); await p.push();
   assert.equal(p.get('private').hidden,false); assert.ok(descendants(p.get('private')).includes(hand)); assert.ok(descendants(p.get('private')).includes(tickets));
   assert.equal(privateNode(p,'Pay with 1 Blue'),undefined,'Only payments for the detected route are offered');
   assert.equal(privateNode(p,'Draw a blind card').disabled,true); assert.equal(privateNode(p,'Draw destination tickets').disabled,true);
@@ -353,11 +481,11 @@ test('camera-only polls update payment choices while preserving the private hand
   assert.equal(p.requests.some(r=>r.url==='/api/command'),false);
   await privateNode(p,'Pay with 1 Red + 1 Locomotive').events.click();
   assert.equal(privateNode(p,'Pay for detected route').disabled,false);
-  detect(p,{ready:false}); await p.client.poll();
+  detect(p,{ready:false}); await p.push();
   assert.equal(privateNode(p,'Pay with 1 Red + 1 Locomotive')['aria-pressed'],'true'); assert.equal(privateNode(p,'Pay for detected route').disabled,true);
   await p.client.submit('payDetectedRoute',{routeId:'first-route',payment:p.data.actions.claims[0].payments[1],detectedClaimId:'placement-1'});
   assert.equal(p.requests.some(r=>r.url==='/api/command'),false);
-  detect(p); await p.client.poll();
+  detect(p); await p.push();
   assert.equal(privateNode(p,'Pay with 1 Red + 1 Locomotive')['aria-pressed'],'true');
   assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,1);
   await privateNode(p,'Pay for detected route').events.click(); await flush();
@@ -366,36 +494,36 @@ test('camera-only polls update payment choices while preserving the private hand
   assert.deepEqual(payload.command.payment,{color:'Red',colorCards:1,locomotives:1}); assert.equal(p.get('private').hidden,true);
 });
 test('removed or replaced camera proposals clear payment choices and reject stale submissions', async () => {
-  const p=page(); await flush(); cameraTurn(p); detect(p); await p.client.poll(); await p.client.reveal();
+  const p=page(); await flush(); cameraTurn(p); detect(p); await p.push(); await p.client.reveal();
   await privateNode(p,'Pay with 2 Red').events.click(); const oldPay=privateNode(p,'Pay for detected route');
-  detect(p,{proposalId:'placement-2'}); await p.client.poll();
+  detect(p,{proposalId:'placement-2'}); await p.push();
   assert.equal(privateNode(p,'Pay with 2 Red')['aria-pressed'],'false'); assert.equal(privateNode(p,'Pay for detected route').disabled,true);
   await oldPay.events.click(); await p.client.submit('payDetectedRoute',{routeId:'first-route',payment:p.data.actions.claims[0].payments[0],detectedClaimId:'placement-1'});
   assert.equal(p.requests.some(r=>r.url==='/api/command'),false);
   await privateNode(p,'Pay with 2 Red').events.click();
   await oldPay.events.click(); await flush();
   assert.equal(p.requests.some(r=>r.url==='/api/command'),false,'A detached Pay button must not spend a newly selected payment on its old proposal');
-  p.state.snapshot.boardInteraction.detectedRoute=null; p.state.snapshot.boardInteraction.cardActionsBlocked=false; await p.client.poll();
+  p.state.snapshot.boardInteraction.detectedRoute=null; p.state.snapshot.boardInteraction.cardActionsBlocked=false; await p.push();
   assert.equal(privateNode(p,'Pay for detected route'),undefined); assert.equal(privateNode(p,'Draw a blind card').disabled,false);
-  detect(p,{proposalId:'placement-2'}); await p.client.poll();
+  detect(p,{proposalId:'placement-2'}); await p.push();
   assert.equal(privateNode(p,'Pay for detected route').disabled,true); assert.equal(privateNode(p,'Pay with 2 Red')['aria-pressed'],'false');
 });
-test('camera-only polls preserve in-progress destination ticket checkboxes', async () => {
+test('camera-only pushes preserve in-progress destination ticket checkboxes', async () => {
   const p=page(), choices=await ticketOffer(p); await checkTicket(choices[0],true);
-  detect(p); await p.client.poll(); detect(p,{proposalId:'placement-2',ready:false}); await p.client.poll();
+  detect(p); await p.push(); detect(p,{proposalId:'placement-2',ready:false}); await p.push();
   const current=descendants(p.get('private')).filter(node=>node.type==='checkbox');
   assert.equal(current[0],choices[0]); assert.equal(current[0].checked,true); assert.equal(privateNode(p,'Pay for detected route'),undefined);
   const keep=descendants(p.get('private')).find(node=>node.textContent==='Keep selected tickets');
   assert.equal(keep.disabled,true);
   await p.client.submit('keepTickets',{keptTickets:['first'],returnedTickets:['second']});
   assert.equal(p.requests.some(r=>r.url==='/api/command'),false); assert.equal(current[0].checked,true);
-  p.state.snapshot.boardInteraction.cardActionsBlocked=false; await p.client.poll();
+  p.state.snapshot.boardInteraction.cardActionsBlocked=false; await p.push();
   assert.equal(keep.disabled,false); assert.equal(descendants(p.get('private')).find(node=>node.type==='checkbox'),choices[0]);
 });
 test('a delayed private reveal uses the newest camera proposal without requesting another hand', async () => {
-  const reply=deferred(), p=page({fetch:url=>url==='/api/reveal'?reply.promise:undefined}); await flush(); cameraTurn(p); detect(p); await p.client.poll();
+  const reply=deferred(), p=page({fetch:url=>url==='/api/reveal'?reply.promise:undefined}); await flush(); cameraTurn(p); detect(p); await p.push();
   const revealing=p.client.reveal(); await flush();
-  detect(p,{proposalId:'placement-2',routeId:'other-route',label:'Seattle – Vancouver',length:1}); await p.client.poll();
+  detect(p,{proposalId:'placement-2',routeId:'other-route',label:'Seattle – Vancouver',length:1}); await p.push();
   reply.resolve(p.response({grant:'latest-hand',handoffGeneration:2,data:p.data})); await revealing;
   assert.ok(privateNode(p,'Pay with 1 Blue')); assert.equal(privateNode(p,'Pay with 2 Red'),undefined);
   assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,1); assert.equal(p.get('private').hidden,false);
@@ -425,13 +553,13 @@ function secondDrawContinuation(p) {
 
 test('first face-up draw refreshes in place and the next draw uses the new version and grant', async () => {
   const reply=deferred(), p=page({fetch:url=>url==='/api/command'?reply.promise:undefined});
-  await flush(); cameraTurn(p); await p.client.poll(); await p.client.reveal();
+  await flush(); cameraTurn(p); await p.push(); await p.client.reveal();
   const hand=p.get('private').children[3], ticketRow=descendants(p.get('private')).find(n=>n.className==='tickets held-tickets');
   const first=privateNode(p,'Red · slot 1'), locomotive=privateNode(p,'White · slot 3'); ticketRow.scrollLeft=87;
   const sending=p.client.submit('drawTrain',{slot:0}); await flush();
   assert.equal(first.disabled,true); assert.equal(p.get('curtain').hidden,true);
-  const result=secondDrawContinuation(p); await p.client.poll();
-  assert.equal(p.get('private').hidden,false,'The command revision may reach a poll before the receipt');
+  const result=secondDrawContinuation(p); await p.push();
+  assert.equal(p.get('private').hidden,false,'The command revision may be pushed before the receipt');
   reply.resolve(p.response(result)); await sending;
   assert.equal(p.get('private').hidden,false); assert.equal(p.get('curtain').hidden,true);
   assert.equal(p.get('private').children[3],hand); assert.equal(hand.children[0].children[1].textContent,'2');
@@ -450,32 +578,47 @@ test('first face-up draw refreshes in place and the next draw uses the new versi
 test('late continuation cannot uncover after Hide, background, revoke, disconnect, or a turn change', async () => {
   for(const reason of ['hide','background','revoked','offline','turn','handoff']) {
     const reply=deferred(),p=page({fetch:url=>url==='/api/command'?reply.promise:undefined});
-    await flush(); cameraTurn(p); await p.client.poll(); await p.client.reveal();
+    await flush(); cameraTurn(p); await p.push(); await p.client.reveal();
     const sending=p.client.submit('drawTrain',{slot:0}); await flush(); const result=secondDrawContinuation(p);
     if(reason==='hide') p.client.hide();
     if(reason==='background') {p.context.document.hidden=true;await p.event('document','visibilitychange');}
-    if(reason==='revoked') {p.state.paired=false;await p.client.poll();}
-    if(reason==='offline') {p.options.offline=true;await p.client.poll();p.options.offline=false;}
-    if(reason==='turn') {p.state.snapshot.game.turnNumber++;p.state.snapshot.game.activeSeatId=2;p.state.snapshot.revealSeatId=2;await p.client.poll();}
-    if(reason==='handoff') {p.state.handoffGeneration++;await p.client.poll();}
+    if(reason==='revoked') {p.state.paired=false;await p.push();}
+    if(reason==='offline') {p.options.offline=true;await p.push();p.options.offline=false;}
+    if(reason==='turn') {p.state.snapshot.game.turnNumber++;p.state.snapshot.game.activeSeatId=2;p.state.snapshot.revealSeatId=2;await p.push();}
+    if(reason==='handoff') {p.state.handoffGeneration++;await p.push();}
     reply.resolve(p.response(result)); await sending;
     assert.equal(p.get('private').hidden,true,reason); assert.equal(p.client.state().grant,null,reason);
   }
 });
 
-test('an old poll cannot replace the continuation with an earlier game revision', async () => {
-  const commandReply=deferred(),pollReply=deferred();
+test('an old pushed update cannot replace the continuation with an earlier game revision', async () => {
+  const commandReply=deferred();
   const p=page({fetch:url=>url==='/api/command'?commandReply.promise:undefined});
-  await flush();cameraTurn(p);await p.client.poll();await p.client.reveal();
+  await flush();cameraTurn(p);await p.push();await p.client.reveal();
   const sending=p.client.submit('drawTrain',{slot:0});await flush();
   const oldState=structuredClone(p.state);
-  p.options.fetch=url=>url==='/api/session'?pollReply.promise:undefined;
-  const polling=p.client.poll();await flush();
   commandReply.resolve(p.response(secondDrawContinuation(p)));await sending;
-  pollReply.resolve(p.response(oldState));await polling;
+  await p.push(oldState);
   assert.equal(p.get('private').hidden,false); assert.equal(p.client.state().grant,'second-draw-grant');
-  p.options.fetch=undefined;await p.client.poll();assert.equal(p.get('private').hidden,false);
+  assert.equal(p.client.state().snapshot.game.stateVersion,2);
+  await p.push();assert.equal(p.get('private').hidden,false);
 });
+
+test('a delayed continuation preserves newer public guidance streamed for its resulting revision', async () => {
+  const reply=deferred(),p=page({fetch:url=>url==='/api/command'?reply.promise:undefined});
+  await flush();cameraTurn(p);await p.push();await p.client.reveal();
+  const sending=p.client.submit('drawTrain',{slot:0});await flush();
+  const receipt=secondDrawContinuation(p);
+  p.state.snapshot.guidance={title:'Alex',instruction:'The camera now sees an extra train.'};
+  p.state.snapshot.boardInteraction.message='Latest camera observation';await p.push();
+  reply.resolve(p.response(receipt));await sending;
+  assert.equal(p.get('private').hidden,false);assert.equal(p.client.state().grant,'second-draw-grant');
+  assert.equal(p.client.state().snapshot.game.stateVersion,2);
+  assert.equal(p.client.state().snapshot.boardInteraction.message,'Latest camera observation');
+  assert.equal(p.get('public-instruction').textContent,'The camera now sees an extra train.');
+  assert.equal(p.requests.filter(request=>request.url==='/api/events').length,1,'A periodic fetch must not be needed to restore the latest guidance');
+});
+
 test('untrusted player text is assigned as text and never interpreted as HTML', async () => {
   const p=page(); p.state.snapshot.game.seats[0].displayName='<img src=x onerror=alert(1)>'; await flush(); await p.client.reveal();
   assert.equal(p.get('private').hidden,false); // Node.innerHTML setter would throw on interpolation.
@@ -486,7 +629,7 @@ const imageResponse = (bytes = resultPng, contentType = 'image/png') => new Resp
 async function receiveResults(p, id = 'image-1') {
   p.state.snapshot.resultImage = {id, fileName:'golden-ticket-final-standings.png'};
   p.state.snapshot.canControl = false;
-  await p.client.poll();
+  await p.push();
   for(let i=0; i<5; i++) { await new Promise(resolve=>setImmediate(resolve)); await flush(); }
 }
 
@@ -500,7 +643,7 @@ test('standings stay absent until published and load once with authenticated unc
   assert.deepEqual(Buffer.from(await p.objectUrls.at(-1).blob.arrayBuffer()),resultPng);
   const request=p.requests.find(r=>r.url==='/api/result-image/image-1').request;
   assert.equal(request.cache,'no-store'); assert.equal(request.credentials,'same-origin'); assert.ok(request.headers['X-GoldenTicket-Tab']);
-  await p.client.poll(); assert.equal(p.requests.filter(r=>r.url.startsWith('/api/result-image/')).length,1);
+  await p.push(); assert.equal(p.requests.filter(r=>r.url.startsWith('/api/result-image/')).length,1);
   await p.event('window','blur'); assert.equal(p.get('curtain').hidden,true); assert.equal(p.get('result-preview').hidden,false);
 });
 
@@ -509,9 +652,9 @@ test('replacement, revocation, game change, disconnect and page departure erase 
     const p=page({fetch:url=>url.startsWith('/api/result-image/')?imageResponse():undefined}); await flush(); await receiveResults(p);
     const old=p.client.state().resultUrl;
     if(action==='replacement') await receiveResults(p,'image-2');
-    if(action==='revoked') {p.state.paired=false; await p.client.poll();}
-    if(action==='new-game') {p.state.snapshot.game.sessionId='next-match'; delete p.state.snapshot.resultImage; await p.client.poll();}
-    if(action==='removed') {delete p.state.snapshot.resultImage; await p.client.poll();}
+    if(action==='revoked') {p.state.paired=false; await p.push();}
+    if(action==='new-game') {p.state.snapshot.game.sessionId='next-match'; delete p.state.snapshot.resultImage; await p.push();}
+    if(action==='removed') {delete p.state.snapshot.resultImage; await p.push();}
     if(action==='offline') await p.event('window','offline');
     if(action==='pagehide') await p.event('window','pagehide');
     if(action==='timeout') {p.advance(6000);p.intervals.find(t=>t.ms===500).fn();}
@@ -526,8 +669,8 @@ test('replacement, revocation, game change, disconnect and page departure erase 
 test('late image response cannot restore results after revocation or session replacement', async () => {
   for(const action of ['revoked','new-game','offline']) {
     const pending=deferred(); const p=page({fetch:url=>url.startsWith('/api/result-image/')?pending.promise:undefined}); await flush(); await receiveResults(p);
-    if(action==='revoked') {p.state.paired=false;await p.client.poll();}
-    if(action==='new-game') {p.state.snapshot.game.sessionId='next';delete p.state.snapshot.resultImage;await p.client.poll();}
+    if(action==='revoked') {p.state.paired=false;await p.push();}
+    if(action==='new-game') {p.state.snapshot.game.sessionId='next';delete p.state.snapshot.resultImage;await p.push();}
     if(action==='offline') await p.event('window','offline');
     pending.resolve(imageResponse()); await new Promise(resolve=>setImmediate(resolve)); await flush();
     assert.equal(p.client.state().resultUrl,null); assert.equal(p.objectUrls.length,0); assert.equal(p.get('result').hidden,true);
@@ -538,7 +681,7 @@ test('failed image download has a working retry without polling indefinitely', a
   let attempts=0;
   const p=page({fetch:url=>url.startsWith('/api/result-image/')?(++attempts===1?new Response('',{status:404}):imageResponse()):undefined}); await flush(); await receiveResults(p);
   assert.equal(p.get('result-retry').hidden,false); assert.equal(p.client.state().resultUrl,null);
-  await p.client.poll(); assert.equal(attempts,1,'Polling must not retry the failed image indefinitely.');
+  await p.push(); assert.equal(attempts,1,'Polling must not retry the failed image indefinitely.');
   await p.click('result-retry'); assert.equal(attempts,2); assert.equal(p.get('result-save').hidden,false); assert.equal(p.get('result-retry').hidden,true);
 });
 
@@ -552,6 +695,6 @@ test('result download rejects non-PNG, invalid signatures and oversized streamed
 test('result metadata cannot fetch external URLs and unsafe filenames use a PNG basename', async () => {
   const p=page({fetch:url=>url.startsWith('/api/result-image/')?imageResponse():undefined}); await flush(); await receiveResults(p,'https://elsewhere.test/private');
   assert.equal(p.requests.some(r=>r.url.startsWith('/api/result-image/')),false);
-  p.state.snapshot.resultImage={id:'safe-id',fileName:'../../bad.html'};await p.client.poll();await new Promise(resolve=>setImmediate(resolve));await flush();
+  p.state.snapshot.resultImage={id:'safe-id',fileName:'../../bad.html'};await p.push();await new Promise(resolve=>setImmediate(resolve));await flush();
   assert.equal(p.get('result-save').download,'golden-ticket-final-standings.png');
 });

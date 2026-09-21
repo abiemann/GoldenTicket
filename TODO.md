@@ -456,8 +456,10 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
 - [x] **First portable package built and checked.** Normal and cache-only offline builds passed;
   the published executable passed eight component checks and every archived payload hash matched.
   Source/artifact identities are in [package evidence](docs/evidence/offline-package-2026-09-12/README.md).
-- [ ] Replace companion snapshot polling with WS event-cursor synchronization; persist a protected
-  approved-device registry, implement reconnect/lease recovery without pairing after every reload,
+- [x] Replace companion snapshot polling with event-driven SSE over the existing LAN HTTP connection.
+  Push public game/camera/instruction changes, coalesce bursts, keep the connection alive without
+  rereading unchanged game state, and reconnect covered with a fresh snapshot rather than replaying actions.
+- [ ] Persist a protected approved-device registry, implement reconnect/lease recovery without pairing after every reload,
   and add hold-to-peek plus full accessibility/device acceptance. The plain-JS client remains a
   bundled implementation deviation from the planned TypeScript build.
 - [x] **M0/M2: guided connection setup first slice.** Detect the Windows network profile, explain a

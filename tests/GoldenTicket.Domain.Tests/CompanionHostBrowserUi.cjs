@@ -28,6 +28,22 @@ const viewports=[{name:'pixel',width:448,height:900},{name:'small-phone',width:3
 assert.ok(viewports.length,'GOLDENTICKET_BROWSER_VIEWPORTS must select an existing viewport.');
 let fixture = fixtures.setup, paired = false, pending = false, generation = 1, requests = [], offline = false, delayedReveal = null;
 let resultImageBytes = null, activeGrant = null, delayedCommand = null;
+let sessionRevision=0, controllerGeneration=1, suppressHeartbeats=false;
+const eventStreams=new Set();
+function sessionEnvelope() {
+  return paired ? {paired,pending:false,csrf:'test-csrf',handoffGeneration:generation,controllerGeneration,apiVersion:'1',assetsVersion:'12',snapshot:fixture.snapshot} : {paired,pending,apiVersion:'1',assetsVersion:'12'};
+}
+function publishSession(target) {
+  const revision=++sessionRevision, frame=`id: ${revision}\nevent: session\ndata: ${JSON.stringify(sessionEnvelope())}\n\n`;
+  for(const response of target ? [target] : eventStreams) response.write(frame);
+  return revision;
+}
+function publishHeartbeat() {
+  for(const response of eventStreams) response.write('event: heartbeat\ndata: {}\n\n');
+}
+function disconnectStreams() { for(const response of eventStreams) response.destroy(); }
+const heartbeatTimer=setInterval(()=>{if(!offline && !suppressHeartbeats) publishHeartbeat();},2000);
+heartbeatTimer.unref();
 function sameTurnFixture(next, previous) {
   const value=structuredClone(next), before=previous.snapshot.game;
   for(const game of [value.snapshot.game,value.data.view.public]) {
@@ -51,16 +67,25 @@ const requestHandler = async (request, response) => {
     let body = ''; for await(const chunk of request) body += chunk;
     body = body ? JSON.parse(body) : {};
     requests.push({url:url.pathname, body, headers:request.headers});
-    if(url.pathname === '/api/session') return send(response, paired ? { paired, csrf:'test-csrf', handoffGeneration:generation, controllerGeneration:1, apiVersion:'1', assetsVersion:'11', snapshot:fixture.snapshot } : {paired,pending});
+    if(url.pathname === '/api/session') return send(response, {error:'The browser must use the event stream.'},410);
+    if(url.pathname === '/api/events') {
+      assert.ok(request.headers['x-goldenticket-tab'],'The event stream must retain the per-tab identity.');
+      response.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store'});
+      response.flushHeaders(); eventStreams.add(response);
+      response.on('close',()=>eventStreams.delete(response));
+      publishSession(response);
+      return;
+    }
     if(url.pathname.startsWith('/api/result-image/')) {
       if(!paired || !resultImageBytes || url.pathname!==`/api/result-image/${fixture.snapshot.resultImage?.id}` || !request.headers['x-goldenticket-tab']) return send(response,{},404);
       response.writeHead(200,{'Content-Type':'image/png','Content-Length':resultImageBytes.length,'Cache-Control':'no-store'}); response.end(resultImageBytes); return;
     }
-    if(url.pathname === '/api/pair') { pending=true; return send(response, {pending:true,identity:'2468'}); }
-    if(url.pathname === '/api/hide') { generation++; activeGrant=null; return send(response,{hidden:true}); }
+    if(url.pathname === '/api/pair') { pending=true; publishSession(); return send(response, {pending:true,identity:'2468'}); }
+    if(url.pathname === '/api/hide') { generation++; activeGrant=null; publishSession(); return send(response,{hidden:true}); }
     if(url.pathname === '/api/reveal') {
       const reply = {grant:'test-private-grant', handoffGeneration:++generation, data:fixture.data};
       activeGrant={seat:body.seat,sessionId:body.sessionId,version:body.version,grant:reply.grant,handoffGeneration:reply.handoffGeneration};
+      publishSession();
       if(delayedReveal) { delayedReveal.response=response; delayedReveal.reply=reply; return; }
       return send(response, reply);
     }
@@ -95,6 +120,7 @@ const requestHandler = async (request, response) => {
         reply.continuation={grant:`test-private-grant-${generation}`,handoffGeneration:generation,snapshot:fixture.snapshot,data:fixture.data};
         activeGrant={seat:body.seat,sessionId:fixture.snapshot.game.sessionId,version:fixture.snapshot.game.stateVersion,grant:reply.continuation.grant,handoffGeneration:generation};
       }
+      publishSession();
       if(delayedCommand) { delayedCommand.response=response; delayedCommand.reply=reply; return; }
       return send(response,reply);
     }
@@ -110,12 +136,24 @@ const server = http.createServer(requestHandler);
 async function record(name, action) { const start=Date.now(); await action(); results.push({name,passed:true,milliseconds:Date.now()-start}); console.log('PASS '+name); }
 async function waitCovered(page) { await page.locator('#curtain').waitFor({state:'visible'}); assert.equal(await page.locator('#private').textContent(),''); }
 async function reveal(page) { await page.locator('#reveal').waitFor({state:'visible'}); await page.locator('#reveal').click(); await page.locator('#private').waitFor({state:'visible'}); }
+async function sessionDelivered(page,revision=sessionRevision) {
+  await page.waitForFunction(expected=>window.fixtureEvents.session>=expected,revision);
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+}
+async function heartbeatDelivered(page) {
+  const previous=await page.evaluate(()=>window.fixtureEvents.heartbeat);
+  await page.waitForFunction(expected=>window.fixtureEvents.heartbeat>expected,previous);
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));
+}
 async function changeFixture(page, next) {
-  fixture = fixtures[next]; generation++;
+  // Independent scenarios can return to an earlier seeded turn. Model a new
+  // controller so the production client's stale-event guard still stays active.
+  fixture = fixtures[next]; generation++; controllerGeneration++;
+  publishSession();
   await page.locator('#hide').click();
   await page.waitForFunction(expected => document.getElementById('handoff').textContent === expected, fixture.snapshot.message);
-  // Same player but changed phase can have identical handoff text. Await an actual later poll.
-  await page.waitForResponse(r => r.url().endsWith('/api/session') && r.ok());
+  // Same player but changed phase can have identical handoff text. Await the actual stream frame.
+  await sessionDelivered(page);
 }
 async function screenshot(page,name) {
   // Normalize scroll before a full-page capture so a sticky header is not composited halfway
@@ -203,7 +241,7 @@ async function main() {
   const browserVersion=browser.version();
   try {
     for(const viewport of viewports) {
-      fixture=fixtures.setup; paired=false; pending=false; generation=1; requests=[]; offline=false; delayedReveal=null; delayedCommand=null; activeGrant=null;
+      fixture=fixtures.setup; paired=false; pending=false; generation=1; controllerGeneration=1; requests=[]; offline=false; suppressHeartbeats=false; delayedReveal=null; delayedCommand=null; activeGrant=null;
       const context=await browser.newContext({viewport:{width:viewport.width,height:viewport.height},deviceScaleFactor:1,isMobile:!viewport.name.includes('tablet'),hasTouch:true});
       const outsideLaptop=new Set(), browserRequests=[];
       // Keep the local host reachable while denying Internet destinations. Full browser offline
@@ -221,6 +259,36 @@ async function main() {
       // An OS Internet probe can fail even while the local network remains available.
       await context.addInitScript(()=>{
         Object.defineProperty(navigator,'onLine',{configurable:true,value:false});
+        // Observe delivery without altering chunks, timing, or application parsing. This lets
+        // tests await events whose effects are intentionally invisible (for example, a camera
+        // update while the hand is covered), instead of using a session polling surrogate.
+        window.fixtureEvents={session:0,heartbeat:0};
+        const fetch=window.fetch.bind(window);
+        window.fetch=async(...args)=>{
+          const response=await fetch(...args);
+          if(new URL(args[0],location.href).pathname==='/api/events' && response.ok) {
+            const getReader=response.body.getReader.bind(response.body);
+            response.body.getReader=(...readerArgs)=>{
+              const reader=getReader(...readerArgs),read=reader.read.bind(reader),decoder=new TextDecoder();
+              let buffer='';
+              reader.read=async(...readArgs)=>{
+                const result=await read(...readArgs);
+                if(result.value) {
+                  buffer+=decoder.decode(result.value,{stream:true}).replace(/\r\n/g,'\n');
+                  let boundary;
+                  while((boundary=buffer.indexOf('\n\n'))!==-1) {
+                    const frame=buffer.slice(0,boundary);buffer=buffer.slice(boundary+2);
+                    if(/^event: session$/m.test(frame)) window.fixtureEvents.session=Number(/^id: (\d+)$/m.exec(frame)?.[1]||0);
+                    if(/^event: heartbeat$/m.test(frame)) window.fixtureEvents.heartbeat++;
+                  }
+                }
+                return result;
+              };
+              return reader;
+            };
+          }
+          return response;
+        };
       });
       const page=await context.newPage(); const errors=[]; page.on('pageerror',error=>errors.push(error.message));
       await record(viewport.name+': joining immediately in an ordinary LAN browser',async()=>{
@@ -236,7 +304,7 @@ async function main() {
         await page.getByRole('button',{name:'Join game'}).click();
         await page.getByText('Approve this phone on the laptop to join.',{exact:false}).waitFor();
         assert.equal(requests.filter(r=>r.url==='/api/pair').length,1);
-        paired=true; pending=false;
+        paired=true; pending=false; publishSession();
         await page.locator('#curtain').waitFor({state:'visible'}); await noOverflow(page);
         await screenshot(page,viewport.name+'-curtain');
       });
@@ -255,6 +323,16 @@ async function main() {
         assert.deepEqual(await choices.evaluateAll(nodes=>nodes.map(node=>node.checked)),[false,true,false]);
         assert.equal(requests.filter(r=>r.url==='/api/hide').length,hideCount);
         assert.equal(requests.some(r=>r.url==='/api/activity'),false);
+      });
+      await record(viewport.name+': one SSE connection stays live without polling or repeated snapshots',async()=>{
+        await sessionDelivered(page);
+        const revision=sessionRevision, streams=requests.filter(r=>r.url==='/api/events').length;
+        await heartbeatDelivered(page); await heartbeatDelivered(page);
+        assert.equal(sessionRevision,revision,'Unchanged games send only stream heartbeats, not fresh session snapshots.');
+        assert.equal(requests.filter(r=>r.url==='/api/events').length,streams,'Heartbeats must reuse the open connection.');
+        assert.equal(requests.some(r=>r.url==='/api/session'),false,'The browser must not poll session data.');
+        assert.equal(await page.locator('#private').isVisible(),true);
+        assert.equal(await page.locator('#private input[type=checkbox]').nth(1).isChecked(),true);
       });
       await record(viewport.name+': human opening tickets and pass-and-hide',async()=>{
         const choices=page.locator('#private input[type=checkbox]');
@@ -307,6 +385,7 @@ async function main() {
         await expectLastDestination(row);
         const savedScroll=await row.evaluate(node=>{node.dataset.identity='original-destination-row';return node.scrollLeft;});
         fixture.snapshot.boardInteraction={useCameraClaims:true,cardActionsBlocked:true,message:'Keep the board still while the camera checks the trains.',detectedRoute:null};
+        publishSession();
         await page.getByText('Keep the board still while the camera checks the trains.',{exact:true}).waitFor();
         assert.equal(await row.getAttribute('data-identity'),'original-destination-row');
         assert.ok(Math.abs(await row.evaluate(node=>node.scrollLeft)-savedScroll)<1,'Camera-only updates must preserve destination scroll position.');
@@ -336,7 +415,11 @@ async function main() {
         await row.evaluate(node=>{node.scrollLeft=node.scrollWidth;node.dataset.identity='same-turn-destinations';});
         const slot=3, kind=fixture.snapshot.game.faceUp[slot];
         const chosen=page.getByRole('button',{name:`${kind} · slot ${slot+1}`,exact:true});
-        await chosen.scrollIntoViewIfNeeded();
+        // Center the card below the sticky header before measuring. A merely
+        // in-viewport card can be covered by that header on a narrow screen,
+        // causing Playwright itself to scroll it before delivering the click.
+        await chosen.evaluate(node=>node.scrollIntoView({block:'center',inline:'nearest'}));
+        await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));
         const originalCardColor=await chosen.evaluate(node=>getComputedStyle(node).backgroundColor);
         const before=await page.evaluate(()=>{
           const privateView=document.getElementById('private'), row=privateView.querySelector('.held-tickets');
@@ -358,8 +441,8 @@ async function main() {
         assert.equal(await page.locator('#private').isVisible(),true); assert.equal(await page.locator('#curtain').isVisible(),false);
         await chosen.evaluate(node=>{node.click();node.click();});
         assert.equal(requests.filter(r=>r.url==='/api/command').length,commands+1,'Repeated taps while submitting must not draw another card.');
-        // Let a public poll observe the advanced game while the continuation is still in flight.
-        await page.waitForResponse(r=>r.url().endsWith('/api/session') && r.ok());
+        // Let the public event observe the advanced game while the continuation is still in flight.
+        await sessionDelivered(page);
         assert.equal(await page.locator('#private').isVisible(),true);
         const response=page.waitForResponse(r=>r.url().endsWith('/api/command'));
         send(delayedCommand.response,delayedCommand.reply); delayedCommand=null; await response;
@@ -373,7 +456,8 @@ async function main() {
         assert.equal(await page.getByRole('button',{name:'Locomotive · slot 3',exact:true}).isDisabled(),true);
         assert.equal(await row.getAttribute('data-identity'),'same-turn-destinations');
         assert.ok(Math.abs(await row.evaluate(node=>node.scrollLeft)-before.x)<1,'Drawing a card must preserve horizontal destination scrolling.');
-        assert.ok(Math.abs(await page.evaluate(()=>scrollY)-before.y)<2,'Drawing a card must preserve vertical page scrolling.');
+        const afterScroll=await page.evaluate(()=>scrollY);
+        assert.ok(Math.abs(afterScroll-before.y)<2,`Drawing a card must preserve vertical page scrolling (${before.y} before, ${afterScroll} after).`);
         assert.equal(requests.filter(r=>r.url==='/api/reveal').length,reveals,'The first card must not require another reveal.');
         assert.deepEqual(await page.evaluate(()=>{window.turnContinuityObserver.disconnect();return window.turnContinuityViolations;}),[]);
         await noOverflow(page);
@@ -426,6 +510,7 @@ async function main() {
           ['scoring',"Move Computer 1's Green score marker to 1."]
         ]) {
           fixture.snapshot.guidance={title:'Computer 1',instruction};
+          publishSession();
           await page.waitForFunction(expected=>document.getElementById('curtain-detail').textContent===expected,instruction);
           assert.equal(await page.locator('#handoff').textContent(),'Computer 1');
           assert.equal(await page.locator('#public-instruction').textContent(),instruction);
@@ -435,7 +520,7 @@ async function main() {
         }
         assert.equal(requests.filter(r=>r.url==='/api/reveal').length,reveals);
         assert.equal(requests.filter(r=>r.url==='/api/command').length,commands);
-        fixture=fixtures.nextHuman;
+        fixture=fixtures.nextHuman; publishSession();
         await page.getByText('Pass this device to Jordan.',{exact:true}).waitFor(); await waitCovered(page);
         assert.equal(await page.locator('#reveal').isDisabled(),false);
         assert.match(await page.locator('#curtain-detail').textContent(),/Reveal only when it is your turn/);
@@ -456,7 +541,9 @@ async function main() {
         const proposal={proposalId:'camera-placement-1',routeId:claim.routeId,label:definition.label,length:claim.length,ready:true};
         const initialVersion=fixture.snapshot.game.stateVersion, reveals=requests.filter(r=>r.url==='/api/reveal').length, commandCount=requests.filter(r=>r.url==='/api/command').length;
         fixture.snapshot.boardInteraction={useCameraClaims:true,cardActionsBlocked:true,message:null,detectedRoute:proposal};
+        const pushedAt=Date.now(); publishSession();
         await page.locator('.detected-route').getByRole('heading',{name:definition.label,exact:true}).waitFor();
+        assert.ok(Date.now()-pushedAt<1500,'Camera detection should arrive immediately rather than waiting for a two-second poll.');
         assert.equal(fixture.snapshot.game.stateVersion,initialVersion);
         assert.equal(await page.locator('#private .cards').getAttribute('data-identity'),'original-hand');
         assert.equal(await page.locator('#private .tickets').first().getAttribute('data-identity'),'original-tickets');
@@ -473,9 +560,11 @@ async function main() {
         await screenshot(page,viewport.name+'-detected-payment');
         fixture.snapshot.boardInteraction.detectedRoute={...proposal,ready:false};
         fixture.snapshot.boardInteraction.message='Confirming the trains on the board.';
+        publishSession();
         await page.getByText('Confirming the trains on the board.',{exact:true}).waitFor();
         assert.equal(await pay.isDisabled(),true); assert.equal(await page.locator('.payment-choice').nth(paymentIndex).getAttribute('aria-pressed'),'true');
         fixture.snapshot.boardInteraction.detectedRoute={...proposal}; fixture.snapshot.boardInteraction.message=null;
+        publishSession();
         await page.waitForFunction(()=>document.querySelector('.detected-pay')?.disabled===false);
         assert.equal(await page.locator('.payment-choice').nth(paymentIndex).getAttribute('aria-pressed'),'true');
         assert.equal(requests.filter(r=>r.url==='/api/reveal').length,reveals); assert.equal(requests.filter(r=>r.url==='/api/command').length,commandCount);
@@ -488,19 +577,21 @@ async function main() {
         await changeFixture(page,'cameraTurn');
         const reveals=requests.filter(r=>r.url==='/api/reveal').length;
         fixture.snapshot.boardInteraction.detectedRoute={...fixture.snapshot.boardInteraction.detectedRoute,proposalId:'camera-placement-2'};
-        await page.waitForResponse(r=>r.url().endsWith('/api/session') && r.ok()); await waitCovered(page);
+        await sessionDelivered(page,publishSession()); await waitCovered(page);
         assert.equal(requests.filter(r=>r.url==='/api/reveal').length,reveals);
         await reveal(page); await page.locator('.payment-choice').first().click();
         fixture.snapshot.boardInteraction.detectedRoute={...fixture.snapshot.boardInteraction.detectedRoute,proposalId:'camera-placement-3'};
+        publishSession();
         await page.waitForFunction(()=>document.querySelector('.detected-pay')?.disabled===true && !document.querySelector('.payment-choice[aria-pressed=true]'));
         await page.locator('.payment-choice').first().click();
         fixture.snapshot.boardInteraction.detectedRoute=null; fixture.snapshot.boardInteraction.cardActionsBlocked=false;
+        publishSession();
         await page.locator('.detected-route').getByRole('heading',{name:'Claim a route',exact:true}).waitFor();
         assert.equal(await page.locator('.payment-choice').count(),0); assert.equal(await page.getByRole('button',{name:'Draw a blind card',exact:true}).isDisabled(),false);
         await page.locator('#hide').click(); await waitCovered(page);
         const claim=fixture.data.actions.claims[0], definition=fixture.snapshot.routes.find(route=>route.id===claim.routeId);
         fixture.snapshot.boardInteraction={useCameraClaims:true,cardActionsBlocked:true,message:null,detectedRoute:{proposalId:'camera-placement-4',routeId:claim.routeId,label:definition.label,length:claim.length,ready:true}};
-        await page.waitForResponse(r=>r.url().endsWith('/api/session') && r.ok()); await waitCovered(page);
+        await sessionDelivered(page,publishSession()); await waitCovered(page);
       });
       await record(viewport.name+': a camera check blocks keeping tickets without losing checked destinations',async()=>{
         fixtures.cameraTicketOffer=structuredClone(fixtures.ticketOffer);
@@ -509,10 +600,12 @@ async function main() {
         await choices.first().evaluate(node=>node.dataset.identity='original-ticket-checkbox');
         const keep=page.getByRole('button',{name:'Keep selected tickets',exact:true}); assert.equal(await keep.isDisabled(),false);
         fixture.snapshot.boardInteraction={useCameraClaims:true,cardActionsBlocked:true,message:'Camera is checking the board.',detectedRoute:null};
+        publishSession();
         await page.getByText('Camera is checking the board.',{exact:true}).waitFor();
         assert.equal(await keep.isDisabled(),true); assert.equal(await choices.first().isChecked(),true);
         assert.equal(await choices.first().getAttribute('data-identity'),'original-ticket-checkbox');
         fixture.snapshot.boardInteraction.cardActionsBlocked=false; fixture.snapshot.boardInteraction.message=null;
+        publishSession();
         await page.waitForFunction(()=>[...document.querySelectorAll('#private button')].some(button=>button.textContent==='Keep selected tickets' && !button.disabled));
         assert.equal(await choices.first().isChecked(),true); assert.equal(await choices.first().getAttribute('data-identity'),'original-ticket-checkbox');
         await keep.click(); await waitCovered(page);
@@ -520,23 +613,25 @@ async function main() {
       await record(viewport.name+': Hide, leaving the page and stale reveal cover private DOM',async()=>{
         await page.locator('#hide').click(); await waitCovered(page); await reveal(page);
         await page.evaluate(()=>window.dispatchEvent(new Event('pagehide'))); await waitCovered(page);
+        const pageShowRevision=sessionRevision+1;
+        await page.evaluate(()=>window.dispatchEvent(new Event('pageshow'))); await sessionDelivered(page,pageShowRevision);
         delayedReveal={};
         const clicked=page.locator('#reveal').click(); await clicked;
         while(!delayedReveal.response) await new Promise(resolve=>setTimeout(resolve,20));
         await page.locator('#hide').click();
+        const revealed=page.waitForResponse(r=>r.url().endsWith('/api/reveal'));
         send(delayedReveal.response,delayedReveal.reply); delayedReveal=null;
-        await page.waitForResponse(r=>r.url().endsWith('/api/reveal')); await waitCovered(page);
-        await page.waitForResponse(r=>r.url().endsWith('/api/session')); await reveal(page);
+        await revealed; await waitCovered(page);
+        await sessionDelivered(page); await reveal(page);
         await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
         await waitCovered(page);
         await page.evaluate(()=>{delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));});
         await waitCovered(page);
-        await page.waitForResponse(r=>r.url().endsWith('/api/session'));
+        await page.waitForFunction(()=>!document.getElementById('reveal').disabled);
         delayedReveal={}; await page.locator('#reveal').click();
         while(!delayedReveal.response) await new Promise(resolve=>setTimeout(resolve,20));
         generation++; // Laptop Hide after granting, while the private response is still in transit.
-        const latest=await page.waitForResponse(r=>r.url().endsWith('/api/session')); await latest.finished();
-        await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));
+        await sessionDelivered(page,publishSession());
         const oldResponse=page.waitForResponse(r=>r.url().endsWith('/api/reveal'));
         send(delayedReveal.response,delayedReveal.reply); delayedReveal=null; await oldResponse;
         await waitCovered(page);
@@ -545,6 +640,8 @@ async function main() {
         assert.equal(await page.evaluate(()=>navigator.onLine),false);
         assert.ok(browserRequests.includes('/companion/app.js'));
         assert.ok(browserRequests.includes('/api/command'));
+        assert.ok(browserRequests.includes('/api/events'));
+        assert.equal(browserRequests.includes('/api/session'),false,'Session updates must use SSE without background polling.');
         assert.deepEqual([...outsideLaptop],[],'The companion must never request an Internet destination.');
       });
       await record(viewport.name+': published standings preview and exact PNG download',async()=>{
@@ -553,6 +650,7 @@ async function main() {
         fixture=structuredClone(fixtures.turnStart);fixture.snapshot.canControl=false;fixture.snapshot.game.lifecycle='Finished';
         fixture.snapshot.message='Game finished. The final standings are ready.';
         fixture.snapshot.resultImage={id:'finished-image-1',fileName:'golden-ticket-final-standings.png'};
+        publishSession();
         await page.locator('#result-preview').waitFor({state:'visible'});
         await page.waitForFunction(()=>document.getElementById('result-preview').naturalWidth>0);
         assert.equal(await page.locator('#curtain').isVisible(),false);assert.equal(await page.locator('#private').textContent(),'');
@@ -563,28 +661,40 @@ async function main() {
       });
       await record(viewport.name+': replaced standings remain downloadable without native sharing APIs',async()=>{
         assert.equal(await page.evaluate(()=>typeof navigator.share),'undefined');
-        fixture.snapshot.resultImage.id='finished-image-2';
-        await page.waitForResponse(r=>r.url().endsWith('/api/result-image/finished-image-2'));
+        const replacement=page.waitForResponse(r=>r.url().endsWith('/api/result-image/finished-image-2'));
+        fixture.snapshot.resultImage.id='finished-image-2'; publishSession();
+        await replacement;
         await page.getByText('Your results are ready.',{exact:true}).waitFor();
         assert.equal(await page.locator('#result-share').count(),0);assert.equal(await page.locator('#result-save').isVisible(),true);
         await page.getByText('On iPhone, downloaded images may be in Files.',{exact:false}).waitFor();
       });
       await record(viewport.name+': revocation removes standings and a new game starts covered',async()=>{
-        paired=false;
+        paired=false; publishSession();
         await page.locator('#connect').waitFor({state:'visible'});assert.equal(await page.locator('#result').isVisible(),false);
         assert.equal(await page.locator('#result-preview').getAttribute('src'),null);assert.equal(await page.locator('#result-save').getAttribute('href'),null);
-        fixture=fixtures.turnStart;paired=true;
+        fixture=fixtures.turnStart;paired=true; publishSession();
         await page.locator('#curtain').waitFor({state:'visible'});assert.equal(await page.locator('#result').isVisible(),false);await waitCovered(page);
       });
+      await record(viewport.name+': a stalled event stream covers the hand and reconnects',async()=>{
+        await reveal(page); await heartbeatDelivered(page);
+        const connections=requests.filter(r=>r.url==='/api/events').length;
+        suppressHeartbeats=true;
+        await page.getByText('Laptop connection unavailable',{exact:true}).waitFor({timeout:10000}); await waitCovered(page);
+        const nextRevision=sessionRevision+1; suppressHeartbeats=false;
+        await sessionDelivered(page,nextRevision); await waitCovered(page);
+        assert.ok(requests.filter(r=>r.url==='/api/events').length>connections,'A stalled stream must establish a fresh connection.');
+        assert.equal(requests.some(r=>r.url==='/api/session'),false);
+      });
       await record(viewport.name+': disconnected cover and browser reconnect',async()=>{
-        await page.waitForResponse(r=>r.url().endsWith('/api/session')); await reveal(page);
-        offline=true;
+        await sessionDelivered(page); await reveal(page);
+        offline=true; disconnectStreams();
         await page.getByText('Laptop connection unavailable',{exact:true}).waitFor({timeout:10000}); await waitCovered(page);
         await screenshot(page,viewport.name+'-disconnected');
         assert.equal(await page.evaluate(()=>typeof window.caches),'undefined');
         assert.equal(browserRequests.includes('/companion/sw.js'),false);
+        const nextRevision=sessionRevision+1;
         offline=false;
-        await page.waitForResponse(r=>r.url().endsWith('/api/session')&&r.ok());
+        await sessionDelivered(page,nextRevision);
         await waitCovered(page);
         await reveal(page);
         assert.equal(await page.evaluate(()=>localStorage.length+sessionStorage.length),0);
@@ -598,12 +708,12 @@ async function main() {
         const selectedTicket=fixture.data.offeredTickets[1].id;
         const originalGrant={...activeGrant}, revealCount=requests.filter(r=>r.url==='/api/reveal').length, hideCount=requests.filter(r=>r.url==='/api/hide').length;
         const start=Date.now(); await page.clock.setFixedTime(start);
-        // Only Date is controlled: real Chromium input, the 500 ms watchdog, polling and
+        // Only Date is controlled: real Chromium input, the 500 ms watchdog, event streaming and
         // HTTP requests still run. Advance in five-second steps so heartbeat checks remain
         // meaningful. No pointer, keyboard or checkbox interaction occurs during this wait.
         for(let step=1;step<=24;step++) {
           await page.clock.setFixedTime(start+step*5000);
-          const heartbeat=await page.waitForResponse(r=>r.url().endsWith('/api/session') && r.ok()); await heartbeat.finished();
+          await heartbeatDelivered(page);
           assert.equal(await choices.nth(0).isChecked(),false); assert.equal(await choices.nth(1).isChecked(),true);
           assert.equal(await page.locator('#private').isVisible(),true);
         }
@@ -619,8 +729,8 @@ async function main() {
       });
       await context.close();
     }
-    fs.writeFileSync(path.join(output,'browser-ui-results.json'),JSON.stringify({browser:'Chromium '+browserVersion,scope:drawOnly?'Focused draw controls and opening-ticket flow':'Complete companion workflow',fixtureFile:fixturePath,fixtureTransport:'Real insecure HTTP goldenticket.test origin mapped to loopback; no browser security overrides or certificate dependencies; no real-phone acceptance claim.',internetIsolation:'Page requests outside the laptop fixture origin are blocked and recorded; navigator.onLine is false. Browser/OS background traffic is outside this harness.',viewports:viewports.map(v=>`${v.width}×${v.height}`),screenshots:'Synthetic player data only',results},null,2));
+    fs.writeFileSync(path.join(output,'browser-ui-results.json'),JSON.stringify({browser:'Chromium '+browserVersion,scope:drawOnly?'Focused draw controls and opening-ticket flow over SSE':'Complete companion workflow over SSE',fixtureFile:fixturePath,fixtureTransport:'Real insecure HTTP and fetch-streamed SSE on goldenticket.test mapped to loopback; no browser security overrides or certificate dependencies; no real-phone acceptance claim.',eventDelivery:'Session snapshots are published only on fixture or authorization changes. Two-second heartbeats contain no game snapshot. The former session polling endpoint returns 410.',internetIsolation:'Page requests outside the laptop fixture origin are blocked and recorded; navigator.onLine is false. Browser/OS background traffic is outside this harness.',viewports:viewports.map(v=>`${v.width}×${v.height}`),screenshots:'Synthetic player data only',results},null,2));
     console.log(`${results.length} browser UI scenarios passed.`);
-  } finally { await browser.close(); await new Promise(resolve=>server.close(resolve)); }
+  } finally { await browser.close(); clearInterval(heartbeatTimer); disconnectStreams(); await new Promise(resolve=>server.close(resolve)); }
 }
-main().catch(error=>{console.error(error);process.exitCode=1; server.close();});
+main().catch(error=>{console.error(error);process.exitCode=1;clearInterval(heartbeatTimer);disconnectStreams();server.close();});

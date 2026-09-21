@@ -63,6 +63,37 @@ public sealed class CompanionLifecycleTests
         Assert.Null(server.Authority.Authenticate(pairing.Session, new string('a', 32)));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HostingStopOrPublicNetworkTransitionClosesAnExistingEventStream(bool networkBecomesPublic)
+    {
+        var token = TestContext.Current.CancellationToken;
+        var options = new CompanionHostOptions(IPAddress.Loopback, ReserveAvailablePort());
+        var selected = new LanInterface("fixture", "fixture", IPAddress.Loopback, 8, Guid.Empty);
+        var privateNetwork = true;
+        await using var server = new CompanionServer(new CoordinatorCompanionBridge(() => null));
+        await server.StartOnInterfaceAsync(options, selected, () => Volatile.Read(ref privateNetwork), token);
+        using var client = new HttpClient { BaseAddress = new Uri(server.Status.Address!) };
+        client.DefaultRequestHeaders.Add("X-GoldenTicket-Tab", new string('a', 32));
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/events");
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+        response.EnsureSuccessStatusCode();
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(token));
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(5));
+        Assert.Equal("event: session", await reader.ReadLineAsync(deadline.Token));
+        while (await reader.ReadLineAsync(deadline.Token) is { Length: > 0 }) { }
+        Assert.Equal(1, server.EventSubscriberCount);
+
+        if (networkBecomesPublic) Volatile.Write(ref privateNetwork, false);
+        else await server.StopAsync(deadline.Token);
+
+        await reader.ReadToEndAsync(deadline.Token);
+        Assert.Equal(0, server.EventSubscriberCount);
+        if (!networkBecomesPublic) Assert.False(server.Status.Running);
+    }
+
     private static int ReserveAvailablePort()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);

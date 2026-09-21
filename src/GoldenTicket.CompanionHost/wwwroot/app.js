@@ -8,12 +8,13 @@
   const tab = randomId();
   let csrf = null, snapshot = null, privateData = null, grant = null;
   let revealGeneration = 0, handoffGeneration = -1, paired = false, pending = false;
-  let busy = false, polling = false, lastHeartbeat = 0;
+  let busy = false, lastHeartbeat = 0;
   let privateActionsTarget = null, ticketOfferControls = null, renderedBoardInteraction = null, detectedPayment = null;
   let pendingClaimInstruction = null;
-  let pendingCommand = null, snapshotRevision = 0;
+  let pendingCommand = null;
   let privateHandTarget = null, drawControls = null;
-  let connectionGeneration = 0;
+  let connectionGeneration = 0, controllerGeneration = null;
+  let eventsAbort = null, reconnectTimer = null, reconnectDelay = 1000, connectionStarted = 0, needsReload = false;
   const maxResultBytes = 16 * 1024 * 1024;
   let resultKey = null, resultGeneration = 0, resultUrl = null, resultAbort = null;
   const trainCount = count => `${count} train${count === 1 ? "" : "s"}`;
@@ -56,33 +57,100 @@
   }
   function currentIdentity(value) { return value?.game ? `${value.game.sessionId}:${value.game.stateVersion}:${value.revealSeatId}:${value.canControl}` : "none"; }
   function turnIdentity(value) { return value?.game && value.canControl ? `${value.game.sessionId}:${value.game.turnNumber}:${value.game.activeSeatId}:${value.revealSeatId}` : "none"; }
-  async function poll() {
-    if (polling || document.hidden) return;
-    polling = true;
-    const generation = connectionGeneration;
-    const revision = snapshotRevision;
+  function receiveSession(result) {
+    if (!result || typeof result.paired !== "boolean" || typeof result.pending !== "boolean") throw new Error("The laptop sent an invalid update.");
+    if (result.apiVersion !== "1" || result.assetsVersion !== "12") {
+      needsReload = true; throw new Error("The companion needs an update. Reload from the laptop before playing.");
+    }
+    lastHeartbeat = Date.now(); reconnectDelay = 1000;
+    if (!result.paired) {
+      if (paired) { clearPrivate(); notice("This controller was revoked or replaced. Join again using the code shown on the laptop."); }
+      clearResultImage(); snapshot = null;
+      paired = false; csrf = null; handoffGeneration = -1; controllerGeneration = null; pending = result.pending;
+      byId("connect").hidden = false; byId("curtain").hidden = true; byId("public").hidden = true;
+      byId("connection").textContent = pending ? "Waiting for the laptop" : "Connected to your game";
+      updatePairForm(); return;
+    }
+    if (!Number.isSafeInteger(result.controllerGeneration) || !Number.isSafeInteger(result.handoffGeneration) ||
+        typeof result.csrf !== "string" || !result.snapshot || typeof result.snapshot.canControl !== "boolean" ||
+        (result.snapshot.game && (!Number.isSafeInteger(result.snapshot.game.stateVersion) || typeof result.snapshot.game.sessionId !== "string")))
+      throw new Error("The laptop sent an invalid update.");
+    // Command receipts and this stream can arrive in either order. Never let
+    // an update queued before a receipt rewind its game revision or grant.
+    if (controllerGeneration !== null && result.controllerGeneration < controllerGeneration) return;
+    if (result.controllerGeneration === controllerGeneration &&
+        (result.handoffGeneration < handoffGeneration || (snapshot?.game && result.snapshot.game?.sessionId === snapshot.game.sessionId &&
+         result.snapshot.game.stateVersion < snapshot.game.stateVersion))) return;
+    if (controllerGeneration !== null && result.controllerGeneration !== controllerGeneration) { clearPrivate(); handoffGeneration = -1; }
+    const awaitingSameTurn = pendingCommand && pendingCommand.identity === turnIdentity(result.snapshot);
+    if (!awaitingSameTurn && (currentIdentity(snapshot) !== currentIdentity(result.snapshot) || (grant && result.handoffGeneration > handoffGeneration))) clearPrivate();
+    paired = true; pending = false; csrf = result.csrf; snapshot = result.snapshot; controllerGeneration = result.controllerGeneration;
+    updatePairForm();
+    handoffGeneration = Math.max(handoffGeneration, result.handoffGeneration);
+    byId("connect").hidden = true; byId("curtain").hidden = privateData !== null;
+    byId("connection").textContent = "Synchronized · Private LAN";
+    renderPublic(); syncResultImage(); syncBoardActions();
+  }
+  function stopEvents() {
+    connectionGeneration++;
+    clearTimeout(reconnectTimer); reconnectTimer = null;
+    eventsAbort?.abort(); eventsAbort = null; connectionStarted = 0;
+  }
+  function reconnectEvents(message) {
+    stopEvents(); disconnect(message);
+    if (document.hidden || needsReload) return;
+    const delay = reconnectDelay; reconnectDelay = Math.min(reconnectDelay * 2, 10000);
+    reconnectTimer = setTimeout(() => { reconnectTimer = null; startEvents(); }, delay);
+  }
+  async function startEvents() {
+    if (eventsAbort || reconnectTimer || document.hidden || needsReload) return;
+    const abort = new AbortController(), generation = ++connectionGeneration;
+    eventsAbort = abort; connectionStarted = Date.now();
+    // Reconnection never replays or restores a private view. The next session
+    // event establishes the current host/controller, even after a host restart.
+    clearPrivate(); lastHeartbeat = 0; snapshot = null; controllerGeneration = null; handoffGeneration = -1;
+    let reader;
     try {
-      const result = await api("/api/session");
-      if (generation !== connectionGeneration || revision !== snapshotRevision || document.hidden) return;
-      if (!result.paired) {
-        if (paired) { clearPrivate(); notice("This controller was revoked or replaced. Join again using the code shown on the laptop."); }
-        clearResultImage(); snapshot = null;
-        paired = false; csrf = null; handoffGeneration = -1; pending = result.pending;
-        byId("connect").hidden = false; byId("curtain").hidden = true; byId("public").hidden = true;
-        byId("connection").textContent = pending ? "Waiting for the laptop" : "Connected to your game";
-        updatePairForm(); return;
+      const response = await fetch("/api/events", { headers: { "Accept": "text/event-stream", "X-GoldenTicket-Tab": tab }, credentials: "same-origin", cache: "no-store", signal: abort.signal });
+      if (!response.ok || response.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "text/event-stream" || !response.body)
+        throw new Error("Cannot receive updates from the laptop. Check that it is running.");
+      reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8", { fatal: true });
+      let buffer = "", event = "", data = [], eventSize = 0, skipLf = false;
+      const maxEventSize = 1024 * 1024;
+      function line(value) {
+        if (!value) {
+          if (data.length) {
+            if (event === "session") receiveSession(JSON.parse(data.join("\n")));
+            else if (event === "heartbeat") { JSON.parse(data.join("\n")); if (lastHeartbeat) lastHeartbeat = Date.now(); }
+          }
+          event = ""; data = []; eventSize = 0; return;
+        }
+        eventSize += value.length;
+        if (eventSize > maxEventSize) throw new Error("The laptop update was too large.");
+        const colon = value.indexOf(":"), field = colon < 0 ? value : value.slice(0, colon);
+        let content = colon < 0 ? "" : value.slice(colon + 1);
+        if (content.startsWith(" ")) content = content.slice(1);
+        if (field === "event") event = content;
+        else if (field === "data") data.push(content);
       }
-      if (result.apiVersion !== "1" || result.assetsVersion !== "11") { disconnect("The companion needs an update. Reload from the laptop before playing."); return; }
-      const awaitingSameTurn = pendingCommand && pendingCommand.identity === turnIdentity(result.snapshot);
-      if (!awaitingSameTurn && (currentIdentity(snapshot) !== currentIdentity(result.snapshot) || (grant && result.handoffGeneration > handoffGeneration))) clearPrivate();
-      paired = true; pending = false; csrf = result.csrf; snapshot = result.snapshot;
-      updatePairForm();
-      handoffGeneration = Math.max(handoffGeneration, result.handoffGeneration); lastHeartbeat = Date.now();
-      byId("connect").hidden = true; byId("curtain").hidden = privateData !== null;
-      byId("connection").textContent = "Synchronized · Private LAN";
-      renderPublic(); syncResultImage(); syncBoardActions();
-    } catch (error) { if (generation === connectionGeneration && revision === snapshotRevision) disconnect(error.message); }
-    finally { polling = false; }
+      while (!abort.signal.aborted) {
+        const { value, done } = await reader.read();
+        if (generation !== connectionGeneration || document.hidden) return;
+        if (done) throw new Error("Laptop connection interrupted. Reconnecting…");
+        const decoded = decoder.decode(value, { stream: true });
+        for (const character of decoded) {
+          if (skipLf) { skipLf = false; if (character === "\n") continue; }
+          if (character === "\r" || character === "\n") { line(buffer); buffer = ""; skipLf = character === "\r"; }
+          else { buffer += character; if (buffer.length + eventSize > maxEventSize) throw new Error("The laptop update was too large."); }
+        }
+      }
+    } catch (error) {
+      if (generation === connectionGeneration && !abort.signal.aborted) reconnectEvents(error.message);
+    } finally {
+      if (reader) { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+      if (eventsAbort === abort) eventsAbort = null;
+    }
   }
   function element(tag, text, className) {
     const node = document.createElement(tag); if (text !== undefined) node.textContent = text;
@@ -218,7 +286,12 @@
           turnIdentity(snapshot) === operation.identity && next.snapshot.game.stateVersion >= snapshot.game.stateVersion &&
           next.data?.view.seatId === payload.seat && next.data.view.public.sessionId === payload.command.sessionId &&
           next.data.view.public.stateVersion === next.snapshot.game.stateVersion) {
-        snapshotRevision++; snapshot = next.snapshot; privateData = next.data; grant = next.grant;
+        // The stream can deliver this command's new revision plus newer camera
+        // guidance before its HTTP receipt arrives. Keep that public update;
+        // a snapshot from before the command cannot satisfy the newer version.
+        if (snapshot.game.stateVersion !== next.snapshot.game.stateVersion ||
+            snapshot.game.stateVersion <= payload.command.expectedStateVersion) snapshot = next.snapshot;
+        privateData = next.data; grant = next.grant;
         handoffGeneration = next.handoffGeneration; pendingCommand = null; busy = false;
         if (kind === "drawTrain" && drawControls && !privateData.actions.mustCommitTicketSelection && !privateData.actions.mustResolvePendingClaim) {
           renderHand(privateHandTarget); drawControls.update();
@@ -227,8 +300,8 @@
       } else {
         clearPrivate(); notice(result.message);
       }
-    } catch (error) { disconnect("The result is not confirmed on this device. Check the current turn on the laptop before choosing again."); }
-    finally { busy = false; pendingCommand = null; byId("private").removeAttribute("aria-busy"); await poll(); }
+    } catch (error) { reconnectEvents("The result is not confirmed on this device. Check the current turn on the laptop before choosing again."); }
+    finally { busy = false; pendingCommand = null; byId("private").removeAttribute("aria-busy"); if (snapshot) { renderPublic(); syncBoardActions(); } }
   }
   function card(kind, count) {
     const node = element("div", undefined, "card"); node.dataset.color = kind;
@@ -456,27 +529,26 @@
   }
   byId("pair-form").addEventListener("submit", async event => {
     event.preventDefault(); if (busy || paired || pending) return;
-    busy = true; connectionGeneration++; updatePairForm();
+    busy = true; stopEvents(); updatePairForm();
     try {
       const result = await api("/api/pair", { code: byId("pair-code").value.trim(), tab, label: byId("device-label").value.trim() });
       byId("pair-code").value = ""; pending = true;
       byId("pair-status").textContent = `Approve this phone on the laptop to join. Device number: ${result.identity}.`;
     } catch (error) { notice(error.message); }
-    finally { busy = false; updatePairForm(); await poll(); }
+    finally { busy = false; updatePairForm(); startEvents(); }
   });
   byId("hide").addEventListener("click", () => hide());
   byId("reveal").addEventListener("click", reveal);
   byId("result-retry").addEventListener("click", loadResultImage);
-  document.addEventListener("visibilitychange", () => { if (document.hidden) { connectionGeneration++; hide(); } else { clearPrivate(); poll(); } });
-  window.addEventListener("pagehide", () => { connectionGeneration++; hide(); clearResultImage(); });
-  window.addEventListener("pageshow", () => { clearPrivate(); poll(); });
-  window.addEventListener("offline", () => disconnect("Reconnect to the laptop before continuing."));
+  document.addEventListener("visibilitychange", () => { if (document.hidden) { stopEvents(); hide(); } else startEvents(); });
+  window.addEventListener("pagehide", () => { stopEvents(); hide(); clearResultImage(); });
+  window.addEventListener("pageshow", () => { clearPrivate(); startEvents(); });
+  window.addEventListener("offline", () => reconnectEvents("Reconnect to the laptop before continuing."));
   // Tapping outside a control, native pickers and scrolling can blur/cancel a
   // pointer without leaving the page. Only actual backgrounding covers it.
   document.addEventListener("keydown", event => { if (event.key === "Escape") hide(); });
   setInterval(() => {
-    if (lastHeartbeat && Date.now() - lastHeartbeat >= 6000) disconnect();
+    if (eventsAbort && Date.now() - (lastHeartbeat || connectionStarted) >= 6000) reconnectEvents();
   }, 500);
-  setInterval(poll, 2000);
-  clearPrivate(); updatePairForm(); poll();
+  clearPrivate(); updatePairForm(); startEvents();
 })();

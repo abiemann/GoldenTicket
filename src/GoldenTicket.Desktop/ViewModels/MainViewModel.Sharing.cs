@@ -29,6 +29,7 @@ public sealed partial class MainViewModel
 
     private void NotifyFinalStandingsSharing()
     {
+        NotifyCompanionPresentationChanged();
         OnPropertyChanged(nameof(CanShareFinalStandings));
         SendFinalStandingsToPhoneCommand.NotifyCanExecuteChanged();
         BackToMenuCommand.NotifyCanExecuteChanged();
@@ -59,6 +60,7 @@ public sealed partial class MainViewModel
             _finalStandingsImage = new CompanionResultImage(game.SessionId.Value, version,
                 new CompanionResultImageInfo(Guid.NewGuid().ToString("N"), "golden-ticket-final-standings.png"), png);
             FinalStandingsShareStatus = "Image ready on the shared phone. Open it to share or save.";
+            NotifyCompanionPresentationChanged();
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         {

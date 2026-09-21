@@ -160,9 +160,15 @@ public partial class CompanionHostTransportTests
     private sealed class ContinuationBridge(GameCoordinator game) : ICompanionGameBridge
     {
         private readonly CoordinatorCompanionBridge _inner = new(() => game);
+        private int _publicReads;
+        public int PublicReads => Volatile.Read(ref _publicReads);
+        public CompanionGuidance? Guidance { get; set; }
         public Func<CancellationToken, Task>? AfterPrivateRead { get; set; }
-        public Task<CompanionPublicSnapshot> ReadPublicAsync(CancellationToken cancellationToken = default) =>
-            _inner.ReadPublicAsync(cancellationToken);
+        public async Task<CompanionPublicSnapshot> ReadPublicAsync(CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _publicReads);
+            return (await _inner.ReadPublicAsync(cancellationToken)) with { Guidance = Guidance };
+        }
         public async Task<CompanionPrivateSnapshot?> ReadPrivateAsync(SeatId seat, long expectedVersion,
             CancellationToken cancellationToken = default)
         {
@@ -209,6 +215,13 @@ public partial class CompanionHostTransportTests
         }
         public CompanionCommand Command(string kind, int? slot = null) => new(Guid.NewGuid().ToString("N"),
             game.SessionId.Value, game.Public.StateVersion, kind, Slot: slot);
+        public async Task<HttpResponseMessage> OpenEvents(CancellationToken token, string? session = null, string? tab = null)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/events");
+            if (session is not null) request.Headers.Add("Cookie", "GoldenTicketQuickPlayController=" + session);
+            if (tab is not null) request.Headers.Add("X-GoldenTicket-Tab", tab);
+            return await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+        }
         public async Task<string> Reveal(CancellationToken token)
         {
             using var response = await client.PostAsJsonAsync("/api/reveal", new

@@ -164,6 +164,7 @@ public sealed partial class MainViewModel
     {
         if (_toolsDisposed) return;
         _toolsDisposed = true;
+        DisposeCompanionUpdates();
         ResetFinalStandingsSharing();
         _cardBoardCheck?.Completion.TrySetResult(false);
         _turnClockTimer?.Stop();

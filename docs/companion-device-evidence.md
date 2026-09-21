@@ -39,6 +39,7 @@ Run this on Android Chrome and repeat on iPhone/iPad Safari when hardware is ava
 | Reload | Fresh pairing works without losing or repeating the current turn. |
 | Duplicate tabs or replacement controller | Previous control cannot continue spending cards or revealing a hand. |
 | Laptop/LAN loss and recovery | Hand covers, commands stop, reconnection does not replay or invent an action. |
+| Live SSE updates | Camera route changes, AI instructions and turn handoffs arrive without a two-second polling delay. No repeated `/api/session` requests appear. Backgrounding closes the stream; returning reconnects covered without restoring a private hand. |
 | Completed-match image | Preview loads and Save image creates a readable PNG; sharing through Files/Photos works. |
 | Browser opened from another app | Direct browser use remains possible; record any embedded-browser limitation. |
 | Accessibility and layout | Touch targets, landscape, zoom, keyboard/assistive navigation where available are usable. |
@@ -62,6 +63,11 @@ production app, not the retired connectivity experiment. Keep recorded outcomes 
 from planned tests.
 
 ## Current status
+
+The September 21 SSE implementation passed 135 targeted .NET tests, 46 JavaScript client tests,
+and 64 Chromium scenarios at 320, 448 and 768 CSS pixels. Checks cover event-only synchronization,
+approval, camera/AI updates, first-draw continuity, reconnects and backgrounding. The browser
+harness uses synthetic fixtures over ordinary HTTP; these checks do not replace device acceptance.
 
 Quick play and PRACTICAL implementation have automated coverage; full current-mode device
 acceptance is pending. Earlier September 12 Android evidence established reachability of the old

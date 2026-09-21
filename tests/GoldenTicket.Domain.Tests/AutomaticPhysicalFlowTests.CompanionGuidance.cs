@@ -20,6 +20,7 @@ public sealed partial class AutomaticPhysicalFlowTests
         var model = await CreateComputerPlacementCompanionAsync();
         try
         {
+            using var updates = ObserveCompanionUpdates(model);
             var game = GetCoordinator(model);
             var bridge = GetCompanionBridge(model);
             var placement = Assert.IsType<PlacementInstruction>(model.Table.Placement);
@@ -42,6 +43,7 @@ public sealed partial class AutomaticPhysicalFlowTests
             var claim = Assert.IsAssignableFrom<Task>(accept.Invoke(model,
                 [placement, EvidenceKind.CameraAutomatic, "synthetic-test-model", "Two stable route observations."]));
             await WaitUntilAsync(() => model.Game.GuidanceInstruction == "Thank you");
+            Assert.True(updates.Changes.Reader.TryRead(out _));
             var thanks = await bridge.ReadPublicAsync(token).WaitAsync(TimeSpan.FromSeconds(1), token);
             Assert.Equal("Thank you", thanks.Guidance!.Instruction);
             Assert.Equal(placement.SeatName, thanks.Guidance.Title);
@@ -50,6 +52,7 @@ public sealed partial class AutomaticPhysicalFlowTests
             Assert.Null(thanks.RevealSeatId);
 
             await claim;
+            Assert.True(updates.Changes.Reader.TryRead(out _));
             var scoring = await bridge.ReadPublicAsync(token);
             Assert.Equal(thanks.Game!.StateVersion, scoring.Game!.StateVersion);
             Assert.Equal(new CompanionGuidance(model.Game.GuidanceSeat, model.Game.GuidanceInstruction),
@@ -67,6 +70,7 @@ public sealed partial class AutomaticPhysicalFlowTests
             PublishScore(model.Camera, 1, at, color, target);
             PublishScore(model.Camera, 2, at.AddSeconds(1.1), color, target);
             await WaitUntilAsync(() => model.Game.GuidanceTurn != "Scoring");
+            Assert.True(updates.Changes.Reader.TryRead(out _));
             var next = await bridge.ReadPublicAsync(token);
             Assert.Equal(scoring.Game.StateVersion, next.Game!.StateVersion);
             Assert.Null(next.Guidance);
