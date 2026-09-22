@@ -30,7 +30,8 @@ public sealed partial class MainViewModel
         CompanionBridge = new DesktopCompanionBridge(inner,
             () => System.Windows.Application.Current?.Dispatcher,
             BeginRemoteCommand, EndRemoteCommand, () => { if (CanCompanionControl) HideLaptopPrivateViewOnly(); }, RequireReload,
-            CurrentCompanionBoardInteraction, InterceptCompanionCommandAsync, CurrentCompanionGuidance);
+            CurrentCompanionBoardInteraction, InterceptCompanionCommandAsync, CurrentCompanionGuidance,
+            CurrentCompanionBoardMap, ReadCompanionBoardImage);
         Connection = new ConnectionViewModel(CompanionBridge);
         Connection.PropertyChanged += ConnectionPresentationChanged;
         PropertyChanged += (_, args) =>
@@ -165,6 +166,7 @@ public sealed partial class MainViewModel
         if (_toolsDisposed) return;
         _toolsDisposed = true;
         DisposeCompanionUpdates();
+        ResetCompanionMap();
         ResetFinalStandingsSharing();
         _cardBoardCheck?.Completion.TrySetResult(false);
         _turnClockTimer?.Stop();

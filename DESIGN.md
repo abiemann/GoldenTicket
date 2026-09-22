@@ -260,6 +260,16 @@ corrections and scoring transitions that do not change the game-state version. T
 its existing instructions. This projection carries no hand or payment data, grants no actions,
 and clears when the physical step ends or gameplay is suspended.
 
+During a computer turn, the companion also displays the accepted upright camera crop and the
+same public `Game.PlacementTargets` used by the laptop. The map replaces the unavailable reveal
+button, stays through that computer's physical scoring step, and clears for human play or a
+suspended/unavailable game. Camera loss clears the old image and shows a waiting state.
+SSE carries image IDs and dot coordinates in the laptop's 960-by-600 board coordinate system.
+Approved clients fetch JPEGs through `/api/board-image/{id}`; no private card or destination
+overlays are captured. Encoding runs off the UI thread, is limited to one frame per second and
+one concurrent encode, and retains only the current and previous frames. Images are bounded,
+not cached by HTTP, and cannot authorize or verify a move.
+
 If the player started a route during an already selected card action, explain the conflict and guide them to restore the physical board. Do not reinterpret the card action as a claim or discard an already revealed card to make the history fit.
 
 The desktop camera flow checks committed train inventory during `TurnStart`,

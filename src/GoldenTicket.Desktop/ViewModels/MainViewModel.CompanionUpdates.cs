@@ -9,7 +9,7 @@ public sealed partial class MainViewModel
     // observations without relying on a timer or sending private hand contents to the stream.
     private sealed record CompanionPresentation(string? SessionId, long? StateVersion,
         bool CanControl, bool StorageFaulted, CompanionBoardInteraction? Board,
-        CompanionGuidance? Guidance, string? ResultImageId);
+        CompanionGuidance? Guidance, string? ResultImageId, CompanionBoardMap? BoardMap);
 
     private CompanionPresentation? _lastCompanionPresentation;
     private BoardFirstClaimProposal? _observedCompanionProposal;
@@ -57,7 +57,8 @@ public sealed partial class MainViewModel
     private void CompanionGuidancePropertyChanged(object? sender, PropertyChangedEventArgs args)
     {
         if (args.PropertyName is nameof(GameScreenViewModel.GuidanceSeat) or
-            nameof(GameScreenViewModel.GuidanceInstruction)) NotifyCompanionPresentationChanged();
+            nameof(GameScreenViewModel.GuidanceInstruction) or nameof(GameScreenViewModel.PlacementTargets))
+            NotifyCompanionPresentationChanged();
     }
 
     private void CompanionTablePropertyChanged(object? sender, PropertyChangedEventArgs args)
@@ -67,8 +68,9 @@ public sealed partial class MainViewModel
 
     private void CompanionCameraPropertyChanged(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName is nameof(CameraViewModel.GameTableAnalysis) or
-            nameof(CameraViewModel.IsGameTablePreviewUpright) or nameof(CameraViewModel.IsGameTablePreviewRequested))
+        if (args.PropertyName is nameof(CameraViewModel.GameTableAnalysis) or nameof(CameraViewModel.GameTablePreview) or
+            nameof(CameraViewModel.IsGameTablePreviewUpright) or nameof(CameraViewModel.IsGameTablePreviewRequested) or
+            nameof(CameraViewModel.IsRunning))
             NotifyCompanionPresentationChanged();
     }
 
@@ -86,9 +88,11 @@ public sealed partial class MainViewModel
     private void NotifyCompanionPresentationChanged()
     {
         if (_toolsDisposed) return;
+        RefreshCompanionMap();
         var presentation = new CompanionPresentation(_coordinator?.SessionId.Value,
             _coordinator?.Public.StateVersion, CanCompanionControl, _coordinator?.StorageFaulted == true,
-            CurrentCompanionBoardInteraction(), CurrentCompanionGuidance(), CurrentFinalStandingsImage()?.Info.Id);
+            CurrentCompanionBoardInteraction(), CurrentCompanionGuidance(), CurrentFinalStandingsImage()?.Info.Id,
+            _companionBoardMap);
         if (presentation == _lastCompanionPresentation) return;
         _lastCompanionPresentation = presentation;
         // A nonblocking invalidation: the SSE handler reads the public bridge on its own

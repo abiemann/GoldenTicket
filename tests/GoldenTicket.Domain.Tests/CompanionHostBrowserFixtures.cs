@@ -16,10 +16,11 @@ public class CompanionHostBrowserFixtures
     public async Task ExportSyntheticBridgePayloadsWhenRequested()
     {
         var token = TestContext.Current.CancellationToken;
-        async Task<GameCoordinator> Create(bool setupComplete)
+        async Task<GameCoordinator> Create(bool setupComplete, bool computerFirst = false)
         {
             var game = await GameCoordinator.CreateAsync(new GameRules(TestManifest.Manifest, TestManifest.Catalog), new InMemorySessionStore(),
-                new SessionSetup(SessionId.New(), [new Seat(new(1), "Alex", PlayerColor.Blue, SeatKind.Human, AiDifficulty.Standard),
+                new SessionSetup(SessionId.New(), [new Seat(new(1), computerFirst ? "Computer 1" : "Alex", PlayerColor.Blue,
+                        computerFirst ? SeatKind.Computer : SeatKind.Human, AiDifficulty.Standard),
                     new Seat(new(2), "Jordan", PlayerColor.Red, SeatKind.Human, AiDifficulty.Standard)], new(1), VerificationMode.Manual), DeterministicRandom.SeedFrom(91), token);
             if (setupComplete)
                 foreach (var seat in game.Seats)
@@ -57,6 +58,23 @@ public class CompanionHostBrowserFixtures
         await routeGame.SubmitAsync(new PlanClaim(routeGame.NewEnvelope(new(1)), claim.RouteId,
             LegalActionCalculator.ResolveCards(handForClaim, claim.Payments[0])), token);
         await Capture("physicalPlacement", routeGame);
+        var computerGame = await Create(true, computerFirst: true);
+        var computerBridge = new CoordinatorCompanionBridge(() => computerGame);
+        var computerPublic = await computerBridge.ReadPublicAsync(token);
+        Assert.False(computerPublic.CanControl);
+        Assert.Null(await computerBridge.ReadPrivateAsync(new(1), computerPublic.Game!.StateVersion, token));
+        const string boardImageId = "00112233445566778899aabbccddee00";
+        Assert.True(Guid.TryParseExact(boardImageId, "N", out _));
+        fixtures["computerMap"] = new
+        {
+            snapshot = computerPublic with
+            {
+                Guidance = new("Computer 1", "Place Computer 1's 3 Blue trains on Duluth - Chicago. The camera will check their positions and continue automatically."),
+                BoardMap = new(boardImageId,
+                    [new(558, 215, 1), new(587, 223, 2), new(620, 229, 3)])
+            },
+            data = (CompanionPrivateSnapshot?)null
+        };
         var directory = Environment.GetEnvironmentVariable("GOLDENTICKET_COMPANION_FIXTURE_DIRECTORY");
         if (!string.IsNullOrWhiteSpace(directory))
         {

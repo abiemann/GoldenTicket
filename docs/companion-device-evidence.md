@@ -30,7 +30,7 @@ Run this on Android Chrome and repeat on iPhone/iPad Safari when hardware is ava
 | Normal card/ticket/route choices | Correct active-seat options work; laptop retains train-placement verification and authoritative game state. |
 | First train-card draw | Hand stays visible, count and face-up market update, scroll position remains, and a second legal card can be drawn without another reveal. The second draw or a first face-up locomotive covers the hand for the next turn. |
 | Place trains before paying | The revealed phone updates to the camera-detected route, offers only its legal payments, and commits after Pay with current board evidence. The hidden phone and public laptop expose no payment choices. |
-| Computer placement and score markers | The browser and laptop show the same current placement, correction and score-marker instructions. Instructions update without a reload and clear for the next human; cards remain covered during the computer's turn. |
+| Computer placement and score markers | The browser and laptop show the same current placement, correction and score-marker instructions. During the computer's turn the browser replaces Reveal with the upright board image and matching gold train-space dots; correction subsets update, and the map clears when the next human can reveal. Check dots stay aligned in portrait and landscape. |
 | Move/remove trains while choosing payment | Pay pauses or the proposal clears; an old proposal cannot spend cards. Phone card draws also wait for the recorded board to match. |
 | Pass and hide | Cards clear before handoff; the next human obtains only their own private view. |
 | Destination check/uncheck and idle time | Cards and selections remain visible and usable after several minutes without interaction while the page is foregrounded and connected. |
@@ -68,6 +68,15 @@ The September 21 SSE implementation passed 135 targeted .NET tests, 46 JavaScrip
 and 64 Chromium scenarios at 320, 448 and 768 CSS pixels. Checks cover event-only synchronization,
 approval, camera/AI updates, first-draw continuity, reconnects and backgrounding. The browser
 harness uses synthetic fixtures over ordinary HTTP; these checks do not replace device acceptance.
+
+The September 21 computer-map update passed a warnings-as-errors desktop build, 151 targeted
+.NET tests, 55 JavaScript tests and 76 Chromium workflow scenarios at those same widths. Five
+additional landscape scenarios passed at 1024 by 768 CSS pixels. Rendered views used synthetic
+game state with an existing upright board photo; placement and correction dots were visually
+checked against it. Automated coverage also checks map continuity through computer scoring,
+camera loss, bounded frame updates and clearing at human handoff. Evidence is in
+`artifacts/companion-computer-map-20260921/`; this remains browser simulation, not physical-tablet
+or live-camera acceptance.
 
 Quick play and PRACTICAL implementation have automated coverage; full current-mode device
 acceptance is pending. Earlier September 12 Android evidence established reachability of the old

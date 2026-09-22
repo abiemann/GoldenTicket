@@ -4,6 +4,8 @@
 // NODE_PATH must point to the existing bundled node_modules containing Playwright. No npm install.
 // Optional visual iteration: GOLDENTICKET_BROWSER_DRAW_ONLY=1 and
 // GOLDENTICKET_BROWSER_VIEWPORTS=pixel,small-phone,tablet,wide-tablet.
+// Computer-map checks: GOLDENTICKET_BROWSER_MAP_ONLY=1; optionally provide an upright
+// PNG without overlays through GOLDENTICKET_BOARD_IMAGE_FIXTURE for visual evidence.
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
@@ -23,15 +25,16 @@ fs.mkdirSync(output, { recursive: true });
 const mime = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.svg':'image/svg+xml' };
 const results = [];
 const drawOnly=process.env.GOLDENTICKET_BROWSER_DRAW_ONLY==='1';
+const mapOnly=process.env.GOLDENTICKET_BROWSER_MAP_ONLY==='1';
 const viewports=[{name:'pixel',width:448,height:900},{name:'small-phone',width:320,height:740},{name:'tablet',width:768,height:1024},{name:'wide-tablet',width:1024,height:768}]
   .filter(viewport=>process.env.GOLDENTICKET_BROWSER_VIEWPORTS ? process.env.GOLDENTICKET_BROWSER_VIEWPORTS.split(',').includes(viewport.name) : viewport.name!=='wide-tablet');
 assert.ok(viewports.length,'GOLDENTICKET_BROWSER_VIEWPORTS must select an existing viewport.');
 let fixture = fixtures.setup, paired = false, pending = false, generation = 1, requests = [], offline = false, delayedReveal = null;
-let resultImageBytes = null, activeGrant = null, delayedCommand = null;
+let resultImageBytes = null, boardImageBytes = null, delayedBoardImage = null, activeGrant = null, delayedCommand = null;
 let sessionRevision=0, controllerGeneration=1, suppressHeartbeats=false;
 const eventStreams=new Set();
 function sessionEnvelope() {
-  return paired ? {paired,pending:false,csrf:'test-csrf',handoffGeneration:generation,controllerGeneration,apiVersion:'1',assetsVersion:'12',snapshot:fixture.snapshot} : {paired,pending,apiVersion:'1',assetsVersion:'12'};
+  return paired ? {paired,pending:false,csrf:'test-csrf',handoffGeneration:generation,controllerGeneration,apiVersion:'1',assetsVersion:'13',snapshot:fixture.snapshot} : {paired,pending,apiVersion:'1',assetsVersion:'13'};
 }
 function publishSession(target) {
   const revision=++sessionRevision, frame=`id: ${revision}\nevent: session\ndata: ${JSON.stringify(sessionEnvelope())}\n\n`;
@@ -79,6 +82,11 @@ const requestHandler = async (request, response) => {
     if(url.pathname.startsWith('/api/result-image/')) {
       if(!paired || !resultImageBytes || url.pathname!==`/api/result-image/${fixture.snapshot.resultImage?.id}` || !request.headers['x-goldenticket-tab']) return send(response,{},404);
       response.writeHead(200,{'Content-Type':'image/png','Content-Length':resultImageBytes.length,'Cache-Control':'no-store'}); response.end(resultImageBytes); return;
+    }
+    if(url.pathname.startsWith('/api/board-image/')) {
+      if(!paired || !boardImageBytes || url.pathname!==`/api/board-image/${fixture.snapshot.boardMap?.imageId}` || !request.headers['x-goldenticket-tab']) return send(response,{},404);
+      if(delayedBoardImage) { delayedBoardImage.response=response; delayedBoardImage.bytes=boardImageBytes; return; }
+      sendBoardImage(response,boardImageBytes);return;
     }
     if(url.pathname === '/api/pair') { pending=true; publishSession(); return send(response, {pending:true,identity:'2468'}); }
     if(url.pathname === '/api/hide') { generation++; activeGrant=null; publishSession(); return send(response,{hidden:true}); }
@@ -133,6 +141,9 @@ const requestHandler = async (request, response) => {
   response.end(fs.readFileSync(path.join(assets,asset)));
 };
 const server = http.createServer(requestHandler);
+function sendBoardImage(response,bytes) {
+  response.writeHead(200,{'Content-Type':'image/jpeg','Content-Length':bytes.length,'Cache-Control':'no-store'});response.end(bytes);
+}
 async function record(name, action) { const start=Date.now(); await action(); results.push({name,passed:true,milliseconds:Date.now()-start}); console.log('PASS '+name); }
 async function waitCovered(page) { await page.locator('#curtain').waitFor({state:'visible'}); assert.equal(await page.locator('#private').textContent(),''); }
 async function reveal(page) { await page.locator('#reveal').waitFor({state:'visible'}); await page.locator('#reveal').click(); await page.locator('#private').waitFor({state:'visible'}); }
@@ -230,6 +241,116 @@ async function syntheticStandingsPng(page) {
   });
   return Buffer.from(data,'base64');
 }
+async function boardJpeg(page) {
+  const source=process.env.GOLDENTICKET_BOARD_IMAGE_FIXTURE;
+  const image=source ? 'data:image/png;base64,'+fs.readFileSync(source).toString('base64') : null;
+  const encoded=await page.evaluate(async image=>{
+    const canvas=document.createElement('canvas');canvas.width=960;canvas.height=600;const context=canvas.getContext('2d');
+    if(image) {
+      const board=new Image();board.src=image;await board.decode();context.drawImage(board,0,0,960,600);
+    } else {
+      // Public synthetic calibration board for CI. Local visual review supplies
+      // an upright camera frame without baked overlays through the variable above.
+      context.fillStyle='#dbcba6';context.fillRect(0,0,960,600);context.strokeStyle='#8e7656';context.lineWidth=2;
+      for(let x=0;x<=960;x+=80) {context.beginPath();context.moveTo(x,0);context.lineTo(x,600);context.stroke();}
+      for(let y=0;y<=600;y+=60) {context.beginPath();context.moveTo(0,y);context.lineTo(960,y);context.stroke();}
+      context.fillStyle='#3f3427';context.font='24px sans-serif';context.fillText('Public board camera fixture',40,45);
+    }
+    return canvas.toDataURL('image/jpeg',0.85).split(',')[1];
+  },image);
+  return Buffer.from(encoded,'base64');
+}
+async function showComputerMap(page, imageAvailable=true) {
+  fixture=structuredClone(fixtures.computerMap);generation++;controllerGeneration++;
+  if(!imageAvailable) fixture.snapshot.boardMap.imageId=null;
+  await sessionDelivered(page,publishSession());await waitCovered(page);
+  await page.locator('#board-map').waitFor({state:'visible'});
+  if(imageAvailable) await page.waitForFunction(()=>document.getElementById('board-image').naturalWidth===960);
+}
+async function checkMapTargets(page,targets) {
+  const markers=page.locator('#board-targets .board-target');assert.equal(await markers.count(),targets.length);
+  const expected=targets.map(target=>({number:String(target.number),transform:`translate(${target.x} ${target.y})`}));
+  const actual=await markers.evaluateAll(nodes=>nodes.map(node=>({number:node.dataset.number,transform:node.getAttribute('transform')})));
+  assert.deepEqual(actual,expected);
+  const layout=await page.evaluate(()=>{
+    const image=document.getElementById('board-image').getBoundingClientRect(),svg=document.getElementById('board-targets').getBoundingClientRect();
+    return {image:{x:image.x,y:image.y,width:image.width,height:image.height},svg:{x:svg.x,y:svg.y,width:svg.width,height:svg.height}};
+  });
+  for(const key of ['x','y','width','height']) assert.ok(Math.abs(layout.image[key]-layout.svg[key])<1,`Map and gold targets must share ${key}.`);
+  assert.ok(Math.abs(layout.image.width/layout.image.height-1.6)<0.02,'The map must preserve its 960×600 proportions.');
+}
+async function computerMapCases(page,viewport) {
+  assert.ok(fixtures.computerMap,'Export the current .NET computerMap fixture before browser checks.');
+  boardImageBytes=await boardJpeg(page);
+  await record(viewport.name+': computer placement replaces Reveal with the public map and aligned gold targets',async()=>{
+    const reveals=requests.filter(request=>request.url==='/api/reveal').length;
+    await showComputerMap(page,false);
+    assert.equal(await page.locator('#reveal').isVisible(),false);
+    assert.equal(await page.locator('#board-stage').isVisible(),false);
+    assert.match(await page.locator('#board-status').textContent(),/Waiting for the laptop/);
+    fixture.snapshot.boardMap.imageId=fixtures.computerMap.snapshot.boardMap.imageId;await sessionDelivered(page,publishSession());
+    await page.waitForFunction(()=>document.getElementById('board-image').naturalWidth===960);
+    assert.equal(await page.locator('#handoff').textContent(),'Computer 1');
+    assert.equal(await page.locator('#curtain-detail').textContent(),fixture.snapshot.guidance.instruction);
+    await checkMapTargets(page,fixture.snapshot.boardMap.targets);await noOverflow(page);
+    const received=requests.filter(request=>request.url===`/api/board-image/${fixture.snapshot.boardMap.imageId}`);
+    assert.equal(received.length,1);assert.ok(received[0].headers['x-goldenticket-tab']);
+    assert.equal(requests.filter(request=>request.url==='/api/reveal').length,reveals);
+    await screenshot(page,viewport.name+'-computer-map-placement');
+    await page.locator('#board-map').screenshot({path:path.join(output,viewport.name+'-computer-map-detail.png')});
+    const imageCount=requests.filter(request=>request.url.startsWith('/api/board-image/')).length;
+    await heartbeatDelivered(page);await heartbeatDelivered(page);
+    assert.equal(requests.filter(request=>request.url.startsWith('/api/board-image/')).length,imageCount,'Unchanged heartbeats must not download the board again.');
+  });
+  await record(viewport.name+': camera correction updates only remaining gold dots and new frames replace the image',async()=>{
+    const before=requests.filter(request=>request.url.startsWith('/api/board-image/')).length;
+    fixture.snapshot.boardMap.targets=[fixture.snapshot.boardMap.targets[2]];
+    fixture.snapshot.guidance.instruction='Place the remaining Blue train on Duluth - Chicago.';
+    await sessionDelivered(page,publishSession());await checkMapTargets(page,fixture.snapshot.boardMap.targets);
+    assert.equal(requests.filter(request=>request.url.startsWith('/api/board-image/')).length,before,'Target changes reuse the current camera frame.');
+    await screenshot(page,viewport.name+'-computer-map-correction');
+    const oldSource=await page.locator('#board-image').getAttribute('src');
+    fixture.snapshot.boardMap.imageId='00112233445566778899aabbccddee01';publishSession();
+    await page.waitForFunction(previous=>{const image=document.getElementById('board-image');return image.naturalWidth===960&&image.getAttribute('src')!==previous;},oldSource);
+    await checkMapTargets(page,fixture.snapshot.boardMap.targets);
+    assert.equal(requests.filter(request=>request.url.startsWith('/api/board-image/')).length,before+1);
+  });
+  await record(viewport.name+': stale image delivery cannot replace a newer frame or restore a removed map',async()=>{
+    delayedBoardImage={};fixture.snapshot.boardMap.imageId='00112233445566778899aabbccddee02';publishSession();
+    while(!delayedBoardImage.response) await new Promise(resolve=>setTimeout(resolve,20));
+    const old=delayedBoardImage;delayedBoardImage=null;
+    fixture.snapshot.boardMap.imageId='00112233445566778899aabbccddee03';
+    const source=await page.locator('#board-image').getAttribute('src');publishSession();
+    await page.waitForFunction(previous=>{const image=document.getElementById('board-image');return image.naturalWidth===960&&image.getAttribute('src')!==previous;},source);
+    const current=await page.locator('#board-image').getAttribute('src');sendBoardImage(old.response,old.bytes);
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    assert.equal(await page.locator('#board-image').getAttribute('src'),current);
+    delayedBoardImage={};fixture.snapshot.boardMap.imageId='00112233445566778899aabbccddee04';publishSession();
+    while(!delayedBoardImage.response) await new Promise(resolve=>setTimeout(resolve,20));
+    const removed=delayedBoardImage;delayedBoardImage=null;
+    fixture=structuredClone(fixtures.nextHuman);generation++;controllerGeneration++;await sessionDelivered(page,publishSession());
+    sendBoardImage(removed.response,removed.bytes);
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    assert.equal(await page.locator('#board-map').isVisible(),false);
+    assert.equal(await page.locator('#board-image').getAttribute('src'),null);
+    assert.equal(await page.locator('#reveal').isVisible(),true);assert.equal(await page.locator('#reveal').isDisabled(),false);
+  });
+  await record(viewport.name+': pause, background and revocation erase the computer map',async()=>{
+    await showComputerMap(page);
+    fixture.snapshot.boardMap=null;fixture.snapshot.guidance=null;fixture.snapshot.message='The game is paused.';
+    await sessionDelivered(page,publishSession());
+    assert.equal(await page.locator('#board-map').isVisible(),false);assert.equal(await page.locator('#board-image').getAttribute('src'),null);
+    await showComputerMap(page);
+    await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
+    assert.equal(await page.locator('#board-map').isVisible(),false);assert.equal(await page.locator('#board-image').getAttribute('src'),null);
+    const next=sessionRevision+1;
+    await page.evaluate(()=>{delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));});await sessionDelivered(page,next);
+    await page.waitForFunction(()=>document.getElementById('board-image').naturalWidth===960);
+    paired=false;await sessionDelivered(page,publishSession());
+    assert.equal(await page.locator('#board-map').isVisible(),false);assert.equal(await page.locator('#board-image').getAttribute('src'),null);
+    fixture=fixtures.setup;paired=true;generation++;controllerGeneration++;await sessionDelivered(page,publishSession());await waitCovered(page);
+  });
+}
 async function main() {
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const origin='http://goldenticket.test:'+server.address().port;
@@ -241,7 +362,7 @@ async function main() {
   const browserVersion=browser.version();
   try {
     for(const viewport of viewports) {
-      fixture=fixtures.setup; paired=false; pending=false; generation=1; controllerGeneration=1; requests=[]; offline=false; suppressHeartbeats=false; delayedReveal=null; delayedCommand=null; activeGrant=null;
+      fixture=fixtures.setup; paired=false; pending=false; generation=1; controllerGeneration=1; requests=[]; offline=false; suppressHeartbeats=false; delayedReveal=null; delayedCommand=null; delayedBoardImage=null; activeGrant=null;
       const context=await browser.newContext({viewport:{width:viewport.width,height:viewport.height},deviceScaleFactor:1,isMobile:!viewport.name.includes('tablet'),hasTouch:true});
       const outsideLaptop=new Set(), browserRequests=[];
       // Keep the local host reachable while denying Internet destinations. Full browser offline
@@ -308,6 +429,8 @@ async function main() {
         await page.locator('#curtain').waitFor({state:'visible'}); await noOverflow(page);
         await screenshot(page,viewport.name+'-curtain');
       });
+      if(!drawOnly) await computerMapCases(page,viewport);
+      if(mapOnly) {assert.deepEqual(errors,[]);assert.deepEqual([...outsideLaptop],[]);await context.close();continue;}
       await record(viewport.name+': destination checks and outside taps preserve the private hand',async()=>{
         await reveal(page); await noOverflow(page);
         const choices=page.locator('#private input[type=checkbox]'); assert.equal(await choices.count(),3);
@@ -729,7 +852,7 @@ async function main() {
       });
       await context.close();
     }
-    fs.writeFileSync(path.join(output,'browser-ui-results.json'),JSON.stringify({browser:'Chromium '+browserVersion,scope:drawOnly?'Focused draw controls and opening-ticket flow over SSE':'Complete companion workflow over SSE',fixtureFile:fixturePath,fixtureTransport:'Real insecure HTTP and fetch-streamed SSE on goldenticket.test mapped to loopback; no browser security overrides or certificate dependencies; no real-phone acceptance claim.',eventDelivery:'Session snapshots are published only on fixture or authorization changes. Two-second heartbeats contain no game snapshot. The former session polling endpoint returns 410.',internetIsolation:'Page requests outside the laptop fixture origin are blocked and recorded; navigator.onLine is false. Browser/OS background traffic is outside this harness.',viewports:viewports.map(v=>`${v.width}×${v.height}`),screenshots:'Synthetic player data only',results},null,2));
+    fs.writeFileSync(path.join(output,'browser-ui-results.json'),JSON.stringify({browser:'Chromium '+browserVersion,scope:mapOnly?'Focused computer map and image lifecycle over SSE':drawOnly?'Focused draw controls and opening-ticket flow over SSE':'Complete companion workflow over SSE',fixtureFile:fixturePath,fixtureTransport:'Real insecure HTTP and fetch-streamed SSE on goldenticket.test mapped to loopback; no browser security overrides or certificate dependencies; no real-phone acceptance claim.',eventDelivery:'Session snapshots are published only on fixture or authorization changes. Two-second heartbeats contain no game snapshot. The former session polling endpoint returns 410.',internetIsolation:'Page requests outside the laptop fixture origin are blocked and recorded; navigator.onLine is false. Browser/OS background traffic is outside this harness.',viewports:viewports.map(v=>`${v.width}×${v.height}`),screenshots:process.env.GOLDENTICKET_BOARD_IMAGE_FIXTURE?'Synthetic player data with local upright board camera fixture; gold targets rendered by the browser':'Synthetic player data and public calibration board only',results},null,2));
     console.log(`${results.length} browser UI scenarios passed.`);
   } finally { await browser.close(); clearInterval(heartbeatTimer); disconnectStreams(); await new Promise(resolve=>server.close(resolve)); }
 }

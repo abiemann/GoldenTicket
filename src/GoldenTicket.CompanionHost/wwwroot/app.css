@@ -34,6 +34,11 @@ input,select{background:#f9edcf;color:#302a23;border:2px solid #b59455}
 summary{cursor:pointer;min-height:44px;padding:10px 0;font-size:.9rem;font-weight:650;color:#e6d4ad}
 .device-options label{display:block;margin-top:12px}.device-options input{font-size:1rem;margin-bottom:0}
 .curtain .fine-print{font-size:.77rem}
+.board-map{margin-top:20px}.board-stage{position:relative;aspect-ratio:8/5;overflow:hidden;border-radius:9px;background:#14232e;box-shadow:0 0 0 2px #d6af62}
+.board-stage img,.board-stage svg{display:block;width:100%;height:100%;position:absolute;inset:0}.board-stage svg{pointer-events:none}
+.board-target-ring{fill:#ffe39a33;stroke:#ffe082;stroke-width:2}.board-target-dot{fill:#ffd15c;stroke:#665019;stroke-width:1.8}
+.board-map .fine-print{margin:10px 0 0}.board-map .fine-print:empty{display:none}
+@media(prefers-reduced-motion:no-preference){.board-target-ring{transform-box:fill-box;transform-origin:center;animation:board-target-pulse 1.5s ease-in-out infinite}@keyframes board-target-pulse{50%{transform:scale(1.14);opacity:.68}}}
 @media(max-width:420px){#connect{padding:25px 20px}#pair-form{margin-top:24px}#pair-code{font-size:1.8rem}footer{font-size:.74rem}}
 @media(prefers-reduced-motion:no-preference){button{transition:background-color .15s,transform .15s}button:not(:disabled):active{transform:translateY(1px)}}
 

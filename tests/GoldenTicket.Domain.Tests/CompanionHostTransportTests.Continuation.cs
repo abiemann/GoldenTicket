@@ -163,12 +163,16 @@ public partial class CompanionHostTransportTests
         private int _publicReads;
         public int PublicReads => Volatile.Read(ref _publicReads);
         public CompanionGuidance? Guidance { get; set; }
+        public CompanionBoardMap? BoardMap { get; set; }
+        public Func<string, CancellationToken, Task<CompanionBoardImage?>>? BoardImageReader { get; set; }
         public Func<CancellationToken, Task>? AfterPrivateRead { get; set; }
         public async Task<CompanionPublicSnapshot> ReadPublicAsync(CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _publicReads);
-            return (await _inner.ReadPublicAsync(cancellationToken)) with { Guidance = Guidance };
+            return (await _inner.ReadPublicAsync(cancellationToken)) with { Guidance = Guidance, BoardMap = BoardMap };
         }
+        public Task<CompanionBoardImage?> ReadBoardImageAsync(string id, CancellationToken cancellationToken = default) =>
+            BoardImageReader?.Invoke(id, cancellationToken) ?? Task.FromResult<CompanionBoardImage?>(null);
         public async Task<CompanionPrivateSnapshot?> ReadPrivateAsync(SeatId seat, long expectedVersion,
             CancellationToken cancellationToken = default)
         {
@@ -188,6 +192,7 @@ public partial class CompanionHostTransportTests
         public CompanionServer Server => server;
         public ContinuationBridge Bridge => bridge;
         public ControllerCredentials Credentials => credentials;
+        public HttpClient Client => client;
         public static async Task<ContinuationHost> Create(GameCoordinator game, CancellationToken token)
         {
             var bridge = new ContinuationBridge(game);

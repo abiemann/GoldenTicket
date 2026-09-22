@@ -195,6 +195,9 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   to phone card draws; keep camera-free manual route selection as a technical fallback.
 - [x] Mirror current public placement, correction and score-marker instructions on the tablet
   while preserving the laptop's guidance and existing private-card controls.
+- [x] Replace the unavailable browser reveal button during computer turns with the upright board
+  preview and the laptop's gold placement dots. Signal new frames through SSE at a bounded rate,
+  mirror correction subsets, and restore human reveal after placement/scoring completes.
 - [x] Confine save paths and reject linked/unsupported paths before filesystem operations.
 - [x] Check snapshot/journal/version integrity and prevent competing writers for supported saves.
 - [x] Keep unreadable saves visible, sanitize recovery errors, and block gameplay after uncertain writes.

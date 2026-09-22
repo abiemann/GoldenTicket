@@ -68,7 +68,7 @@ public partial class CompanionHostTransportTests
         Assert.False(status.GetProperty("paired").GetBoolean()); Assert.True(status.GetProperty("pending").GetBoolean());
         Assert.True(server.ApprovePendingController());
         status = await client.GetFromJsonAsync<JsonElement>("/api/session", token);
-        Assert.Equal("12", status.GetProperty("assetsVersion").GetString());
+        Assert.Equal("13", status.GetProperty("assetsVersion").GetString());
         var csrf = status.GetProperty("csrf").GetString()!;
         var generation = status.GetProperty("handoffGeneration").GetInt64();
         var reveal = new { seat = 1, sessionId = game.SessionId.Value, version = game.Public.StateVersion, handoffGeneration = generation };

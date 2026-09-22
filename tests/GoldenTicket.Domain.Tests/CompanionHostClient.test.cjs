@@ -23,7 +23,7 @@ function page(options = {}) {
   }
   const get = id => { if (!nodes.has(id)) nodes.set(id, new Node()); return nodes.get(id); };
   const state = {
-    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '12', controllerGeneration: 1, handoffGeneration: 1,
+    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '13', controllerGeneration: 1, handoffGeneration: 1,
     snapshot: { canControl: true, revealSeatId: 1, message: 'Pass this device to Alex.', profileId: 'classic-us', manifestHash: 'hash', routes: [],
       game: { sessionId: 'match', stateVersion: 1, activeSeatId: 1, turnNumber: 1, turnPhase: 'TurnStart', seats: [{ seatId: 1, displayName: 'Alex', symbol: 'A', color: 'Blue', routeScore: 0, trainsRemaining: 45 }], pendingClaim: null } }
   };
@@ -31,13 +31,14 @@ function page(options = {}) {
   function response(value, ok = true, status = 200) { return { ok, status, json: async () => structuredClone(value) }; }
   const context = vm.createContext({
     console, Promise, AbortController, Blob, Uint8Array, TextDecoder, structuredClone,
+    Image: class { async decode() { if (options.decode) await options.decode(); } },
     URL: class extends URL { static createObjectURL(blob) { const url = `blob:results-${objectUrls.length}`; objectUrls.push({url, blob}); return url; } static revokeObjectURL(url) { revokedUrls.push(url); } },
     Date: class extends Date { static now() { return now; } },
     // getRandomValues remains available in an insecure context; randomUUID does not.
     crypto: { getRandomValues: bytes => { bytes.fill(++uuid); return bytes; } },
     setTimeout: (fn, ms) => { const id = ++nextTimer; timeouts.set(id, {fn, ms}); return id; }, clearTimeout: id => timeouts.delete(id),
     setInterval: (fn, ms) => intervals.push({fn, ms}),
-    document: { hidden: false, getElementById: get, createElement: tag => new Node(tag), addEventListener: (name, fn) => listeners['document:' + name] = fn },
+    document: { hidden: false, getElementById: get, createElement: tag => new Node(tag), createElementNS: (_, tag) => new Node(tag), addEventListener: (name, fn) => listeners['document:' + name] = fn },
     window: { isSecureContext: options.secure !== false, addEventListener: (name, fn) => listeners['window:' + name] = fn },
     navigator: { onLine: options.internetAvailable !== false },
     fetch: async (url, request) => {
@@ -63,7 +64,7 @@ function page(options = {}) {
     }
   });
   let source = fs.readFileSync(path.join(sourceDir, 'app.js'), 'utf8');
-  source = source.replace(/\}\)\(\);\s*$/, 'globalThis.clientTest = { reveal, hide, submit, clearPrivate, state: () => ({paired, busy, privateData, grant, revealGeneration, handoffGeneration, resultKey, resultUrl, snapshot, eventsAbort, reconnectTimer, needsReload}) }; })();');
+  source = source.replace(/\}\)\(\);\s*$/, 'globalThis.clientTest = { reveal, hide, submit, clearPrivate, state: () => ({paired, busy, privateData, grant, revealGeneration, handoffGeneration, resultKey, resultUrl, snapshot, eventsAbort, reconnectTimer, needsReload, boardUrl, boardImageId, boardAbort}) }; })();');
   vm.runInContext(source, context);
   async function retry() {
     const timer=context.clientTest.state().reconnectTimer;
@@ -162,7 +163,7 @@ test('SSE parses fragmented CRLF, multiline JSON and split UTF-8 without partial
 test('malformed or oversized SSE events cover cards and reconnect without accepting partial data', async () => {
   for(const invalid of [
     'event: session\ndata: {bad json}\n\n',
-    'event: session\ndata: {"paired":true,"pending":false,"apiVersion":"1","assetsVersion":"12"}\n\n',
+    'event: session\ndata: {"paired":true,"pending":false,"apiVersion":"1","assetsVersion":"13"}\n\n',
     'data: '+ 'x'.repeat(1024*1024+1),
     Uint8Array.of(0xff)
   ]) {
@@ -626,6 +627,136 @@ test('untrusted player text is assigned as text and never interpreted as HTML', 
 // Synthetic one-pixel PNG; independent of product branding assets.
 const resultPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==','base64');
 const imageResponse = (bytes = resultPng, contentType = 'image/png') => new Response(bytes, {headers:{'Content-Type':contentType}});
+const boardIds = ['a'.repeat(32), 'b'.repeat(32), 'c'.repeat(32)];
+const boardJpeg = Uint8Array.of(255,216,255,224,0,16,255,217);
+const boardResponse = () => imageResponse(boardJpeg, 'image/jpeg');
+const settleImages = async () => { await new Promise(resolve => setImmediate(resolve)); await flush(); };
+async function computerBoard(p, imageId = boardIds[0], targets = [{x:524,y:340,number:1},{x:515,y:365,number:2}]) {
+  p.state.snapshot.canControl = false; p.state.snapshot.revealSeatId = null;
+  p.state.snapshot.guidance = {title:'Computer 1',instruction:'Place 2 Green trains on Kansas City - Oklahoma City.'};
+  p.state.snapshot.boardMap = {imageId, targets};
+  await p.push(); await settleImages();
+}
+
+test('computer map replaces Reveal with authenticated image and canonical gold indicator positions', async () => {
+  const p=page({fetch:url=>url.startsWith('/api/board-image/')?boardResponse():undefined}); await flush(); await p.client.reveal();
+  await computerBoard(p);
+  assert.equal(p.get('private').hidden,true); assert.equal(p.get('private').children.length,0);
+  assert.equal(p.get('board-map').hidden,false); assert.equal(p.get('board-stage').hidden,false);
+  assert.equal(p.get('reveal').hidden,true); assert.equal(p.get('curtain-privacy').hidden,true);
+  assert.equal(p.get('curtain-detail').textContent,'Place 2 Green trains on Kansas City - Oklahoma City.');
+  assert.equal(p.get('board-targets').children[0].transform,'translate(524 340)');
+  assert.equal(p.get('board-targets').children[0].children[0].r,'13');
+  assert.equal(p.get('board-targets').children[0].children[1].r,'7.5');
+  assert.deepEqual(Buffer.from(await p.objectUrls[0].blob.arrayBuffer()),Buffer.from(boardJpeg));
+  const request=p.requests.find(r=>r.url.startsWith('/api/board-image/'));
+  assert.equal(request.url,`/api/board-image/${boardIds[0]}`); assert.equal(request.request.credentials,'same-origin');
+  assert.equal(request.request.cache,'no-store'); assert.match(request.request.headers['X-GoldenTicket-Tab'],/^[a-f0-9]{32}$/);
+  const marker=p.get('board-targets').children[0]; await p.push(); await elapse(p,30000);
+  assert.equal(p.requests.filter(r=>r.url.startsWith('/api/board-image/')).length,1);
+  assert.equal(p.get('board-targets').children[0],marker,'Identical updates keep the pulse and image undisturbed');
+});
+
+test('camera corrections update only the target overlay at the same game revision', async () => {
+  const p=page({fetch:url=>url.startsWith('/api/board-image/')?boardResponse():undefined}); await flush(); await computerBoard(p);
+  const image=p.get('board-image').src, version=p.state.snapshot.game.stateVersion;
+  await computerBoard(p,boardIds[0],[{x:515,y:365,number:2}]);
+  assert.equal(p.get('board-targets').children.length,1); assert.equal(p.get('board-targets').children[0].dataset.number,'2');
+  assert.equal(p.get('board-image').src,image); assert.equal(p.state.snapshot.game.stateVersion,version);
+  await computerBoard(p,boardIds[0],[]); assert.equal(p.get('board-targets').children.length,0);
+  assert.equal(p.requests.filter(r=>r.url.startsWith('/api/board-image/')).length,1);
+});
+
+test('computer scoring keeps the map through digital turn advance until the actual human handoff', async () => {
+  const p=page({fetch:url=>url.startsWith('/api/board-image/')?boardResponse():undefined}); await flush(); await computerBoard(p);
+  const image=p.get('board-image').src;
+  p.state.snapshot.game.activeSeatId=2;p.state.snapshot.game.turnNumber++;p.state.snapshot.game.stateVersion++;
+  p.state.snapshot.guidance={title:'Computer 1',instruction:'Move the Green score marker to 2.'};
+  p.state.snapshot.boardMap.targets=[];await p.push();await settleImages();
+  assert.equal(p.get('board-image').src,image);assert.equal(p.get('board-stage').hidden,false);
+  assert.equal(p.get('reveal').hidden,true);assert.equal(p.get('board-targets').children.length,0);
+  assert.equal(p.requests.filter(r=>r.url.startsWith('/api/board-image/')).length,1);
+  assert.equal(p.revokedUrls.length,0,'Finishing the computer instruction does not discard the current frame');
+  p.state.snapshot.canControl=true;p.state.snapshot.revealSeatId=2;p.state.snapshot.boardMap=null;await p.push();
+  assert.equal(p.get('board-map').hidden,true);assert.equal(p.get('board-image').src,undefined);
+  assert.equal(p.get('reveal').hidden,false);assert.equal(p.get('reveal').disabled,false);
+  assert.deepEqual(p.revokedUrls,[image]);
+});
+
+test('camera frames finish one at a time and fetch only the latest queued frame without flicker', async () => {
+  const delayed=deferred();
+  const p=page({fetch:url=>url.startsWith('/api/board-image/')?(url.endsWith(boardIds[1])?delayed.promise:boardResponse()):undefined});
+  await flush(); await computerBoard(p); const old=p.get('board-image').src;
+  await computerBoard(p,boardIds[1]); await computerBoard(p,boardIds[2]);
+  assert.equal(p.get('board-image').src,old); assert.equal(p.get('board-stage').hidden,false);
+  assert.equal(p.requests.filter(r=>r.url.startsWith('/api/board-image/')).length,2);
+  delayed.resolve(boardResponse()); await settleImages(); await settleImages();
+  assert.equal(p.client.state().boardImageId,boardIds[2]);
+  assert.equal(p.requests.filter(r=>r.url.startsWith('/api/board-image/')).length,3);
+  assert.equal(p.revokedUrls.includes(old),true); assert.equal(p.revokedUrls.length,2);
+});
+
+test('human turn, dismissal, background and disconnect discard map images and ignore late downloads', async () => {
+  for(const action of ['human','removed','background','disconnect','revoked','new-game']) {
+    const delayed=deferred();
+    const p=page({fetch:url=>url.startsWith('/api/board-image/')?(url.endsWith(boardIds[1])?delayed.promise:boardResponse()):undefined});
+    await flush(); await computerBoard(p); const old=p.get('board-image').src; await computerBoard(p,boardIds[1]);
+    const active=p.requests.find(r=>r.url.endsWith(boardIds[1])).request.signal;
+    if(action==='human') {p.state.snapshot.boardMap=null;p.state.snapshot.canControl=true;p.state.snapshot.revealSeatId=1;await p.push();}
+    if(action==='removed') {p.state.snapshot.boardMap=null;await p.push();}
+    if(action==='background') {p.context.document.hidden=true;await p.event('document','visibilitychange');}
+    if(action==='disconnect') {p.options.offline=true;await p.push();}
+    if(action==='revoked') {p.state.paired=false;await p.push();}
+    if(action==='new-game') {p.state.snapshot.game.sessionId='replacement';p.state.snapshot.boardMap=null;await p.push();}
+    assert.equal(active.aborted,true,action); assert.equal(p.revokedUrls.includes(old),true,action);
+    delayed.resolve(boardResponse()); await settleImages();
+    assert.equal(p.client.state().boardUrl,null,action); assert.equal(p.get('board-image').src,undefined,action);
+    assert.equal(p.get('board-map').hidden,true,action); assert.equal(p.get('board-targets').children.length,0,action);
+    if(action==='human') {assert.equal(p.get('reveal').hidden,false);assert.equal(p.get('reveal').disabled,false);}
+  }
+});
+
+test('a map decoded after leaving its turn is never displayed and its object URL is released', async () => {
+  const decode=deferred();
+  const p=page({fetch:url=>url.startsWith('/api/board-image/')?boardResponse():undefined,decode:()=>decode.promise});
+  await flush(); await computerBoard(p); assert.equal(p.objectUrls.length,1);
+  p.state.snapshot.boardMap=null; await p.push();
+  assert.deepEqual(p.revokedUrls,[p.objectUrls[0].url],'An in-progress decode releases its URL immediately on dismissal');
+  decode.resolve(); await settleImages();
+  assert.equal(p.get('board-map').hidden,true); assert.equal(p.get('board-image').src,undefined);
+  assert.deepEqual(p.revokedUrls,[p.objectUrls[0].url]);
+});
+
+test('missing or failed map images keep Reveal hidden and recover on a later SSE update', async () => {
+  let attempts=0;
+  const p=page({fetch:url=>url.startsWith('/api/board-image/')?(++attempts===1?new Response('',{status:404}):boardResponse()):undefined});
+  await flush(); await computerBoard(p,null);
+  assert.equal(p.get('board-map').hidden,false); assert.equal(p.get('reveal').hidden,true);
+  assert.match(p.get('board-status').textContent,/Waiting/); assert.equal(attempts,0);
+  await computerBoard(p); assert.equal(attempts,1); assert.equal(p.get('board-stage').hidden,true);
+  await elapse(p,30000); assert.equal(attempts,1,'Heartbeats never fetch or retry map images');
+  await p.push(); await settleImages(); assert.equal(attempts,2); assert.equal(p.get('board-stage').hidden,false);
+  await computerBoard(p,null); assert.equal(p.get('board-stage').hidden,true); assert.equal(p.client.state().boardUrl,null);
+});
+
+test('map metadata cannot fetch external URLs or inject invalid marker coordinates', async () => {
+  const p=page(); await flush();
+  await computerBoard(p,'https://example.test/map.jpg',[null,{x:'1);bad',y:10,number:1},{x:-1,y:2,number:2},{x:2,y:601,number:3},{x:2,y:2,number:1.5},{x:480,y:300,number:1}]);
+  assert.equal(p.requests.some(r=>r.url.startsWith('/api/board-image/')),false);
+  assert.equal(p.get('board-targets').children.length,1); assert.equal(p.get('board-targets').children[0].transform,'translate(480 300)');
+  p.state.snapshot.canControl=true;await p.push();assert.equal(p.get('board-map').hidden,true,'A human turn never displays a computer board');
+});
+
+test('map image reception rejects wrong formats, oversized bodies and decode errors', async () => {
+  for(const makeResponse of [()=>imageResponse(resultPng),()=>imageResponse('bad','image/jpeg'),()=>imageResponse(new Uint8Array(4*1024*1024+1),'image/jpeg'),()=>new Response(null,{headers:{'Content-Type':'image/jpeg','Content-Length':String(4*1024*1024+1)}})]) {
+    const p=page({fetch:url=>url.startsWith('/api/board-image/')?makeResponse():undefined}); await flush(); await computerBoard(p);
+    assert.equal(p.client.state().boardUrl,null); assert.equal(p.objectUrls.length,0); assert.equal(p.get('board-stage').hidden,true);
+    assert.equal(p.get('reveal').hidden,true);
+  }
+  const p=page({fetch:url=>url.startsWith('/api/board-image/')?boardResponse():undefined,decode:()=>{throw new Error('Corrupt image');}});
+  await flush(); await computerBoard(p); assert.equal(p.client.state().boardUrl,null); assert.equal(p.objectUrls.length,1); assert.equal(p.revokedUrls.length,1);
+});
+
 async function receiveResults(p, id = 'image-1') {
   p.state.snapshot.resultImage = {id, fileName:'golden-ticket-final-standings.png'};
   p.state.snapshot.canControl = false;

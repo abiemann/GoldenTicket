@@ -16,7 +16,9 @@ internal sealed class DesktopCompanionBridge(
     Action commandFaulted,
     Func<CompanionBoardInteraction?>? boardInteraction = null,
     Func<SeatId, CompanionCommand, CancellationToken, Task<CompanionCommandReceipt?>>? interceptCommand = null,
-    Func<CompanionGuidance?>? guidance = null) : ICompanionGameBridge
+    Func<CompanionGuidance?>? guidance = null,
+    Func<CompanionBoardMap?>? boardMap = null,
+    Func<string, CompanionBoardImage?>? boardImage = null) : ICompanionGameBridge
 {
     private readonly SemaphoreSlim _serial = new(1, 1);
 
@@ -24,8 +26,15 @@ internal sealed class DesktopCompanionBridge(
         OnDispatcherAsync(async () =>
         {
             var snapshot = await inner.ReadPublicAsync(cancellationToken);
-            return snapshot with { BoardInteraction = boardInteraction?.Invoke(), Guidance = guidance?.Invoke() };
+            return snapshot with
+            {
+                BoardInteraction = boardInteraction?.Invoke(), Guidance = guidance?.Invoke(),
+                BoardMap = boardMap?.Invoke()
+            };
         }, cancellationToken);
+
+    public Task<CompanionBoardImage?> ReadBoardImageAsync(string id, CancellationToken cancellationToken = default) =>
+        OnDispatcherAsync(() => Task.FromResult(boardImage?.Invoke(id)), cancellationToken);
 
     public Task<CompanionResultImage?> ReadResultImageAsync(string id, CancellationToken cancellationToken = default) =>
         RunAsync(() => inner.ReadResultImageAsync(id, cancellationToken), cancellationToken);
@@ -70,7 +79,7 @@ internal sealed class DesktopCompanionBridge(
         finally { _serial.Release(); }
     }
 
-    // Public polling must remain responsive while a command waits for fresh camera frames.
+    // Public updates must remain responsive while a command waits for fresh camera frames.
     // The dispatcher still protects UI-owned state; only private reads and mutations serialize.
     private async Task<T> OnDispatcherAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
     {

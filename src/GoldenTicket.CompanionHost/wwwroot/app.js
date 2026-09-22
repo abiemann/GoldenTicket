@@ -17,6 +17,8 @@
   let eventsAbort = null, reconnectTimer = null, reconnectDelay = 1000, connectionStarted = 0, needsReload = false;
   const maxResultBytes = 16 * 1024 * 1024;
   let resultKey = null, resultGeneration = 0, resultUrl = null, resultAbort = null;
+  const maxBoardBytes = 4 * 1024 * 1024;
+  let boardTurnKey = null, boardImageId = null, boardDesiredImage = null, boardUrl = null, boardAbort = null, boardGeneration = 0, boardTargetsKey = null;
   const trainCount = count => `${count} train${count === 1 ? "" : "s"}`;
 
   function notice(message) { byId("notice").textContent = message; }
@@ -34,7 +36,7 @@
     if (notify && csrf && paired) api("/api/hide", {}).catch(() => {});
   }
   function disconnect(message) {
-    clearResultImage(); clearPrivate(); lastHeartbeat = 0;
+    clearBoardMap(); clearResultImage(); clearPrivate(); lastHeartbeat = 0;
     byId("connection").textContent = "Laptop connection unavailable";
     byId("curtain-detail").textContent = "Return to the same private network. Your game is saved on the laptop. No actions are queued offline.";
     byId("reveal").disabled = true;
@@ -59,13 +61,13 @@
   function turnIdentity(value) { return value?.game && value.canControl ? `${value.game.sessionId}:${value.game.turnNumber}:${value.game.activeSeatId}:${value.revealSeatId}` : "none"; }
   function receiveSession(result) {
     if (!result || typeof result.paired !== "boolean" || typeof result.pending !== "boolean") throw new Error("The laptop sent an invalid update.");
-    if (result.apiVersion !== "1" || result.assetsVersion !== "12") {
+    if (result.apiVersion !== "1" || result.assetsVersion !== "13") {
       needsReload = true; throw new Error("The companion needs an update. Reload from the laptop before playing.");
     }
     lastHeartbeat = Date.now(); reconnectDelay = 1000;
     if (!result.paired) {
       if (paired) { clearPrivate(); notice("This controller was revoked or replaced. Join again using the code shown on the laptop."); }
-      clearResultImage(); snapshot = null;
+      clearBoardMap(); clearResultImage(); snapshot = null;
       paired = false; csrf = null; handoffGeneration = -1; controllerGeneration = null; pending = result.pending;
       byId("connect").hidden = false; byId("curtain").hidden = true; byId("public").hidden = true;
       byId("connection").textContent = pending ? "Waiting for the laptop" : "Connected to your game";
@@ -81,7 +83,7 @@
     if (result.controllerGeneration === controllerGeneration &&
         (result.handoffGeneration < handoffGeneration || (snapshot?.game && result.snapshot.game?.sessionId === snapshot.game.sessionId &&
          result.snapshot.game.stateVersion < snapshot.game.stateVersion))) return;
-    if (controllerGeneration !== null && result.controllerGeneration !== controllerGeneration) { clearPrivate(); handoffGeneration = -1; }
+    if (controllerGeneration !== null && result.controllerGeneration !== controllerGeneration) { clearBoardMap(); clearPrivate(); handoffGeneration = -1; }
     const awaitingSameTurn = pendingCommand && pendingCommand.identity === turnIdentity(result.snapshot);
     if (!awaitingSameTurn && (currentIdentity(snapshot) !== currentIdentity(result.snapshot) || (grant && result.handoffGeneration > handoffGeneration))) clearPrivate();
     paired = true; pending = false; csrf = result.csrf; snapshot = result.snapshot; controllerGeneration = result.controllerGeneration;
@@ -89,9 +91,10 @@
     handoffGeneration = Math.max(handoffGeneration, result.handoffGeneration);
     byId("connect").hidden = true; byId("curtain").hidden = privateData !== null;
     byId("connection").textContent = "Synchronized · Private LAN";
-    renderPublic(); syncResultImage(); syncBoardActions();
+    renderPublic(); syncBoardMap(); syncResultImage(); syncBoardActions();
   }
   function stopEvents() {
+    clearBoardMap();
     connectionGeneration++;
     clearTimeout(reconnectTimer); reconnectTimer = null;
     eventsAbort?.abort(); eventsAbort = null; connectionStarted = 0;
@@ -158,6 +161,101 @@
   }
   function button(text, callback, className) {
     const node = element("button", text, className); node.type = "button"; node.addEventListener("click", callback); return node;
+  }
+  function clearBoardImage() {
+    boardGeneration++; boardAbort?.abort(); boardAbort = null;
+    boardDesiredImage = null; boardImageId = null;
+    byId("board-image").removeAttribute("src"); byId("board-stage").hidden = true;
+    if (boardUrl) URL.revokeObjectURL(boardUrl);
+    boardUrl = null;
+  }
+  function clearBoardMap() {
+    clearBoardImage(); boardTurnKey = null; boardTargetsKey = null;
+    byId("board-targets").replaceChildren(); byId("board-map").hidden = true;
+    byId("board-status").textContent = "";
+    byId("reveal").hidden = false; byId("curtain-privacy").hidden = false;
+  }
+  function syncBoardMap() {
+    const board = paired && !document.hidden && snapshot?.game && !snapshot.canControl && snapshot.boardMap;
+    if (!board || snapshot.resultImage) { if (boardTurnKey !== null) clearBoardMap(); return; }
+    // A completed claim can advance the digital turn while the computer's
+    // placement/scoring instruction is still on screen. The laptop keeps the
+    // map present for that instruction and removes it at the actual handoff.
+    const key = snapshot.game.sessionId;
+    if (boardTurnKey !== key) { clearBoardMap(); boardTurnKey = key; }
+    byId("board-map").hidden = false; byId("reveal").hidden = true; byId("curtain-privacy").hidden = true;
+    const targets = byId("board-targets");
+    // Positions use the laptop's canonical board coordinates, independent of
+    // viewport size and image arrival. No server-provided markup or URLs enter the DOM.
+    const positions = (Array.isArray(board.targets) ? board.targets.slice(0, 128) : []).filter(target =>
+      target && Number.isFinite(target.x) && Number.isFinite(target.y) && target.x >= 0 && target.x <= 960 && target.y >= 0 && target.y <= 600 && Number.isSafeInteger(target.number));
+    const targetsKey = JSON.stringify(positions.map(target => [target.x, target.y, target.number]));
+    if (targetsKey !== boardTargetsKey) {
+      boardTargetsKey = targetsKey; targets.replaceChildren();
+      for (const target of positions) {
+        const marker = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        marker.setAttribute("class", "board-target"); marker.setAttribute("transform", `translate(${target.x} ${target.y})`); marker.dataset.number = String(target.number);
+        for (const [radius, className] of [[13, "board-target-ring"], [7.5, "board-target-dot"]]) {
+          const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          circle.setAttribute("r", String(radius)); circle.setAttribute("class", className); marker.append(circle);
+        }
+        targets.append(marker);
+      }
+    }
+    const imageId = typeof board.imageId === "string" && /^[a-f0-9]{32}$/.test(board.imageId) ? board.imageId : null;
+    if (!imageId) {
+      if (boardUrl || boardAbort) clearBoardImage();
+      byId("board-status").textContent = "Waiting for the laptop’s map…"; return;
+    }
+    boardDesiredImage = imageId;
+    if (!boardUrl) byId("board-status").textContent = "Receiving the map…";
+    loadBoardImage();
+  }
+  async function loadBoardImage() {
+    if (!boardDesiredImage || boardDesiredImage === boardImageId || boardAbort || !boardTurnKey) return;
+    const imageId = boardDesiredImage, generation = boardGeneration;
+    const abort = new AbortController(); boardAbort = abort;
+    const timeout = setTimeout(() => abort.abort(), 5000);
+    let nextUrl = null;
+    abort.signal.addEventListener("abort", () => { if (nextUrl) { URL.revokeObjectURL(nextUrl); nextUrl = null; } }, { once: true });
+    try {
+      const response = await fetch(`/api/board-image/${imageId}`, {
+        headers: { "X-GoldenTicket-Tab": tab }, credentials: "same-origin", cache: "no-store", signal: abort.signal
+      });
+      if (!response.ok || response.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "image/jpeg" || !response.body || Number(response.headers.get("Content-Length")) > maxBoardBytes)
+        throw new Error("The map is unavailable.");
+      const reader = response.body.getReader(), chunks = [];
+      let size = 0;
+      try {
+        while (true) {
+          const { value, done } = await reader.read(); if (done) break;
+          size += value.byteLength; if (size > maxBoardBytes) throw new Error("The map is too large.");
+          chunks.push(value);
+        }
+      } catch (error) { await reader.cancel().catch(() => {}); throw error; }
+      finally { reader.releaseLock(); }
+      const blob = new Blob(chunks, { type: "image/jpeg" });
+      const signature = new Uint8Array(await blob.slice(0, 3).arrayBuffer());
+      if (signature.length !== 3 || signature[0] !== 255 || signature[1] !== 216 || signature[2] !== 255) throw new Error("The map could not be read.");
+      if (generation !== boardGeneration || abort.signal.aborted) return;
+      nextUrl = URL.createObjectURL(blob);
+      const image = new Image(); image.src = nextUrl; await image.decode();
+      if (generation !== boardGeneration || abort.signal.aborted || document.hidden || !paired) return;
+      const previousUrl = boardUrl; boardUrl = nextUrl; nextUrl = null; boardImageId = imageId;
+      byId("board-image").src = boardUrl; byId("board-stage").hidden = false; byId("board-status").textContent = "";
+      if (previousUrl) URL.revokeObjectURL(previousUrl);
+    } catch {
+      if (generation === boardGeneration) byId("board-status").textContent = boardUrl ? "Waiting for the latest map…" : "Waiting for the laptop’s map…";
+    } finally {
+      if (nextUrl) { URL.revokeObjectURL(nextUrl); nextUrl = null; }
+      clearTimeout(timeout); abort.abort();
+      if (generation === boardGeneration) {
+        boardAbort = null;
+        // Finish the current frame before fetching the newest pending one so
+        // continuous camera updates cannot starve a slower tablet connection.
+        if (boardDesiredImage !== imageId) loadBoardImage();
+      }
+    }
   }
   function resultMetadata() {
     const value = snapshot?.resultImage;

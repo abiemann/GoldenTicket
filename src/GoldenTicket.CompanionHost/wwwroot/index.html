@@ -32,7 +32,14 @@
       <div class="privacy-symbol" aria-hidden="true">◈</div><p class="eyebrow">CARDS ARE COVERED</p><h2 id="handoff">Follow the laptop</h2>
       <p id="curtain-detail">Keep this device private. Reveal only when it is your turn.</p>
       <button id="reveal" type="button" disabled>Reveal my cards</button>
-      <p class="fine-print">Tap Hide before passing the device. Cards also hide when you leave the app, the connection drops, or the turn changes. Device screenshots cannot be prevented.</p>
+      <div id="board-map" class="board-map" hidden>
+        <div id="board-stage" class="board-stage" hidden>
+          <img id="board-image" alt="Game board with the computer's placement indicators">
+          <svg id="board-targets" viewBox="0 0 960 600" aria-hidden="true"></svg>
+        </div>
+        <p id="board-status" class="fine-print" role="status"></p>
+      </div>
+      <p id="curtain-privacy" class="fine-print">Tap Hide before passing the device. Cards also hide when you leave the app, the connection drops, or the turn changes. Device screenshots cannot be prevented.</p>
     </section>
     <section id="result" class="panel result-panel" hidden aria-labelledby="result-title">
       <p class="eyebrow">A JOURNEY TO REMEMBER</p><h2 id="result-title">The final standings</h2>

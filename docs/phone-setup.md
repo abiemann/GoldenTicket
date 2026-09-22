@@ -36,6 +36,12 @@ Small heartbeat messages keep track of the connection; if it drops, cards cover 
 reconnects automatically with the current game state. Reveal again to continue. No actions are
 replayed, and no HTTPS certificate or installation is needed.
 
+During a computer's turn, the browser shows the laptop's upright board image below its current
+instruction, replacing the unavailable card-reveal button. Gold dots mark the same train spaces
+as on the laptop, including any remaining spaces that need correction. The preview updates at
+most once per second; the dots update as the instruction changes. The human card-reveal control
+returns after the computer's physical placement and scoring steps finish.
+
 The pairing code stays valid while hosting is running, including after a phone joins. Reuse it
 after a browser reload or when connecting a replacement device. It changes only when hosting
 restarts or you choose **New pairing code**; each new connection still needs laptop approval.

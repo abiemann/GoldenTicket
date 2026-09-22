@@ -171,6 +171,7 @@ public sealed partial class CompanionServer(ICompanionGameBridge bridge, TimePro
 
     internal void MapApi(WebApplication app)
     {
+        MapBoardImages(app);
         app.MapGet("/api/events", StreamEventsAsync);
         ControllerCredentials? Credentials(HttpContext context, bool heartbeat = false) =>
             _authority.Authenticate(context.Request.Cookies[CookieName], context.Request.Headers["X-GoldenTicket-Tab"], heartbeat);
