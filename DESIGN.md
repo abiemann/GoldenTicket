@@ -1,13 +1,20 @@
 # GoldenTicket: Ticket to Ride Windows Companion
 
-**Status:** Product specification with a partial C# implementation. The manual desktop slice, state-only pack-away and standalone connectivity spike have automated validation; the full camera/companion product is incomplete. See the [implementation audit](docs/AUDIT-2026-09-12.md) and [remaining work](TODO.md).
+**Status:** Current product design and implementation reference. The Windows game includes digital cards, computer opponents, live camera verification, the LAN browser companion, PRACTICAL laptop sharing, final scoring and photographed save/reload. Physical-board matches with an Android tablet have been played. Section 24 distinguishes existing test evidence, specific checks still to run and future features.
 
 **Design date:** September 11, 2026.  
+**Implementation review:** September 21, 2026.
+
 **Working name:** GoldenTicket. This is a project codename, not an approved product name.  
 **Target:** Windows 11 x64; the classic English North America Ticket to Ride board shown in the user's photographs, product DO7201 / 7201.  
-**Multi-human play:** Recommended **Quick play** uses one shared iOS/iPadOS or Android phone/tablet browser on the local network. **PRACTICAL** uses the laptop while other players look away during private choices. Neither needs an installed app or certificates. A single human uses the laptop. Physical-device acceptance remains pending.
+**Multi-human play:** Recommended **Quick play** uses one shared phone/tablet browser on the local network. Android-tablet play has been exercised in real games; iPhone/iPad testing is still unrecorded. **PRACTICAL** uses the laptop while other players look away during private choices. Neither needs an installed app or certificates. A single human uses the laptop.
 
 **Primary experience:** Physical board and trains, digital cards, human operators, camera verification, and local computer opponents.
+
+Sections marked **Planned** describe future work, not current setup requirements. Verification
+tables specify expected results; section 24 records which kinds of checks have actually run.
+The [README](README.md) is the current player/setup guide and
+[architecture reference](docs/architecture.md) describes the compiled project boundaries.
 
 ## Contents
 
@@ -57,7 +64,7 @@ Ticket to Ride is a route-claiming game. Trains are placed to occupy the spaces 
 |---|---|---|
 | R01 | Ticket to Ride only; no other board games | No game-plugin platform or generic board-game interpreter. |
 | R02 | The classic North America edition pictured by the user | One versioned board and rules profile; no Europe, expansions, or automatic substitution of the 2025 refresh. |
-| R03 | Windows 11; automatically use a supported GPU at launch, otherwise CPU, with a visible status icon | Default Auto selection validates the packaged GPU inference path before using it. Retain CPU/GPU overrides, a complete CPU path, and automatic CPU fallback. Show the effective backend with a chip/CPU or GPU/lightning indicator. |
+| R03 | Windows 11; automatically use a supported GPU, otherwise CPU, with processor controls in Settings | Validate the active processing path, retain CPU/GPU overrides and CPU fallback, and report the effective backend in settings/diagnostics. The standalone game-screen GPU button has been removed. |
 | R04 | Offline operation with no subscriptions or server costs; no companion inputs required from outside the LAN | The Windows app locally hosts the companion, its assets, and game data. QR-assisted connection and initial synchronization use the LAN only; no account, hosted server, internet dependency, or recurring infrastructure cost. |
 | R05 | Human places trains while the camera watches | Durable pending actions, visual/audio instructions, and verified physical completion. |
 | R06 | Printed alignment markers are acceptable | A printable marker layout beside the board supports orientation and recovery. |
@@ -71,7 +78,7 @@ Ticket to Ride is a route-claiming game. Trains are placed to occupy the spaces 
 | R14 | Use the game's box color scheme for the app | Parchment surfaces, burgundy actions, antique-gold accents, dark-brown text, and muted-blue secondary accents as specified in section 4.8. |
 | R15 | Quick play first, PRACTICAL second; remove PWA completely (updated September 21, 2026) | Direct HTTP browser game with QR and pairing, or local laptop handoffs. No installed app, certificate flow, service worker or network requirement for PRACTICAL. |
 | R16 | Photograph and save the game so the board can be cleared and rebuilt later | Explicit Save and pack away workflow: version-matched board photo, complete digital checkpoint, cleanup-safe pause, and guided physical restoration. |
-| R17 | A single human uses the main monitor for their cards without connecting a phone | Count human seats in the current match, hide Connect phone for one human, and present that human's card choices on the laptop. Preserve AI secrecy and physical-placement instructions. |
+| R17 | A single human uses the main monitor for their cards without connecting a phone | Count human seats in the current match, hide LAN Game for one human, and present that human's card choices on the laptop. Preserve AI secrecy and physical-placement instructions. |
 
 ### 1.3 Explicit design assumptions
 
@@ -79,7 +86,7 @@ These are implementation choices, not additional statements attributed to the us
 
 - Digital cards apply to **all** seats and both card families. A mixed physical/digital deck is excluded because it would require a second synchronization problem.
 - English is the first UI and narration language, matching the supplied edition reference. Text and speech resources remain separable for later translation.
-- Normal matches have at least one human and at least one AI. Local all-human play can reuse the same referee and privacy screens. All-AI play belongs to simulation and testing.
+- Matches have 2–5 seats in any human/computer mix, including all-human or all-computer games. A person operates the physical pieces for computer seats. Headless simulations are a separate developer tool.
 - The physical board, train molds, and colors must match a validated classic-edition profile. Replacement miniatures and other editions are outside the initial recognition guarantee.
 - Voice means spoken guidance. Free-form speech recognition is not required. A single human selects cards on the laptop; multiple humans choose Quick play on a shared touchscreen or PRACTICAL on the laptop.
 - Quick play uses one shared companion device. Separate simultaneous devices per human are outside the initial scope. PRACTICAL, single-human play and AI seats need no extra device.
@@ -100,7 +107,9 @@ The earlier document is background, not a second set of implementation orders. I
 
 The implementation plan must reach a complete local game, including setup, browser joining/pairing or PRACTICAL laptop handoffs, seat assignment, digital dealing, mobile pass-and-hide and PRACTICAL laptop handoffs, computer decisions, physical route verification, card-only turns, camera recovery, final scoring, story presentation, and photo-assisted save, pack away, and board restoration.
 
-Early milestones deliberately use manual input and recorded imagery, but they are development steps rather than a substitute for the final camera-assisted product.
+The current build supports complete camera-assisted games. Story/audio, the wake gesture and
+installer delivery remain planned; their requirements below are separate from the implemented
+gameplay and its remaining hardware checks.
 
 ### 2.2 Excluded features
 
@@ -127,15 +136,19 @@ Neither a convincing image nor an animation completion changes rules state by it
 
 ### 3.1 Table layout
 
-Use a rigid overhead mount, a UVC USB camera, and even lighting. Show a live preview and negotiated capture format rather than assuming the camera is delivering its advertised resolution. Aim to fit the complete board, registration markers, and a small gesture area into the image while retaining enough pixels per train.
+Use a rigid overhead mount, a UVC USB camera, and even lighting. Show a live preview and negotiated capture format rather than assuming the camera is delivering its advertised resolution. Fit the complete board and its scoring track into the image while retaining enough pixels per train. Current registration uses learned board corners and printed artwork; no printed marker sheet or gesture area is required.
 
-The laptop sits within the operator's reach. Spare trains remain outside the mapped board area. Physical score markers may be used for familiarity, but the app's computed score is authoritative. Their perimeter region is separately masked so score-marker movement is not mistaken for a route change.
+The laptop sits within the operator's reach. Spare trains remain outside the mapped board area. Physical scoring markers are part of current setup and turn verification; the app's computed score is authoritative. The recognizer distinguishes score markers from trains and reads their printed track positions separately.
 
 Place the shared phone/tablet outside the mapped board area. Keep both devices on the same private network; the router does not need a WAN connection. Validate any optional Windows hotspot mode on the actual adapter and OS, rather than assuming it works without an upstream connection. Guest-network client isolation may prevent the two devices from communicating.
 
 The physical card decks stay in the box during an application-managed match. Setup explicitly states this, preventing players from drawing from two different sources of cards.
 
 ### 3.2 Printable registration layout
+
+**Planned optional registration approach.** No ArUco print asset is required by the current
+learned-corner/artwork registration path. The fixture requirements below apply if this alternative
+is implemented and tested.
 
 Ship a locally generated vector/PDF print asset containing distinct ArUco markers, orientation labels, a print-scale check, board placement guides, and a palm area. Implementation must use an approved fixed dictionary and reserved IDs; do not accept any four arbitrary squares as a valid board fixture.
 
@@ -145,22 +158,33 @@ Prefer a mat or corner guides that fix the board's relationship to the markers. 
 
 ### 3.3 First-run sequence
 
-1. Choose the presentation mode, Standard/Training/Story experience, and audio device. Processor mode defaults to Auto; run the launch capability check and show its result, with CPU/GPU overrides available in settings.
-2. Explain that operation is local and that private cards appear only in the active human's private view.
-3. Select a camera by preview. Confirm camera access and enumerate usable formats.
-4. Identify the supported classic board. Show the reference edition description, not a vague “Ticket to Ride compatible” label.
-5. Guide framing until the complete board, markers, and gesture region are sufficiently visible.
-6. Establish board-to-image mapping and verify orientation using marker IDs plus board landmarks.
-7. Run automatic quality checks for blur, reflections, clipping, occlusion, and piece resolution.
-8. Capture an empty-board reference, with all trains off the mapped routes. This is automatic calibration, not consumer training.
-9. Select seats, human/AI assignments, physical train colors, clockwise order, starting player, and AI difficulty.
-10. Ask players to prepare the correct starting stock of trains. Do not pretend the camera can count an overlapping pile outside its view.
-11. With one human, use the laptop automatically and omit Connect phone. With multiple humans, offer Quick play or PRACTICAL on the visible game table. For Quick play, require an explicit start on a selected Private LAN interface, then show the direct game QR and guide pairing and approval as described in section 18.5. Offer **PRACTICAL** for private laptop choices while others look away. In Quick play, pass the shared phone between humans for private choices. Create the saved match, perform digital setup, and visit each human's destination-selection screen on the companion. The implemented shared-phone flow still needs real-device acceptance.
-12. Return to public view and begin the first turn only after the physical board is consistent.
+1. Choose **Start a new game**. Settings provides display, camera quality and processor choices;
+   narration and story modes are not part of current onboarding.
+2. Select 2–5 portraits as human, computer or unselected. Each portrait has its matching physical
+   train color; computer badges select Standard or Aggressive play.
+3. Choose **SET-UP BOARD**, select the camera if necessary, and frame all four outer corners and
+   the scoring track. The app detects corners with the bundled model and checks the board image.
+4. Leave routes empty and place each selected color's scoring marker near the printed **1**.
+   **PLAY!** requires fresh corners, no detected trains and the required scoring markers.
+   No empty-board reference capture, printed registration sheet or consumer training is required.
+5. Keep each player's starting train stock beside the board. The camera does not count an
+   overlapping off-board pile.
+6. Choose **PLAY!**. The live table establishes an upright crop and begins digital setup.
+7. With one human, make card choices on the laptop. With multiple humans, choose recommended
+   **Quick play** or **PRACTICAL**. Quick play explicitly starts hosting on a selected Private LAN,
+   then shows the address/QR and pairing code; approve the shared device on the laptop.
+8. Each human keeps at least two opening destination tickets using the selected private view.
+   Return to the table and follow the current turn instruction.
 
-No user has to label a train, photograph one color at a time, install Python, or teach the model their set. If the set falls outside the shipped recognizer's support, offer manual verification or explain the compatibility issue.
+Both bundled models are required for the normal camera-assisted startup. Missing models or an
+unusable camera leave PLAY disabled with guidance. Explicit manual verification remains a technical
+workflow; it is not an automatic bypass of the new-game camera checks.
 
 ### 3.4 Camera quality screen
+
+**Planned expanded guidance.** Current setup reports camera availability, supported capture
+resolution, board corners, empty routes and selected scoring markers. The per-region quality
+categories below describe additional guidance, not a completed glare/occlusion classifier.
 
 Report actionable categories rather than a single unexplained confidence number:
 
@@ -203,19 +227,32 @@ The public screen contains:
 - Public card market, public scores, and remaining-train indicators. Public destination stacks include
   the count of a pending offer, including all three opening tickets, while ticket identities remain
   confined to the owning seat's private view.
-- A public event history that omits private draws and unplayed tickets.
-- Always-reachable Pause, Save and pack away, Recheck, Repeat instruction, and sound controls.
-- Camera status and the actual inference backend in use.
+- A public action summary on each player tile. Full event history is available in the technical layer.
+- Escape opens Save Game, Quit to Menu and Return to Game when no action/write is running.
+  Recheck, repeated spoken guidance and sound controls belong to technical or planned workflows,
+  not the current public table's button set.
+- Camera/readiness guidance; processor controls and backend details remain in Settings/diagnostics.
 
 Never place a hidden hand in the public screen's visual tree merely with zero opacity. Construct public and private view models from different data projections.
 
 ### 4.2 Human card turn
 
-With one human, the T and D stacks on the public table show compact previews; technical private controls are available through Shift+Escape. With multiple humans, the laptop remains on the public table while the active player explicitly reveals their private view on the shared companion phone. That view offers the available action families. Selecting a face-up card or a blind draw submits a command to the laptop, shows its authoritative result privately, and updates the market before a subsequent choice is permitted. Destination draws open a private selection view with clear keep/return controls. Disable duplicate submissions while a result is unknown; do not locally invent a successful draw.
+With one human, the T and D stacks show compact previews and the table's draw controls perform
+card actions directly. With multiple humans, Quick play keeps the laptop public while the active
+player reveals the shared browser; PRACTICAL uses private laptop controls while others look away.
+Selecting a face-up card or blind draw submits a command, shows its authoritative result privately
+and updates the market before a subsequent choice is permitted. Destination draws open their
+private offer directly. Disable duplicate submissions while a result is unknown; do not locally
+invent a successful draw. The browser stays open through the first draw and a camera-rejected
+choice, preserving the current turn and displaying the result beside the picker.
 
 The game completes these actions through the rules engine. It does not wait for a nonexistent physical board change to decide that the turn ended. It returns to the privacy curtain before another human's information becomes available.
 
 ### 4.3 Human route claim: planned placement
+
+This route-first sequence remains available through technical/manual controls. Normal
+camera-assisted human play uses the board-first flow in section 4.4; the browser shows the route
+actually detected rather than asking the player to select an unrelated route from a list.
 
 1. The human selects a route through the map or an accessible city/route list.
 2. If parallel routes exist, identify the specific lane using endpoint labels and a lane marker.
@@ -313,6 +350,9 @@ The app should display the actual board image with a contrasting outline and num
 
 ### 4.6 Presentation modes
 
+**Planned audio/presentation settings.** Current gameplay provides visual instructions. Voice,
+Story and Training presets below remain future work described in section 16.
+
 | Mode | Public move guidance | Private cards and interaction | Story behavior |
 |---|---|---|---|
 | Visual only | Text, shapes, and board overlays | Screen and accessible controls | Silent story captions; no automatic audio |
@@ -327,14 +367,22 @@ Select the experience separately from voice/visual output: **Standard** uses ess
 
 During later solo play, opening the human's D stack circles the endpoint cities of all held
 destinations on the upright live board. Shared cities get one ring; visible printed city dots
-refine the ring positions. Closing the panel or switching to T removes the rings. Multiple-human
-games never show this overlay.
+refine the ring positions. Closing the panel or switching to T removes the rings. The public
+laptop does not show a multi-human player's private destinations. The tablet's revealed hand
+can show all that player's held destinations on its own live-board overlay.
 
-For exactly one human, show the three opening destination tickets in a compact **Your Cards** row below the live board. Shift the board upward so it partially underlays the persistent game-table guidance, and hide the draw piles and face-up market during this opening choice. In the board's rectified canonical coordinates, draw thick rings around both endpoint cities of every offered destination, with a thin line connecting each card's pair of rings. Start from calibrated city-dot coordinates and refine each ring against the printed orange dot in the live crop when the dot is identifiable; retain the calibrated coordinate when detection is uncertain. Keep the rings in register as the window scales. On a confirmed drop, hide the rejected card and its line and rings together, retaining a ring for any endpoint shared with another kept card. Then slide the remaining **Your Cards** panel vertically down and off-screen before the existing ticket-selection command durably records the two kept destinations. A canceled drop changes nothing. Keep the live table guidance visible above the board. The unresolved opening choice has no **Back to table** action, and plain Escape does not dismiss it; the player must keep all three or confirm one drop to continue normal play. After either choice, retain the public board rather than automatically covering it with the solo private view; clicking the human's T or D stack opens a compact card preview in a free gap in their tile's side column. Animate the draw piles and face-up market from the outer bottom edges to centered positions for two to five players; all player tiles remain on the left and right sides of the board. Use **Your cards** on the laptop and **Back to table** instead of pass-the-device wording for later private actions. A deliberate Back to table or Escape remains respected for later private views; ordinary focus loss and idle time do not cover the solo opening choice. Shift+Escape and system privacy or recovery paths remain available, and refreshing the public state must not reopen a deliberately hidden hand. Normal board-check, pack-away and rebuild gates still apply before card actions. Derive the mode from the actual match roster, including resumed matches; setup edits affect only a future match. Hide **Connect phone** and prevent starting companion gameplay in single-human mode.
+For exactly one human, show the three opening destination tickets in a compact **Your Cards** row below the live board. Shift the board upward so it partially underlays the persistent game-table guidance, and hide the draw piles and face-up market during this opening choice. In the board's rectified canonical coordinates, draw thick rings around both endpoint cities of every offered destination, with a thin line connecting each card's pair of rings. Start from calibrated city-dot coordinates and refine each ring against the printed orange dot in the live crop when the dot is identifiable; retain the calibrated coordinate when detection is uncertain. Keep the rings in register as the window scales. On a confirmed drop, hide the rejected card and its line and rings together, retaining a ring for any endpoint shared with another kept card. Then slide the remaining **Your Cards** panel vertically down and off-screen before the existing ticket-selection command durably records the two kept destinations. A canceled drop changes nothing. Keep the live table guidance visible above the board. The unresolved opening choice has no **Back to table** action, and plain Escape does not dismiss it; the player must keep all three or confirm one drop to continue normal play. After either choice, retain the public board rather than automatically covering it with the solo private view; clicking the human's T or D stack opens a compact card preview in a free gap in their tile's side column. Animate the draw piles and face-up market from the outer bottom edges to centered positions for two to five players; all player tiles remain on the left and right sides of the board. Use **Your cards** on the laptop and **Back to table** instead of pass-the-device wording for later private actions. A deliberate Back to table or Escape remains respected for later private views; ordinary focus loss and idle time do not cover the solo opening choice. Shift+Escape and system privacy or recovery paths remain available, and refreshing the public state must not reopen a deliberately hidden hand. Normal board-check, pack-away and rebuild gates still apply before card actions. Derive the mode from the actual match roster, including resumed matches; setup edits affect only a future match. Hide **LAN Game** and prevent starting companion gameplay in single-human mode.
 
 The compact solo T/D preview is available only on the human's turn. During a computer turn, its stack targets cannot be clicked, and a preview closes as play advances.
 
-With multiple humans, display the phone setup prompt on the public game table and show a QR only after the local host has a reachable address on the selected Private LAN interface. At a human handoff, first show a neutral curtain on the companion: “Pass this device to Alex.” Reveal the active seat's private view only after an explicit action and a fresh laptop-issued private-view grant. The planned hold-to-peek option returns to the curtain when released; it is not implemented yet. The current explicit reveal uses a visible Hide control without an inactivity timeout. The laptop remains on the public board view; Shift+Escape exposes technical recovery controls without changing the normal table presentation. Cards and pass-and-hide are implemented in the shared client and await real-device acceptance in both connection modes.
+With multiple humans, offer Quick play and PRACTICAL on the public table. In Quick play, show a
+QR only after the local host has a reachable address on the selected Private LAN interface. A
+neutral curtain names the active human. Reveal that seat's cards after an explicit action and a
+fresh laptop-issued grant; Hide covers them before passing the device. There is no browser idle
+timeout. The laptop stays on the public board, with technical recovery through Shift+Escape.
+PRACTICAL instead uses the laptop's private view while other players look away. Shared Android
+tablet play has been exercised in physical matches; the remaining device-specific checks are in
+section 24. Hold-to-peek is a future option, not a current control.
 
 The unresolved solo opening destination choice stays visible through ordinary laptop focus changes and idle time. Other laptop private views hide on deactivation and idle timeout; the browser has no inactivity timeout. Always hide on seat changes, device lock, sleep, connection loss, recovery dialogs that leave the private workflow, and entry into public mode. Clear private DOM/view models, tooltips, search results, accessible labels, and pending narration at the same transition. The public scoreboard cannot acquire focus behind an unhidden private window. Mobile lifecycle and operating-system snapshot limitations are addressed in section 4.9.
 
@@ -342,7 +390,10 @@ This is social privacy on a shared device, not protection against another person
 
 ### 4.8 Box-derived color scheme
 
-Use the classic box photographs supplied by the user as the visual reference throughout onboarding, gameplay, private hands, settings, recovery, and story mode. The dominant treatment is warm parchment with deep burgundy, antique gold, dark brown, and restrained blue accents. The locomotive contributes charcoal for dark panels; the illustrated clothing and luggage provide optional muted green.
+Use the supplied artwork and classic box palette as the visual reference. The current game layer
+and browser use dark navy/charcoal panels, warm cream text and gold borders over the railway
+artwork. Parchment, burgundy, brown and muted blue remain supporting tokens and technical-screen
+colors; they are not a requirement to turn the current dark game UI into a light theme.
 
 These sRGB values are implementation choices visually matched to the supplied photographs, not publisher-issued brand specifications. They establish a consistent starting palette rather than sampling shadows, paper texture, or lighting variation differently on each screen.
 
@@ -362,11 +413,11 @@ These sRGB values are implementation choices visually matched to the supplied ph
 
 #### Component application
 
-- Main screens use `Parchment`, with `Paper` cards and `Ink` text. Use `SecondaryInk` for supporting copy. Keep reading areas flat and uncluttered; any subtle paper decoration stays outside text, cards, and camera evidence.
-- Primary buttons use `Burgundy` with `Paper` labels; hover/pressed uses `BurgundyHover` with a visible state change. Secondary actions use `RailBlue` text and borders on a light surface. Selected items combine `AgedPaper` with an explicit border/checkmark.
+- Game and companion screens retain their dark panels with cream text and gold framing. Light technical surfaces use `Parchment`, `Paper` and `Ink`. Keep reading areas flat and uncluttered.
+- Preserve existing game control shapes, sizing and placement when making a local UI change. Hosting uses regal green for Start and regal red for Stop; state and labels remain clear without relying only on color.
 - Use `AntiqueGold` sparingly for ornament and story presentation. It must not be the sole indicator of focus, route selection, a required boundary, or small text on parchment. A gold-filled badge uses `Ink` text.
 - The privacy curtain and camera surround use `RailCharcoal` with `Paper` text. Keep the curtain fully opaque. Recovery, success, and error states include clear words and icons, rather than relying on a theme color alone.
-- Maintain canonical theme tokens and generate a WPF resource dictionary and browser CSS custom properties from them. Map colors to semantic roles such as `Surface.Window`, `Surface.Card`, `Text.Primary`, `Action.Primary`, and `Focus.Outline`. Both clients use the same box-derived palette rather than scattering literal hex values.
+- Maintain the shared theme tokens, WPF palette and browser CSS consistently. Automatic generation of every style from tokens is a maintenance target, not the current build pipeline.
 
 #### Gameplay colors and readability
 
@@ -385,9 +436,10 @@ The browser companion is a private controller for the existing Windows game, not
 1. **Connect:** Laptop identity, local connection status, connection help, and pairing controls.
 2. **Pass:** Opaque curtain identifying the next human; no hidden cards loaded in advance.
 3. **Private turn:** This human's hand, tickets, legal choices, visible market, and payment selection.
-4. **Placement:** Public instructions for an authorized route, mirrored from the laptop, with Recheck and Hide controls. The laptop remains the principal camera-overlay display.
-5. **Waiting:** Current public phase while an AI acts or physical verification is pending.
+4. **Placement/computer turn:** The laptop's actual instruction plus its upright live board and matching gold placement dots. No unavailable Reveal button is shown during computer turns.
+5. **Destination map:** Tap any held ticket to animate the horizontal ticket row into the live board with dashed connections for all held destinations. Back restores the row; lower controls move smoothly.
 6. **Reconnect:** Opaque, read-only connection guidance; no private hand, queued card purchases, or independent turn advancement.
+7. **Results:** Completed-game guidance without Hide/Reveal controls or handoff help. A published final-standings image can be previewed and saved.
 
 Use a responsive layout for phones and tablets in portrait and landscape, with a single-column phone view, grouped card counts, large ticket-selection controls, and a sticky Hide action. Initial usability targets are 48 CSS-pixel touch targets and operation at 360 CSS pixels of width. Honor safe-area insets, dynamic viewport height, text enlargement, reduced motion, and device/browser contrast settings. Interaction must not depend on hover, dragging precisely, or a physical keyboard.
 
@@ -399,11 +451,19 @@ Maintain a client-local `revealGeneration`, incremented on every Hide, backgroun
 
 These events are best-effort browser signals. The browser companion cannot guarantee that iOS/Android never takes a task-switcher snapshot before its handlers run, prevent screenshots, or securely erase browser process memory. Encourage Hide before passing the device; never claim operating-system-level screenshot protection. Do not put private data into page titles, notification text, URLs, browser history state, application icons, or shared-device audio.
 
-Narration and train sounds remain on the laptop by default. The companion is silent except for explicitly enabled non-private feedback. This avoids duplicate narration and dependence on background audio or mobile autoplay permissions. No push service or notification permission is needed.
+The current companion is silent. Planned narration and train sounds belong on the laptop by
+default to avoid duplicate audio. No push service or notification permission is needed.
 
 ### 4.10 Save and pack away
 
-Provide a **Save and pack away** action on both the laptop and the connected companion. The Windows app uses the overhead camera to take the board picture; players do not need to use the phone camera or move the mount.
+The current action is **Escape → Save Game** on the laptop. It checks the live board, writes and
+reads back the checkpoint, captures its matching photo from the accepted game-table crop, validates
+the attachment and checks fresh camera frames again before returning to the menu. It does not
+require a separate technical crop or empty-board reference. The companion has no Save action.
+
+The following expanded save/rebuild presentation remains a **planned extension**, including a
+companion save request and a separate clean reconstruction diagram. The existing camera-checked
+Save Game and reload flow is described in sections 4.11 and 19.8.
 
 The normal flow is:
 
@@ -423,7 +483,7 @@ The board photo is required for a completed user save. If capture or validation 
 whether to exit, with **No** as the default. Explain that completed digital actions are saved
 automatically and that **Save and pack away** is required before clearing the physical board;
 do not claim that confirmed digital progress will be lost. Apply this from every screen, including
-Camera and Connect phone. No confirmation is needed before a match starts, after final scoring,
+Camera and LAN Game. No confirmation is needed before a match starts, after final scoring,
 or while a completed save with a validated matching photo is packed or being rebuilt. A missing
 or invalid required photo leaves the logical checkpoint intact but prevents completed-save status.
 If storage is faulted, warn that the latest action may
@@ -660,22 +720,32 @@ ClassicUsManifest
 
 Digitize the actual supported board's geometry from a controlled developer capture. Independently verify every city connection, printed color, lane, segment count, and ticket value against the physical edition. Store a reviewed source-data checksum. The photographed box establishes edition identity; its small board illustration is not accurate enough to derive production coordinate polygons.
 
-Do not invent a route count or ship placeholder edges just to fill the schema. Completing and independently auditing this data is an implementation milestone with a named acceptance artifact.
+The current rules manifest contains 36 cities, 100 routes, 30 tickets and 110 train cards, with
+schema/version/checksum validation. Production geometry is stored separately in
+`ClassicUsRouteGeometry`: measured centers and directions for all 309 route spaces, plus city
+anchors and artwork calibration. The schema above describes the broader target data contract.
+Physical-board playtesting is established. The manifest's `dataAudit.status = unaudited` instead
+means a named, exhaustive per-route and per-ticket review has not been recorded; it must not be
+described as proof that nobody has played or checked the app with a physical board.
 
 ### 6.4 Rare cases and explicit software policies
 
 Some pathological supply states require an explicit software policy beyond ordinary gameplay. Keep these separate from the official rules, version them, and describe them in local help.
 
-| Situation | Initial product policy |
+| Situation | Implemented policy |
 |---|---|
 | Several setup ticket returns | Collect all initial offers before recycling returns; append rejected cards in deterministic seat order. |
 | Several tickets returned together | Let the acting seat choose their order; preserve it in the journal. |
-| Partial supply or no selectable second draw | Expose a reviewed `RulesDecisionRequired` state rather than silently inventing an action. Preserve every already revealed result. |
-| Market reset cannot stabilize | Detect impossible supply composition and bound repeated refresh computation. Pause with the exact cause; do not hang the UI or silently accept a different rule. |
-| No legal action under the selected profile | Save and surface the condition; no undocumented forced pass. |
+| No selectable second draw | Preserve the first awarded card; offer an explicit end-turn-with-one-card continuation. |
+| Partial market supply | Preserve every revealed result; offer play with the smaller available market. |
+| Market reset cannot stabilize or is impossible | Bound reset work and pause; offer disabling locomotive resets for the rest of this match. |
+| No legal action under the selected profile | Offer an explicit pass; consecutive passes by all seats lead to final scoring. |
 | Official final tie-break still leaves multiple winners | Treat as shared victory, recording this as a product clarification. |
 
-Before the consumer release, each supply case needs a documented decision supported by the edition's official clarification where available, or an explicitly disclosed house policy. This is outstanding rules work, not permission to ship a normal game loop that can freeze. A pause preserves the match while policy implementation is incomplete; it is not claimed as a satisfying final resolution.
+These continuations are implemented and tested. The operator must accept the exact offered
+policy; its ID/version and resumed phase are journaled for deterministic replay. They are
+disclosed house policies, not attributed to a publisher ruling. See the supply-policy table in
+[rules policies](docs/rules-policies.md); publisher clarification remains separate research.
 
 ### 6.5 Graph algorithms
 
@@ -694,7 +764,11 @@ Best(city, usedEdges) = max(
 answer = max(Best(startCity, emptySet) for every incident city)
 ```
 
-Run this separately on connected components, retaining the best witness trail. Add exact memoization and a safe upper bound based on unused reachable edge length. Never cache an incompletely explored, pruned result as an exact value. Do not substitute a timeout approximation when determining the winner. Run final scoring off the UI thread and show progress if needed. Heuristic versions may be used inside AI evaluation but must never supply official results.
+The implementation searches each connected component, memoizes exact `(city, used-edge bitmask)`
+states and reconstructs the best witness trail. Its 20,000,000-expansion guard throws rather than
+substituting an approximate winner. Reachable-edge upper-bound pruning is a possible optimization,
+not current behavior; a future pruned result must never be cached as exact. Heuristic versions
+used inside AI evaluation must never supply official results.
 
 ## 7. State model and invariants
 
@@ -901,16 +975,16 @@ Each frame carries a sequence number, monotonic timestamp, negotiated format, de
 ```mermaid
 flowchart LR
     A[UVC camera] --> B[Latest-frame buffer]
-    B --> C[Marker and board pose checks]
-    C --> D[Rectification and quality masks]
-    D --> E[Hands and stability gate]
-    E --> F[Train occupancy observations]
+    B --> C[Learned corners and upright artwork alignment]
+    C --> D[Board rectification and preprocessing]
+    D --> E[Fresh-frame and stability checks]
+    E --> F[Train and scoring-marker detections]
     F --> G[Whole-board comparison]
     G --> H[Candidate or pending-claim matcher]
     H --> I[Coordinator validation]
     I --> J[Rules transaction]
     B --> K[Timestamped preview]
-    J --> L[Public UI and local audio]
+    J --> L[Laptop UI and companion instructions]
 ```
 
 Use a capacity-one or capacity-two latest-frame channel and drop superseded work. Expensive inference is cancellable. An old frame arriving after a jog is discarded even if its prediction is very confident.
@@ -936,6 +1010,11 @@ After stable setup, attempt to lock supported exposure and white-balance control
 Do not use an old empty-board subtraction image as the sole detector after lighting changes. Preserve geometric calibration separately from appearance quality.
 
 ## 11. Calibration and automatic camera recovery
+
+**Current implementation:** learned corners, upright artwork matching, periodic game-board
+framing checks and bounded alignment/refocus recovery. The marker-fixture and full per-region
+quality protocol below is the broader **planned** recovery design; it is not a requirement to
+print markers for current play. Physical recovery timings are listed as unmeasured in section 24.
 
 ### 11.1 Initial registration
 
@@ -983,21 +1062,40 @@ Do not estimate a series of unseen actions from a plausible final arrangement. D
 
 ### 12.1 Observation representation
 
+The current runtime produces independent piece detections and maps them to measured route slots
+for inventory/color checks. The per-region visibility/unknown-foreground representation below is
+an expanded **planned** observation contract; a general hand/foreign-object segmentation model
+is not implemented.
+
 The board is a known set of route-segment regions. For each segment, estimate `Empty`, one supported physical player color, or `Unknown`, with separate visibility and quality values. Preserve the unthresholded evidence for matching and diagnostics.
 
 Unknown is an intentional outcome, not a sixth player color or an empty cell. Include evidence for foreign objects and unassigned foreground in board areas outside normal segments. Otherwise a misplaced train between routes could disappear from the occupancy-only model.
 
-### 12.2 Baseline first
+### 12.2 Historical comparison baseline
 
-Implement a measured non-trained baseline using known geometry, empty-board appearance, shape/texture cues, calibrated image normalization, and temporal comparison. Printed route colors are not player ownership. A colored track on an empty board must remain empty regardless of its hue.
+The original non-trained difference detector used an empty-board reference, shape/color cues and
+temporal comparison. It remains a developer comparison tool; the current game uses independent
+learned detection. Printed route colors are not player ownership, and a colored empty track must
+remain empty regardless of hue.
 
-Use the baseline to establish failure cases. Introduce a small targeted learned classifier or segmentation component when the baseline misses required reliability targets, particularly for dark trains, similar printed colors, shadows, glare, and crowded parallel routes.
+Recorded baseline failures helped motivate the learned detector. Dark trains, printed colors,
+shadows, glare and crowded parallel routes remain useful regression cases.
 
-### 12.3 Model candidate
+### 12.3 Implemented model and board geometry
 
-A compact batched patch classifier remains a candidate once measured route-segment geometry is available. The current manifest does not yet contain production pixel geometry, so the first learned preview experiment will instead use independent tiled object detection for individual trains and player score markers. It must find pieces without an empty-board reference; filtering only subtraction candidates would retain the baseline's blind spots. Inputs, tile geometry and output classes are versioned. A segmentation head is an alternative if bounding boxes cannot separate touching or neighboring pieces.
+The current tiled ONNX detector independently finds trains and scoring markers without an
+empty-board reference. The game maps its detections to the measured 100-route/309-space geometry,
+samples physical piece colors and checks current whole-board inventory. Inputs, tile geometry,
+output classes and model hashes are versioned. A patch classifier or segmentation head would be
+a future alternative requiring its own comparison evidence.
 
-The [ML implementation sequence](docs/piece-recognition-ml.md) now includes developer-only annotation, grouped training/evaluation data, a trained YOLOX-Nano experiment, ONNX export and offline CPU/DirectML preview integration. Reviewed piece and board-corner ONNX models, including embedded trained weights and matching manifests, are versioned under `assets/models/` and copied into desktop build/publish output. Training photos, labels, continuation checkpoints and intermediate outputs remain ignored under `artifacts/`. Finished artwork resources are versioned; unused generation masters, prompts and avatar copies remain ignored. Piece outlines uses independent current-image detection and records failures through local review ZIPs. Production acceptance remains open. Physical color is annotation metadata until separately trained and evaluated; neither object class nor printed route hue establishes ownership.
+Developer tools provide annotation, training, ONNX export and CPU/DirectML evaluation. Reviewed
+piece and board-corner models and manifests are committed under `assets/models/` and copied into
+build/publish output. Training photos and intermediate checkpoints remain local in `artifacts/`.
+Piece outlines and local review ZIPs expose detections for diagnosis. Physical color is read from
+the analyzed image by a separate color sampler, not predicted by the two-class model or inferred
+from route ownership. See [model details](docs/piece-recognition-ml.md) and section 24 for the
+photo regressions already run and independent-session coverage still to collect.
 
 Do not select an architecture solely because it achieves a high frame-level accuracy number. Evaluate complete claimed routes, previously occupied routes, and unknown-foreground detection. A model that confidently mistakes one black train for a shadow can corrupt a whole match.
 
@@ -1015,6 +1113,10 @@ See [canonical alignment validation](docs/evidence/canonical-alignment-2026-09-1
 for measured cases and remaining limits.
 
 ### 12.4 Occlusion and stability
+
+**Current boundary:** fresh distinct observations, crop/model validity and train-inventory checks
+gate acceptance. The explicit visibility masks and hand classification below are planned
+improvements and require separate adversarial-occlusion evaluation.
 
 First determine whether relevant regions are visible, then estimate occupancy. Use scene motion, foreground masks, and available hand evidence to wait until placement is finished. A motionless hand still occludes the board; low motion is not proof of visibility.
 
@@ -1056,6 +1158,8 @@ Highlight missing, extra, wrong-color, and displaced trains separately. Use symb
 A manual confirmation is not counted as an automatic vision success. Persistent trouble can switch the session to manual physical verification, with a visible status that tracking is reduced.
 
 ## 13. Wake gesture
+
+**Planned, not implemented.** Current camera checks run without a palm gesture.
 
 The gesture area is beside the board and inside the camera image. An open palm held there for an initial target of about one second requests `RequestRecheck`. Require presence in the gesture region, a stable gesture classification, release before rearming, and a cooldown to avoid repeated commands.
 
@@ -1104,6 +1208,11 @@ Export ONNX with a tested opset, supported operators, explicit tensor shapes, pr
 Quantization is optional and must earn its place through accuracy and latency measurements. Keep an unquantized CPU reference model for comparison if an optimized variant ships.
 
 ### 14.5 Model bundle contract
+
+Current bundles are `assets/models/pieces/piece-detector.onnx` and
+`assets/models/board-corners/board-corners.onnx`, each with a checked `manifest.json`. The app
+validates hashes and tensor/model contracts before use. The expanded multi-file contract below
+is a **planned** release metadata format; it is not the current directory layout.
 
 ```text
 model.json
@@ -1160,7 +1269,7 @@ cards. These are bounded heuristics, not exact future-turn or draw-probability p
 |---|---|---|
 | Relaxed | Legal heuristic with bounded variation and forgiving planning | About 0.25–0.75 seconds |
 | Standard | Better route alternatives, resource planning, and public opponent signals | About 1–2 seconds |
-| Challenging | Bounded sampled lookahead with stronger evaluation | About 3–5 seconds |
+| Challenging | Same heuristic planner with adjusted claim threshold and route-length reward | About 3–5 seconds |
 | Aggressive | Destination planning with opportunistic public human-network blocking | About 1–2 seconds |
 
 These are initial latency targets, not strength claims. Difficulty changes computation and decision policy, never private-information access or deck order. Personality changes wording and optional strategic preferences, but cannot grant illegal actions.
@@ -1185,6 +1294,8 @@ destinations or a guarantee of stronger play or denying the longest-route bonus.
 
 ### 15.4 Search without hidden-state leakage
 
+**Planned search extension.** The shipped policy is heuristic; it does not run sampled hidden-world rollouts.
+
 For harder play, sample plausible unknown hands/decks consistent with public information and the AI's own cards. Use those synthetic worlds only inside search. Do not take samples from the actual hidden referee state or reveal its future order through a shared RNG.
 
 Avoid building an opponent policy inside rollouts that acts on secrets it would not have. Use information-set-aware action selection or bounded public-information opponent models. Document the limitations of determinization before claiming strong play.
@@ -1207,7 +1318,16 @@ Reports include ticket completion, score, penalties, wins, decision latency, rej
 fallbacks, invariants and replay equality. See the [benchmark guide](tools/GoldenTicket.Simulator/README.md)
 for the command and the limits of synthetic-opponent comparisons.
 
+The final policy completed 640 paired screening/held-out games, including 320 untouched held-out
+games, with no invalid decisions or replay mismatches. The held-out Aggressive mean score improved
+from 13.80 to 75.13 at three seats and 12.08 to 80.62 at five seats. These are measured synthetic
+comparisons, not a human skill rating. See [strategy validation](docs/ai-strategy-evidence.md);
+a complete physical human match with the updated policy remains to be recorded.
+
 ## 16. Story mode and sound
+
+**Planned, not implemented.** Current gameplay uses visual instructions. Story, Training,
+narration, effects and the audio behavior below belong to the final presentation feature pass.
 
 ### 16.1 Purpose
 
@@ -1267,38 +1387,49 @@ Run the same public event sequence in Training and Story: narrative progression 
 
 ## 17. Windows implementation and dependencies
 
-### 17.1 Selected baseline
+### 17.1 Implemented baseline
 
-Use C# on .NET 10 LTS with WPF and MVVM for the Windows application. Add an embedded ASP.NET Core/Kestrel host for the mobile browser companion and its local API, sharing the existing coordinator in the same process. The companion uses TypeScript, HTML, and CSS built with Vite; its static output ships inside the Windows distribution. No Electron shell, Python runtime service, hosted backend, or separate user-managed web server is required.
+The application uses C#/.NET 10 and WPF/MVVM, with an embedded ASP.NET Core/Kestrel host calling
+its existing coordinator. The companion is plain JavaScript, HTML and CSS bundled under
+`src/GoldenTicket.CompanionHost/wwwroot/`. There is no TypeScript/Vite build, runtime Node process,
+Electron shell or separate user-managed web server.
 
-Target `net10.0-windows10.0.26100.0` with `win-x64`. Officially validate Windows 11 24H2 and later releases while they are supported by the selected .NET runtime. A `SupportedOSPlatformVersion` of `10.0.22000.0` may retain a technical compatibility floor for older Windows 11 builds, but is not a support promise. Guard newer APIs and align installer checks with the actual release support matrix. [Windows version targeting](https://learn.microsoft.com/en-us/windows/apps/get-started/versioning-overview), [.NET 10 supported operating systems](https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md)
+The desktop targets `net10.0-windows10.0.26100.0`, `win-x64`, with a technical Windows floor of
+`10.0.22000.0`. The SDK is pinned in `global.json`. The normal Visual Studio/CLI build is
+framework-dependent; a separate packaging workflow produces a self-contained x64 directory/ZIP.
+Trimming, Native AOT and single-file extraction are disabled. Clean-machine validation of the
+current distribution and an installer remain separate work.
 
-Publish a self-contained application directory, without trimming, Native AOT, or single-file native extraction in the first release. These can complicate WPF, WinRT, speech, and native model loading before delivering user value. Use the current serviced .NET 10 patch when locking the implementation. [.NET support policy](https://dotnet.microsoft.com/en-us/platform/support/policy)
+### 17.2 Current dependencies and planned additions
 
-### 17.2 Dependency and cost matrix
+[Directory.Packages.props](Directory.Packages.props) and per-project `packages.lock.json` files
+pin the current dependency graph. Builds and integration tests exercise these packages; they are
+not merely researched candidates. Self-contained packaging selects separate
+`packages.win-x64.lock.json` files.
 
-The versions below are researched design baselines, not a tested lockfile. M0 must compile and exercise their native dependencies, then record exact versions and hashes. No floating package versions are allowed in released builds.
+| Purpose | Current implementation | Validation/status |
+|---|---|---|
+| Runtime and desktop | .NET 10, WPF, SDK 10.0.401 | Full solution builds, core/integration tests and WPF rendering checks |
+| MVVM helpers | CommunityToolkit.Mvvm 8.4.2 | Compiled desktop workflows and view-model tests |
+| Browser host | ASP.NET Core/Kestrel from the .NET framework | Local HTTP/SSE transport and ordinary-HTTP browser tests |
+| Browser UI | Bundled JavaScript/HTML/CSS | Node behavior tests and Chromium workflows; real Android tablet play |
+| Camera | Windows MediaCapture / MediaFrameReader | Direct WinRT capture; selected-camera format inventory and physical gameplay |
+| Image processing | Vortice.Direct3D11 and Vortice.D3DCompiler 3.8.3, plus C# CPU processing | Actual GPU/CPU output comparison and fallback tests |
+| Learned inference | Microsoft.ML.OnnxRuntime.DirectML 1.24.4, including CPU fallback | Bundled-model CPU/DirectML photo fixtures, warm-up and contract validation |
+| Storage | Microsoft.Data.Sqlite 10.0.12 and its locked SQLite native dependencies | Transaction, deduplication, replay, checkpoint/photo and fault tests |
+| Developer model tools | Local pinned Python/PyTorch/ONNX environments | Annotation, export and model evaluation tools; no consumer Python requirement |
+| Distribution | Framework-dependent development output; optional self-contained ZIP tooling | Historical package/component checks exist; current clean-machine run remains unrecorded |
 
-| Purpose | Selected dependency | Cost/license basis | Validation required |
-|---|---|---|---|
-| Runtime, compiler, CLI | .NET 10 SDK/runtime | Free development/runtime; core code MIT. [.NET terms](https://dotnet.microsoft.com/en-us/platform/free) | Self-contained clean-machine launch; serviced patch pin |
-| Desktop UI | WPF | MIT. [License](https://github.com/dotnet/wpf/blob/main/LICENSE.TXT) | DPI, keyboard, accessibility, dispatcher responsiveness |
-| Local companion host | ASP.NET Core 10 / Kestrel, included in the self-contained Windows publish | MIT framework; no hosting fee. [License](https://github.com/dotnet/aspnetcore/blob/main/LICENSE.txt), [Kestrel endpoints](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/endpoints?view=aspnetcore-10.0) | HTTP Quick play, same-origin API, firewall scope, clean-machine deployment |
-| Companion UI and build | TypeScript, Vite, HTML/CSS, standard browser APIs; Node.js LTS only on the development machine | TypeScript Apache-2.0; Vite and Node.js MIT with component notices. [TypeScript](https://github.com/microsoft/TypeScript/blob/main/LICENSE.txt), [Vite](https://github.com/vitejs/vite/blob/main/LICENSE), [Node.js](https://github.com/nodejs/node/blob/main/LICENSE) | Exact locked versions, no CDN/runtime Node dependency, Safari/Chrome and real-device testing |
-| MVVM helpers | CommunityToolkit.Mvvm 8.x | MIT. [Project license](https://github.com/CommunityToolkit/dotnet/blob/main/License.md) | Lock tested patch; no paid toolkit dependency |
-| Camera | Windows `MediaCapture` / `MediaFrameReader` | Included Windows APIs; no separate service. [Capture guide](https://learn.microsoft.com/en-us/windows/apps/develop/camera/process-media-frames-with-mediaframereader) | WPF initialization, consent, negotiated formats, sleep/reconnect |
-| Implemented image preprocessing | Vortice.Direct3D11 and Vortice.D3DCompiler 3.8.3; Windows Direct3D 11 compute and a C# CPU reference | Vortice MIT; Windows graphics APIs supplied locally. [Vortice license](https://github.com/amerkoleci/Vortice.Windows/blob/main/LICENSE) | CPU/GPU output comparison, hardware probe, fallback, device loss, accurate backend/source-size reporting; no model runtime required |
-| Native CV wrapper | OpenCvSharp4 4.13.0.20260627 and matching slim Windows runtime | Apache-2.0 wrapper and modern OpenCV; inspect native notices. [Wrapper license](https://github.com/shimat/opencvsharp/blob/main/LICENSE), [OpenCV license](https://opencv.org/license/) | Required marker/warp/image exports and native dependency availability |
-| Model runtime | Microsoft.Windows.AI.MachineLearning 2.3.42, self-contained | Microsoft runtime redistribution terms; no required runtime subscription or service. Bundled ONNX Runtime has MIT notices; the entire package is not MIT. [Package](https://www.nuget.org/packages/Microsoft.Windows.AI.MachineLearning/2.3.42), [License](https://www.nuget.org/packages/Microsoft.Windows.AI.MachineLearning/2.3.42/License) | Offline CPU/DirectML startup, redistribution conditions/notices, model operator support |
-| Local database | Microsoft.Data.Sqlite 10.x plus bundled SQLite native library | Wrapper MIT; SQLite public domain. [Wrapper license](https://github.com/dotnet/efcore/blob/main/LICENSE.txt), [SQLite status](https://www.sqlite.org/copyright.html) | Actual transitive native bundle, transactions, backup/recovery |
-| Local speech | System.Speech 10.x, installed SAPI voices | .NET code MIT; Windows voice terms apply. [Voice enumeration](https://learn.microsoft.com/en-us/dotnet/api/system.speech.synthesis.speechsynthesizer.getinstalledvoices?view=net-10.0) | No assumed voice download; bundled recording fallback |
-| Sound playback/mixing | NAudio 2.x | MIT. [License](https://github.com/naudio/NAudio/blob/release/2.x/license.txt) | Device changes, independent volumes, cancellation and ducking |
-| Developer training | Python 3.12, PyTorch, optional torchvision, ONNX export tooling | Python PSF; PyTorch/vision BSD-style; audit exporter dependencies. [Python](https://docs.python.org/3/license.html), [PyTorch](https://github.com/pytorch/pytorch/blob/main/LICENSE), [torchvision](https://github.com/pytorch/vision/blob/main/LICENSE) | Exact environment lock, model provenance, reproducible export |
-| Packaging | Portable ZIP; NSIS installer with an audited compression choice | NSIS primarily zlib/libpng with component-specific terms. [License](https://nsis.sourceforge.io/License) | Per-user offline install and uninstall; include all notices |
+OpenCvSharp and Microsoft.Windows.AI.MachineLearning were investigated earlier but are not
+current runtime dependencies. System.Speech, NAudio and an NSIS installer remain planned options,
+not shipped features. Switching provider or adding these packages requires an explicit dependency
+change and fresh validation; the original investigation is not a requirement to replace the
+working ONNX Runtime path.
 
-Build with the free `dotnet` CLI and any suitable free editor. Do not make commercial Visual Studio Community eligibility, C# Dev Kit licensing, a paid IDE, or hosted CI a prerequisite. Initial development may download SDKs/packages; installed application operation must not need those downloads or an account.
-
-“Free of subscriptions and server costs” does not mean every bundled Windows component is open source. Maintain `THIRD-PARTY-NOTICES`, an SBOM, asset provenance, and license copies for the exact shipped versions, including native/transitive code and trained weights.
+Node and browser tooling are development dependencies only. Installed play uses bundled assets
+and local processing without accounts, subscriptions or hosted services. Keep notices and model/
+asset provenance aligned with the exact distributed files; packaging details live in the
+[build guide](docs/build-and-ci.md) and [offline packaging guide](docs/offline-package.md).
 
 ### 17.3 Camera implementation
 
@@ -1308,7 +1439,9 @@ Acquire the latest frame, copy required pixel data into a reusable bounded buffe
 
 Use the camera's negotiated orientation and mirror metadata consistently. Device removal creates a new device generation. Reopening starts a new camera epoch and requires registration and board verification.
 
-OpenCvSharp supplies image analysis, not capture. Its [slim runtime](https://www.nuget.org/packages/OpenCvSharp4.runtime.win.slim) excludes several modules, so the initial native smoke test must explicitly exercise marker detection, homography, warping, image conversion, and image saving. If a required export is absent, use a verified fuller runtime and audit its dependencies. Do not call `VideoCapture` while assuming a slim package provides it.
+Image analysis, rectification and color sampling use the current C# implementation, with
+Vortice compute for GPU preprocessing and ONNX Runtime for learned inference. No OpenCvSharp
+native runtime is currently required. Capture remains direct WinRT video-only acquisition.
 
 #### Implemented capture and output policy, September 19, 2026
 
@@ -1347,7 +1480,7 @@ describes those configurations. Native-4K physical input remains untested. Repro
 inventory using `tools/GoldenTicket.CameraDiagnostics`; it uses SharedReadOnly initialization,
 without setting formats or starting a frame reader. See [camera setup and evidence](docs/camera-processing.md).
 
-### 17.4 CPU/GPU processing and future model inference
+### 17.4 CPU/GPU processing and model inference
 
 #### 17.4.1 Implemented preprocessing
 
@@ -1374,27 +1507,18 @@ continues on the enhanced path. Frame work is serialized and
 superseded work is dropped. Camera epoch, crop, processor and reference revisions reject stale
 results; changes of crop/camera/processor clear the empty-board reference and candidate overlays.
 
-The September 12 baseline recognizer compares equally rectified images against an empty-board reference,
-uses color/shape components, and draws white rotated rectangles for train candidates and squares
-for player-marker candidates. It withholds results on stale frames, insufficient detail, motion
-or substantial image misalignment/change. Returning the camera to the prior view permits further
-comparisons; arbitrary-pose recovery with automatic board registration remains future work.
-This low-false-positive baseline has no measured physical accuracy guarantee. Printed routes,
-shadows, touching pieces, lighting changes, and references containing pieces can cause false
-candidates or missed pieces. It has no authoritative ownership output and cannot commit a move.
+The historical empty-board difference detector remains available for comparison. Current gameplay
+and live piece outlines use independent ONNX detection; they do not require an empty-board reference.
+Current camera/crop/model revisions and source freshness gate publication of inference results.
+The original [camera report](docs/camera-processing.md) records preprocessing measurements;
+[current registration evidence](docs/evidence/canonical-alignment-2026-09-19/validation.md) covers
+the later learned-recognition/alignment integration.
 
-Current setup, measured hardware observations, integrated-check status and remaining physical
-acceptance are maintained in [docs/camera-processing.md](docs/camera-processing.md). That original
-preprocessing slice had no learned model/runtime dependency. The September 13 experiment below
-now replaces its live outlines with local ONNX inference; the difference implementation remains
-available for baseline comparison.
+#### 17.4.2 Implemented learned-model inference
 
-#### 17.4.2 Planned learned-model inference
-
-September 13 experimental implementation: `LearnedPieceDetector` uses the pinned
-`Microsoft.ML.OnnxRuntime.DirectML` 1.24.4 package (including CPU fallback) for this local
-preview trial. This is an explicit narrow implementation choice; the broader Windows ML
-deployment investigation below remains planned, not reported as a failed or completed spike.
+`LearnedPieceDetector` uses the pinned `Microsoft.ML.OnnxRuntime.DirectML` 1.24.4 package,
+including CPU fallback, for current gameplay and diagnostics. Both runtime models ship locally;
+the earlier Windows ML investigation is not the active dependency choice.
 The model contract is fixed FP32 opset 17, 640-pixel tiles with stride 512 on a 1920 × 1200 board,
 BGR 0–255 input, two decoded classes, midpoint ownership of overlap regions, and classwise NMS.
 Model hash/graph/tensor validation and a real warm-up precede inference. Hardware adapter
@@ -1413,30 +1537,26 @@ readings do not become numeric scores. The cards expire and invalidate with thei
 outlines, including immediately when stopping capture. Printed 1–100 positions do not infer
 completed laps and never write to authoritative game scores.
 
-The latest [reviewed-example retraining](docs/evidence/ml-retrain-large-lighting-2026-09-13/validation.md)
-uses all 38 collected photos to incorporate reported failures and lighting variations, including
-the yellow train beside Denver, parallel black trains and several changed shadow directions,
-preserving capture-group metadata and earlier models for rollback. Selection checks per-photo
-regressions and close-pair box placement, in addition to detection counts and score readings.
-The final checkpoint was rejected for a missed marker; the saved epoch-30 fallback passes
-all 1,663 labels and 14 native CPU/DirectML fixtures. The rejected
-marker case exposes an unresolved tile-ownership boundary gap, preserved for a separate runtime
-fix. The latest frame is correct both before and after training, so it does not reproduce
-intermittent live extras. Saved-photo results are explicitly in-sample;
-new independent capture sessions remain required. The model contract, operating thresholds and
-manual verification boundary are unchanged.
+Dated retraining records describe the models and photos evaluated at that revision. They are
+regression evidence, not the version selector for the current app: the committed ONNX files and
+matching manifests under `assets/models/` define what ships. Reviewed photo checks have run on
+CPU and DirectML, including crowded markers, dark parallel trains and changed lighting. Section 24
+separates those measured checks from independent-session recognition rates still to collect.
 
 After ML detection and NMS, `TrainOutlineFitter` uses the analyzed pixels within each train box
 to estimate a rotated display rectangle. Original model boxes, confidences and class counts stay
 unchanged. Ambiguous or clipped fits fall back to the original geometry; score markers stay square.
 The optional normalized-board polygon is projected through the crop into the sensor preview and
-recorded separately in review ZIPs as an unreviewed local image fit. This is display refinement,
-not a learned angle, segmentation mask, board-route lookup or an empty-board comparison.
+recorded separately in review ZIPs as an unreviewed local image fit. The fitted rectangle also
+bounds a conservative physical-color retry when the original samples lack sufficient color
+support. That retry must retain the same leading color and satisfy the unchanged support/margin
+thresholds. It never moves the detection center or changes model confidence, and is not a learned
+angle, segmentation mask, board-route lookup or empty-board comparison.
 
-The subsequent corner experiment adds a separate, locally trained U-Net heatmap model on the
-complete raw camera frame. It proposes TL/TR/BR/BL outer corners once per camera/format session,
-and through an explicit **Detect board corners** retry. It does not run continuously or replace
-manual adjustments after they begin. The fixed contract is RGB 0–1, centered 384-pixel letterbox,
+The separate locally trained U-Net heatmap model finds corners on the complete raw camera frame.
+The technical Camera screen uses it initially and through **Detect board corners**, preserving
+manual edits. The game layer also performs periodic fresh-frame corner/framing checks and bounded
+artwork alignment during play and refocus recovery. The fixed contract is RGB 0–1, centered 384-pixel letterbox,
 four 192-pixel sigmoid heatmaps, and local peak-centroid decoding. Confidence and quadrilateral
 validation precede crop replacement; rejected proposals leave the existing crop untouched.
 One weak corner can trigger a single learned retry on a 3%-padded bounding box in the same
@@ -1456,33 +1576,32 @@ are checked. The resulting visible outline is used for preview, export and piece
 Padding is applied once per model proposal, with no hidden expansion of manually edited handles.
 Both detectors share the pinned local DirectML loader and retain CPU fallback. The corner model
 uses synthetic projective training from manually cropped board photos, with real screenshot
-diagnostics; it is an initial crop assistant, not calibrated landmarks, arbitrary-pose tracking
-or independent-camera acceptance. See [corner model scope](docs/board-corners-ml.md).
+diagnostics. Together with artwork matching it supports current board framing; broader arbitrary-pose
+recovery and independent-camera coverage still need the measurements in section 24.
+See [corner model scope](docs/board-corners-ml.md).
 
-The requirements below describe the full deployment target; hardware coverage, initialization
-timeouts, live physical acceptance and automatic route verification are not completed by this trial.
+Current automatic route verification uses the learned detections, measured route spaces, separate
+color sampling and fresh whole-board checks. It is implemented, with physical gameplay and targeted
+frame-replay evidence. A full supported-hardware matrix and measured false-acceptance/recovery
+rates remain the concrete validation work in section 24.
 
-Windows ML's self-contained deployment can include its runtime, ONNX Runtime, and DirectML beside the executable. Select that mode and include all required files. Do not add the aggregate Windows App SDK/runtime packages that switch this setup to an external framework dependency. Do not call execution-provider download/catalog acquisition APIs. [Windows ML deployment](https://learn.microsoft.com/en-us/windows/ai/new-windows-ml/distributing-your-app)
+Keep compute preference separate from the effective backend. Both detectors use the pinned local
+CPU/DirectML runtime, validate their model contract and warm up before publishing results. Diagnostics
+report the actual provider/adapter; the preprocessing backend is reported separately. Settings
+provides the processor controls. The standalone game-screen GPU button was removed at the user's
+request and should not be restored as part of this design.
 
-Expose **Auto (default)**, **CPU only**, and **GPU accelerated**, with detected adapter names and a short explanation that this setting accelerates camera recognition. Auto implements the user's requested launch behavior: use a supported GPU when its inference check succeeds, otherwise use CPU. Gameplay search, rules, and much preprocessing remain CPU work. Supported DirectX hardware must pass model and driver tests; the presence of a GPU alone is insufficient. [DirectML provider requirements](https://onnxruntime.ai/docs/execution-providers/DirectML-ExecutionProvider.html)
-
-At launch, enumerate local adapters and validate the shipped provider/model without blocking the UI or requesting downloads. In Auto, prefer a compatible discrete adapter, then a compatible integrated adapter; exclude software adapters from the GPU status. Initialize the candidate session and execute a bounded warm-up using packaged test input, checking model outputs against the accepted contract before enabling live verification. Start with a ten-second total GPU-probe budget and tune against supported hardware. If the check fails, expires, or finds no supported adapter, activate the packaged CPU path and report its reason. If CPU initialization also fails, show vision unavailable and require explicit manual verification instead of pretending inference is active.
-
-Persist `preferredComputeMode` separately from `effectiveComputeBackend` and the active adapter. An explicit CPU preference skips GPU initialization; GPU preference still falls back safely if unavailable. Retry the selected preference at the next launch or through an explicit safe retry, without repeatedly switching providers during placement. A baseline with no ML model uses its actual processing path and must not display GPU inference merely because WPF rendering uses a graphics card.
-
-Place a compact indicator in the laptop's persistent status area: a **chip icon with CPU text** for CPU operation, or **GPU text with a lightning outline around it** for GPU operation. Use the box palette and a static shape, with accessible labels and tooltips containing the adapter name, requested mode, effective backend, and any fallback reason. During detection show **Checking processor...**; during recovery show the transition rather than a healthy GPU badge. Only display GPU after actual model execution on that adapter is established. If execution uses both GPU and CPU operators, disclose that in the tooltip. The icon opens processor settings; it must not imply that the rules engine or opponent strategy has moved to the GPU.
-
-Choose providers explicitly and allowlist only the packaged CPU/DirectML paths. Record the actual provider/device and operator assignment during diagnostics, rather than trusting the requested setting. Avoid loading additional `Microsoft.ML.OnnxRuntime.*` packages that supply competing native binaries. [Provider selection](https://learn.microsoft.com/en-us/windows/ai/new-windows-ml/select-execution-providers)
-
-The first inference spike uses a conservative FP32 model contract, initially ONNX opset 17, with fixed input sizes or a tested fixed maximum batch with padding/masks. Validate every operator against both shipped backends. For the chosen DirectML session, apply its documented sequential execution and memory-pattern settings, and serialize calls to an individual session.
-
-GPU initialization or device loss pauses observation acceptance, cancels queued inference, disposes the failed session, creates the CPU session, and rebuilds a fresh stability window. Keep the user preference but show “CPU in use” with the reason. A manual retry can reselect the GPU when no physical verification is in progress.
-
-Acceptance includes launch with no compatible GPU, integrated-only and discrete hardware, multiple adapters, initialization timeout, unsupported model operations, device loss, explicit CPU preference, and a remembered GPU preference on a later CPU-only machine. Verify equivalent accepted observations across providers, reject stale GPU results after fallback, and check that the status icon always reports the effective backend. These hardware tests remain implementation evidence to obtain.
-
-If the Windows ML integration fails M0, the bounded fallback is one pinned `Microsoft.ML.OnnxRuntime.DirectML` package, which includes a CPU fallback. Do not also install a separate CPU native runtime package. Record the change in this document and repeat offline/provider validation. DirectML's maintenance status is a dependency risk to track, not a reason to require vendor cloud runtimes or paid GPU services.
+Any future Windows ML migration must preserve local/offline deployment, explicit provider selection,
+CPU fallback, bounded work and rejection of stale observations. It is not a prerequisite for using
+the current runtime. Test actual adapter/device loss, integrated-only machines and additional GPU
+families before adding them to the measured compatibility list. A unit test of fallback policy
+and a successful probe on one adapter are separate evidence from those physical cases.
 
 ### 17.5 Audio and packaging
+
+**Planned audio and installer work.** Current development output is framework-dependent; optional
+self-contained ZIP tooling already exists. The audio and installer requirements below describe
+the future distribution, not prerequisites for running the current game from Visual Studio.
 
 Enumerate enabled local speech voices. If an appropriate voice is absent or fails, use the packaged English prompt/city/color/number recordings. Story and essential instructions must remain available on a clean offline machine without extra voice installation.
 
@@ -1494,12 +1613,12 @@ Begin with a per-user installer and a ZIP artifact. Storefronts, paid code-signi
 
 The implemented dependency graph and ownership rules are documented in
 [architecture.md](docs/architecture.md). Executable architecture tests protect platform independence
-and prohibit production dependencies on tests/tools. The schematic interfaces and proposed layout
-below also include future product work.
+and prohibit production dependencies on tests/tools. Section 18.2 retains schematic design
+interfaces; section 18.3 lists the actual projects.
 
 ### 18.1 Process model
 
-Use one desktop process initially, with the embedded companion host calling the application coordinator through typed contracts. Only the device-to-laptop boundary is a network API; internal rules, vision, AI, and storage do not become microservices. Camera callbacks, inference, AI search, persistence, audio, and HTTP/WebSocket handling run through bounded asynchronous workers. Only WPF view updates run on the dispatcher.
+Use one desktop process, with the embedded companion host calling the application coordinator through typed contracts. Only the device-to-laptop boundary is a network API; internal rules, vision, AI, and storage do not become microservices. Camera callbacks, inference, AI search, persistence and HTTP/SSE handling use bounded asynchronous work; planned audio must follow the same boundary. Only WPF view updates run on the dispatcher.
 
 Serialize authoritative commands through a single coordinator queue. That queue performs version checks and database transactions; do not hold it while waiting for a human, GPU execution, speech, or a search result. Workers return results tied to the state/operation that requested them.
 
@@ -1546,39 +1665,29 @@ interface IStoryDirector {
 
 `FrameLease` has explicit ownership and disposal rules. `MatchResult` includes discrepancies and rejected-evidence reasons, not just a Boolean. `Transition` contains domain effects and journal events to commit together. None of these interfaces should leak a WPF control, raw database connection, or global mutable state.
 
-### 18.3 Proposed repository layout
+### 18.3 Implemented repository layout
 
 ```text
-GoldenTicket.sln
-global.json
-Directory.Packages.props
-NuGet.config
-src/
-  GoldenTicket.Domain/          rules, cards, graph, events, projections
-  GoldenTicket.Application/     coordinator, operations, version checks
-  GoldenTicket.AI/              strategies, synthetic simulations
-  GoldenTicket.Vision/          geometry, observations, matching, model contract
-  GoldenTicket.Windows/         capture, inference adapter, audio, OS integration
-  GoldenTicket.Persistence/     SQLite journal, replay, integrity checks
-  GoldenTicket.Desktop/         WPF views and view models, composition root
-  GoldenTicket.CompanionHost/   embedded Kestrel, pairing, device/seat grants, API
-companion/                     responsive browser touch UI and shared theme assets
-shared/theme/                  canonical tokens generating WPF and CSS resources
-tools/
-  GoldenTicket.Simulator/       headless matches and AI evaluation
-  GoldenTicket.Replay/          recorded frames and fault injection
-  GoldenTicket.DatasetTool/     developer capture and annotation export
-training/                      pinned Python environment and training scripts
-data/classic-us/                reviewed graph/tickets/geometry manifest
-assets/                        original UI, audio, marker print files
-models/                        release manifests and approved model bundles
-tests/                         domain, property, replay, integration, UI tests
-docs/evidence/                 small reports and links/hashes of larger corpora
-packaging/                     installer and offline dependency checks
-DESIGN.md
+src/GoldenTicket.Domain/          rules, cards, events, projections and scoring
+src/GoldenTicket.Application/     coordinator, command validation and computer turns
+src/GoldenTicket.AI/              heuristic strategy and shared destination planning
+src/GoldenTicket.Vision/          WinRT capture, geometry, CPU/GPU processing and models
+src/GoldenTicket.Persistence/     SQLite journal, checkpoint photos and restoration
+src/GoldenTicket.Desktop/         WPF views/view models and composition root
+src/GoldenTicket.CompanionHost/   embedded Kestrel, HTTP/SSE and wwwroot browser assets
+shared/theme/                    shared palette tokens
+tools/                           simulations, UI/vision probes and developer model tools
+data/classic-us/                 rules, route and ticket manifest
+assets/models/                   reviewed ONNX models and manifests
+assets/artwork/                  committed game artwork
+tests/                           portable core and Windows integration/browser tests
+docs/                            architecture, setup and evidence records
 ```
 
-Keep full training recordings outside ordinary source history; reference them by dataset manifests and checksums in a developer-managed local storage location. No external dataset host is required. Add a README and task tracker during implementation to distinguish built milestones from this design.
+Camera/native integration is in Vision; there is no separate `GoldenTicket.Windows` project or
+`companion/` TypeScript application. Training captures and intermediate checkpoints stay outside
+source control in `artifacts/`. Build output receives the committed models under `models/`.
+See [architecture](docs/architecture.md) for compiled dependencies and enforced boundaries.
 
 ### 18.4 Test toolchain
 
@@ -1590,7 +1699,9 @@ suite. CI includes a portable-core Ubuntu job and full Windows validation. Captu
 
 Use `dotnet test` with a pinned free test framework, such as xUnit, and a small seeded property/fault generator. WPF UI integration may use a pinned Windows UI Automation wrapper after its license is verified; do not make a commercial UI-test runner mandatory.
 
-Test runners can execute on the developer's laptop or a local Windows machine. GPU tests require actual compatible hardware; simulation cannot establish driver compatibility. Companion browser tests cover rendering, protocol, and private-view lifecycle, but real iPhone/iPad and Android joining/lifecycle tests remain mandatory.
+Test runners execute on the developer's machine and CI. Current evidence includes CPU/DirectML
+hardware probes, synthetic browser workflows and real Android-tablet play. Additional adapters,
+iPhone/iPad and specific physical lifecycle/failure scenarios remain listed in section 24.
 
 ### 18.5 Multi-human play and local browser transport
 
@@ -1661,10 +1772,10 @@ physical-placement/recovery rules are shared with Quick play.
 
 #### Initial synchronization and browser data
 
-Capture the public projection and its version/event cursor consistently on the coordinator.
-Initial synchronization validates compatible API/profile/asset versions. Planned event-cursor
-updates apply only later ordered events and request a new public snapshot after gaps. The phone
-never reshuffles, starts a second game or reconstructs an earlier seat's secrets.
+The host sends a current public session envelope when an approved stream connects and pushes
+changed snapshots thereafter. API/asset versions are envelope fields. Same-version camera and
+instruction changes also trigger updates. Reconnect starts with a current snapshot and a covered
+hand; there is no event cursor, event replay or browser-side reconstruction of game state.
 
 Private hands, offers, pending private command bodies and grants live only in active browser
 memory. Do not put them in Cache Storage, IndexedDB, localStorage, URLs or persisted browser
@@ -1709,26 +1820,36 @@ All remote commands go through the same validation and durable transaction path 
 
 #### Protocol and reconnect behavior
 
-| Message/endpoint | Purpose | Important constraint |
+| Implemented endpoint | Purpose | Important constraint |
 |---|---|---|
-| `GET /api/v1/capabilities` | Protocol, application build, and connection readiness | No private state; schema compatibility checked before play |
-| `POST /api/v1/pair` | Consume pairing challenge and establish device session | Laptop confirmation and attempt limits |
-| `GET /api/v1/bootstrap` | Synchronize compatible public data and a consistent current snapshot/event cursor | Paired controller only; no private hands or deck order, no caching, and no second referee |
-| `POST /api/v1/private-view` | Obtain a current active-seat view/grant | Controller and handoff checks; no arbitrary seat query |
-| `POST /api/v1/commands` | Submit a versioned card, ticket, claim choice, Recheck, or Save and pack away request | Validate command/state/controller/operation; private choices also require the active seat grant |
-| `GET /api/v1/commands/{id}` | Resolve an uncertain result after reconnection | Only the owning authorized controller; private result details require a current matching seat grant |
-| `GET /api/events` (implemented SSE) | Initial and changed public snapshots, plus connection heartbeats | Controller/tab checks; private views stay on authorized request/reply paths; fresh covered snapshot on reconnect |
-| `POST /api/v1/hide` | Revoke private view and complete a handoff | Local covering occurs before waiting for the network |
+| `GET /api/events` | Public snapshots and heartbeat events | Current controller/tab; no private hands |
+| `GET /api/session` | Diagnostic public snapshot | Browser does not poll it |
+| `POST /api/pair` | Request approval using the pairing code | Laptop approval, tab identity and attempt limits |
+| `POST /api/reveal` | Obtain the active human's private view/grant | Current controller, seat, revision and handoff |
+| `POST /api/hide` | Revoke private authorization | Browser covers locally before waiting for a reply |
+| `POST /api/command` | Draw train cards/tickets, keep tickets or authorize a route/payment | Permitted action, state/grant validation and duplicate-command handling |
+| `GET /api/board-image/{id}` | Current board JPEG for computer/destination maps | Approved controller; bounded current image |
+| `GET /api/result-image/{id}` | Published final-standings PNG | Approved controller; current shared image |
 
-Use a versioned JSON envelope with bounded payload size, a message ID, session ID, state version, controller/handoff generation, and message type. Validate schemas and authorize each operation on the laptop. Reject unknown message types, stale market card IDs, and incompatible clients. Keep secrets out of server access logs and exception payloads.
+Command and snapshot envelopes carry version/controller context. The laptop rejects stale card
+choices and unauthorized actions. Same-turn receipts may refresh a valid revealed hand; duplicate
+receipts do not contain private continuation. Secrets stay out of URLs and diagnostics.
 
-The controlling companion may request `SaveAndPackAway` without revealing a private hand. Only the laptop can capture the board, create the checkpoint, and confirm it durable. A request acknowledgment means saving has started; the phone displays permission to pack away only after the host reports the verified completed checkpoint and its current lifecycle is `PackedAway` for that same checkpoint. Resolve an uncertain save result through the command-result endpoint, including a fresh public lifecycle/version projection. Reject out-of-order responses and clear pack-away permission on disconnect or lifecycle change. An old successful receipt remains a historical save result; it cannot authorize clearing a game that has since resumed. Starting a rebuild, changing its target, and resuming a packed game remain laptop controls in the first release. The companion receives public progress and stays covered; no save or board-photo recovery cache is added to the phone.
+There is no `/api/v1` endpoint family or command-result query endpoint in the current host. After
+an uncertain request or disconnect, the browser covers, reconnects and obtains current authoritative
+state. It does not automatically retry a private command or replay an offline queue. A later reveal
+must obtain fresh authorization. Page reload requires pairing again.
 
-On disconnection, cover the hand, disable commands, and show reconnect guidance. Do not implement background synchronization of purchases or optimistic card dealing. If a submitted command's acknowledgment was lost, query its ID after reauthorization; the laptop returns its durable outcome. If the turn has already changed, return a non-private completion receipt and the current handoff, not the previous seat's revealed cards. After a page termination that loses the command ID, obtain a fresh authoritative phase/view before offering another action.
+Phone disconnection does not cancel an already authorized physical claim. The laptop keeps the
+operation and its camera checks; normal game rules determine completion. The phone cannot act
+while disconnected and reconnects covered. Do not promise a separate desktop next-turn pause that
+is not implemented.
 
-Use bounded reconnect attempts with backoff and foreground retry. On any missed event sequence, request a fresh permitted projection rather than replaying a stream that could contain an earlier seat's secrets. Fresh private authorization is required after backgrounding, controller changes, or laptop restart. Phone and laptop timers cannot confer an extra turn.
-
-A phone disconnect does not cancel an authorized physical claim. While the session lifecycle is `Active`, the laptop may verify and commit that exact placement normally, then pause before beginning another turn until the companion reconnects or an operator explicitly selects laptop-only control. Pack-away and rebuilding gates suppress that completion path. Preserve partially completed digital actions. Never reroll cards or launch a second autonomous game on the phone.
+**Planned extensions:** a durable command-result query, persistent approved-device registration,
+browser Recheck and a companion Save Game request. None is exposed by today's browser. If remote
+saving is added, the laptop must own capture/checkpoint durability and publish completion only after
+validating the matching photo and current packed lifecycle; a request acknowledgment cannot mean
+it is safe to clear the board.
 
 #### Updates and compatibility
 
@@ -1869,6 +1990,17 @@ Pin a named pack-away checkpoint's source snapshot, required journal history, an
 
 ### 19.8 Save, pack away, and rebuild protocol
 
+**Current behavior:** laptop Save Game checks live train positions/colors before and after its
+photo capture, validates the digital checkpoint and matching attachment on readback, and retains
+the occupied-slot mask of an unfinished computer placement. Reload checks markers and saved train
+slots before the OK acknowledgment. Saving waits for score-marker moves and cancellation restoration
+to finish.
+
+**Planned extensions:** the full durable camera-photo evidence chain, remote save/result queries,
+photographed cancellation progress, narrative state and separate reconstruction diagram. The
+detailed protocol below specifies that complete target; the implemented continuation paragraphs
+identify today's narrower storage contract.
+
 #### Capture one consistent checkpoint
 
 `SaveAndPackAway` is a coordinator operation around the existing foreground game action, not another gameplay action. It may suspend a partial digital draw, an offered ticket choice, or an authorized physical placement without forcing the player to finish the turn.
@@ -1922,7 +2054,12 @@ If the photo becomes corrupt or is missing later, preserve the valid digital sta
 
 ## 20. Performance and resource budgets
 
-These budgets guide optimization and acceptance. They must be measured on named hardware; none are verified by this document.
+These are end-to-end targets, not a claim that every row has been measured. Existing evidence
+includes CPU/GPU preprocessing and model-frame comparisons, plus AI decision latency. The final
+held-out AI groups measured p95 decisions of 8.38–12.64 ms; the separate rich-hand probe measured
+a 1.10 s cold maximum. See [strategy measurements](docs/ai-strategy-evidence.md) and
+[camera measurements](docs/camera-processing.md). Full claim/recovery/save latency and four-hour
+resource stability still need recorded runs on named hardware.
 
 | Area | Initial target | Measurement boundary |
 |---|---|---|
@@ -1948,6 +2085,10 @@ Use measured train pixel dimensions and geometric residuals to define compatibil
 ## 21. Failure handling and diagnostics
 
 ### 21.1 Failure response matrix
+
+This matrix includes target responses for planned visibility/audio/recovery features. Current
+camera-assisted startup requires working capture and both bundled models; technical manual mode
+is explicit, not an automatic substitute when normal setup cannot pass.
 
 | Failure | User-visible response | State behavior |
 |---|---|---|
@@ -1990,6 +2131,12 @@ Manual mode retains digital cards, rules, AI, story, save/resume, and guided rou
 Re-enabling vision requires a full registration and board comparison. Manual mode must not turn a corrupted physical board into a new logical truth without a recorded correction.
 
 ## 22. Verification and acceptance criteria
+
+The following matrices are test specifications. Implemented behaviors have unit/integration,
+browser, photo-replay and physical-play evidence summarized in section 24. Rows involving planned
+features (gesture, audio, printed markers or remote save) are future tests, not failed tests of
+the current game. Lack of a recorded device scenario means **not yet confirmed**, not that all
+physical play is untested.
 
 ### 22.1 Verification layers
 
@@ -2083,7 +2230,9 @@ These sample sizes are an initial engineering gate, not proof of a near-zero rea
 
 Run a complete mixed human/AI match on the actual supported board. Include pass-and-hide, digital card-only turns, a board-first human claim, wrong-lane placement, a partial AI placement, a held palm, a deliberate camera jog, sleep/resume, mid-operation restart, saving with a photo followed by complete board removal and guided rebuilding, and final scoring with a visible witness trail. Repeat with CPU-only and a supported GPU, then repeat offline with no optional speech voice installed.
 
-Keep a checklist and annotated event log. A feature is marked implemented only when its scenario passes; a screenshot of a screen is not evidence that its state transitions work.
+Keep a checklist and annotated event log. Record implementation, automated regression coverage and
+physical walkthrough results separately. Completed physical games already establish real use;
+they do not silently mark every deliberate fault-injection scenario in this walkthrough as passed.
 
 ### 22.7 Companion-specific acceptance
 
@@ -2093,25 +2242,26 @@ Test current stable iOS/iPadOS Safari and Android Chrome, plus the previous supp
 |---|---|
 | Fresh Quick play setup with WAN disconnected | Direct browser game, pairing and local play succeed with no certificate/install/cache gate or external download |
 | Scan the laptop QR on a fresh companion with WAN disconnected | Quick play opens the browser game; pairing and initial public synchronization stay entirely on the LAN |
-| Game changes between initial snapshot and update subscription | Catch up from the snapshot cursor or resynchronize; no lost/duplicated action, stale hand, or new deal |
+| Game changes while the SSE stream connects or reconnects | Receive a consistent current snapshot and subsequent changes; no stale hand, new deal or command replay |
 | Phone and tablet, portrait/landscape, enlarged text | Card choices and Hide stay usable with the box palette and safe areas |
 | Explicit HTTP Quick play on LAN | Same authorized card actions and handoff behavior without certificate setup; image saving works |
 | Switch from Quick play to PRACTICAL | Phone controller revoked; same match continues with deliberate private laptop handoffs and no networking UI |
 | Guest Wi-Fi isolation or blocked port | Diagnose connection layer without changing game state |
 | DHCP change or laptop restart | Show the current direct address and QR; join and pair again without changing the saved match |
 | Handoff followed by delayed private response | Prior seat's response rejected by grant/handoff generation |
-| Hide or release peek while a private-view request is in flight | Client reveal generation rejects the late response; the same seat's hand stays covered |
+| Hide while a private-view request is in flight | Client reveal generation rejects the late response; the same seat's hand stays covered |
 | Two tabs/devices submit an action | Only the current controller and command version can succeed |
-| Network drops before/after command commit | Query durable outcome; no duplicate draw, spend, ticket offer, or turn |
-| Network drops during physical placement | Laptop preserves/verifies the authorized operation; next turn waits for control recovery |
+| Network drops before/after command commit | Reconnect covered and obtain current authoritative state; no automatic command retry, duplicate draw, spend, ticket offer or turn |
+| Network drops during physical placement | Laptop preserves/verifies the authorized operation; disconnected phone cannot act and reconnects covered |
 | Lock, switch apps, back/forward cache, or process termination | Resume covered and require fresh private authorization |
-| Inspect browser caches/storage/history and public WebSocket messages | No hidden hands, tickets, reusable pairing secrets, or pending private command bodies |
+| Inspect browser caches/storage/history and public SSE messages | No hidden hands, tickets, reusable pairing secrets, or pending private command bodies |
 | Browser reload after a laptop application update | Re-pair and verify protocol compatibility; preserve the Windows operation |
 | Reload the browser or clear its site data | Re-pair and recover the current authorized state from the laptop without losing match progress |
 
-Real-device acceptance must prove Quick play QR joining, gameplay, image saving and reconnect on
-actual iOS and Android. PRACTICAL needs a full multi-human laptop session with networking absent.
-The implemented handoff and automated tests do not establish those platform results.
+Real Android-tablet Quick play has been used in a completed physical match. Specific lifecycle,
+WAN-disconnected setup and image-download checks still need recorded results, as does a complete
+PRACTICAL game with networking absent. iPhone/iPad Safari remains untested in the available records.
+See [device evidence](docs/companion-device-evidence.md) for the confirmed session and remaining checklist.
 
 ### 22.8 Save, pack away, and rebuild acceptance
 
@@ -2158,9 +2308,14 @@ Each milestone ends with a runnable, reviewable artifact and relevant validation
 | M6: Game experience | Complete non-audio AI/theme/accessibility work first; implement Training/Story, voice/visual modes, original narration/sounds, and private-output filtering as the final feature pass after photographed save-and-rebuild and packaging foundation | Complete Training and Story mixed-seat matches; Training produces no sound effects; verified theme contrast and player-color distinction; no hidden-information leakage; measured AI completion/latency |
 | M7: Hardening and release candidate | Offline installer and bundled browser assets, native dependencies, mobile lifecycle and asset updates, suspend/reconnect, disk faults, photo/checkpoint crash recovery and retention, save-format validation, extended sessions, documentation | Full acceptance matrix, clean-machine/local-network install, real-device report, known limitations, reviewed release artifacts |
 
-M1 may proceed alongside M0's camera experiments because rules do not depend on capture. Dataset collection begins as soon as M3 tooling produces trustworthy synchronized labels. M5's model training is conditional on measured need; skipping training is acceptable only if M4's recognizer meets the same final criteria. Processor selection and truthful status remain required for whichever recognition path is implemented.
+These milestone IDs preserve the original work breakdown; they are not a claim that the project
+is still at M0. Rules, local browser play, camera verification and trained models are implemented.
+Further model changes must be justified by measured failures and evaluated against held-out data.
+Section 24 records remaining implementation and validation work.
 
 ### 23.1 First implementation slice
+
+**Historical development sequence.** The project has progressed beyond this manual-first slice.
 
 The smallest useful slice is one classic map, local digital cards, a human seat and AI seats, legal route selection, a persistent pending claim, a manual confirmation button, and an accurate final result. Add mixed-human privacy before introducing recognition, so the camera does not distract from card-state correctness.
 
@@ -2172,218 +2327,90 @@ For every milestone, record what works, which checks ran, exact data/model/packa
 
 ## 24. Release readiness and remaining evidence
 
-### 24.1 Decisions already settled
+### 24.1 What is implemented and has been exercised
 
-The game, physical/digital division, local operation, Windows host, iOS/Android companion,
-selectable inference, automatic reorientation, developer-only model training, presentation modes,
-story mode, box palette, multiple-human handoff and photo-assisted save/pack-away/rebuild are
-specified. The September 21 decision removes installed-app and certificate setup. Quick play is
-the recommendation; PRACTICAL uses the laptop with other players looking away. Both need physical
-play-session validation, with Android/iOS testing for Quick play.
+The current Windows game includes the complete digital rules/turn/scoring flow, Standard and
+Aggressive opponents, camera-detected human route payments, computer placement guidance, scoring
+marker checks, Quick play, PRACTICAL and photographed save/reload. Geometry covers all 100 routes
+and 309 train spaces. The browser receives SSE updates and displays private destination maps,
+computer placement dots and current instructions.
 
-### 24.2 Evidence still to obtain during implementation
-
-| Item | Why it remains open | Resolution point |
+| Area | Evidence already available | What that evidence establishes |
 |---|---|---|
-| Exact board geometry and ticket data audit | Box images identify the edition but are not production calibration data | M1 data manifest review |
-| Physical camera/mount reference configuration | Shared-read-only inspection confirms the connected Pixel UVC source currently advertises at most 1920×1080. The NEEWER DS009 arm/existing upright need mounted stability/lighting acceptance; native-4K physical input remains untested. Exact phone model is unrecorded | M0/M3 measured compatibility report and [current camera report](docs/camera-processing.md) |
-| Train appearance generalization | Training on the developer's pieces is permitted, but coverage is unmeasured | M4/M5 held-out evaluation |
-| Actual package/native compatibility | Version research is not a compiled integration test | M0 locked dependency report |
-| Multi-human controllers | Real QR scans, HTTP browser behaviour, focus/handoff and downloads vary by device; laptop sharing also needs usability checks | M0/M2 Quick play Android/iOS and PRACTICAL laptop acceptance before declaring support |
-| Rare depleted-supply policies | Classic printed rules do not resolve every software boundary condition explicitly | M1 documented decisions and fixtures |
-| Narration pronunciation and recording inventory | Voice mode must work with no downloadable voice | M6 audio manifest and offline walkthrough |
-| Final public distribution rights and naming | Software-library permissions do not establish rights to game branding, copied artwork, ticket presentation, or audio | Distribution review before public packaging/marketing |
+| Physical board and Android tablet | The user's September 21 reports/screenshots and completed two-human/one-computer match; its saved journal was inspected in the [AI investigation](docs/ai-strategy-evidence.md) | Actual shared-browser and physical-board gameplay through final scoring. This is real-device testing, not merely an HTTP reachability experiment. Exact tablet model, OS/browser build and WAN state were not recorded. |
+| Rules, storage, application and Windows integration | Latest local Release verification: 343 core and 939 Windows integration tests passed, with a warnings-as-errors solution build | Automated rules, transaction/replay, save/photo, coordinator, camera and companion regressions. The four repaired timing-sensitive tests also passed 10 repetitions each. |
+| Browser and WPF UI | 70 Node tests, 92 Chromium scenarios and 126 WPF render cases with zero binding warnings/errors in the latest local verification | Automated state transitions, first-draw continuity, blocked-draw handling, SSE/reconnect behavior, private maps, final standings and responsive layouts |
+| Simulation and AI | 20 invariant/replay simulations in the integration pass; 640 paired strategy games, including 320 untouched held-out games | Legal completion and measured improvement against frozen synthetic opponents. [AI evidence](docs/ai-strategy-evidence.md) also replays decisions from the failed real match. |
+| Camera/model integration | Physical play, reviewed-photo CPU/DirectML checks and [canonical alignment replays](docs/evidence/canonical-alignment-2026-09-19/validation.md), including 55 trains across 25 routes | Working learned recognition, geometry alignment and targeted regressions on actual camera frames. These are bounded measured cases, not an all-hardware error-rate estimate. |
+| GPU preprocessing and developer tools | Actual 4K processing CPU/GPU comparison; 27 Python tests passed with two optional skips; 12 annotation checks | Tested processing operations and data tooling on the development setup. 4K processing input does not imply a native 4K camera was used. |
+| Packaging | [Historical self-contained ZIP validation](docs/evidence/offline-package-2026-09-12/README.md) passed runtime/component and archive checks on the development machine | Packaging tooling works for that recorded revision. It predates current gameplay changes and is not a clean-machine test of the current build. |
 
-The rights item does not prevent designing or testing the application. Use original interface art, original narrative text, and controlled developer captures; retain provenance for game data and recognition assets. Any plan to publish a branded digital companion needs a separate, documented rights decision. This design does not claim that owning a physical box or using free libraries grants redistribution rights.
+The local full-suite summary is retained at
+`artifacts/ci-failure-fix-20260921/summary.md`, with TRX files, logs and rendered evidence beside it.
+Those generated artifacts are local, not source-distribution files. The
+[CI workflow](.github/workflows/windows-ci.yml) runs portable tests on Ubuntu and Windows build,
+test and browser/render checks; it retains evidence rather than publishing a release.
+Historical audits describe their dated revisions and do not override current behavior.
+
+### 24.2 Specific checks not yet confirmed in the available records
+
+The entries below identify missing recorded outcomes. They do not mean that physical play,
+computer strength or camera recognition has never been tested. If a scenario has already been
+performed, record its build, hardware and result instead of repeating a blanket pending label.
+
+| Check | What remains to verify |
+|---|---|
+| iPhone/iPad Safari | A real-device session covering QR joining, pairing, private choices, maps, download, backgrounding and reconnect. No Apple-device run is recorded. |
+| Android follow-up on the latest build | Physically retest the blocked first/second draw fix, smooth destination-map expansion and the improved AI in a complete human match. Automated regressions already pass; the earlier completed match predates these fixes. |
+| Network-independent setup | Start Quick play with the router WAN disconnected but LAN active, including a fresh camera QR scan. Separately play a complete PRACTICAL multi-human match with networking unavailable. |
+| Real browser lifecycle and usability | Deliberate lock/app switching, history navigation, reconnect, host/LAN loss, DHCP change, duplicate/replacement controllers and actual PNG saving/sharing. Record portrait/landscape, enlarged text, reduced motion and assistive-input outcomes. |
+| Physical pack-away and rebuild | Save, remove all pieces, restart and reconstruct in another order; resume the exact saved card choice or partial computer placement. Save/photo/reload integration tests already cover these states; a complete physical walkthrough is not recorded. |
+| Hardware failure and long sessions | Deliberate camera unplug/jog, sleep/resume, real GPU loss/fallback and controlled process/power/storage failure during relevant operations. Measure end-to-end claim/recovery/save latency and four-hour resource stability. Automated fault and stale-evidence tests are separate existing evidence. |
+| Recognition coverage and additional equipment | Independent sessions across lighting, poses, colors, map regions, touching pieces, hands and negative cases. The section 22 target corpus/rates have not been measured. Native 4K capture, a full 720p game, additional camera/GPU families and another physical board copy remain unrecorded. |
+| Clean-machine distribution | Build the current distribution and run offline on a clean Windows machine with its bundled dependencies. Installer install/update/uninstall tests follow implementation of the installer. |
+| Exhaustive board-data review | Named sign-off for every route/lane/color/length and ticket value. The manifest still records this specific audit as unaudited; ordinary physical-board playtesting is already established. |
+
+The [device checklist](docs/companion-device-evidence.md) expands the phone/PRACTICAL cases.
+The [camera report](docs/camera-processing.md) and model/alignment records retain specific hardware
+and photo results. Use their dates and scope when planning the next check.
 
 ### 24.3 Release checklist
 
-- README, this DESIGN, the implementation task tracker, help, and compatibility descriptions match the final implementation.
-- All required rule-policy decisions are explicit and tested; no placeholders remain in a shipped data manifest.
-- CPU operation, camera verification, privacy, digital deck restoration, and offline sound pass on a clean machine.
-- A photographed checkpoint survives complete board cleanup, restart, and guided reconstruction, including partial turns and injected save faults; required-photo validation, completed-save retention, and separate active-journal recovery pass.
-- Quick play passes direct QR joining, pass-and-hide, image saving and reconnect checks on real
-  iOS/iPadOS and Android devices without Internet. PRACTICAL passes multi-human private laptop
-  choices and handoffs without networking. The trusted-LAN and unencrypted-HTTP limits are disclosed.
-- Every advertised GPU/camera configuration has supporting evidence; untested support is not implied.
-- The installer includes runtime/model/audio/native dependencies and exact license notices, with no first-launch downloads.
-- The supported physical edition is unmistakable in onboarding and packaging.
-- Diagnostic recording is opt-in and local; saved image behavior is disclosed.
-- Known recognition limits and manual recovery are explained in user-facing terms.
-- Documentation updates are included in the source revision used to build the release before any release tag/artifact is created.
+These are future distribution gates, not setup barriers for the current development game:
 
-This document specifies the complete intended product. Implemented behavior and executed checks are recorded in the audit, README and current camera report; the remaining sections must not be read as evidence that a feature exists. A preprocessing GPU probe establishes only that tested operation on that adapter. Model training, physical recognition accuracy, full GPU compatibility, companion-device support, AI strength, and camera recovery timing remain unverified.
+- README, DESIGN, the task tracker, help and compatibility descriptions match the release source.
+- The supported physical edition and disclosed rare-supply policies are clear; the formal data review is recorded.
+- Current-build clean-machine, offline LAN/device and CPU/GPU checks have named hardware/results.
+- Photographed save/rebuild and deliberate failure/recovery scenarios have both automated and physical evidence.
+- Any advertised device/camera configuration is supported by the corresponding recorded checks.
+- The installer bundles required runtimes, native libraries, models and assets without first-launch downloads; exact notices and redistribution decisions are reviewed.
+- Planned audio/story features, if included in the release, pass their separate state/privacy/offline tests.
+- Known recognition limits and recovery instructions are described in user-facing terms.
+- Documentation changes are included in the source commit before creating release tags or artifacts.
 
-### 24.4 Implementation audit and follow-up status, September 12, 2026
+### 24.4 Remaining implementation work
 
-The user's current development workflow is Visual Studio plus GitHub Windows CI, which builds/tests
-the solution and retains diagnostic evidence. Routine personal ZIP generation is no longer requested;
-future installer work remains separate. Build-time downloads on GitHub or a developer machine do not
-change the installed-runtime contract: Windows and the companion communicate only over the trusted
-LAN, using bundled assets and local game state, without Internet services or connectivity checks.
-The browser regression harness blocks non-laptop origins while exercising LAN play with an offline
-Internet indication. [Build/CI documentation](docs/build-and-ci.md) distinguishes these checks from
-remaining physical-device joining, lifecycle and disconnected-WAN acceptance.
+These are features or architectural extensions, distinct from the existing features awaiting
+additional physical checks:
 
-The repository now contains Domain, Application, AI, Persistence, Desktop, Simulator, and test projects. The implemented desktop uses explicit manual physical verification and a private laptop view. It implements digital dealing/turns, route reservation and confirmation, exact scoring algorithms, heuristic opponents, SQLite event replay, and the box-derived palette. Audit fixes add stale-view protection, physical reconciliation before resumed play, strict save integrity and path checks, concurrent-write protection, bounded AI waiting, and regression tests.
+- Palm wake/recheck gesture, expanded visibility/occlusion diagnostics and the optional printed-marker recovery approach.
+- Story/Training presentation, narration and sound, followed by their audio-device and offline tests.
+- Installer and current clean-machine distribution workflow.
+- Companion Save Game/Recheck, durable command-result queries and persistent approved-device registration if retained in scope. Current browser reload intentionally re-pairs.
+- The complete durable camera-photo evidence chain and photographed cancellation recovery in section 19.8. Current Save Game already validates the board before/after capture and the stored checkpoint/photo; its `LogicalStateOnly` metadata describes the storage contract, not an absence of camera checks.
+- Durable persistence of the post-claim scoring-marker obligation. Its current step is process-local; save waits for the marker move to finish. Crash/restart at this point remains a specific implementation/recovery concern.
+- A separate clean reconstruction diagram. Current reload already checks all saved scoring markers and train slots, shows correction cues and requires OK before resuming.
 
-Earlier work added state-only named checkpoints, pack-away/rebuild lifecycles, supply-policy
-continuations and a certificate-based connectivity experiment. The September 12 audit and its
-evidence describe that historical approach. Its tool, certificate setup and installed web-app
-support were removed on September 21; those reports are not current setup requirements.
-
-The embedded `GoldenTicket.CompanionHost` supplies the shared browser controller, while the
-Windows coordinator owns cards, turns, physical verification and durable saves.
-`GoldenTicket.Vision` supplies Windows camera capture, manual board cropping and scene-reference
-comparison, with board photos attached to verified checkpoints.
-
-The current implementation offers recommended HTTP Quick play and PRACTICAL laptop sharing.
-Quick play serves bundled browser assets on port 8080, with explicit laptop pairing, active-seat
-grants and handoff controls. PRACTICAL keeps all private choices on the laptop while other humans
-look away. There are no certificate downloads, installed-app prompts, service workers or cached
-shell gates. Both modes preserve the same Windows match. Physical phone acceptance remains open.
-
-Single-human play now uses the laptop's card view directly for opening destinations. The unresolved
-opening choice has no **Back to table** action; plain Escape covers it with the save/quit dialog.
-Later gameplay stays on
-**THE GAME TABLE** after human and computer actions, including physical scoring-marker confirmation.
-Clicking the solo human's T or D stack opens a compact read-only card panel in a free gap in that
-tile's side column; technical private controls for taking a turn are available after **Shift+Escape**.
-Hover and keyboard focus highlight only the front T or D card with the same rounded gold border
-as the draw piles, without an outer stack outline or dotted focus marks.
-The train-card preview groups the hand by card kind, including locomotives, and displays quantities
-above one in a top-left badge. This read-only grouping leaves individual cards available for payment.
-Unexpected-train guidance names a uniquely identifiable unclaimed route and the observed color/count;
-uncertain locations retain generic guidance. These diagnostics do not relax inventory checks or claim
-routes. A recognized incomplete or invalid solo placement blocks card draws, including technical
-private actions. Keep that warning through menus and private viewing; clear it after a legal placement
-proposal or fresh, stable verification that the committed board has been restored.
-On a confirmed opening drop, the rejected card and board highlight vanish together, then the
-remaining cards panel slides down. Either opening choice returns to the public table. The draw
-panels animate to the centered bottom layout for two to five players.
-Setup changes update the proposed mode; an active or resumed match uses its own human-seat count.
-Multiple-human games choose Quick play phone setup or PRACTICAL laptop sharing on the visible
-game table; companion card and
-handoff acceptance remains outstanding. The solo workflow keeps
-the table available for placements and AI instructions, respects explicit covering, and retains
-the physical reconciliation gate before restored gameplay.
-
-The manual photo crop retains four editable numbered handles after selection. Operators can drag
-an existing handle while placing the remaining corners or after the crop is complete; the valid
-crop preview updates immediately. Keyboard users focus the camera preview, choose a handle with
-1–4, then use arrows (Shift for larger steps). During selection, Enter leaves handle editing and
-returns to keyboard placement; arrows and Enter position and place that next corner. Mouse selection
-shows only the numbered corners already placed. While selecting corners, the mouse pointer becomes
-a crosshair over the camera image, with a move cursor over existing handles and an arrow outside
-the image. The separate placement
-crosshair appears only after explicit keyboard input and hides when mouse interaction resumes. Crossed,
-overlapping or undersized crops retain the handles for correction and disable photo capture.
-Every geometry edit invalidates previous photo geometry before notifying the view. A camera-session
-or frame-size change clears the selection; crop editing alone does not reset the scene reference.
-
-The camera preview supports view-only zoom from Fit (100%) through 800%, with + / − buttons,
-Ctrl + mouse wheel anchored at the pointer, and 0 or Fit to reset. An ordinary left drag on the
-zoomed image moves the view within bounded limits, including while selecting crop corners.
-A click places the next corner during selection; dragging a numbered handle edits that corner.
-The selection button is available beside the zoom controls, with the current corner prompt and
-camera error immediately above the image. Before selection starts, the prompt names the required
-button; active selection changes its label to Restart corner selection. Plain background clicks
-outside selection do not create or reset a crop.
-Background input distinguishes a click from a drag before placing a corner, so panning does not
-add a corner. Pan mode, Space + left drag and middle-button drag remain available for explicit
-panning. The viewport clips the
-image and overlays together; corner handles retain their screen size. Normalized corner input
-and detection overlays use the same displayed-image transform. Keys 1–4 reveal the chosen
-corner when it is offscreen, and arrow movement scales inversely with zoom for finer adjustment.
-Fresh frames retain the view; stopping the preview resets it. Zoom/pan never changes source
-pixels, board registration, crop/reference revisions, or export/processing dimensions.
-
-**Export board photo** uses the current fresh frame and valid manual crop independently of the
-scene reference. A missing reference, stabilization or scene-change hold must not disable manual
-PNG export. Missing/stale frames, invalid geometry and camera/crop changes during encoding still
-prevent export. This does not attach a checkpoint photo or change the match; checkpoint photo
-capture retains its scene-reference and operator-confirmation requirements.
-Headless synthetic interaction/rendering checks cover this behavior; real pointer dragging with
-the overhead-camera setup remains a physical acceptance check.
-
-The photo foundation explicitly distinguishes a digital checkpoint, a live unsaved crop and a saved
-photo attachment. The low-level logical checkpoint operation does not capture a photo itself;
-the game-layer Save Game adds and validates the required attachment before reporting completion.
-Missing or invalid attachments remain incomplete after restart, and Quit to Menu selects only a
-completed earlier save with a matching validated image. Reload reports image failures before gameplay.
-The photo page shows
-the missing prerequisite (camera, crop, stable reference or operator confirmation), links to camera
-setup and labels its live crop as unsaved. Capture is disabled outside packed/rebuilding sessions
-or while the camera is not ready. Only successful checksum and checkpoint-binding readback supplies the saved
-image. The rebuild page shows that image above the authoritative route list, and supplies clear
-messages for missing photos and zero-route positions. A checkpoint with no attachment cannot
-recreate a historical board picture after the physical board has been cleared.
-
-The latest camera slice adds the native-resolution policy and CPU/GPU preprocessing in §17.3–17.4.1,
-including saved processor preference and source-versus-output reporting. Experimental empty-board
-outlines are available from a captured or loaded reference. Manual exports are enhanced 3456 × 2160
-board crops; checkpoint evidence remains unsharpened. Locked restore/build, 546 automated tests,
-50 synthetic WPF render cases and the dependency advisory audit passed. The implementation,
-bounded photo-pair/GPU evidence and remaining physical acceptance are described in
-[the current camera report](docs/camera-processing.md).
-
-Current deviations remain explicit: the browser companion uses bundled plain JavaScript instead of the
-specified TypeScript build. Public synchronization uses SSE snapshots rather than a WS event cursor. Controller sessions are
-process-local and each page reload requires fresh laptop-approved pairing. The device uses a
-visible Hide control without an inactivity timeout or hold-to-peek. Photos are operator-attested plaintext
-sidecars with SHA-256 checksums for `LogicalStateOnly` checkpoints, not `VerifiedBoardPhoto` evidence.
-The local learned piece model supplies train candidates to a measured automatic claim check for
-all 100 classic-US routes and 309 printed train spaces. One pulsing cue marks each requested space.
-Raleigh–Charleston's two spaces use separately measured centers and directions because the printed
-route turns sharply between them. This corrects route assignment while retaining the shared
-16-reference-pixel sideways tolerance, independent piece detections, colors and fresh-frame checks.
-The runtime may retry at most two weak train proposals in centered, same-frame model tiles.
-Only strong, spatially agreeing predictions replace weak proposals; a missing proposal or failed
-retry supplies no occupancy evidence. Original tile ownership, final duplicate suppression,
-capture identity and freshness remain in force. Model retries do not use the expected route list.
-Two fresh upright observations must identify a separate train of the requested player color in
-every space of the correct lane. Train-color sampling requires at least 55% of all samples to
-support one physical color and a 35% sample-count lead over the next physical color. Neutral
-samples count against total support but do not compete as a sixth player color, allowing modest
-highlights on black trains such as those in the Calgary–Helena screenshot replay.
-For angled pieces, the original ML-box samples may include neutral board beside the train.
-If those samples fail only total support while retaining the required physical-color lead,
-the verifier may retry inside the same frame's fitted train rectangle. The retry must agree
-with the original leading color and meet both unchanged thresholds. The rectangle must cover
-a substantial train-shaped body, and every sampled pixel must remain inside the original ML
-box. This does not move candidate centers, relax slot tolerances, or infer color from a route
-or player. Missing or uncertain fits retain the original conservative reading.
-A durable camera-evidence event precedes the claim commit. The
-table then shows “Thank you” for three seconds and asks for the scoring marker to move; two fresh
-readings of its new printed position release the next turn. Diagonally crowded score markers
-can share a corner when a separate known-color
-marker independently reads that corner from both adjoining edges. The fallback is limited to
-0.2–0.55 score steps inward on each axis, cannot override a direct different-cell reading, and
-cannot chain inferred positions. The target score never supplies position evidence. The slot map has
-visual and synthetic test coverage, but live-camera accuracy across routes and rotations remains unmeasured. Full-board
-comparison, automatic camera recovery, gesture recognition, and a durable post-claim score-marker
-gate remain unfinished. The rebuild target remains a route list rather than a geometry-based diagram.
-Snapshot rows hold validation metadata and state hashes rather than complete state snapshots.
-Physical board-data review, narrated story/audio and installer acceptance remain outstanding.
-The normal developer build is framework-dependent; the offline packaging workflow produces a
-separate self-contained x64 ZIP after documented source validation. These are implementation gaps,
-not changes to the full requirements above.
-
-The packaging builder selects a separate reviewed `packages.win-x64.lock.json` graph for each
-application project. Before archiving, the published executable's explicit `--check-package` mode
-tests its loaded bundled runtime and synthetic WPF/SQLite/PNG/ASP.NET/asset operations without
-a visible window, camera, listener or player save. This does not satisfy clean-machine or physical
-device acceptance.
-
-Normal and cache-only offline builds from source `54fd076b5394b896f9332d59a409b1bf5fe2cc22` passed
-the executable checks and archive validation. [Package evidence](docs/evidence/offline-package-2026-09-12/README.md)
-records the local artifact and checksums; installer and clean-machine acceptance remain unfinished.
-
-The [original audit](docs/AUDIT-2026-09-11.md) maps R01–R16 to source evidence; the [follow-up audit](docs/AUDIT-2026-09-12.md) records the reviewed changes, fixes and current validation. [TODO.md](TODO.md) lists the remaining implementation and real-device acceptance work. Passing domain, persistence, view-model or browser-script tests does not satisfy the camera, privacy lifecycle, packaging, or mobile hardware gates.
+The normal workflow remains Visual Studio or the CLI plus GitHub CI. No certificate, PWA,
+service worker, remote server or installer is required for current LAN play from that build.
 
 ## 25. Sources
 
 Sources were consulted on September 11, 2026. They establish edition facts and platform capabilities, not validation of an implementation. Package versions and terms must be locked and reviewed with the binaries actually shipped.
+
+This bibliography also retains investigated alternatives. OpenCvSharp, Windows ML, TypeScript,
+Vite and the audio/installer libraries listed here are not current application dependencies;
+section 17.2 and the package locks identify the implemented choices.
 
 ### 25.1 Product inputs and rules
 
@@ -2413,4 +2440,4 @@ Sources were consulted on September 11, 2026. They establish edition facts and p
 ### 25.4 Browser companion and local hosting
 
 - [Kestrel endpoints](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/endpoints?view=aspnetcore-10.0) and [ASP.NET Core license](https://github.com/dotnet/aspnetcore/blob/main/LICENSE.txt): embedded local HTTP hosting and framework terms.
-- [TypeScript license](https://github.com/microsoft/TypeScript/blob/main/LICENSE.txt), [Vite license](https://github.com/vitejs/vite/blob/main/LICENSE), and [Node.js license](https://github.com/nodejs/node/blob/main/LICENSE): development dependency basis; no runtime Node or external web service is required.
+- [TypeScript license](https://github.com/microsoft/TypeScript/blob/main/LICENSE.txt) and [Vite license](https://github.com/vitejs/vite/blob/main/LICENSE): earlier build-tool investigation. [Node.js license](https://github.com/nodejs/node/blob/main/LICENSE): current developer test tooling; no runtime Node or external web service is required.

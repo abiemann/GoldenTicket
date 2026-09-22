@@ -233,8 +233,6 @@ public sealed partial class GameScreenViewModel : ObservableObject
         {
             if (args.PropertyName == nameof(MainViewModel.IsCheckingResumedGame))
                 NotifyGuidanceChanged();
-            if (args.PropertyName == nameof(MainViewModel.ShowSoloOpeningTicketsOnBoard))
-                TableSeatsChanged(null, null);
             if (args.PropertyName == nameof(MainViewModel.SavedBoardRestoreTarget))
                 RefreshPlacementTarget();
         };
@@ -352,12 +350,13 @@ public sealed partial class GameScreenViewModel : ObservableObject
 
     private void TableSeatsChanged(object? sender, NotifyCollectionChangedEventArgs? e)
     {
-        // All seats flank the board. With five players, three on the left and two on the
+        // Keep the same seat positions during opening choices and normal play.
+        // With five players, three on the left and two on the
         // right share the same vertical center, leaving the bottom clear for cards.
         (double Left, double Top)[] positions = _main.Table.Seats.Count switch
         {
             2 => [(10, 330), (1180, 330)],
-            3 => [(10, 330), (1180, 330), _main.ShowSoloOpeningTicketsOnBoard ? (10, _main.GameTableBoardTop) : (10, 530)],
+            3 => [(10, 330), (1180, 330), (10, 530)],
             4 => [(10, 265), (1180, 265), (10, 530), (1180, 530)],
             _ => [(10, 205), (1180, 205), (10, 395), (1180, 585), (10, 585)],
         };

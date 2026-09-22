@@ -1,16 +1,18 @@
 # Multi-human device evidence plan
 
 The current product has recommended HTTP **Quick play** on one shared phone/tablet and
-**PRACTICAL** on the laptop. Real-device acceptance remains required by DESIGN §22.7. Automated
-browser rendering and network tests do not establish phone support.
+**PRACTICAL** on the laptop. The user has played Quick play on a real Android tablet in Chrome
+with the physical board, including a completed two-human and one-computer match on September 21.
+This document records that experience alongside automated checks and the specific physical-device
+scenarios still to confirm from DESIGN §22.7.
 
 ## Hardware and support position
 
-| Platform | Availability | Claim allowed before acceptance |
+| Platform | Availability | Recorded experience and remaining coverage |
 |---|---|---|
-| Android phone/tablet | Owned; earlier development used a Pixel 8 Pro | Quick play remains unverified until the checklist below passes on recorded hardware/browser versions. |
-| Windows laptop and UVC camera | Owned | Automated UI checks exist; full PRACTICAL and physical-board sessions remain manual gates. |
-| iPhone/iPad | Not owned; a borrowed session may be possible | Untested. A successful borrowed session is one recorded data point, not evidence of broad ongoing support. |
+| Android tablet / Chrome | Used in the user's September 21 play sessions | Real shared-browser gameplay and a completed physical-board match are confirmed. Exact tablet model, OS/browser versions and WAN state were not recorded; remaining cases are listed below. |
+| Windows laptop and UVC camera | Used with the physical board | Camera-assisted physical gameplay is confirmed. A complete PRACTICAL multi-human session with networking unavailable has not been recorded. |
+| iPhone/iPad | Not owned; a borrowed session may be possible | Untested. Record hardware and Safari versions when a device becomes available. |
 
 For every run record device model, exact OS/browser versions, laptop build/commit, local network,
 whether the WAN was disconnected, and pass/fail with observed errors. Keep private hands, pairing
@@ -66,6 +68,20 @@ from planned tests.
 
 ## Current status
 
+### Physical play
+
+The user's September 21 screenshots and reports show the Android tablet running the current
+browser game with private hands and destinations while the laptop handles the physical board.
+The completed two-human and one-computer match is also corroborated by the saved-game analysis in
+[computer strategy evidence](ai-strategy-evidence.md). These are real gameplay results, beyond the
+earlier certificate-download experiment.
+
+That playtesting also exposed problems, including interrupted private views and confusing feedback
+when a camera check refused a card draw. Subsequent fixes have the automated coverage below. The
+completed match does not by itself confirm every later fix or every checklist scenario.
+
+### Dated automated checks
+
 The September 21 SSE implementation passed 135 targeted .NET tests, 46 JavaScript client tests,
 and 64 Chromium scenarios at 320, 448 and 768 CSS pixels. Checks cover event-only synchronization,
 approval, camera/AI updates, first-draw continuity, reconnects and backgrounding. The browser
@@ -86,7 +102,8 @@ widths. They verify smooth height changes, the Back touch target, all held desti
 matching image/overlay frames, preserved scroll through the first draw, and immediate privacy
 cleanup. Another 15 computer-map and 27 card/SSE workflow regression scenarios passed, for 63
 browser checks in total. Phone and tablet renders were visually checked. Evidence is in
-`artifacts/companion-destination-map-20260921/`; the same physical-device acceptance gap remains.
+`artifacts/companion-destination-map-20260921/`; a physical-tablet check of this animation and its
+privacy/scroll behavior has not been recorded.
 
 The blocked-draw follow-up passed a warnings-as-errors build, 164 targeted .NET checks,
 70 JavaScript client tests and 20 Chromium workflows at 320 and 768 CSS pixels. Checks cover
@@ -98,8 +115,23 @@ windows and full-text exports, with equal card heights and no binding warnings. 
 `artifacts/final-equal-height-20260921/`. These are bounded automated checks, not a new
 physical-tablet acceptance run.
 
-Quick play and PRACTICAL implementation have automated coverage; full current-mode device
-acceptance is pending. Earlier September 12 Android evidence established reachability of the old
-HTTP certificate-download page only. It does not establish the current browser game's QR,
-private-hand, download or reconnect behaviour. Historical certificate/PWA reports remain dated
-evidence of the discarded approach and impose no current installation requirement.
+### Physical checks not yet recorded
+
+The available reports do not confirm the following cases. An unrecorded case is not a claim that
+the user has never tried it.
+
+- iPhone/iPad Safari joining and gameplay, including its download and lifecycle behavior.
+- A fresh real-camera QR scan, pairing and a full Quick play session with the router's WAN
+  physically disconnected.
+- A complete PRACTICAL multi-human game with networking unavailable.
+- Device lock, sleep, app switching and history restoration; deliberate laptop/LAN loss,
+  reconnect, DHCP changes, and controller replacement during play.
+- Saving the final PNG and sharing the saved file through Android Files/Photos.
+- The full portrait/landscape, enlarged-text, accessibility and reduced-motion checklist on
+  physical devices.
+- A physical-tablet retest of the latest blocked-draw fixes and destination-map transitions,
+  including unchanged hand/turn after a refused draw and exactly one awarded card after retry.
+
+Record device model, OS/browser versions, app revision and WAN state for these follow-up runs.
+Historical certificate/PWA reports remain dated evidence of the discarded approach and impose no
+current installation requirement.

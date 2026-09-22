@@ -53,21 +53,25 @@ replay behavior; previously recorded turns are not rewritten.
 
 ## Save, pack away and rebuild
 
-DESIGN 19.8 defines two save paths. This build implements the **state-only** one, because a verified
-board photograph needs the camera milestones.
+The desktop **Save Game** workflow checks the physical board before and after capture, saves a
+matching board photo, and reads back the checkpoint and attachment before reporting a completed
+save. A missing, corrupt or mismatched required photo blocks checkpoint reload. Automatic journal
+recovery preserves digital actions separately and does not authorize clearing the board.
 
-| Aspect | This build | Design reference |
-|---|---|---|
-| `targetProvenance` | Always `LogicalStateOnly` | 19.8, state-only fallback |
-| `photoHash` | Always null; the route list is the reconstruction record | 19.8 |
-| Physical target | Committed route ownership only | 19.8 |
-| A partially placed claim | **Not** part of the saved target. Its payment stays reserved and its claim stays uncommitted; after resuming, the trains are placed again and confirmed as usual. | 19.8, "a forward claim needs its trains placed again" |
-| Durable boundaries | Three: request, checkpoint commit, readback verification | 19.8 step 6 |
-| Safe-to-pack result | Only while `PackedAway` with a `Verified` checkpoint. Readback binds complete checkpoint content and its replayed source; a failed readback can be retried. | 19.8 step 6 |
-| Resume gate | Operator whole-target attestation, re-checked at the moment Resume is pressed. Restart invalidates a saved attestation; a fresh physical check is required. | 19.8, guided reconstruction |
-| Logical fingerprint | New checkpoints use `logical-v2`, covering accepted supply policies and the pass counter. Legacy `logical-v1` checkpoints remain readable and are still checked against the authenticated replay. | 19.8, invariant 15 |
-| Retention | The journal is never pruned, so a checkpoint's source history is pinned by construction | 19.7 |
+The checkpoint retains `LogicalStateOnly` provenance and confirmed routes in its `PhysicalTarget`.
+Its required photo sidecar also records any authorized pending placement's operation, route,
+player color and occupied-slot mask, including an explicit empty mask. Those slots remain
+uncommitted: the reserved payment, remaining train stock and score do not change during saving or
+rebuilding. Photo readback checks this metadata against the checkpoint and restored operation.
+Scoring-marker moves and cancelled-placement restoration must finish before saving.
 
-The current reconstruction display is a route list; a board diagram requires measured geometry.
-The camera milestones add the verified photograph, the pending-placement mask and image readback to
-this same protocol; the transaction boundaries and the resume gate do not change.
+Reload checks the saved photo, then requires fresh camera agreement with scoring-marker positions,
+confirmed train slots and colors, and the exact saved pending-slot mask. The game announces the
+saved player and turn and waits for **OK** before allowing human actions or computer continuation.
+Any pending claim then resumes its normal verification and commit protocol.
+
+Accepted supply policies and the pass counter remain part of the `logical-v2` checkpoint
+fingerprint; legacy `logical-v1` checkpoints retain their replay checks. The journal is not pruned,
+so checkpoint source history remains available. See
+[DESIGN §19.8](../DESIGN.md#198-save-pack-away-and-rebuild-protocol) for the current save contract
+and the broader planned evidence and recovery extensions.
