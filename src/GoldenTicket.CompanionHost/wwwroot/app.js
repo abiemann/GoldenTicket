@@ -766,7 +766,7 @@
       for (const option of marketOptions.slice(faceUp.length)) { option.hidden = true; option.disabled = true; }
       const drawing = pendingCommand?.kind === "drawTrain";
       trainHelp.textContent = drawing
-        ? snapshot.boardInteraction?.useCameraClaims ? `Checking the board before drawing your ${pendingCommand.drawLabel}…` : `Drawing your ${pendingCommand.drawLabel}…`
+        ? `Drawing your ${pendingCommand.drawLabel}…`
         : privateActionFeedback ? actionFeedback()
         : snapshot.boardInteraction?.cardActionsBlocked ? snapshot.boardInteraction.message || "Finish the train placement before drawing cards."
         : privateData.view.public.turnPhase === "AwaitingSecondTrainCard"

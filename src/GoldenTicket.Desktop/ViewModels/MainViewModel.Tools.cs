@@ -12,6 +12,7 @@ public sealed partial class MainViewModel
 {
     private Screen _gameScreen = Screen.Setup;
     private bool _handlingRemoteCommand;
+    private GoldenTicket.Domain.Projections.PublicView? _remoteCommandStartingView;
     private bool _systemAvailable = true;
     private bool _toolsDisposed;
     private string? _loadedPhotoCheckpoint;
@@ -23,10 +24,16 @@ public sealed partial class MainViewModel
 
     private void InitializeTools(CameraViewModel? camera)
     {
-        Camera = camera ?? new CameraViewModel(_store is SqliteSessionStore localStore
-            ? System.IO.Path.Combine(localStore.RootDirectory, "camera-processing.json") : null);
+        var settingsRoot = (_store as SqliteSessionStore)?.RootDirectory;
+        Camera = camera ?? new CameraViewModel(settingsRoot is null ? null
+            : System.IO.Path.Combine(settingsRoot, "camera-processing.json"),
+            cameraSettingsPath: settingsRoot is null ? null : System.IO.Path.Combine(settingsRoot, "camera-device.json"));
         var inner = new CoordinatorCompanionBridge(() => _coordinator,
-            async _ => await PumpAsync(), () => CanCompanionControl, resultImage: CurrentFinalStandingsImage);
+            async _ =>
+            {
+                if (_remoteCommandStartingView is { } before) BeginCardTurnBoardCheck(before);
+                await PumpAsync();
+            }, () => CanCompanionControl, resultImage: CurrentFinalStandingsImage);
         CompanionBridge = new DesktopCompanionBridge(inner,
             () => System.Windows.Application.Current?.Dispatcher,
             BeginRemoteCommand, EndRemoteCommand, () => { if (CanCompanionControl) HideLaptopPrivateViewOnly(); }, RequireReload,
@@ -64,12 +71,14 @@ public sealed partial class MainViewModel
 
     private bool CanCompanionControl => CanConnectPhone && Connection.UseQuickPlay && !_toolsDisposed && !_exitRequested &&
         !IsGameInputPaused && _systemAvailable && !_mustReload && _scoreMarkerStep is null &&
+        !IsCheckingBoardBeforeNextTurn &&
         (!_operationInProgress || _handlingRemoteCommand) && !NeedsBoardReconciliation &&
         IsGameplayScreenActive(Screen.Table) && _coordinator is { StorageFaulted: false };
 
     private bool BeginRemoteCommand()
     {
         if (_operationInProgress || !CanCompanionControl) return false;
+        _remoteCommandStartingView = _coordinator?.Public;
         _handlingRemoteCommand = true;
         SetOperationInProgress(true);
         HideLaptopPrivateViewOnly();
@@ -79,6 +88,7 @@ public sealed partial class MainViewModel
     private void EndRemoteCommand()
     {
         _handlingRemoteCommand = false;
+        _remoteCommandStartingView = null;
         SetOperationInProgress(false);
         if (_coordinator?.StorageFaulted == true) RequireReload();
     }
@@ -151,7 +161,7 @@ public sealed partial class MainViewModel
     public async Task SetSystemAvailableAsync(bool available)
     {
         _systemAvailable = available;
-        if (!available) _cardBoardCheck?.Completion.TrySetResult(false);
+        if (!available) PauseCardBoardCheck();
         UpdateTurnClock();
         Camera.SetGameTableCameraRecoveryEnabled(available);
         HidePrivateSeat();
@@ -172,7 +182,7 @@ public sealed partial class MainViewModel
         DisposeCompanionUpdates();
         ResetCompanionMap();
         ResetFinalStandingsSharing();
-        _cardBoardCheck?.Completion.TrySetResult(false);
+        PauseCardBoardCheck();
         _turnClockTimer?.Stop();
         UpdateTurnClock();
         await PersistTurnClockAsync();

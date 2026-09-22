@@ -24,6 +24,9 @@ public sealed partial class CameraViewModel
 
     partial void OnSelectedDeviceChanged(CameraDevice? value)
     {
+        // Picker refreshes can temporarily clear selection. That must not forget which
+        // webcam to wait for, or replace it with another camera moved by the collection.
+        if (!_refreshingDeviceList && value is not null) RememberCamera(value);
         _cameraCapabilitiesRevision++;
         _cameraCapabilitiesCancellation?.Cancel();
         _selectedCameraFormats = null;

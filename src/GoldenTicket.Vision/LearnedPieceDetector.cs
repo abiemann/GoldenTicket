@@ -129,8 +129,9 @@ public sealed class LearnedPieceDetector : IPieceModelDetector
             }
             token.ThrowIfCancellationRequested();
             // Preserve model boxes/confidences for NMS, evaluation and review. The optional
-            // image fit comes from the same frame for display and guarded color sampling,
-            // without an empty-board reference. Route positions still use the model boxes.
+            // image fit comes from the same frame for display, guarded color sampling and
+            // body-center positioning, without an empty-board reference or requested route.
+            // Unavailable or invalid fits retain the original model-box center.
             var fittingStarted = Stopwatch.GetTimestamp();
             var candidates = TrainOutlineFitter.Refine(resized, detection.Candidates, token);
             var fittingElapsed = Stopwatch.GetElapsedTime(fittingStarted);

@@ -1,6 +1,6 @@
 # Camera processing and experimental piece outlines
 
-Updated September 19, 2026. This describes the current implementation, its measured hardware
+Updated September 22, 2026. This describes the current implementation, its measured hardware
 observations and the acceptance work still needed. It supplements [DESIGN §17.3–17.4](../DESIGN.md)
 and [TODO](../TODO.md); it does not replace the full automatic-verification requirements.
 
@@ -56,6 +56,11 @@ backend. Rules and game AI remain on the CPU.
    change the processor. The setting is saved locally for the next launch. The status and tooltip
    report the active adapter and any fallback, separately from the selected preference.
 
+If the selected webcam disconnects, recovery waits for that device instead of switching to the
+laptop camera or another available webcam. It remembers the Windows device ID and display name.
+The same ID takes precedence; if Windows changes it, a name match is used only when exactly one
+camera matches. You can explicitly select a different camera in Settings or Camera.
+
 **Enhanced preview** in the technical Camera screen is enabled by default. Uncheck it to compare
 the original camera image; analysis continues on the enhanced path. This comparison uses ordinary
 bounded filtering and bicubic upscaling, not NVIDIA RTX Video Super Resolution; the app does not
@@ -91,6 +96,9 @@ their colors or assign route ownership. Train candidates appear as white rectang
 follow their visible shape when a local image fit is reliable; uncertain fits keep the original
 model box. Score markers stay white squares. Counts describe the current prediction, not a verified
 inventory. Review ZIPs preserve original model boxes and optional fitted polygons separately.
+Gameplay uses the center of a validated fitted train body for route matching, falling back to the
+model-box center if the fit is uncertain. This reduces diagonal-train lane errors without changing
+the model's detections, confidence thresholds or checks for adjacent lanes.
 
 The model loads from `models/pieces/` beside the executable. Builds copy the committed
 `assets/models/pieces/` ONNX model and manifest there, so a fresh checkout includes the
@@ -216,6 +224,24 @@ explains that vendors configure the UVC resolutions/rates advertised to the host
 that every Pixel advertises that mode. The actual advertised modes determine what GoldenTicket
 can request.
 
+## September 22 physical camera recovery test
+
+The user unplugged and reconnected **Android Webcam** while the laptop camera was available.
+The app switched to the laptop camera and remained there after Android Webcam returned. The
+user stopped capture and manually reselected Android Webcam to recover. This was a performed
+hardware test with a failure, not an untested scenario.
+
+The recovery fix retains the selected camera's ID and name, waits for that identity, and permits
+a unique-name match if Windows changes its ID. It does not automatically substitute an arbitrary
+available camera. A physical unplug/replug recheck of this fix is still pending, including
+continuation of any pending game action and rejection of frames from the disconnected camera
+session. No recovery latency was measured in the reported test.
+
+The updated Windows build passes with zero warnings or errors, and all 1,067 integration tests
+pass. Fake-capture regressions cover unplug/replug with another camera present, changed device
+IDs, duplicate camera names, explicit switching, saved selection across restarts, failed discovery
+and delayed capability checks. These automated checks do not replace the physical recheck above.
+
 ## Physical acceptance still required
 
 The [September 13 ML validation](evidence/ml-preview-2026-09-13/validation.md) is a tuned
@@ -230,6 +256,9 @@ evaluate the current image independently and count misses and false positives.
   scoring markers, partial occlusion and hands entering/leaving the image.
 - Test crop changes, stop/restart, resolution changes, processor changes and model reloads; each
   must reject stale overlays. After moving the camera, adjust the crop and evaluate fresh results.
+- Repeat the Android Webcam unplug/replug test after the identity fix, with the laptop camera
+  still available. Confirm it waits for and resumes Android Webcam without manual reselection.
+  Camera jog and Windows sleep/resume recovery remain separate physical checks.
 - Compare raw/enhanced views and CPU/GPU outputs on the mounted board. Check responsiveness over
   a complete game; the synthetic microbenchmark is not an end-to-end frame-rate promise.
 - Test actual GPU failure/fallback and additional integrated/discrete adapter families. Confirm

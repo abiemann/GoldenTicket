@@ -332,49 +332,56 @@ public sealed partial class AutomaticPhysicalFlowTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Phone_draws_wait_for_new_clean_frames_and_public_polling_remains_responsive(bool cancel)
+    public async Task Phone_card_receipts_arrive_before_the_board_check_and_the_next_phone_turn_waits(bool cancelAfterReceipt)
     {
         var model = await StartCompanionMatchAsync();
         try
         {
+            var token = TestContext.Current.CancellationToken;
             var bridge = GetCompanionBridge(model);
             var game = GetCoordinator(model);
             var active = game.Public.ActiveSeatId;
+            var firstCount = game.Public.SeatOf(active).TrainCardCount;
             model.Camera.IsGameTablePreviewUpright = true;
             var at = DateTimeOffset.UtcNow;
             PublishTrains(model.Camera, "duluth--omaha--a", 1, at, MarkerColor.Blue, count: 0);
             PublishTrains(model.Camera, "duluth--omaha--a", 2, at.AddSeconds(1.1), MarkerColor.Blue, count: 0);
-            var before = await game.ComputeStateHashAsync(TestContext.Current.CancellationToken);
-            var version = game.Public.StateVersion;
-            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
-            var draw = bridge.ExecuteAsync(active, new(Guid.NewGuid().ToString("N"), game.SessionId.Value,
-                version, "drawTrain"), cancellation.Token);
-            Assert.False(draw.IsCompleted);
-            var poll = await bridge.ReadPublicAsync(TestContext.Current.CancellationToken)
-                .WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
-            Assert.True(poll.CanControl);
+            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
+            var first = await bridge.ExecuteAsync(active, new(Guid.NewGuid().ToString("N"), game.SessionId.Value,
+                game.Public.StateVersion, "drawTrain"), cancellation.Token).WaitAsync(TimeSpan.FromSeconds(2), token);
+            Assert.True(first.Accepted);
+            Assert.Equal(firstCount + 1, game.Public.SeatOf(active).TrainCardCount);
+            Assert.Equal(TurnPhase.AwaitingSecondTrainCard, game.Public.TurnPhase);
+            Assert.False(model.IsCheckingBoardBeforeNextTurn);
+            Assert.True((await bridge.ReadPublicAsync(token)).CanControl);
+
+            var second = await bridge.ExecuteAsync(active, new(Guid.NewGuid().ToString("N"), game.SessionId.Value,
+                game.Public.StateVersion, "drawTrain"), cancellation.Token).WaitAsync(TimeSpan.FromSeconds(2), token);
+            Assert.True(second.Accepted);
+            Assert.Equal(firstCount + 2, game.Public.SeatOf(active).TrainCardCount);
+            Assert.True(model.IsCheckingBoardBeforeNextTurn);
+            var committed = await game.ComputeStateHashAsync(token);
+            if (cancelAfterReceipt) cancellation.Cancel();
+            var poll = await bridge.ReadPublicAsync(token).WaitAsync(TimeSpan.FromSeconds(1), token);
+            Assert.False(poll.CanControl);
             Assert.True(poll.BoardInteraction!.CardActionsBlocked);
-            Assert.Equal(before, await game.ComputeStateHashAsync(TestContext.Current.CancellationToken));
-            if (cancel)
-            {
-                cancellation.Cancel();
-                await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await draw);
-                Assert.Equal(before, await game.ComputeStateHashAsync(TestContext.Current.CancellationToken));
-            }
-            else
-            {
-                at = DateTimeOffset.UtcNow;
-                PublishTrains(model.Camera, "duluth--omaha--a", 3, at, MarkerColor.Blue, count: 0);
-                Assert.False(draw.IsCompleted);
-                PublishTrains(model.Camera, "duluth--omaha--a", 4, at.AddSeconds(1.1), MarkerColor.Blue, count: 0);
-                Assert.True((await draw).Accepted);
-                Assert.Equal(version + 1, game.Public.StateVersion);
-                Assert.Equal(TurnPhase.AwaitingSecondTrainCard, game.Public.TurnPhase);
-            }
+            var next = game.Public.ActiveSeatId;
+            var attempted = await bridge.ExecuteAsync(next, new(Guid.NewGuid().ToString("N"), game.SessionId.Value,
+                game.Public.StateVersion, "drawTrain"), token);
+            Assert.False(attempted.Accepted);
+            Assert.Equal(committed, await game.ComputeStateHashAsync(token));
+
+            at = DateTimeOffset.UtcNow.AddSeconds(2);
+            PublishTrains(model.Camera, "duluth--omaha--a", 3, at, MarkerColor.Blue, count: 0);
+            Assert.True(model.IsCheckingBoardBeforeNextTurn);
+            PublishTrains(model.Camera, "duluth--omaha--a", 4, at.AddSeconds(1.1), MarkerColor.Blue, count: 0);
+            await WaitUntilAsync(() => !model.IsCheckingBoardBeforeNextTurn && model.CanRevealPrivateSeat);
+            Assert.True((await bridge.ReadPublicAsync(token)).CanControl);
+            Assert.Equal(committed, await game.ComputeStateHashAsync(token));
+            Assert.Equal(firstCount + 2, game.Public.SeatOf(active).TrainCardCount);
         }
         finally { await model.DisposeToolsAsync(); }
     }
-
     private static ICompanionGameBridge GetCompanionBridge(MainViewModel model) =>
         (ICompanionGameBridge)typeof(MainViewModel).GetProperty("CompanionBridge",
             BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(model)!;

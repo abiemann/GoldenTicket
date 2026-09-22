@@ -598,7 +598,7 @@ test('a pending face-up draw names the chosen card beside the picker until the b
   await flush();cameraTurn(p);await p.push();await p.client.reveal();
   assert.equal(privateNode(p,'Red · slot 1').disabled,false,'Reveal itself must not leave draw controls busy');
   const help=p.get('train-draw-help');const sending=p.client.submit('drawTrain',{slot:0});await flush();
-  assert.equal(help.textContent,'Checking the board before drawing your Red card…');assert.equal(help.style.minHeight,'150px');
+  assert.equal(help.textContent,'Drawing your Red card…');assert.equal(help.style.minHeight,'150px');
   assert.equal(p.get('private').hidden,false);assert.equal(help.role,'status');
   assert.ok(descendants(p.get('private')).filter(node=>node.className==='market-card').every(node=>node.disabled));
   const continuation=secondDrawContinuation(p);reply.resolve(p.response(continuation));await sending;

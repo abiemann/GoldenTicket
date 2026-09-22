@@ -206,6 +206,41 @@ public sealed class BoardInventoryVerifierTests
         Assert.Empty(confirmed.UnexpectedDetections);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void Missing_Boston_train_identifies_only_its_unverified_space(int missing)
+    {
+        const string route = "boston--new-york--a";
+        Train[] trains = [new(1838, 299, MarkerColor.Blue), new(1804, 357, MarkerColor.Blue)];
+        var scene = Scene(1, 1, DateTimeOffset.UtcNow, [trains[1 - missing]]);
+        var result = new BoardInventoryVerifier([new(route, MarkerColor.Blue, 2)],
+                verifyClaimedRouteColors: false)
+            .Observe(scene.Frame, scene.Candidates, 1, 1);
+
+        Assert.Equal(BoardInventoryState.MissingTrains, result.State);
+        Assert.Equal(route, result.RouteId);
+        Assert.Equal(1 << missing, result.UnverifiedSlotMask);
+        Assert.Empty(result.UnexpectedDetections);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void Ambiguous_Boston_train_identifies_the_duplicate_space(int ambiguous)
+    {
+        const string route = "boston--new-york--a";
+        var scene = Scene(1, 1, DateTimeOffset.UtcNow,
+            [new(1838, 299, MarkerColor.Blue), new(1804, 357, MarkerColor.Blue)]);
+        var result = new BoardInventoryVerifier([new(route, MarkerColor.Blue, 2)],
+                verifyClaimedRouteColors: false)
+            .Observe(scene.Frame, [.. scene.Candidates, scene.Candidates[ambiguous]], 1, 1);
+
+        Assert.Equal(BoardInventoryState.Ambiguous, result.State);
+        Assert.Equal(route, result.RouteId);
+        Assert.Equal(1 << ambiguous, result.UnverifiedSlotMask);
+    }
+
     [Fact]
     public void A_piece_changed_after_the_first_matching_frame_cannot_use_stale_route_confirmation()
     {

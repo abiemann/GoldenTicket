@@ -70,10 +70,11 @@ public sealed partial class MainViewModel
             return;
         }
 
-        if (_coordinator is not { } coordinator || IsGameInputPaused || !IsGameplayScreenActive(Screen.Table) ||
+        if (_coordinator is not { } coordinator || IsCheckingBoardBeforeNextTurn || IsGameInputPaused || !IsGameplayScreenActive(Screen.Table) ||
             _mustReload || NeedsBoardReconciliation)
         {
-            NotePlacementVerificationBlock(_coordinator is null ? "no-game" : IsGameInputPaused ? "game-dialog-open" :
+            NotePlacementVerificationBlock(_coordinator is null ? "no-game" :
+                IsCheckingBoardBeforeNextTurn ? "next-turn-board-check" : IsGameInputPaused ? "game-dialog-open" :
                 !IsGameplayScreenActive(Screen.Table) ? "table-not-active" : _mustReload ? "reload-required" :
                 "board-reconciliation-required");
             return;
@@ -317,8 +318,11 @@ public sealed partial class MainViewModel
                 point.X is >= 0 and <= 1 && point.Y is >= 0 and <= 1))
             .Select(candidate =>
             {
-                var x = candidate.Outline.Average(point => point.X) * ClassicUsRouteGeometry.ReferenceWidth;
-                var y = candidate.Outline.Average(point => point.Y) * ClassicUsRouteGeometry.ReferenceHeight;
+                var rawX = candidate.Outline.Average(point => point.X) * ClassicUsRouteGeometry.ReferenceWidth;
+                var rawY = candidate.Outline.Average(point => point.Y) * ClassicUsRouteGeometry.ReferenceHeight;
+                var center = TrainCandidateGeometry.GetCenter(analysis.Board, candidate);
+                var x = center.X * ClassicUsRouteGeometry.ReferenceWidth;
+                var y = center.Y * ClassicUsRouteGeometry.ReferenceHeight;
                 var nearest = slots.Select((slot, index) => new
                 {
                     index,
@@ -330,7 +334,8 @@ public sealed partial class MainViewModel
                 var dy = y - nearest.slot.ReferenceY;
                 return new
                 {
-                    x = Math.Round(x, 1), y = Math.Round(y, 1),
+                    x = Math.Round(rawX, 1), y = Math.Round(rawY, 1),
+                    verifiedCenterX = Math.Round(x, 1), verifiedCenterY = Math.Round(y, 1),
                     kind = candidate.Kind.ToString(),
                     confidence = Math.Round(candidate.Confidence, 3),
                     width = Math.Round((candidate.Outline.Max(point => point.X) -

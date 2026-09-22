@@ -840,7 +840,7 @@
                                    FontWeight="SemiBold" HorizontalAlignment="Center" />
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
                             <StackPanel Margin="0,0,14,0">
-                                <Button Style="{StaticResource DrawPileCardButtonStyle}" Content="T"
+                                <Button x:Name="BlindTrainDrawButton" Style="{StaticResource DrawPileCardButtonStyle}" Content="T"
                                         Background="#FF9B613C" HorizontalAlignment="Center"
                                         ToolTip="Draw a train card from the pile"
                                         AutomationProperties.Name="Draw a train card from the pile"
@@ -849,7 +849,7 @@
                                            HorizontalAlignment="Center" />
                             </StackPanel>
                             <StackPanel>
-                                <Button Style="{StaticResource DrawPileCardButtonStyle}" Content="D"
+                                <Button x:Name="DestinationDrawButton" Style="{StaticResource DrawPileCardButtonStyle}" Content="D"
                                         Background="#FF648AA7" HorizontalAlignment="Center"
                                         ToolTip="Draw destination tickets"
                                         AutomationProperties.Name="Draw destination tickets"
@@ -887,6 +887,8 @@
                         </ItemsControl>
                     </StackPanel>
                 </Border>
+                <Canvas x:Name="DrawCardFlightLayer" Width="1440" Height="900" Panel.ZIndex="200"
+                        IsHitTestVisible="False" Focusable="False" />
             </Canvas>
         </Viewbox>
 

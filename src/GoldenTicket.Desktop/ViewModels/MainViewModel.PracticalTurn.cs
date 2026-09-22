@@ -21,7 +21,7 @@ public sealed partial class MainViewModel
             : coordinator.Public.ActiveSeatId == turn.SeatId);
 
     public bool CanUseGameTableControls => IsSingleHumanGame || HasAcceptedPracticalTurn;
-    public bool IsGameTableHumanTurn => CanUseGameTableControls &&
+    public bool IsGameTableHumanTurn => CanUseGameTableControls && !IsCheckingBoardBeforeNextTurn &&
         _coordinator?.Public is { Lifecycle: SessionLifecycle.Active } view &&
         view.SeatOf(view.ActiveSeatId).Kind == SeatKind.Human;
 
@@ -52,9 +52,6 @@ public sealed partial class MainViewModel
         }
 
         await RefreshSoloDrawActionsAsync(view.Public);
-        if (generation != _revealGeneration || !HasAcceptedPracticalTurn || ShowSoloTicketOffer) return;
-        var tile = Game.TableSeats.FirstOrDefault(item => item.Seat.SeatId == seat.SeatId);
-        if (tile is not null) await ToggleSoloCardsAsync(tile, SoloCardPanelSelection.TrainCards);
     }
 
     private void ClearPracticalTurn()

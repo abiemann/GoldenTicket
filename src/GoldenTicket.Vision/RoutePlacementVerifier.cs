@@ -107,9 +107,11 @@ public sealed class RoutePlacementVerifier
         var plausible = candidates.Where(candidate =>
                 candidate.Kind == PieceCandidateKind.Train &&
                 candidate.Confidence >= MinimumConfidence && candidate.Outline.Count >= 4)
-            .Select(candidate => new LocatedCandidate(candidate,
-                candidate.Outline.Average(point => point.X) * 1996,
-                candidate.Outline.Average(point => point.Y) * 1248))
+            .Select(candidate =>
+            {
+                var center = TrainCandidateGeometry.GetCenter(uprightRectifiedBoard, candidate);
+                return new LocatedCandidate(candidate, center.X * 1996, center.Y * 1248);
+            })
             .ToArray();
         var matched = 0;
         var unverifiedSlotMask = 0;
@@ -280,36 +282,7 @@ public sealed class RoutePlacementVerifier
     private static ColorReading ReadFittedColor(CameraFrame frame, PieceCandidate candidate,
         double left, double top, double width, double height)
     {
-        var outline = candidate.OrientedOutline;
-        if (outline is not { Count: 4 } || outline.Any(point =>
-                !double.IsFinite(point.X) || !double.IsFinite(point.Y) ||
-                point.X is < 0 or >= 1 || point.Y is < 0 or >= 1)) return default;
-
-        var x0 = outline[0].X * frame.Width;
-        var y0 = outline[0].Y * frame.Height;
-        var ux = (outline[1].X - outline[0].X) * frame.Width;
-        var uy = (outline[1].Y - outline[0].Y) * frame.Height;
-        var vx = (outline[3].X - outline[0].X) * frame.Width;
-        var vy = (outline[3].Y - outline[0].Y) * frame.Height;
-        var uLength = Distance(ux, uy);
-        var vLength = Distance(vx, vy);
-        // Keep a substantial, rectangular train body, not a tiny favorable patch of color.
-        if (Math.Min(uLength, vLength) < 5 ||
-            Math.Max(uLength, vLength) / Math.Min(uLength, vLength) is < 1.5 or > 6 ||
-            Math.Abs(ux * vx + uy * vy) > uLength * vLength * .02 ||
-            Distance(outline[2].X * frame.Width - x0 - ux - vx,
-                outline[2].Y * frame.Height - y0 - uy - vy) > 1 ||
-            Math.Abs(ux) + Math.Abs(vx) < width * .64 ||
-            Math.Abs(uy) + Math.Abs(vy) < height * .64) return default;
-
-        var cx = x0 + (ux + vx) / 2;
-        var cy = y0 + (uy + vy) / 2;
-        if (Math.Abs(cx - left - width / 2) > width * .22 ||
-            Math.Abs(cy - top - height / 2) > height * .22 ||
-            outline.Any(point => point.X * frame.Width < left - width * .12 - 2 ||
-                point.X * frame.Width > left + width * 1.12 + 2 ||
-                point.Y * frame.Height < top - height * .12 - 2 ||
-                point.Y * frame.Height > top + height * 1.12 + 2)) return default;
+        if (!TrainCandidateGeometry.TryGetFittedBody(frame, candidate, out var body)) return default;
 
         Span<int> votes = stackalloc int[6];
         var samples = 0;
@@ -318,8 +291,8 @@ public sealed class RoutePlacementVerifier
         for (var gx = -3; gx <= 3; gx++)
         {
             if (gx * gx + gy * gy > 9) continue;
-            var sx = cx + (gx * ux + gy * vx) / 12;
-            var sy = cy + (gx * uy + gy * vy) / 12;
+            var sx = body.CenterX + (gx * body.Ux + gy * body.Vx) / 12;
+            var sy = body.CenterY + (gx * body.Uy + gy * body.Vy) / 12;
             var x = (int)Math.Round(sx);
             var y = (int)Math.Round(sy);
             // Fitted corners may include padding outside the box; sampled pixels may not.

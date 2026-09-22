@@ -79,7 +79,7 @@ internal sealed class DesktopCompanionBridge(
         finally { _serial.Release(); }
     }
 
-    // Public updates must remain responsive while a command waits for fresh camera frames.
+    // Public updates remain responsive during durable commands and between-turn board checks.
     // The dispatcher still protects UI-owned state; only private reads and mutations serialize.
     private async Task<T> OnDispatcherAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
     {

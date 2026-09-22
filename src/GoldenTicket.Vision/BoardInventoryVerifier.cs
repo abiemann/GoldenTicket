@@ -24,6 +24,8 @@ public sealed record BoardInventoryObservation(BoardInventoryState State,
     int? PendingSlotMask = null, UnexpectedTrainLocation? UnexpectedTrains = null)
 {
     public bool Confirmed => State == BoardInventoryState.Confirmed;
+    // Known problem spaces on RouteId; null means the verifier could not isolate a slot.
+    public int? UnverifiedSlotMask { get; init; }
     public IReadOnlyList<BoardInventoryDetection> UnexpectedDetections { get; init; } = [];
 }
 
@@ -143,7 +145,7 @@ public sealed class BoardInventoryVerifier
                 RoutePlacementState.WaitingForFreshFrame => BoardInventoryState.WaitingForFreshFrame,
                 RoutePlacementState.Unsupported => BoardInventoryState.Unsupported,
                 _ => BoardInventoryState.MissingTrains
-            }, route.RouteId);
+            }, route.RouteId, observation.UnverifiedSlotMask);
         }
 
         var slots = _slots;
@@ -156,14 +158,16 @@ public sealed class BoardInventoryVerifier
                 cropRevision, modelRevision);
             if (observation.State is RoutePlacementState.WrongColor or RoutePlacementState.Ambiguous)
                 return Fail(observation.State == RoutePlacementState.WrongColor
-                    ? BoardInventoryState.WrongColor : BoardInventoryState.Ambiguous, pending.RouteId);
+                    ? BoardInventoryState.WrongColor : BoardInventoryState.Ambiguous, pending.RouteId,
+                    observation.UnverifiedSlotMask);
             if (observation.State is not (RoutePlacementState.Incomplete or RoutePlacementState.Stabilizing
                 or RoutePlacementState.Confirmed))
                 return Fail(BoardInventoryState.WaitingForFreshFrame, pending.RouteId);
             pendingMask = ((1 << pending.TrainCount) - 1) & ~observation.UnverifiedSlotMask;
             if (_requiredPendingMask is { } required && pendingMask != required)
                 return Fail((pendingMask.Value & ~required) != 0 ? BoardInventoryState.UnexpectedTrain :
-                    BoardInventoryState.MissingTrains, pending.RouteId);
+                    BoardInventoryState.MissingTrains, pending.RouteId,
+                    (pendingMask.Value & ~required) != 0 ? null : required & ~pendingMask.Value);
             slots = [.. _slots, .. ExpectedSlots(pending.RouteId)
                 .Where((_, index) => (pendingMask.Value & (1 << index)) != 0)];
             var observedCounts = _expectedByColor.ToDictionary(pair => pair.Key, pair => pair.Value);
@@ -176,7 +180,7 @@ public sealed class BoardInventoryVerifier
             return Unexpected(board, plausible, slots);
         if (plausible.Length < slots.Length)
             return Fail(BoardInventoryState.MissingTrains);
-        var assignment = CheckAssignments(plausible, slots);
+        var assignment = CheckAssignments(board, plausible, slots);
         if (assignment == BoardInventoryState.UnexpectedTrain)
             return Unexpected(board, plausible, slots);
         if (assignment is { } badAssignment)
@@ -206,14 +210,15 @@ public sealed class BoardInventoryVerifier
         _cropRevision = _modelRevision = _cameraEpoch = -1;
     }
 
-    private static BoardInventoryState? CheckAssignments(IReadOnlyList<PieceCandidate> candidates,
+    private static BoardInventoryState? CheckAssignments(CameraFrame board, IReadOnlyList<PieceCandidate> candidates,
         IReadOnlyList<ExpectedSlot> slots)
     {
         var assigned = new int[slots.Count];
         foreach (var candidate in candidates)
         {
-            var x = candidate.Outline.Average(point => point.X) * 1996;
-            var y = candidate.Outline.Average(point => point.Y) * 1248;
+            var center = TrainCandidateGeometry.GetCenter(board, candidate);
+            var x = center.X * ClassicUsRouteGeometry.ReferenceWidth;
+            var y = center.Y * ClassicUsRouteGeometry.ReferenceHeight;
             var bestIndex = -1;
             var bestDistance = double.PositiveInfinity;
             var secondDistance = double.PositiveInfinity;
@@ -250,8 +255,9 @@ public sealed class BoardInventoryVerifier
         {
             if (candidate.Outline.Any(point => !double.IsFinite(point.X) ||
                 !double.IsFinite(point.Y) || point.X is < 0 or > 1 || point.Y is < 0 or > 1)) continue;
-            var x = candidate.Outline.Average(point => point.X) * ClassicUsRouteGeometry.ReferenceWidth;
-            var y = candidate.Outline.Average(point => point.Y) * ClassicUsRouteGeometry.ReferenceHeight;
+            var center = TrainCandidateGeometry.GetCenter(board, candidate);
+            var x = center.X * ClassicUsRouteGeometry.ReferenceWidth;
+            var y = center.Y * ClassicUsRouteGeometry.ReferenceHeight;
             if (expectedSlots.Any(slot => Fits(x, y, slot))) continue;
             var nearest = AllMeasuredSlots.Where(item => Fits(x, y, item.Slot))
                 .Select(item => (item.RouteId, Distance: Math.Sqrt(
@@ -297,8 +303,9 @@ public sealed class BoardInventoryVerifier
         for (var index = 0; index < plausible.Length; index++)
         {
             var candidate = plausible[index];
-            var x = candidate.Outline.Average(point => point.X) * ClassicUsRouteGeometry.ReferenceWidth;
-            var y = candidate.Outline.Average(point => point.Y) * ClassicUsRouteGeometry.ReferenceHeight;
+            var center = TrainCandidateGeometry.GetCenter(board, candidate);
+            var x = center.X * ClassicUsRouteGeometry.ReferenceWidth;
+            var y = center.Y * ClassicUsRouteGeometry.ReferenceHeight;
             colors[index] = RoutePlacementVerifier.ReadCandidateColor(board, candidate);
             var measured = AllMeasuredSlots.Where(item => Fits(x, y, item.Slot))
                 .Select(item => (item.RouteId, Distance: SlotDistance(x, y, item.Slot)))
@@ -374,12 +381,14 @@ public sealed class BoardInventoryVerifier
         }
     }
 
-    private BoardInventoryObservation Fail(BoardInventoryState state, string? routeId = null)
+    private BoardInventoryObservation Fail(BoardInventoryState state, string? routeId = null,
+        int? unverifiedSlotMask = null)
     {
         _firstMatchingAt = null;
-        return Hold(state, routeId);
+        return Hold(state, routeId, unverifiedSlotMask);
     }
 
-    private static BoardInventoryObservation Hold(BoardInventoryState state, string? routeId = null) =>
-        new(state, new Dictionary<MarkerColor, int>(), routeId);
+    private static BoardInventoryObservation Hold(BoardInventoryState state, string? routeId = null,
+        int? unverifiedSlotMask = null) =>
+        new(state, new Dictionary<MarkerColor, int>(), routeId) { UnverifiedSlotMask = unverifiedSlotMask };
 }

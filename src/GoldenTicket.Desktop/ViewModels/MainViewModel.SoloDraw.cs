@@ -26,8 +26,7 @@ public sealed partial class MainViewModel
     public IReadOnlyList<DestinationLineRow> SoloTicketOfferLines => _soloTicketOfferLines;
     public bool ShowSoloTicketOffer => _soloTicketOffer.Count > 0;
     public int SoloTicketMinimumKeep => _soloTicketMinimumKeep;
-    public bool CanKeepSoloTickets => CanUseGameTableControls && ShowSoloTicketOffer && !_operationInProgress &&
-        _cardActionBoardWarning is null &&
+    public bool CanKeepSoloTickets => CanUseGameTableControls && ShowSoloTicketOffer && !_operationInProgress && !IsCheckingBoardBeforeNextTurn &&
         _windowActive && !IsGameInputPaused && !NeedsBoardReconciliation &&
         _soloTicketOffer.Count(choice => choice.Keep) >= _soloTicketMinimumKeep;
     public string? SoloTicketOfferMessage
@@ -43,7 +42,7 @@ public sealed partial class MainViewModel
         _windowActive && _systemAvailable && !NeedsBoardReconciliation &&
         !IsGameInputPaused && _scoreMarkerStep is null &&
         PrivateSeat is null && BoardFirstProposal is null && _boardFirstInvalidMoveMessage is null &&
-        _cardActionBoardWarning is null &&
+        !IsCheckingBoardBeforeNextTurn &&
         !ShowSoloTicketOffer &&
         _soloDrawActionsVersion == coordinator.Public.StateVersion;
 
@@ -53,6 +52,14 @@ public sealed partial class MainViewModel
         slot is not null && CanUseSoloDrawPiles && _soloDrawableSlots.Contains(slot.Slot) &&
         slot.Slot >= 0 && slot.Slot < _coordinator!.Public.FaceUp.Length &&
         _coordinator!.Public.FaceUp[slot.Slot] == slot.Kind;
+
+    private bool LocalCardActionContextCurrent(GameCoordinator coordinator, long version, long generation) =>
+        ReferenceEquals(coordinator, _coordinator) && coordinator.Public.StateVersion == version &&
+        _revealGeneration == generation && !coordinator.StorageFaulted &&
+        CanUseGameTableControls && IsGameplayScreenActive(Screen.Table) &&
+        _windowActive && _systemAvailable && !_toolsDisposed && !_exitRequested && !_mustReload &&
+        !IsGameInputPaused && !NeedsBoardReconciliation && _scoreMarkerStep is null &&
+        !IsCheckingBoardBeforeNextTurn && BoardFirstProposal is null && _boardFirstInvalidMoveMessage is null;
 
     private void NotifySoloDrawCommands()
     {
@@ -192,6 +199,7 @@ public sealed partial class MainViewModel
             IsGameInputPaused || NeedsBoardReconciliation) return;
 
         var version = _soloTicketOfferVersion;
+        var generation = _revealGeneration;
         var kept = _soloTicketOffer.Where(choice => choice.Keep)
             .Select(choice => choice.TicketId).ToImmutableArray();
         var returned = _soloTicketOffer.Where(choice => !choice.Keep)
@@ -200,10 +208,8 @@ public sealed partial class MainViewModel
         try
         {
             var seat = await coordinator.GetSeatViewAsync(coordinator.Public.ActiveSeatId);
-            if (!ReferenceEquals(coordinator, _coordinator) ||
-                coordinator.Public.StateVersion != version || !CanUseGameTableControls || seat.Offer is null ||
+            if (!LocalCardActionContextCurrent(coordinator, version, generation) || seat.Offer is null ||
                 !_rules.GetLegalActions(seat).MustCommitTicketSelection) return;
-            if (!await CheckBoardBeforeCardActionAsync(coordinator, version) || !CanUseGameTableControls) return;
             var outcome = await coordinator.SubmitAsync(new CommitTicketSelection(
                 coordinator.NewEnvelope(seat.SeatId), kept, returned));
             if (!outcome.IsAccepted)
@@ -212,6 +218,7 @@ public sealed partial class MainViewModel
                 if (outcome.Result.Rejection?.Code == "StorageFaulted") RequireReload();
                 return;
             }
+            BeginCardTurnBoardCheck(seat.Public);
             await PumpAsync();
         }
         catch (Exception) { RequireReload(); }
@@ -232,17 +239,15 @@ public sealed partial class MainViewModel
         if (!CanUseSoloDrawPiles || _coordinator is not { } coordinator) return;
         var active = coordinator.Public.ActiveSeatId;
         var version = coordinator.Public.StateVersion;
+        var generation = _revealGeneration;
         SetOperationInProgress(true);
         var accepted = false;
         try
         {
             var seat = await coordinator.GetSeatViewAsync(active);
-            if (!ReferenceEquals(coordinator, _coordinator) ||
-                coordinator.Public.StateVersion != version ||
-                !CanUseGameTableControls || !IsGameplayScreenActive(Screen.Table) || !_windowActive) return;
+            if (!LocalCardActionContextCurrent(coordinator, version, generation)) return;
             var command = build(coordinator, seat);
             if (command is null) return;
-            if (!await CheckBoardBeforeCardActionAsync(coordinator, version) || !CanUseGameTableControls) return;
             var outcome = await coordinator.SubmitAsync(command);
             if (!outcome.IsAccepted)
             {
@@ -252,6 +257,8 @@ public sealed partial class MainViewModel
             }
             accepted = true;
             Status = null;
+            NotifyAcceptedLocalCardAction(outcome);
+            BeginCardTurnBoardCheck(seat.Public);
             await PumpAsync();
         }
         catch (Exception) { RequireReload(); }

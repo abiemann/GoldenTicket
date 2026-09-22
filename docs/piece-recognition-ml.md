@@ -1,6 +1,6 @@
 # Learning to recognize physical pieces
 
-Updated September 19, 2026. **Piece outlines uses a locally trained ML detector**, whose accepted
+Updated September 22, 2026. **Piece outlines uses a locally trained ML detector**, whose accepted
 runtime weights are included in the source checkout. This replaces empty-board differencing in the camera preview.
 The model supplies visual observations; separate position, color and freshness checks verify game actions.
 
@@ -47,6 +47,15 @@ separate from already strong detections. Unrelated or ambiguous retry outputs ar
 The usual merge, route geometry, colors and fresh-frame checks still apply; no game-state or
 historical occupancy is substituted for missing detections. Retry and recovery counts appear in
 the board-interaction diagnostics. A frame with no usable proposal remains conservative.
+
+Route matching uses a validated visible train-body center when the independent image fitter
+produces a reliable rectangle. The original ML box remains unchanged and supplies the fallback
+center. Size, shape and displacement limits reject unsuitable fits; lane-separation margins and
+the requirement for distinct current detections remain in effect. A September 22 Boston–New York
+case showed why this matters: the model detected both blue trains strongly, but the upper box's
+center was too close to the neighboring lane. The fitted body resolved that positional error
+without retraining the detector. The [three-image replay and regression results](evidence/boston-lane-centers-2026-09-22/validation.md)
+record the measured scope and the remaining live-play check.
 
 Chicago–Duluth live logs contain intermittent weak/missing middle-train predictions. The supplied
 screenshot detects all three after resampling, so it cannot establish a live recovery rate. Existing

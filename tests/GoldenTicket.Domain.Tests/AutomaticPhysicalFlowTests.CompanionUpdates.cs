@@ -9,7 +9,7 @@ namespace GoldenTicket.Domain.Tests;
 public sealed partial class AutomaticPhysicalFlowTests
 {
     [Fact]
-    public async Task Companion_pushes_transient_board_warning_recovery_without_changing_the_turn_or_hand()
+    public async Task Companion_pushes_post_turn_board_warning_and_recovery_without_repeating_card_awards()
     {
         var token = TestContext.Current.CancellationToken;
         var model = await StartCompanionMatchAsync();
@@ -17,22 +17,27 @@ public sealed partial class AutomaticPhysicalFlowTests
         {
             var bridge = GetCompanionBridge(model);
             var game = GetCoordinator(model);
-            var version = game.Public.StateVersion;
             var active = game.Public.ActiveSeatId;
-            var turn = game.Public.TurnNumber;
             var handCount = game.Public.SeatOf(active).TrainCardCount;
-            var stateHash = await game.ComputeStateHashAsync(token);
             model.Camera.IsGameTablePreviewUpright = true;
-            var at = DateTimeOffset.UtcNow;
-            PublishTrains(model.Camera, "duluth--omaha--a", 1, at, MarkerColor.Blue, count: 0);
-            await WaitUntilAsync(() => typeof(MainViewModel)
-                .GetField("_boardFirstLegalActions", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(model) is not null);
+            PublishTrains(model.Camera, "duluth--omaha--a", 1, DateTimeOffset.UtcNow,
+                MarkerColor.Blue, count: 0);
             var clean = model.Camera.GameTableAnalysis!;
-            Assert.False((await bridge.ReadPublicAsync(token)).BoardInteraction!.CardActionsBlocked);
+            for (var draw = 0; draw < 2; draw++)
+            {
+                var receipt = await bridge.ExecuteAsync(active, new(Guid.NewGuid().ToString("N"),
+                    game.SessionId.Value, game.Public.StateVersion, "drawTrain"), token)
+                    .WaitAsync(TimeSpan.FromSeconds(2), token);
+                Assert.True(receipt.Accepted);
+            }
+            Assert.Equal(handCount + 2, game.Public.SeatOf(active).TrainCardCount);
+            Assert.True(model.IsCheckingBoardBeforeNextTurn);
+            var version = game.Public.StateVersion;
+            var turn = game.Public.TurnNumber;
+            var stateHash = await game.ComputeStateHashAsync(token);
+            var at = DateTimeOffset.UtcNow;
             using var updates = ObserveCompanionUpdates(model);
 
-            // A false detection outside every route has no route-specific proposal to dismiss.
             Publish(2, extraTrain: true);
             Assert.True(updates.Changes.Reader.TryRead(out _));
             var blocked = (await bridge.ReadPublicAsync(token)).BoardInteraction!;
@@ -40,29 +45,31 @@ public sealed partial class AutomaticPhysicalFlowTests
             Assert.NotNull(blocked.Message);
             Assert.Null(blocked.DetectedRoute);
             Assert.Equal(blocked.Message, model.Game.GuidanceInstruction);
+            Assert.False((await bridge.ReadPublicAsync(token)).CanControl);
 
-            // Reusing the bad frame's sequence with different candidates is not recovery.
             Publish(2);
             Assert.Equal(blocked, (await bridge.ReadPublicAsync(token)).BoardInteraction);
             Assert.False(updates.Changes.Reader.TryRead(out _));
             Publish(3, stale: true);
             Assert.Equal(blocked, (await bridge.ReadPublicAsync(token)).BoardInteraction);
             Assert.False(updates.Changes.Reader.TryRead(out _));
+            Assert.True(model.IsCheckingBoardBeforeNextTurn);
 
-            // The first fresh whole-board match clears the warning and pushes that change.
-            // Nobody clicks a card, reloads, or acknowledges an error to make this happen.
             Publish(4);
+            Assert.True(model.IsCheckingBoardBeforeNextTurn);
+            Publish(5);
+            await WaitUntilAsync(() => !model.IsCheckingBoardBeforeNextTurn && model.CanRevealPrivateSeat);
             Assert.True(updates.Changes.Reader.TryRead(out _));
             var recovered = await bridge.ReadPublicAsync(token);
+            Assert.True(recovered.CanControl);
             Assert.False(recovered.BoardInteraction!.CardActionsBlocked);
             Assert.Null(recovered.BoardInteraction.Message);
             Assert.Null(recovered.BoardInteraction.DetectedRoute);
-            Assert.NotEqual(blocked.Message, model.Game.GuidanceInstruction);
             Assert.Equal(version, recovered.Game!.StateVersion);
             Assert.Equal(version, game.Public.StateVersion);
-            Assert.Equal(active, game.Public.ActiveSeatId);
+            Assert.NotEqual(active, game.Public.ActiveSeatId);
             Assert.Equal(turn, game.Public.TurnNumber);
-            Assert.Equal(handCount, game.Public.SeatOf(active).TrainCardCount);
+            Assert.Equal(handCount + 2, game.Public.SeatOf(active).TrainCardCount);
             Assert.Equal(stateHash, await game.ComputeStateHashAsync(token));
 
             void Publish(long sequence, bool extraTrain = false, bool stale = false)
@@ -70,7 +77,7 @@ public sealed partial class AutomaticPhysicalFlowTests
                 var clock = new ManualFrameTimeProvider();
                 var frame = CameraFrame.CopyFromBgra32(clean.Board.Width, clean.Board.Height,
                     clean.Board.Bgra32.Span, sequence, clean.Board.Epoch,
-                    at.AddMilliseconds(sequence * 100), clock);
+                    at.AddSeconds(sequence * 1.1), clock);
                 if (stale) clock.Advance(TimeSpan.FromSeconds(3));
                 PieceCandidate[] candidates = extraTrain
                     ? [new(PieceCandidateKind.Train,
@@ -83,7 +90,6 @@ public sealed partial class AutomaticPhysicalFlowTests
         }
         finally { await model.DisposeToolsAsync(); }
     }
-
     [Fact]
     public async Task Companion_updates_keep_detected_payment_ready_through_camera_changes_without_repeating_unchanged_frames()
     {

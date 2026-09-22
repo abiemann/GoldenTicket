@@ -72,12 +72,15 @@ See the
 - [x] Validate turn timing, save compatibility, rewinding and physical-flow attribution with 194
   related regression tests. Offscreen WPF checks cover two and five result panels at 1280×800
   and 1920×1200, including player navigation and full route-text scrolling.
-- [x] Name identifiable unexpected trains by route, color and count. Block solo card draws while
-  a placement warning is unresolved; require fresh whole-board verification after removal.
+- [x] Name identifiable unexpected trains by route, color and count. Hold the next turn while
+  its board check has an unresolved warning; require fresh whole-board verification after removal.
 - [x] Mark blocking train detections directly on the live map with yellow spheres during reload,
   card, placement and save checks, including detections without a named route. Keep check ownership
   separate and clear correction cues on the first fresh matching inventory. Verify with synthetic
   camera and scaled WPF checks; a live-camera walkthrough of these correction cues remains to run.
+- [x] Preserve the failed-space mask in whole-board warnings so yellow spheres isolate the
+  unverified train spaces. Use a guarded visible train-body center for lane matching when an
+  image fit is available; retain the original detector box for diagnostics and as fallback.
 - [x] Resolve duplicate train labels on clearly read scoring markers during whole-board inventory
   checks, using compact size, strong overlap, matching centers and matching sampled color. Retain
   raw model detections and keep genuine nearby trains and missing route pieces blocking.
@@ -91,9 +94,12 @@ See the
   boxes, colors, confidence and route/board location, including unmatched or duplicate boxes.
   Record positions in the local board-decision log. Clear temporary warnings on a fresh match,
   including after a timeout; name unpaid proposals and direct the player back to payment.
-- [x] Require post-click whole-board verification for local human card actions, including the
-  second train card and destination selection. Preserve the human's turn and offer payment for
-  a payable board-first route instead of consuming a draw; reject stale/in-flight camera results.
+- [x] Save local and Quick play card draws immediately, with rotating card flights into the
+  drawing player's tile on the laptop. Update T/D stacks from the saved state, including pending
+  destination offers. Check the whole board after the completed turn, blocking the next human or
+  computer until fresh matching frames arrive. Keep awarded cards through discrepancies and focus
+  changes; reject stale/in-flight camera results. Existing route proposals still require payment
+  or removal before starting a draw. Automated flow and rendered UI checks cover these changes.
 - [x] Confirm a human's board-first route and whole-board inventory before showing payment.
   Keep the proposal and chosen cards stable through camera changes. Accept legal payment into
   the pending claim, then require fresh post-payment whole-board verification before committing
@@ -285,6 +291,15 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   preview responsiveness; compare with 1080p under the same conditions. Exercise route claims,
   card draws, save/reload and camera reconnect, and verify the 720p warning stays visible.
   Record results and practical limits before claiming reliable 720p gameplay.
+- [x] **Android Webcam unplug/replug failure reproduced on hardware (September 22).** The user
+  disconnected and reconnected the webcam. The app switched to the laptop camera and stayed
+  there; stopping capture and manually reselecting Android Webcam restored the intended camera.
+  Recovery now remembers the selected device ID and name, waits for that camera, and uses a
+  unique name match if Windows changes its ID. Another camera requires an explicit selection.
+- [ ] **Retest webcam recovery after the identity fix.** Unplug Android Webcam with the laptop
+  camera available, reconnect it, and confirm the app waits for and resumes the intended camera
+  without manual reselection. Check that pending game actions survive and stale frames are not
+  accepted. This recheck is separate from jog, sleep/resume and GPU-loss acceptance.
 - [x] **CPU/GPU preprocessing implementation.** Real Direct3D 11 compute performs bounded
   enhancement and aspect-preserving resizing, with Auto/CPU/GPU choices, local preference
   persistence, validated hardware activation, effective status and CPU fallback. No recognition

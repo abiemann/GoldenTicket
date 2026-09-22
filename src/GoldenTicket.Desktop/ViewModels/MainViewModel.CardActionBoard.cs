@@ -1,29 +1,28 @@
 using GoldenTicket.Application;
 using GoldenTicket.Domain;
 using GoldenTicket.Domain.Engine;
+using GoldenTicket.Domain.Events;
+using GoldenTicket.Domain.Projections;
 using GoldenTicket.Vision;
 
 namespace GoldenTicket.Desktop.ViewModels;
 
 public sealed partial class MainViewModel
 {
+    // Cards are already durably awarded when this gate starts. Only the following turn waits.
     private sealed record CardBoardCheck(GameCoordinator Coordinator, long Version,
         DateTimeOffset StartedAt, long InitialEpoch, long InitialSequence,
-        BoardInventoryVerifier Verifier)
-    {
-        public TaskCompletionSource<bool> Completion { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public GameTableAnalysis? ConfirmedAnalysis { get; set; }
-    }
+        BoardInventoryVerifier Verifier);
 
     private CardBoardCheck? _cardBoardCheck;
-    private BoardInventoryVerifier? _cardBoardMonitor;
-    private string? _cardBoardMonitorKey;
+    private bool _finishingCardBoardCheck;
     private string? _cardActionBoardWarning;
     private string? _cardBoardGuidance;
     private bool _cardBoardCameraSeen;
     private string? _lastCardBoardProblemLogKey;
     private DateTimeOffset _lastCardBoardProblemLogAt;
+
+    public bool IsCheckingBoardBeforeNextTurn => _cardBoardCheck is not null;
 
     private bool UsesCameraForCardActions => _cardBoardCameraSeen ||
         _gameLayerVisible && Camera.IsGameTablePreviewRequested ||
@@ -35,25 +34,74 @@ public sealed partial class MainViewModel
         coordinator.Public.TurnPhase is TurnPhase.TurnStart or
             TurnPhase.AwaitingSecondTrainCard or TurnPhase.AwaitingTicketKeep;
 
-    private bool CardBoardContextCurrent(GameCoordinator coordinator, long version) =>
-        ReferenceEquals(coordinator, _coordinator) && coordinator.Public.StateVersion == version &&
-        IsHumanCardPhase(coordinator) && !coordinator.StorageFaulted &&
-        !_exitRequested && !_mustReload && !_toolsDisposed && _windowActive && _systemAvailable &&
-        !IsGameInputPaused && !NeedsBoardReconciliation && _scoreMarkerStep is null &&
-        IsGameplayScreenActive(Screen.Table);
-
     private BoardInventoryVerifier NewCardBoardVerifier(GameCoordinator coordinator) =>
         new(coordinator.Public.RouteOwners.Select(route => new BoardInventoryRoute(route.Key.Value,
             ToMarkerColor(coordinator.Public.SeatOf(route.Value).Color),
             _manifest.Route(route.Key).Length)).ToArray(), verifyClaimedRouteColors: false);
 
+    private void NotifyCardBoardCheckChanged()
+    {
+        OnPropertyChanged(nameof(IsCheckingBoardBeforeNextTurn));
+        OnPropertyChanged(nameof(CanRevealPrivateSeat));
+        OnPropertyChanged(nameof(IsGameTableHumanTurn));
+        NotifySoloDrawCommands();
+        UpdateTurnClock();
+        NotifyCompanionPresentationChanged();
+    }
+
     private void ResetCardActionBoard()
     {
-        _cardBoardCheck?.Completion.TrySetResult(false);
         _cardBoardCheck = null;
-        _cardBoardMonitor = null;
-        _cardBoardMonitorKey = null;
         SetCardBoardWarning(null);
+        NotifyCardBoardCheckChanged();
+    }
+
+    private void PauseCardBoardCheck()
+    {
+        if (_cardBoardCheck is not { } check) return;
+        var latest = Camera.GameTableAnalysis;
+        check.Verifier.Reset();
+        _cardBoardCheck = check with { StartedAt = DateTimeOffset.UtcNow,
+            InitialEpoch = latest?.Board.Epoch ?? -1, InitialSequence = latest?.Board.Sequence ?? -1 };
+    }
+
+    private void BeginCardTurnBoardCheck(PublicView before)
+    {
+        if (_coordinator is not { } coordinator || !UsesCameraForCardActions ||
+            before.Lifecycle != SessionLifecycle.Active ||
+            before.SeatOf(before.ActiveSeatId).Kind != SeatKind.Human ||
+            before.TurnPhase is not (TurnPhase.TurnStart or TurnPhase.AwaitingSecondTrainCard or TurnPhase.AwaitingTicketKeep) ||
+            coordinator.Public.TurnNumber == before.TurnNumber && coordinator.Public.Lifecycle != SessionLifecycle.Finished)
+            return;
+
+        _cardBoardCameraSeen = true;
+        var latest = Camera.GameTableAnalysis;
+        _cardBoardCheck = new(coordinator, coordinator.Public.StateVersion, DateTimeOffset.UtcNow,
+            latest?.Board.Epoch ?? -1, latest?.Board.Sequence ?? -1, NewCardBoardVerifier(coordinator));
+        HidePrivateSeat();
+        ResetBoardFirstClaimFlow();
+        SetCardBoardWarning(null);
+        ShowCardBoardGuidance("Checking the board before the next turn. Keep every train visible in its space.");
+        NotifyCardBoardCheckChanged();
+        BoardInteractionLog.Write("card-turn.board-check-started", new
+        {
+            session = coordinator.SessionId.Value, version = coordinator.Public.StateVersion,
+            completedTurn = before.TurnNumber, nextTurn = coordinator.Public.TurnNumber
+        });
+    }
+
+    private void NotifyAcceptedLocalCardAction(SubmitOutcome outcome)
+    {
+        if (!outcome.IsAccepted || outcome.WasDuplicate || outcome.Result.Transition is not { } transition) return;
+        foreach (var entry in transition.Events)
+        {
+            if (entry is FaceUpCardTaken faceUp)
+                OnLocalTrainCardAccepted(faceUp.SeatId, faceUp.Slot, faceUp.Kind);
+            else if (entry is BlindCardDrawn blind)
+                OnLocalTrainCardAccepted(blind.SeatId, null, TrainCardKind.Locomotive);
+            else if (entry is TicketOfferCreated tickets)
+                OnLocalDestinationCardsAccepted(tickets.SeatId, tickets.Offered.Length);
+        }
     }
 
     private void SetCardBoardWarning(string? message)
@@ -74,41 +122,32 @@ public sealed partial class MainViewModel
 
     private void ShowCardBoardGuidance(string message)
     {
-        // A payable route's payment dialog and specific placement feedback take precedence.
-        if (BoardFirstProposal is not null || _boardFirstInvalidMoveMessage is not null) return;
         _cardBoardGuidance = message;
-        Game.ShowGuidance(Table.TurnText, _coordinator!.Public.SeatOf(
-            _coordinator.Public.ActiveSeatId).DisplayName, message);
+        Game.ShowGuidance(Table.TurnText, "Checking…", message);
     }
 
-    private string CardBoardProblem(BoardInventoryObservation observation, GameCoordinator coordinator)
+    private string CardBoardProblem(BoardInventoryObservation observation)
     {
         if (observation.UnexpectedTrains is { } extra)
         {
             var route = _manifest.Describe(new RouteId(extra.RouteId));
-            var color = extra.Color is { } c ? c.ToString().ToLowerInvariant() + " " : "";
-            var seen = $"The camera sees {extra.Count} {color}train{(extra.Count == 1 ? "" : "s")} on {route}. ";
-            return seen + (coordinator.Public.TurnPhase == TurnPhase.TurnStart
-                ? "Claim this route if you can pay for it, or remove the trains before drawing cards."
-                : "You already chose to draw cards this turn. Remove these unclaimed trains to continue.");
+            var color = extra.Color is { } c ? c + " " : "";
+            return $"The camera sees {extra.Count} unexpected {color}train{(extra.Count == 1 ? "" : "s")} on {route}. " +
+                "Check the yellow spheres and remove these trains before the next turn.";
         }
         if (observation.RouteId is { } routeId)
         {
             var route = _manifest.Describe(new RouteId(routeId));
             return observation.State switch
             {
-                BoardInventoryState.Ambiguous =>
-                    $"The camera cannot clearly identify the train positions on {route}. " +
-                    "The claim is still recorded. Keep the trains in their spaces and clear hands or glare " +
-                    "while the camera checks again.",
-                BoardInventoryState.MissingTrains =>
-                    $"The camera cannot verify every train on {route}. The claim is still recorded. " +
-                    "Make sure every train is visible in its space before drawing cards.",
-                BoardInventoryState.WrongColor =>
-                    $"The camera reads a different train color on {route}. The claim is still recorded. " +
-                    "Check the pieces and lighting before drawing cards.",
+                BoardInventoryState.Ambiguous => $"The camera cannot clearly identify the trains on {route}. " +
+                    "Check the yellow spheres and clear hands or glare while it checks again.",
+                BoardInventoryState.MissingTrains => $"The camera cannot verify every train on {route}. " +
+                    "The claim is still recorded. Check the yellow spheres and make every train visible in its space.",
+                BoardInventoryState.WrongColor => $"The camera reads a different train color on {route}. " +
+                    "Check the yellow spheres, pieces and lighting before the next turn.",
                 _ => $"The camera cannot verify the claimed route {route}. " +
-                    "The claim is still recorded. Check the board view before drawing cards."
+                    "The claim is still recorded. Check the yellow spheres before the next turn."
             };
         }
         return observation.UnexpectedDetections.Count > 0
@@ -122,22 +161,19 @@ public sealed partial class MainViewModel
         var routeId = observation.RouteId ?? observation.UnexpectedTrains?.RouteId;
         var key = $"{coordinator.SessionId.Value}/{coordinator.Public.StateVersion}/" +
             $"{analysis.Board.Epoch}/{analysis.CropRevision}/{analysis.ModelRevision}/" +
-            $"{observation.State}/{routeId}/{observation.UnexpectedTrains}/{_cardBoardCheck is not null}";
+            $"{observation.State}/{routeId}/{observation.UnexpectedTrains}";
         if (_lastCardBoardProblemLogKey == key &&
             analysis.Board.CapturedAt >= _lastCardBoardProblemLogAt &&
             analysis.Board.CapturedAt - _lastCardBoardProblemLogAt < TimeSpan.FromSeconds(1)) return;
         _lastCardBoardProblemLogKey = key;
         _lastCardBoardProblemLogAt = analysis.Board.CapturedAt;
-        BoardInteractionLog.Write("card-action.board-problem", new
+        BoardInteractionLog.Write("card-turn.board-problem", new
         {
             session = coordinator.SessionId.Value, version = coordinator.Public.StateVersion,
-            turn = coordinator.Public.TurnNumber, phase = coordinator.Public.TurnPhase.ToString(),
             analysis.Board.Sequence, analysis.Board.Epoch, analysis.Board.CapturedAt,
-            ageMs = analysis.Board.Age.TotalMilliseconds,
             analysis.CropRevision, analysis.ModelRevision,
             state = observation.State.ToString(), route = routeId, observation.UnexpectedTrains,
             observation.UnexpectedDetections,
-            cardCheckPending = _cardBoardCheck is not null,
             nearbyCandidates = routeId is null ? Array.Empty<object>() : DescribeNearbyPlacementCandidates(analysis, routeId)
         });
     }
@@ -146,121 +182,68 @@ public sealed partial class MainViewModel
         observation.State is BoardInventoryState.UnexpectedTrain or BoardInventoryState.MissingTrains or
             BoardInventoryState.WrongColor or BoardInventoryState.Ambiguous or BoardInventoryState.Unsupported;
 
-    // Runs independently of the placement flow, including while an asynchronous card action waits.
     private void ObserveCardActionBoard()
     {
-        if (_coordinator is not { } coordinator) return;
         if (Camera.IsGameTablePreviewUpright || Camera.GameTableAnalysis is not null)
             _cardBoardCameraSeen = true;
-        if (!IsHumanCardPhase(coordinator))
+        if (_cardBoardCheck is not { } check || _finishingCardBoardCheck) return;
+        var coordinator = check.Coordinator;
+        if (!ReferenceEquals(coordinator, _coordinator) || coordinator.Public.StateVersion != check.Version)
         {
+            // A save/rebuild or another recovery transition supersedes this in-memory gate.
             ResetCardActionBoard();
             return;
         }
-        if (!CardBoardContextCurrent(coordinator, coordinator.Public.StateVersion))
+        if (_operationInProgress || IsGameInputPaused || !_windowActive || !_systemAvailable ||
+            _exitRequested || _mustReload || _toolsDisposed || NeedsBoardReconciliation ||
+            !IsGameplayScreenActive(Screen.Table) || coordinator.StorageFaulted)
         {
-            _cardBoardCheck?.Completion.TrySetResult(false);
-            _cardBoardMonitor?.Reset();
+            check.Verifier.Reset();
             return;
         }
         if (Camera.GameTableAnalysis is not { } analysis || !Camera.IsGameTablePreviewUpright ||
             analysis.Board.Age > TimeSpan.FromSeconds(2))
         {
-            _cardBoardMonitor?.Reset();
-            _cardBoardCheck?.Verifier.Reset();
+            check.Verifier.Reset();
+            ShowCardBoardGuidance(_cardActionBoardWarning ??
+                "Keep the whole board visible while the camera checks it before the next turn.");
             return;
         }
-
-        var key = $"{coordinator.SessionId.Value}/{coordinator.Public.StateVersion}";
-        if (_cardBoardMonitorKey != key)
-        {
-            _cardBoardMonitorKey = key;
-            _cardBoardMonitor = NewCardBoardVerifier(coordinator);
-            SetCardBoardWarning(null);
-        }
-        var observation = _cardBoardMonitor!.Observe(analysis.Board, analysis.Candidates,
+        if (analysis.Board.CapturedAt <= check.StartedAt ||
+            analysis.Board.Epoch == check.InitialEpoch && analysis.Board.Sequence <= check.InitialSequence) return;
+        var observation = check.Verifier.Observe(analysis.Board, analysis.Candidates,
             analysis.CropRevision, analysis.ModelRevision);
-        Game.UpdateInventoryProblemMarkers("card", BoardFirstProposal is null ? observation : null);
+        if (observation.State == BoardInventoryState.WaitingForFreshFrame) return;
+        Game.UpdateInventoryProblemMarkers("card", observation);
         if (CardBoardHasProblem(observation))
         {
             LogCardBoardProblem(analysis, observation, coordinator);
-            SetCardBoardWarning(CardBoardProblem(observation, coordinator));
+            SetCardBoardWarning(CardBoardProblem(observation));
         }
         else if (observation.State is BoardInventoryState.Stabilizing or BoardInventoryState.Confirmed)
         {
-            // A fresh matching board corrects the warning immediately. Awarding a card still
-            // requires the separate post-click verifier below to reach Confirmed.
-            if (_cardActionBoardWarning is { } previous)
-                BoardInteractionLog.Write("card-action.board-problem-cleared", new
-                {
-                    session = coordinator.SessionId.Value, version = coordinator.Public.StateVersion,
-                    analysis.Board.Sequence, analysis.Board.Epoch, previous
-                });
-            if (_cardActionBoardWarning is not null || _cardBoardCheck is null)
-                SetCardBoardWarning(null);
-        }
-
-        if (_cardBoardCheck is not { } check) return;
-        if (!CardBoardContextCurrent(check.Coordinator, check.Version))
-        {
-            check.Completion.TrySetResult(false);
-            return;
-        }
-        // A result published after the click can still belong to a capture from before it.
-        if (analysis.Board.CapturedAt < check.StartedAt ||
-            analysis.Board.Epoch == check.InitialEpoch && analysis.Board.Sequence <= check.InitialSequence)
-            return;
-        var fresh = check.Verifier.Observe(analysis.Board, analysis.Candidates,
-            analysis.CropRevision, analysis.ModelRevision);
-        if (CardBoardHasProblem(fresh)) check.Completion.TrySetResult(false);
-        else if (fresh.Confirmed)
-        {
-            check.ConfirmedAnalysis = analysis;
-            check.Completion.TrySetResult(true);
+            SetCardBoardWarning(null);
+            ShowCardBoardGuidance("The board matches. Confirming its positions before the next turn…");
+            if (observation.Confirmed) _ = FinishCardTurnBoardCheckAsync(check);
         }
     }
 
-    private async Task<bool> CheckBoardBeforeCardActionAsync(GameCoordinator coordinator, long version,
-        CancellationToken cancellationToken = default)
+    private async Task FinishCardTurnBoardCheckAsync(CardBoardCheck check)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        // Technical/manual sessions without a camera retain operator verification.
-        if (!UsesCameraForCardActions || coordinator.Public.Lifecycle != SessionLifecycle.Active) return true;
-        _cardBoardCameraSeen = true;
-        if (!CardBoardContextCurrent(coordinator, version) || _cardActionBoardWarning is not null ||
-            BoardFirstProposal is not null || _boardFirstInvalidMoveMessage is not null) return false;
-        var current = Camera.GameTableAnalysis;
-        var check = new CardBoardCheck(coordinator, version, DateTimeOffset.UtcNow,
-            current?.Board.Epoch ?? -1, current?.Board.Sequence ?? -1, NewCardBoardVerifier(coordinator));
-        _cardBoardCheck = check;
-        ShowCardBoardGuidance("Checking the board before drawing cards…");
-        BoardInteractionLog.Write("card-action.board-check-started", new
-        {
-            session = coordinator.SessionId.Value, version,
-            phase = coordinator.Public.TurnPhase.ToString(),
-            check.InitialSequence, check.InitialEpoch
-        });
-        var confirmed = false;
+        if (_finishingCardBoardCheck || !ReferenceEquals(_cardBoardCheck, check) || _operationInProgress) return;
+        _finishingCardBoardCheck = true;
+        SetOperationInProgress(true);
         try
         {
-            confirmed = await check.Completion.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
-            confirmed = confirmed && CardBoardContextCurrent(coordinator, version) &&
-                _cardActionBoardWarning is null && BoardFirstProposal is null &&
-                _boardFirstInvalidMoveMessage is null && Camera.IsGameTablePreviewUpright &&
-                Camera.GameTableAnalysis is { } latest && ReferenceEquals(latest, check.ConfirmedAnalysis) &&
-                latest.Board.Age <= TimeSpan.FromSeconds(2);
-            return confirmed;
+            ResetCardActionBoard();
+            BoardInteractionLog.Write("card-turn.board-check-finished", new { check.Version, confirmed = true });
+            await PumpAsync();
         }
-        catch (TimeoutException)
-        {
-            SetCardBoardWarning("The camera could not verify the board. Keep it clear and in focus, then try again.");
-            return false;
-        }
+        catch (Exception) { RequireReload(); }
         finally
         {
-            if (ReferenceEquals(_cardBoardCheck, check)) _cardBoardCheck = null;
-            if (_cardActionBoardWarning is null) SetCardBoardWarning(null);
-            BoardInteractionLog.Write("card-action.board-check-finished", new { version, confirmed });
+            _finishingCardBoardCheck = false;
+            SetOperationInProgress(false);
         }
     }
 }

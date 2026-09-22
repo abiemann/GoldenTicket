@@ -28,7 +28,7 @@ public sealed partial class MainViewModel
         var placing = view.Lifecycle == SessionLifecycle.Active && Table.Placement is { } placement &&
             view.PendingClaim is { } pending && placement.OperationId == pending.OperationId &&
             placement.StateVersion == view.StateVersion && placement.SeatId == pending.SeatId;
-        return scoring || placing
+        return scoring || placing || IsCheckingBoardBeforeNextTurn
             ? new(Game.GuidanceSeat, Game.GuidanceInstruction)
             : null;
     }
@@ -48,21 +48,18 @@ public sealed partial class MainViewModel
             !_mustReload && !NeedsBoardReconciliation && _scoreMarkerStep is null;
         CompanionDetectedRoute? detected = proposal is null ? null : new(proposal.ProposalId,
             proposal.RouteId.Value, proposal.RouteText, _manifest.Route(proposal.RouteId).Length, ready);
-        var cameraUnavailable = !Camera.IsGameTablePreviewUpright ||
-            Camera.GameTableAnalysis is not { } latest || latest.Board.Age > TimeSpan.FromSeconds(2);
-        var blocked = IsHumanCardPhase(coordinator) && (proposal is not null ||
-            _cardBoardCheck is not null || _boardFirstRouteDetector.ProposedRouteId is not null ||
-            _boardFirstInvalidMoveMessage is not null || _cardActionBoardWarning is not null ||
-            cameraUnavailable || _scoreMarkerStep is not null);
-        var message = proposal is not null
+        var blocked = IsCheckingBoardBeforeNextTurn || IsHumanCardPhase(coordinator) && (proposal is not null ||
+            _boardFirstRouteDetector.ProposedRouteId is not null ||
+            _boardFirstInvalidMoveMessage is not null || _scoreMarkerStep is not null);
+        var message = IsCheckingBoardBeforeNextTurn
+            ? _cardActionBoardWarning ?? "The camera is checking the board before the next turn."
+            : proposal is not null
             ? ready ? $"Your trains on {proposal.RouteText} are confirmed. Choose cards to pay."
                 : "Resume the game to choose cards for your detected route."
-            : _boardFirstInvalidMoveMessage ?? _cardActionBoardWarning ??
-                (_cardBoardCheck is not null ? "The camera is checking the board before drawing cards."
-                    : cameraUnavailable ? "Keep the board visible while the camera checks it."
-                    : _boardFirstRouteDetector.ProposedRouteId is not null
-                        ? "The camera is confirming your route before payment."
-                        : null);
+            : _boardFirstInvalidMoveMessage ??
+                (_boardFirstRouteDetector.ProposedRouteId is not null
+                    ? "The camera is confirming your route before payment."
+                    : null);
         return new(true, blocked, message, detected);
     }
 
@@ -118,7 +115,8 @@ public sealed partial class MainViewModel
             if (coordinator.SessionId.Value != command.SessionId ||
                 coordinator.Public.StateVersion != command.ExpectedStateVersion || coordinator.Public.ActiveSeatId != seat)
                 return Refused("RefreshRequired", "Hide and reveal again to use the current turn.");
-            if (!await CheckBoardBeforeCardActionAsync(coordinator, command.ExpectedStateVersion, cancellationToken))
+            if (IsCheckingBoardBeforeNextTurn || BoardFirstProposal is not null ||
+                _boardFirstInvalidMoveMessage is not null || _boardFirstRouteDetector.ProposedRouteId is not null)
                 return Refused("BoardCheckRequired", CurrentCompanionBoardInteraction()?.Message ??
                     "Check the trains on the board before drawing cards.");
             cancellationToken.ThrowIfCancellationRequested();

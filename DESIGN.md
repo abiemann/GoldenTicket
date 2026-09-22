@@ -243,10 +243,21 @@ player reveals the shared browser; PRACTICAL uses private laptop controls while 
 Selecting a face-up card or blind draw submits a command, shows its authoritative result privately
 and updates the market before a subsequent choice is permitted. Destination draws open their
 private offer directly. Disable duplicate submissions while a result is unknown; do not locally
-invent a successful draw. The browser stays open through the first draw and a camera-rejected
-choice, preserving the current turn and displaying the result beside the picker.
+invent a successful draw. Card actions do not wait for a fresh camera check before each click.
+The browser stays open through the first draw, preserving the current turn and displaying the
+result beside the picker. On the themed laptop board, an accepted face-up card or face-down T/D
+card flies along an arc while rotating into the original player's tile. The public stack updates
+from the committed state, including destination tickets temporarily held in the pending offer.
+The animation never changes the rules, reveals blind cards or delays saving; reduced-motion
+settings skip the flight.
 
-The game completes these actions through the rules engine. It does not wait for a nonexistent physical board change to decide that the turn ended. It returns to the privacy curtain before another human's information becomes available.
+The game completes these actions through the rules engine. After the second train card, a
+face-up locomotive, or a kept destination offer ends a human's turn, the camera checks fresh
+evidence against the claimed routes before the next human or computer can act. Accepted card
+awards remain saved during this check. Discrepancies show specific guidance and yellow spheres
+on the board, and a corrected board automatically releases the next turn. Focus changes cannot
+discard this pending check. Sessions using manual verification retain their operator workflow.
+The shared laptop returns to its turn warning before another human's information becomes available.
 
 ### 4.3 Human route claim: planned placement
 
@@ -323,26 +334,24 @@ overlay immediately. These destination connections are never added to the public
 
 If the player started a route during an already selected card action, explain the conflict and guide them to restore the physical board. Do not reinterpret the card action as a claim or discard an already revealed card to make the history fit.
 
-The desktop camera flow checks committed train inventory during `TurnStart`,
-`AwaitingSecondTrainCard`, and `AwaitingTicketKeep`. Before submitting a local or Quick play human card
-action, it requires two distinct fresh captures taken after the click, at least one second
-apart, matching the complete committed board's occupancy. During normal gameplay, committed
-routes retain their recorded owner and physical color; their sampled color is not reclassified
-as a condition of drawing cards or confirming another route. Current distinct ML train detections,
-correct positions, parallel-lane assignment and absence of extras remain mandatory. Cached or
-already-processing pre-click frames cannot authorize a draw. Unclaimed trains cancel the card request without spending cards or
-advancing the turn; at `TurnStart`, the existing board-first detector can then offer the route's
-payment dialog. Later in a draw action, the user must remove those trains. The check times out
-after five seconds without a command submission and is canceled on focus loss. Explicitly
-camera-free technical play retains its manual workflow; a game using the camera cannot silently
-fall back to that path after the camera stops. Quick play uses the same gate before remote
-card actions.
+Local and Quick play human card actions save immediately, without a new camera check per click.
+A detected route proposal at `TurnStart` still needs payment or removal before a card action can
+begin. Once a draw has started, newly placed trains cannot replace it or revoke an awarded card.
+After the card action completes the turn, a separate gate requires two distinct fresh captures
+taken after completion, at least one second apart, matching the committed board's occupancy.
+During normal gameplay, committed routes retain their recorded owner and physical color; their
+sampled color is not reclassified. Current distinct ML train detections, correct positions,
+parallel-lane assignment and absence of extras remain mandatory. Cached or already-processing
+frames cannot release the next player. Focus loss pauses verification and requires fresh evidence
+on return; it does not discard the pending check or the awarded cards. Explicitly camera-free
+technical play retains its manual workflow; a game using the camera cannot silently fall back
+to that path after the camera stops.
 
 Temporary board warnings clear automatically on the first fresh analysis that matches all
 committed train positions with no extras. Any obsolete invalid-placement markers clear too,
 and Quick play receives the correction through SSE. Missing, stale or repeated captures do
-not count as correction. Clearing a warning neither retries a rejected action nor advances
-the turn; a subsequent card choice still requires the two fresh post-click captures above.
+not count as correction. The next human or computer remains blocked until stable matching frames
+complete verification. Play then continues automatically, with no need to repeat the card choice.
 
 ### 4.5 AI turn
 
@@ -380,7 +389,7 @@ refine the ring positions. Closing the panel or switching to T removes the rings
 laptop does not show a multi-human player's private destinations. The tablet's revealed hand
 can show all that player's held destinations on its own live-board overlay.
 
-For exactly one human, show the three opening destination tickets in a compact **Your Cards** row below the live board. Shift the board upward so it partially underlays the persistent game-table guidance, and hide the draw piles and face-up market during this opening choice. In the board's rectified canonical coordinates, draw thick rings around both endpoint cities of every offered destination, with a thin line connecting each card's pair of rings. Start from calibrated city-dot coordinates and refine each ring against the printed orange dot in the live crop when the dot is identifiable; retain the calibrated coordinate when detection is uncertain. Keep the rings in register as the window scales. On a confirmed drop, hide the rejected card and its line and rings together, retaining a ring for any endpoint shared with another kept card. Then slide the remaining **Your Cards** panel vertically down and off-screen before the existing ticket-selection command durably records the two kept destinations. A canceled drop changes nothing. Keep the live table guidance visible above the board. The unresolved opening choice has no **Back to table** action, and plain Escape does not dismiss it; the player must keep all three or confirm one drop to continue normal play. After either choice, retain the public board rather than automatically covering it with the solo private view; clicking the human's T or D stack opens a compact card preview in a free gap in their tile's side column. Animate the draw piles and face-up market from the outer bottom edges to centered positions for two to five players; all player tiles remain on the left and right sides of the board. Use **Your cards** on the laptop and **Back to table** instead of pass-the-device wording for later private actions. A deliberate Back to table or Escape remains respected for later private views; ordinary focus loss and idle time do not cover the solo opening choice. Shift+Escape and system privacy or recovery paths remain available, and refreshing the public state must not reopen a deliberately hidden hand. Normal board-check, pack-away and rebuild gates still apply before card actions. Derive the mode from the actual match roster, including resumed matches; setup edits affect only a future match. Hide **LAN Game** and prevent starting companion gameplay in single-human mode.
+For exactly one human, show the three opening destination tickets in a compact **Your Cards** row below the live board. Shift the board upward so it partially underlays the persistent game-table guidance, and hide the draw piles and face-up market during this opening choice. In the board's rectified canonical coordinates, draw thick rings around both endpoint cities of every offered destination, with a thin line connecting each card's pair of rings. Start from calibrated city-dot coordinates and refine each ring against the printed orange dot in the live crop when the dot is identifiable; retain the calibrated coordinate when detection is uncertain. Keep the rings in register as the window scales. On a confirmed drop, hide the rejected card and its line and rings together, retaining a ring for any endpoint shared with another kept card. Then slide the remaining **Your Cards** panel vertically down and off-screen before the existing ticket-selection command durably records the two kept destinations. A canceled drop changes nothing. Keep the live table guidance visible above the board. The unresolved opening choice has no **Back to table** action, and plain Escape does not dismiss it; the player must keep all three or confirm one drop to continue normal play. After either choice, retain the public board rather than automatically covering it with the solo private view; clicking the human's T or D stack opens a compact card preview in a free gap in their tile's side column. Animate the draw piles and face-up market from the outer bottom edges to centered positions for two to five players; all player tiles remain on the left and right sides of the board. Use **Your cards** on the laptop and **Back to table** instead of pass-the-device wording for later private actions. A deliberate Back to table or Escape remains respected for later private views; ordinary focus loss and idle time do not cover the solo opening choice. Shift+Escape and system privacy or recovery paths remain available, and refreshing the public state must not reopen a deliberately hidden hand. Pack-away, rebuild and a pending check from the previous turn still block gameplay; ordinary card choices are immediate and the board is checked after the completed turn. Derive the mode from the actual match roster, including resumed matches; setup edits affect only a future match. Hide **LAN Game** and prevent starting companion gameplay in single-human mode.
 
 The compact solo T/D preview is available only on the human's turn. During a computer turn, its stack targets cannot be clicked, and a preview closes as play advances.
 
@@ -389,8 +398,9 @@ QR only after the local host has a reachable address on the selected Private LAN
 neutral curtain names the active human. Reveal that seat's cards after an explicit action and a
 fresh laptop-issued grant; Hide covers them before passing the device. There is no browser idle
 timeout. The laptop stays on the public board, with technical recovery through Shift+Escape.
-PRACTICAL keeps the themed board visible: **Take my turn** opens that player's controls in place
-while other players look away. The next turn requires a fresh handoff. Shared Android
+PRACTICAL keeps the themed board visible: **Take my turn** enables that player's controls in place
+while other players look away. The card tray stays closed until the player selects their train-card
+or destination stack. The next turn requires a fresh handoff. Shared Android
 tablet play has been exercised in physical matches; the remaining device-specific checks are in
 section 24. Hold-to-peek is a future option, not a current control.
 
@@ -1006,6 +1016,13 @@ Final-round bookkeeping is attached to completed domain turns, not camera frames
 
 Use one camera selected by stable device identity, with graceful re-enumeration after reconnect. Request video only. Enumerate actual formats and display the negotiated resolution and rate. Prefer a high-resolution mode that passes the quality test; lower-resolution operation remains available when evidence supports it.
 
+Once a camera has been selected, save its device ID and display name locally across app restarts. If it is
+absent, wait for it instead of selecting another available camera. Prefer the same ID; if Windows
+changes that ID, accept a name match only when exactly one device has that name. Ambiguous or
+missing matches require the camera to return or the user to explicitly choose a different camera.
+The September 22 Android Webcam unplug/replug test exposed the previous fallback to the laptop
+camera. The identity-preserving fix requires a physical recheck; see section 24.
+
 Preview and analysis have different rate requirements. Provide a responsive preview while submitting a smaller number of current frames for vision. Do not accumulate a backlog of high-resolution frames.
 
 Each frame carries a sequence number, monotonic timestamp, negotiated format, device generation, and mapping epoch. Retain these through rectification and rendering. Dispose native frame resources promptly.
@@ -1591,8 +1608,14 @@ The optional normalized-board polygon is projected through the crop into the sen
 recorded separately in review ZIPs as an unreviewed local image fit. The fitted rectangle also
 bounds a conservative physical-color retry when the original samples lack sufficient color
 support. That retry must retain the same leading color and satisfy the unchanged support/margin
-thresholds. It never moves the detection center or changes model confidence, and is not a learned
-angle, segmentation mask, board-route lookup or empty-board comparison.
+thresholds. Route and whole-board verification use the center of a validated fitted train body
+when available, retaining the original box center as fallback. The fitted body must stay within
+bounded size, shape and offset limits around the ML proposal; it is independent of the expected
+route and player color. This avoids assigning a diagonal train to the neighboring lane because
+of background or shadow inside its rectangular detector box. Raw model boxes and confidence
+remain unchanged. The fit is not a learned angle, segmentation mask, board-route lookup or
+empty-board comparison. A route warning carries its failed-space mask so yellow spheres identify
+the affected spaces, rather than highlighting every train on that route.
 
 The separate locally trained U-Net heatmap model finds corners on the complete raw camera frame.
 The technical Camera screen uses it initially and through **Detect board corners**, preserving
@@ -1808,7 +1831,9 @@ play.
 
 In PRACTICAL, the active human selects **Take my turn** after the existing turn warning while
 other players look away. Opening destinations and later card, ticket and route-payment controls
-remain on the themed game board, using the same presentation as single-human play. Local access
+remain on the themed game board, using the same presentation as single-human play. Taking an active
+turn enables the controls without opening the card tray; the player chooses when to inspect their
+train cards or destinations. Required destination choices still appear. Local access
 lasts for that player's turn, including both train-card draws, and is cleared on handoff, focus
 loss, leaving the game view or changing modes. The next player must select **Take my turn** again.
 This is an explicit social convention, not
@@ -2392,6 +2417,7 @@ computer placement dots and current instructions.
 | Physical board and Android tablet | The user's September 21 reports/screenshots and completed two-human/one-computer match; its saved journal was inspected in the [AI investigation](docs/ai-strategy-evidence.md) | Actual shared-browser and physical-board gameplay through final scoring. This is real-device testing, not merely an HTTP reachability experiment. Exact tablet model, OS/browser build and WAN state were not recorded. |
 | Android browser backgrounding and rejoining | The user's September 22 confirmation of successful browser use after removal of the PWA | Backgrounding and rejoining work on the physical tablet. The reusable pairing PIN has no time expiry during hosting, supporting return to the game without generating a new code. |
 | Physical save and rebuild | The user confirmed on September 22, 2026 that save and rebuild was successfully completed that day | The normal physical save/rebuild walkthrough has been tested. Individual interrupted-operation and failure variants in section 22.8 were not separately reported. |
+| Android Webcam unplug/replug | The user's September 22 physical test switched capture to the laptop camera and did not return to Android Webcam; the user stopped capture and manually reselected it | A real hardware recovery failure was reproduced. The fix retains the selected camera identity instead of choosing an arbitrary available camera; successful physical recovery after that fix has not yet been confirmed. |
 | Rules, storage, application and Windows integration | Latest local Release verification: 343 core and 939 Windows integration tests passed, with a warnings-as-errors solution build | Automated rules, transaction/replay, save/photo, coordinator, camera and companion regressions. The four repaired timing-sensitive tests also passed 10 repetitions each. |
 | Browser and WPF UI | 70 Node tests, 92 Chromium scenarios and 126 WPF render cases with zero binding warnings/errors in the latest local verification | Automated state transitions, first-draw continuity, blocked-draw handling, SSE/reconnect behavior, private maps, final standings and responsive layouts |
 | Simulation and AI | 20 invariant/replay simulations in the integration pass; 640 paired strategy games, including 320 untouched held-out games | Legal completion and measured improvement against frozen synthetic opponents. [AI evidence](docs/ai-strategy-evidence.md) also replays decisions from the failed real match. |
@@ -2419,7 +2445,7 @@ performed, record its build, hardware and result instead of repeating a blanket 
 | Network-independent setup | Start Quick play with the router WAN disconnected but LAN active, including a fresh camera QR scan. Separately play a complete PRACTICAL multi-human match with networking unavailable. |
 | Additional browser recovery and usability | Android browser backgrounding and rejoining are confirmed. Remaining specific checks are device lock/sleep, history navigation, deliberate host/LAN failure, DHCP change, duplicate/replacement controllers and actual PNG saving/sharing. Record portrait/landscape, enlarged text, reduced motion and assistive-input outcomes. |
 | Additional save/rebuild edge cases | The normal physical save/rebuild walkthrough passed on September 22. Remaining unrecorded variants include saving after the first card draw, during a destination choice or partial computer placement, then verifying exact continuation without duplicate payment or scoring. Save/photo/reload integration tests already cover these states. |
-| Hardware failure and long sessions | Deliberate camera unplug/jog, sleep/resume, real GPU loss/fallback and controlled process/power/storage failure during relevant operations. Measure end-to-end claim/recovery/save latency and four-hour resource stability. Automated fault and stale-evidence tests are separate existing evidence. |
+| Hardware failure and long sessions | Retest Android Webcam unplug/replug after the identity fix, including preservation of pending game actions and rejection of stale frames. The September 22 test was performed and failed through unwanted laptop-camera fallback. Camera jog, sleep/resume, real GPU loss/fallback and controlled process/power/storage failure remain separate checks. Measure end-to-end claim/recovery/save latency and four-hour resource stability. Automated fault and stale-evidence tests are separate existing evidence. |
 | Recognition coverage and additional equipment | Independent sessions across lighting, poses, colors, map regions, touching pieces, hands and negative cases. The section 22 target corpus/rates have not been measured. Native 4K capture, a full 720p game, additional camera/GPU families and another physical board copy remain unrecorded. |
 | Clean-machine distribution | Build the current distribution and run offline on a clean Windows machine with its bundled dependencies. Installer install/update/uninstall tests follow implementation of the installer. |
 | Exhaustive board-data review | Named sign-off for every route/lane/color/length and ticket value. The manifest still records this specific audit as unaudited; ordinary physical-board playtesting is already established. |

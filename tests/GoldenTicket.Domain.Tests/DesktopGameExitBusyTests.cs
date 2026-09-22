@@ -4,6 +4,7 @@ using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Domain.Model;
+using GoldenTicket.Testing;
 using GoldenTicket.Vision;
 
 namespace GoldenTicket.Domain.Tests;
@@ -19,7 +20,8 @@ public sealed class DesktopGameExitBusyTests
         var store = new DelayedCommitStore();
         var manifest = ManifestLoader.LoadClassicUs();
         var catalog = CardCatalog.FromManifest(manifest);
-        var model = new MainViewModel(manifest, store);
+        var model = new MainViewModel(manifest, store,
+            camera: new CameraViewModel(capture: new FakeCameraCapture()));
         model.Setup.ManualVerificationAccepted = true;
         model.SetGameLayerVisible(true);
         Task? drawing = null;
@@ -38,7 +40,12 @@ public sealed class DesktopGameExitBusyTests
 
             store.DelayCommitAfter(commitsBeforeDelay);
             drawing = model.DrawSoloBlindCommand.ExecuteAsync(null);
-            ConfirmEmptyBoard(model.Camera, firstSequence: 3);
+            if (commitsBeforeDelay == 1)
+            {
+                // The computer cannot start saving until the completed human turn's board check passes.
+                await AssertHumanCardSavedBeforeBoardCheckAsync();
+                ConfirmEmptyBoard(model.Camera, firstSequence: 3);
+            }
             await store.CommitStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken: TestContext.Current.CancellationToken);
 
             model.OpenGameExitMenu();
@@ -46,11 +53,20 @@ public sealed class DesktopGameExitBusyTests
 
             store.ReleaseCommit.TrySetResult();
             await drawing.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken: TestContext.Current.CancellationToken);
+            if (commitsBeforeDelay == 0)
+            {
+                await AssertHumanCardSavedBeforeBoardCheckAsync();
+                ConfirmEmptyBoard(model.Camera, firstSequence: 3);
+            }
+            await WaitForSaveToSettleAsync(model, TestContext.Current.CancellationToken);
+            Assert.False(model.IsCheckingBoardBeforeNextTurn);
 
             var after = (await store.RestoreAsync(session.SessionId, manifest, catalog,
                 CancellationToken.None)).State;
             Assert.True(after.StateVersion > before.StateVersion + 1,
-                "The computer must advance after the human's second draw is saved.");
+                "The computer must advance after the human's second draw is saved and the board check passes.");
+            Assert.Equal(before.HandOf(before.ActiveSeatId).Count + 1,
+                after.HandOf(before.ActiveSeatId).Count);
             Assert.Equal(after.ActiveSeat.DisplayName, model.Table.ActiveSeatName);
             Assert.Equal($"Turn {after.TurnNumber}", model.Table.TurnText);
             Assert.Equal(after.PendingClaim is not null, model.Table.Placement is not null);
@@ -63,6 +79,19 @@ public sealed class DesktopGameExitBusyTests
             Assert.True(model.IsGameExitMenuOpen);
             model.CloseGameExitMenu();
             Assert.False(model.IsGameExitMenuOpen);
+
+            async Task AssertHumanCardSavedBeforeBoardCheckAsync()
+            {
+                await drawing!.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken: TestContext.Current.CancellationToken);
+                var saved = (await store.RestoreAsync(session.SessionId, manifest, catalog,
+                    CancellationToken.None)).State;
+                Assert.Equal(before.StateVersion + 1, saved.StateVersion);
+                Assert.Equal(before.HandOf(before.ActiveSeatId).Count + 1,
+                    saved.HandOf(before.ActiveSeatId).Count);
+                Assert.All(before.HandOf(before.ActiveSeatId), card =>
+                    Assert.Contains(card, saved.HandOf(before.ActiveSeatId)));
+                Assert.True(model.IsCheckingBoardBeforeNextTurn);
+            }
         }
         finally
         {
@@ -72,11 +101,24 @@ public sealed class DesktopGameExitBusyTests
                 // Drain the released save even if the test was cancelled, before disposing its tools.
                 if (drawing is not null)
                     await drawing.WaitAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
+                await WaitForSaveToSettleAsync(model, CancellationToken.None);
             }
             finally
             {
                 await model.DisposeToolsAsync();
             }
+        }
+    }
+
+    private static async Task WaitForSaveToSettleAsync(MainViewModel model, CancellationToken token)
+    {
+        var operation = typeof(MainViewModel).GetField("_operationInProgress", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var finishingCheck = typeof(MainViewModel).GetField("_finishingCardBoardCheck", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+        while ((bool)operation.GetValue(model)! || (bool)finishingCheck.GetValue(model)! || model.Busy is not null)
+        {
+            Assert.True(DateTimeOffset.UtcNow < deadline, "The saved action and subsequent computer turn must settle.");
+            await Task.Delay(10, token);
         }
     }
 

@@ -107,12 +107,20 @@ public sealed class PracticalTurnTests
             Assert.True(model.IsGameTableHumanTurn);
             Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
             Assert.True(model.DrawSoloTicketsCommand.CanExecute(null));
-            Assert.True(model.ShowSoloTrainCards);
-            Assert.Equal(4, model.SoloTrainCards.Sum(card => card.Count));
+            Assert.False(model.ShowSoloCardPanel);
+            Assert.Empty(model.SoloTrainCards);
             Assert.Null(model.PrivateSeat);
 
             var active = model.Game.TableSeats[0];
             var other = model.Game.TableSeats[1];
+            await model.ToggleSoloTrainCardsCommand.ExecuteAsync(other);
+            await model.ToggleSoloDestinationsCommand.ExecuteAsync(other);
+            Assert.False(model.ShowSoloCardPanel);
+            Assert.Empty(model.SoloTrainCards);
+
+            await model.ToggleSoloTrainCardsCommand.ExecuteAsync(active);
+            Assert.True(model.ShowSoloTrainCards);
+            Assert.Equal(4, model.SoloTrainCards.Sum(card => card.Count));
             var ownCards = model.SoloTrainCards.ToArray();
             await model.ToggleSoloTrainCardsCommand.ExecuteAsync(other);
             await model.ToggleSoloDestinationsCommand.ExecuteAsync(other);
@@ -141,13 +149,17 @@ public sealed class PracticalTurnTests
         {
             await StartActiveMatchAsync(model);
             await model.TakePracticalTurnAsync();
+            Assert.False(model.ShowSoloCardPanel);
+            Assert.Empty(model.SoloTrainCards);
             var coordinator = Coordinator(model);
             var seat = coordinator.Public.ActiveSeatId;
             var originalTurn = coordinator.Public.TurnNumber;
             var originalHand = (await coordinator.GetSeatViewAsync(seat,
                 TestContext.Current.CancellationToken)).Hand;
             var first = model.Table.Market.First(slot => slot.Kind != TrainCardKind.Locomotive);
-            await WithFreshBoardAsync(model, () => model.DrawSoloFaceUpCommand.ExecuteAsync(first));
+            await model.DrawSoloFaceUpCommand.ExecuteAsync(first)
+                .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+            Assert.False(model.IsCheckingBoardBeforeNextTurn);
 
             var afterFirst = (await coordinator.GetSeatViewAsync(seat,
                 TestContext.Current.CancellationToken)).Hand;
@@ -163,7 +175,8 @@ public sealed class PracticalTurnTests
             Assert.Null(model.PrivateSeat);
 
             var second = model.Table.Market.First(slot => model.DrawSoloFaceUpCommand.CanExecute(slot));
-            await WithFreshBoardAsync(model, () => model.DrawSoloFaceUpCommand.ExecuteAsync(second));
+            await model.DrawSoloFaceUpCommand.ExecuteAsync(second)
+                .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
 
             var afterSecond = (await coordinator.GetSeatViewAsync(seat,
                 TestContext.Current.CancellationToken)).Hand;
@@ -171,12 +184,19 @@ public sealed class PracticalTurnTests
             Assert.Equal(6, afterSecond.Length);
             Assert.Equal(originalTurn + 1, coordinator.Public.TurnNumber);
             Assert.NotEqual(seat, coordinator.Public.ActiveSeatId);
+            Assert.True(model.IsCheckingBoardBeforeNextTurn);
+            Assert.False(model.ShowPracticalHandoff);
+            Assert.False(model.TakePracticalTurnCommand.CanExecute(null));
+            await CompleteBoardHandoffAsync(model);
             AssertCoveredHandoff(model);
 
             await model.TakePracticalTurnAsync();
             Assert.True(model.HasAcceptedPracticalTurn);
-            Assert.Equal(4, model.SoloTrainCards.Sum(card => card.Count));
+            Assert.False(model.ShowSoloCardPanel);
+            Assert.Empty(model.SoloTrainCards);
             Assert.Equal(coordinator.Public.ActiveSeatId, model.Table.Seats[1].SeatId);
+            await model.ToggleSoloTrainCardsCommand.ExecuteAsync(model.Game.TableSeats[1]);
+            Assert.Equal(4, model.SoloTrainCards.Sum(card => card.Count));
             Assert.Null(model.PrivateSeat);
             AssertTableVisible(model);
         }
@@ -192,7 +212,9 @@ public sealed class PracticalTurnTests
             await StartActiveMatchAsync(model);
             await model.TakePracticalTurnAsync();
             var seat = Coordinator(model).Public.ActiveSeatId;
-            await WithFreshBoardAsync(model, () => model.DrawSoloTicketsCommand.ExecuteAsync(null));
+            await model.DrawSoloTicketsCommand.ExecuteAsync(null)
+                .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+            Assert.False(model.IsCheckingBoardBeforeNextTurn);
 
             Assert.True(model.HasAcceptedPracticalTurn);
             Assert.True(model.ShowSoloTicketOffer);
@@ -203,9 +225,13 @@ public sealed class PracticalTurnTests
             foreach (var ticket in model.SoloTicketOffer) ticket.Keep = false;
             Assert.False(model.KeepSoloTicketsCommand.CanExecute(null));
             model.SoloTicketOffer[0].Keep = true;
-            await WithFreshBoardAsync(model, () => model.KeepSoloTicketsCommand.ExecuteAsync(null));
+            await model.KeepSoloTicketsCommand.ExecuteAsync(null)
+                .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
 
             Assert.Equal(4, model.Table.Seats.Single(row => row.SeatId == seat).TicketCount);
+            Assert.True(model.IsCheckingBoardBeforeNextTurn);
+            Assert.False(model.ShowPracticalHandoff);
+            await CompleteBoardHandoffAsync(model);
             AssertCoveredHandoff(model);
         }
         finally { await model.DisposeToolsAsync(); }
@@ -223,6 +249,9 @@ public sealed class PracticalTurnTests
         {
             await StartActiveMatchAsync(model);
             await model.TakePracticalTurnAsync();
+            Assert.False(model.ShowSoloCardPanel);
+            Assert.Empty(model.SoloTrainCards);
+            await model.ToggleSoloTrainCardsCommand.ExecuteAsync(model.Game.TableSeats[0]);
             Assert.True(model.ShowSoloTrainCards);
 
             switch (transition)
@@ -255,6 +284,9 @@ public sealed class PracticalTurnTests
             AssertCoveredHandoff(model);
             await model.TakePracticalTurnAsync();
             Assert.True(model.HasAcceptedPracticalTurn);
+            Assert.False(model.ShowSoloCardPanel);
+            Assert.Empty(model.SoloTrainCards);
+            await model.ToggleSoloTrainCardsCommand.ExecuteAsync(model.Game.TableSeats[0]);
             Assert.True(model.ShowSoloTrainCards);
             AssertTableVisible(model);
         }
@@ -262,39 +294,50 @@ public sealed class PracticalTurnTests
     }
 
     [Fact]
-    public async Task Focus_loss_during_a_pending_second_card_cancels_the_click_without_advancing_the_turn()
+    public async Task Focus_loss_after_the_second_card_preserves_its_award_and_the_board_handoff_check()
     {
         var model = NewPracticalMatch();
         try
         {
             await StartActiveMatchAsync(model);
             await model.TakePracticalTurnAsync();
-            await WithFreshBoardAsync(model, () => model.DrawSoloBlindCommand.ExecuteAsync(null));
+            await model.DrawSoloBlindCommand.ExecuteAsync(null)
+                .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
             var coordinator = Coordinator(model);
-            var before = await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken);
             var seat = coordinator.Public.ActiveSeatId;
-            var pending = model.DrawSoloBlindCommand.ExecuteAsync(null);
-            await WaitUntilAsync(() => PendingBoardCheck(model));
+            await model.DrawSoloBlindCommand.ExecuteAsync(null)
+                .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+            Assert.True(model.IsCheckingBoardBeforeNextTurn);
+            Assert.Equal(6, (await coordinator.GetSeatViewAsync(seat,
+                TestContext.Current.CancellationToken)).Hand.Length);
+            var awarded = await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken);
 
             model.SetWindowActive(false);
-            await pending;
-            Assert.Equal(before, await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken));
-            Assert.Equal(seat, coordinator.Public.ActiveSeatId);
+            model.Camera.IsGameTablePreviewUpright = true;
+            var at = DateTimeOffset.UtcNow;
+            PublishEmptyBoard(model.Camera, 1, at);
+            PublishEmptyBoard(model.Camera, 2, at.AddSeconds(1.1));
+            Assert.True(model.IsCheckingBoardBeforeNextTurn);
+            Assert.Equal(awarded, await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken));
             Assert.False(model.HasAcceptedPracticalTurn);
             Assert.Empty(model.SoloTrainCards);
             Assert.Null(model.PrivateSeat);
 
             model.SetWindowActive(true);
+            Assert.False(model.ShowPracticalHandoff);
+            await CompleteBoardHandoffAsync(model);
             AssertCoveredHandoff(model);
             await model.TakePracticalTurnAsync();
             Assert.True(model.HasAcceptedPracticalTurn);
-            Assert.Equal(5, model.SoloTrainCards.Sum(card => card.Count));
-            Assert.False(model.DrawSoloTicketsCommand.CanExecute(null));
-            await WithFreshBoardAsync(model, () => model.DrawSoloBlindCommand.ExecuteAsync(null));
+            Assert.False(model.ShowSoloCardPanel);
+            Assert.Empty(model.SoloTrainCards);
+            await model.ToggleSoloTrainCardsCommand.ExecuteAsync(model.Game.TableSeats[1]);
+            Assert.Equal(4, model.SoloTrainCards.Sum(card => card.Count));
+            Assert.True(model.DrawSoloTicketsCommand.CanExecute(null));
             Assert.Equal(6, (await coordinator.GetSeatViewAsync(seat,
                 TestContext.Current.CancellationToken)).Hand.Length);
             Assert.NotEqual(seat, coordinator.Public.ActiveSeatId);
-            AssertCoveredHandoff(model);
+            Assert.Equal(awarded, await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken));
         }
         finally { await model.DisposeToolsAsync(); }
     }
@@ -387,19 +430,18 @@ public sealed class PracticalTurnTests
         Assert.Equal(Screen.Table, model.GameplayScreen);
     }
 
-    private static async Task WithFreshBoardAsync(MainViewModel model, Func<Task> action)
+    private static async Task CompleteBoardHandoffAsync(MainViewModel model)
     {
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
         model.Camera.IsGameTablePreviewUpright = true;
-        var pending = action();
-        await WaitUntilAsync(() => PendingBoardCheck(model) || pending.IsCompleted);
-        Assert.True(PendingBoardCheck(model), "The gameplay action must verify a fresh camera frame.");
         var sequence = model.Camera.GameTableAnalysis?.Board.Sequence ?? 0;
         var at = DateTimeOffset.UtcNow;
         if (model.Camera.GameTableAnalysis?.Board.CapturedAt is { } last && last >= at)
             at = last.AddMilliseconds(10);
         PublishEmptyBoard(model.Camera, sequence + 1, at);
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
         PublishEmptyBoard(model.Camera, sequence + 2, at.AddSeconds(1.1));
-        await pending;
+        await WaitUntilAsync(() => !model.IsCheckingBoardBeforeNextTurn && model.ShowPracticalHandoff);
     }
 
     private static void PublishEmptyBoard(CameraViewModel camera, long sequence, DateTimeOffset at)
@@ -410,9 +452,6 @@ public sealed class PracticalTurnTests
         typeof(CameraViewModel).GetProperty(nameof(CameraViewModel.GameTableAnalysis))!
             .GetSetMethod(nonPublic: true)!.Invoke(camera, [analysis]);
     }
-
-    private static bool PendingBoardCheck(MainViewModel model) => typeof(MainViewModel)
-        .GetField("_cardBoardCheck", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(model) is not null;
 
     private static async Task WaitUntilAsync(Func<bool> condition)
     {

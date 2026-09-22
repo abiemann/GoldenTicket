@@ -95,9 +95,10 @@ See [phone and tablet setup](docs/phone-setup.md) for pairing, firewall help and
 
 Choose **PRACTICAL**, the second option, when you do not have another device. Network setup is
 hidden and any active phone host stops. When your turn warning appears, ask everyone else to
-look away, then select **Take my turn**. Opening destinations, cards and route payments stay on the game
-board, using the same controls as solo play. Cards are covered when the turn ends, and the next
-player gets their own turn warning. The game rules, computer opponents and camera checks work
+look away, then select **Take my turn**. This enables your controls while keeping the card tray closed;
+select your **T** or **D** stack when you want to see your cards or destinations. Opening destinations
+and route payments stay on the game board, using the same controls as solo play. Cards are covered
+when the turn ends, and the next player gets their own turn warning. The game rules, computer opponents and camera checks work
 the same way.
 
 ### Draw cards and claim routes
@@ -115,6 +116,12 @@ On your turn, draw train cards, draw destination tickets, or claim a route:
   again before completing the claim and allowing the next turn. For a wrong route, remove those
   trains and select **Cancel**.
 
+Card choices are saved immediately. On the laptop, each drawn card flies and rotates into your
+player tile, and the corresponding stack updates. Destination offers count in the stack while
+you choose which tickets to keep. The camera checks the board once your card-drawing turn is
+complete, before the next player can act. Any discrepancies are described and marked with yellow
+spheres; correcting the board lets play continue without taking back the cards you drew.
+
 In solo play and after selecting **Take my turn** in PRACTICAL, the **T** and **D** stacks in your
 player tile show your hand and destinations without leaving the table. In Quick play, make private
 choices on the shared phone or tablet.
@@ -123,8 +130,8 @@ The camera checks separate train positions, the player's color and the correct p
 before a claim completes. Card payment, route ownership, points and turn progression are committed
 together. If the board changes or a reading becomes uncertain, the game waits for a fresh check.
 A rejected card draw awards no card and leaves the turn with the same player; an accepted draw is
-saved before the next player can act. The tablet keeps the hand open and displays any board issue
-beside the card picker.
+saved before the next player can act. The tablet displays rejected choices beside the card picker
+and turn-end board discrepancies on its live map.
 
 For a computer claim, follow the named route, lane, color and train count on either screen. Gold
 dots mark the required spaces. After placement is confirmed, move the player's scoring marker as
@@ -203,6 +210,11 @@ Settings offers **Auto · prefer GPU**, **CPU only**, and **GPU · CPU fallback*
 and model inference report their actual backends; GPU processing falls back to CPU when needed.
 Camera quality shows supported native formats and distinguishes capture resolution from the
 processed image size.
+
+The app remembers your selected webcam across restarts. If it disconnects, the board shows
+which webcam it is waiting for and reconnects when that camera returns. You can choose another
+webcam in Settings or Camera. If multiple cameras have the same name and the original device
+cannot be identified, select the one you want to use.
 
 Press **Shift+Escape** for technical screens, including camera setup, saved matches and recovery.
 In **Saved matches**, select a match and choose **Delete selected match** to remove it and its

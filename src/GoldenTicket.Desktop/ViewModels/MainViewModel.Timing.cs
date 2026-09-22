@@ -34,7 +34,7 @@ public sealed partial class MainViewModel
         // The visible match clock keeps running through menus, lost focus, and board checks.
         // Per-player statistics retain their existing pause rules and appear only at the end.
         coordinator.SetGameTimingRunning(!_toolsDisposed);
-        coordinator.SetTurnTimingPaused(IsGameInputPaused || IsCheckingResumedGame ||
+        coordinator.SetTurnTimingPaused(IsGameInputPaused || IsCheckingResumedGame || IsCheckingBoardBeforeNextTurn ||
             NeedsBoardReconciliation || ShowMultiHumanPhoneSetup || _mustReload || _exitRequested ||
             _toolsDisposed || !_systemAvailable || !_windowActive || !IsGameplayScreenActive(Screen.Table));
         var timing = coordinator.TurnTiming;

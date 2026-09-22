@@ -208,7 +208,7 @@ public sealed partial class MainViewModel : ObservableObject
     public bool CanRevealPrivateSeat => _revealable is not null && !_operationInProgress && !_exitRequested
         && !IsGameInputPaused && _windowActive && _systemAvailable && !_toolsDisposed &&
         IsGameplayScreenActive(Screen.Table) && !NeedsBoardReconciliation && !_mustReload
-        && _scoreMarkerStep is null
+        && _scoreMarkerStep is null && !IsCheckingBoardBeforeNextTurn
         && BoardFirstProposal is null
         && _coordinator is { StorageFaulted: false }
         && _coordinator.Public.Lifecycle is SessionLifecycle.Setup or SessionLifecycle.Active
@@ -497,7 +497,7 @@ public sealed partial class MainViewModel : ObservableObject
     public void SetWindowActive(bool active)
     {
         _windowActive = active;
-        if (!active) _cardBoardCheck?.Completion.TrySetResult(false);
+        if (!active) PauseCardBoardCheck();
         UpdateTurnClock();
         if (!active && !(IsSingleHumanGame && ShowSoloOpeningTicketsOnBoard)) HidePrivateSeat();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
@@ -536,21 +536,22 @@ public sealed partial class MainViewModel : ObservableObject
     private async Task SubmitPrivateAsync(Func<CommandEnvelope, PrivateSeatViewModel, GameCommand?> build)
     {
         if (_coordinator is not { } coordinator || _operationInProgress || IsGameInputPaused ||
-            BoardFirstProposal is not null ||
-            _exitRequested || !_windowActive || _mustReload ||
+            BoardFirstProposal is not null || IsCheckingBoardBeforeNextTurn ||
+            _exitRequested || !_windowActive || !_systemAvailable || _toolsDisposed || _mustReload || _scoreMarkerStep is not null ||
             NeedsBoardReconciliation || PrivateSeat is not { } seat) return;
 
         var envelope = new CommandEnvelope(
             coordinator.SessionId, CommandId.New(), seat.StateVersion, seat.SeatId);
 
         if (build(envelope, seat) is not { } command) return;
-        if ((_boardFirstInvalidMoveMessage is not null || _cardActionBoardWarning is not null) &&
+        if (_boardFirstInvalidMoveMessage is not null &&
             command is SelectTrainCard or RequestTicketOffer or CommitTicketSelection)
         {
             seat.Message = "Correct or remove the trains from the unclaimed route before drawing cards.";
             return;
         }
 
+        var beforeAction = coordinator.Public;
         var practicalTurn = _practicalTurn;
         SetOperationInProgress(true);
         HidePrivateSeat();
@@ -559,8 +560,6 @@ public sealed partial class MainViewModel : ObservableObject
         string? privateRejection = null;
         try
         {
-            if (command is SelectTrainCard or RequestTicketOffer or CommitTicketSelection &&
-                !await CheckBoardBeforeCardActionAsync(coordinator, seat.StateVersion)) return;
             var outcome = await coordinator.SubmitAsync(command);
             accepted = outcome.IsAccepted;
             privateRejection = outcome.Result.Rejection?.Message;
@@ -569,6 +568,11 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 RequireReload();
                 return;
+            }
+            if (accepted)
+            {
+                NotifyAcceptedLocalCardAction(outcome);
+                BeginCardTurnBoardCheck(beforeAction);
             }
             await PumpAsync();
         }
@@ -665,7 +669,7 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     private bool CanSubmitOperator() => !_operationInProgress && !IsGameInputPaused &&
-        _scoreMarkerStep is null && !_exitRequested && !_mustReload &&
+        _scoreMarkerStep is null && !IsCheckingBoardBeforeNextTurn && !_exitRequested && !_mustReload &&
         !NeedsBoardReconciliation && IsGameplayScreenActive(Screen.Table);
 
     /// <summary>
@@ -926,6 +930,12 @@ public sealed partial class MainViewModel : ObservableObject
         if (_coordinator is null || _driver is null || IsGameInputPaused || _scoreMarkerStep is not null ||
             NeedsBoardReconciliation || _mustReload) return;
 
+        if (IsCheckingBoardBeforeNextTurn)
+        {
+            await RefreshAsync();
+            return;
+        }
+
         Busy = "Computer seats are playing...";
         try
         {
@@ -974,12 +984,16 @@ public sealed partial class MainViewModel : ObservableObject
 
         // A final claim can finish the digital match while its physical score marker still needs
         // to move. Keep the public board visible until that last movement has been observed.
-        if (view.FinalResult is { } result && !_claimCompletionInProgress && _scoreMarkerStep is null)
+        if (view.FinalResult is { } result && !_claimCompletionInProgress && _scoreMarkerStep is null &&
+            !IsCheckingBoardBeforeNextTurn)
         {
             BuildFinalScores(result);
             ShowGameplayScreen(Screen.FinalScore);
             PrivateSeat = null;
         }
+        if (IsCheckingBoardBeforeNextTurn)
+            ShowCardBoardGuidance(_cardActionBoardWarning ??
+                "Checking the board before the next turn. Keep every train visible in its space.");
         NotifyCompanionPresentationChanged();
     }
 

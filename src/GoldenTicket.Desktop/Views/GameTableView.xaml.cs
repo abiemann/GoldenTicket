@@ -26,6 +26,7 @@ public partial class GameTableView : UserControl
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         DataContextChanged += OnDataContextChanged;
+        IsVisibleChanged += (_, args) => { if (args.NewValue is false) ClearCardFlights(); };
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -51,17 +52,23 @@ public partial class GameTableView : UserControl
         {
             _model.PropertyChanged -= OnModelPropertyChanged;
             _model.Table.Seats.CollectionChanged -= OnSeatsChanged;
+            _model.CardDrawn -= OnCardDrawn;
         }
+        ClearCardFlights();
         _model = model;
         if (_model is not null)
         {
             _model.PropertyChanged += OnModelPropertyChanged;
             _model.Table.Seats.CollectionChanged += OnSeatsChanged;
+            _model.CardDrawn += OnCardDrawn;
         }
     }
 
     private void OnModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName is nameof(MainViewModel.GameplayScreen) or nameof(MainViewModel.IsGameExitMenuOpen) or
+            nameof(MainViewModel.ShowMultiHumanPhoneSetup))
+            ClearCardFlights();
         if (e.PropertyName == nameof(MainViewModel.ShowSoloOpeningTicketsOnBoard))
             QueueDrawPanelPosition();
         if (e.PropertyName == nameof(MainViewModel.ShowSoloCardPanel))

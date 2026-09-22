@@ -35,9 +35,10 @@ public sealed partial class MainViewModel
         var completing = _claimCompletionInProgress && _companionMapContext is { } previous &&
             previous.SessionId == coordinator.SessionId;
         if (view.Lifecycle != SessionLifecycle.Active &&
-            !(view.Lifecycle == SessionLifecycle.Finished && (scoring || completing))) return null;
+            !(view.Lifecycle == SessionLifecycle.Finished &&
+                (scoring || completing || IsCheckingBoardBeforeNextTurn))) return null;
         var seat = scoring ? _scoreMarkerStep!.SeatId : completing ? _companionMapContext!.Value.SeatId : view.ActiveSeatId;
-        return view.SeatOf(seat).Kind == SeatKind.Computer || CanCompanionControl
+        return view.SeatOf(seat).Kind == SeatKind.Computer || CanCompanionControl || IsCheckingBoardBeforeNextTurn
             ? (coordinator.SessionId, seat) : null;
     }
 

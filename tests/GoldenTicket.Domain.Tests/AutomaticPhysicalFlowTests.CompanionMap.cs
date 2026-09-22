@@ -177,14 +177,38 @@ public sealed partial class AutomaticPhysicalFlowTests
             await WaitUntilAsync(() => model.Game.GuidanceTurn != "Scoring");
             await WaitUntilAsync(() => (bool)typeof(MainViewModel).GetProperty("CanCompanionControl",
                 BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(model)!);
-            // Score-only fixture frames omit the newly claimed trains. The human's
-            // inventory check must expose those missing spaces on both board maps.
+            // Score-only fixture frames omit the newly claimed trains. Card clicks
+            // still award immediately; inventory verification waits for the turn boundary.
+            var ready = await bridge.ReadPublicAsync(token);
+            Assert.NotNull(ready.BoardMap);
+            Assert.Empty(ready.BoardMap.Targets);
+            Assert.True(ready.CanControl);
+            var drawingSeat = game.Public.ActiveSeatId;
+            var originalCards = game.Public.SeatOf(drawingSeat).TrainCardCount;
+            for (var draw = 0; draw < 2; draw++)
+            {
+                var receipt = await bridge.ExecuteAsync(drawingSeat,
+                    new(Guid.NewGuid().ToString("N"), game.SessionId.Value,
+                        game.Public.StateVersion, "drawTrain"), token)
+                    .WaitAsync(TimeSpan.FromSeconds(2), token);
+                Assert.True(receipt.Accepted);
+            }
+            Assert.Equal(originalCards + 2, game.Public.SeatOf(drawingSeat).TrainCardCount);
+            Assert.True(model.IsCheckingBoardBeforeNextTurn);
+            at = DateTimeOffset.UtcNow.AddSeconds(2);
+            PublishScore(model.Camera, 3, at, color, target);
+            // The post-turn gate must expose missing spaces on both board maps,
+            // even though the next human cannot reveal cards or take an action yet.
             var missing = await bridge.ReadPublicAsync(token);
             Assert.NotNull(missing.BoardMap);
+            Assert.False(missing.CanControl);
             Assert.Equal(placement.TrainCount, missing.BoardMap.Targets.Count);
             Assert.Equal(model.Game.PlacementTargets.Select(point =>
                 new CompanionMapPoint(point.X, point.Y, point.Number)), missing.BoardMap.Targets);
-            PublishTrains(model.Camera, placement.RouteId.Value, 3, at.AddSeconds(2.2), color);
+            PublishTrains(model.Camera, placement.RouteId.Value, 4, at.AddSeconds(1.1), color);
+            Assert.True(model.IsCheckingBoardBeforeNextTurn);
+            PublishTrains(model.Camera, placement.RouteId.Value, 5, at.AddSeconds(2.2), color);
+            await WaitUntilAsync(() => !model.IsCheckingBoardBeforeNextTurn && model.CanRevealPrivateSeat);
             var human = await bridge.ReadPublicAsync(token);
             Assert.NotNull(human.BoardMap);
             Assert.Empty(human.BoardMap.Targets);

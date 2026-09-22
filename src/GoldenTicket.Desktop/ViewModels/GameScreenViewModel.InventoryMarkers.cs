@@ -37,7 +37,9 @@ public sealed partial class GameScreenViewModel
                 PlacementBoardOverlay.TryGetTargets(_main.Manifest, route.RouteId, route.Length, out var slots))
             {
                 for (var index = 0; index < slots.Count; index++)
-                    if (expectedSlotMask is null || (expectedSlotMask.Value & (1 << index)) != 0)
+                    if ((expectedSlotMask is null || (expectedSlotMask.Value & (1 << index)) != 0) &&
+                        (observation.UnverifiedSlotMask is null ||
+                            (observation.UnverifiedSlotMask.Value & (1 << index)) != 0))
                         Add(slots[index].X, slots[index].Y,
                             $"Check train space {index + 1} on {_main.Manifest.Describe(route.RouteId)}");
             }

@@ -3,10 +3,13 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using GoldenTicket.Application;
 using GoldenTicket.Desktop.ViewModels;
+using GoldenTicket.Domain.Ai;
 using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Domain.Model;
+using GoldenTicket.Domain.Projections;
 using GoldenTicket.Domain.Randomness;
+using GoldenTicket.Testing;
 using GoldenTicket.Vision;
 
 namespace GoldenTicket.Domain.Tests;
@@ -14,357 +17,338 @@ namespace GoldenTicket.Domain.Tests;
 public sealed class DesktopCardActionBoardTests
 {
     [Fact]
-    public async Task Temporary_unlocated_detection_clears_on_the_next_fresh_matching_board_without_spending_a_turn()
+    public async Task First_card_is_awarded_immediately_without_a_new_camera_capture()
     {
         await using var fixture = await Fixture.CreateAsync();
-        var model = fixture.Model;
         fixture.PublishCleanBaseline();
+        var model = fixture.Model;
         var before = await fixture.SnapshotAsync();
-        var handCount = fixture.Coordinator.Public.SeatOf(before.Seat).TrainCardCount;
+        var hand = await fixture.Coordinator.GetSeatViewAsync(before.Seat, TestContext.Current.CancellationToken);
+        var faceUp = model.Table.Market.First(slot => slot.Kind != TrainCardKind.Locomotive);
+
+        await ImmediateAsync(() => model.DrawSoloFaceUpCommand.ExecuteAsync(faceUp));
+
+        var after = await fixture.Coordinator.GetSeatViewAsync(before.Seat, TestContext.Current.CancellationToken);
+        Assert.Equal(faceUp.Kind, Assert.Single(after.Hand.Except(hand.Hand)).Kind);
+        Assert.Equal(before.Turn, fixture.Coordinator.Public.TurnNumber);
+        Assert.Equal(before.Seat, fixture.Coordinator.Public.ActiveSeatId);
+        Assert.Equal(TurnPhase.AwaitingSecondTrainCard, fixture.Coordinator.Public.TurnPhase);
+        Assert.False(model.IsCheckingBoardBeforeNextTurn);
+        Assert.Equal(2, model.Camera.GameTableAnalysis!.Board.Sequence);
+        Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
+        Assert.Equal(0, fixture.Ai.Decisions);
+    }
+
+    [Fact]
+    public async Task Second_card_is_saved_before_board_check_and_computers_wait_for_fresh_good_frames()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        fixture.PublishCleanBaseline();
+        var model = fixture.Model;
+        var seat = fixture.Coordinator.Public.ActiveSeatId;
+        await ImmediateAsync(() => model.DrawSoloBlindCommand.ExecuteAsync(null));
+        var beforeSecond = await fixture.Coordinator.GetSeatViewAsync(seat, TestContext.Current.CancellationToken);
+        var faceUp = model.Table.Market.First(slot => model.DrawSoloFaceUpCommand.CanExecute(slot));
+        await ImmediateAsync(() => model.DrawSoloFaceUpCommand.ExecuteAsync(faceUp));
+
+        var awarded = await fixture.Coordinator.GetSeatViewAsync(seat, TestContext.Current.CancellationToken);
+        Assert.Equal(faceUp.Kind, Assert.Single(awarded.Hand.Except(beforeSecond.Hand)).Kind);
+        Assert.Equal(6, awarded.Hand.Length);
+        Assert.NotEqual(seat, fixture.Coordinator.Public.ActiveSeatId);
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
+        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+        Assert.False(model.CanRevealPrivateSeat);
+        Assert.Equal(0, fixture.Ai.Decisions);
+
+        var at = DateTimeOffset.UtcNow;
+        fixture.Publish(3, at);
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
+        Assert.Equal(0, fixture.Ai.Decisions);
+        fixture.Publish(4, at.AddSeconds(1.1));
+        await fixture.WaitForNextHumanTurnAsync();
+        Assert.Equal(4, fixture.Ai.Decisions);
+        Assert.Equal(6, (await fixture.Coordinator.GetSeatViewAsync(seat,
+            TestContext.Current.CancellationToken)).Hand.Length);
+    }
+
+    [Fact]
+    public async Task Unexpected_train_during_card_selection_does_not_steal_the_second_card_and_is_marked_at_handoff()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        fixture.PublishCleanBaseline();
+        var model = fixture.Model;
+        var seat = fixture.Coordinator.Public.ActiveSeatId;
+        await ImmediateAsync(() => model.DrawSoloBlindCommand.ExecuteAsync(null));
         var at = DateTimeOffset.UtcNow;
         fixture.Publish(3, at, offRouteTrain: true);
-        var warning = model.Game.GuidanceInstruction;
-        Assert.Contains("yellow spheres", warning);
+        Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
+        await ImmediateAsync(() => model.DrawSoloBlindCommand.ExecuteAsync(null));
+        Assert.Equal(6, fixture.Coordinator.Public.SeatOf(seat).TrainCardCount);
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
+
+        fixture.Publish(4, at.AddSeconds(1.1), offRouteTrain: true);
+        Assert.Contains("yellow spheres", model.Game.GuidanceInstruction);
         var target = Assert.Single(model.Game.PlacementTargets);
         Assert.True(model.Game.ShowPlacementTarget);
         Assert.Equal(.476 * 960, target.X, precision: 5);
         Assert.Equal(.9135 * 600, target.Y, precision: 5);
-        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
-
-        // Neither reusing a capture nor losing fresh camera evidence proves correction.
-        fixture.Publish(3, at.AddMilliseconds(100));
-        Assert.Equal(warning, model.Game.GuidanceInstruction);
+        var checkedState = await fixture.SnapshotAsync();
+        fixture.Publish(4, at.AddSeconds(2.2));
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
         Assert.Equal(target, Assert.Single(model.Game.PlacementTargets));
-        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
-        fixture.Publish(4, at.AddMilliseconds(200), stale: true);
-        Assert.Equal(warning, model.Game.GuidanceInstruction);
-        Assert.Equal(target, Assert.Single(model.Game.PlacementTargets));
-        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+        fixture.Publish(5, at.AddSeconds(3.3), stale: true);
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
+        await fixture.AssertUnchangedAsync(checkedState);
+        Assert.Equal(0, fixture.Ai.Decisions);
 
-        fixture.Publish(5, at.AddMilliseconds(300));
-        Assert.Equal(model.Table.Instruction, model.Game.GuidanceInstruction);
+        fixture.Publish(6, at.AddSeconds(4.4));
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
+        fixture.Publish(7, at.AddSeconds(5.5));
+        await fixture.WaitForNextHumanTurnAsync();
         Assert.Empty(model.Game.PlacementTargets);
         Assert.False(model.Game.ShowPlacementTarget);
-        Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
-        Assert.True(model.DrawSoloTicketsCommand.CanExecute(null));
-        await fixture.AssertUnchangedAsync(before);
-
-        // Clearing a warning does not itself authorize or retry a card draw.
-        var draw = model.DrawSoloBlindCommand.ExecuteAsync(null);
-        Assert.False(draw.IsCompleted);
-        var freshAt = DateTimeOffset.UtcNow;
-        fixture.Publish(6, freshAt);
-        Assert.False(draw.IsCompleted);
-        await fixture.AssertUnchangedAsync(before);
-        fixture.Publish(7, freshAt.AddSeconds(1.1));
-        await draw.WaitAsync(TimeSpan.FromSeconds(7), TestContext.Current.CancellationToken);
-        Assert.Equal(before.Version + 1, fixture.Coordinator.Public.StateVersion);
-        Assert.Equal(before.Turn, fixture.Coordinator.Public.TurnNumber);
-        Assert.Equal(before.Seat, fixture.Coordinator.Public.ActiveSeatId);
-        Assert.Equal(handCount + 1, fixture.Coordinator.Public.SeatOf(before.Seat).TrainCardCount);
-        Assert.Equal(TurnPhase.AwaitingSecondTrainCard, fixture.Coordinator.Public.TurnPhase);
-    }
-
-    [Fact]
-    public async Task Claimed_Calgary_trains_with_unclear_colors_clear_the_warning_and_allow_a_fresh_draw()
-    {
-        await using var fixture = await Fixture.CreateAsync(claimedCalgary: true);
-        var model = fixture.Model;
-        var before = await fixture.SnapshotAsync();
-        var handCount = fixture.Coordinator.Public.SeatOf(before.Seat).TrainCardCount;
-        model.Camera.IsGameTablePreviewUpright = true;
-        var at = DateTimeOffset.UtcNow;
-        fixture.Publish(1, at, claimedCalgaryCount: 0);
-        Assert.Contains("cannot verify every train on Calgary - Helena", model.Game.GuidanceInstruction);
-        Assert.Contains("The claim is still recorded", model.Game.GuidanceInstruction);
-        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
-
-        fixture.Publish(2, at.AddSeconds(1.1), claimedCalgaryCount: 4, claimedCalgaryColor: null);
-        Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
-        fixture.Publish(3, at.AddSeconds(2.2), claimedCalgaryCount: 4, claimedCalgaryColor: null);
-        Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
-        Assert.Null(model.BoardFirstProposal);
-        await fixture.AssertUnchangedAsync(before);
-
-        var draw = model.DrawSoloBlindCommand.ExecuteAsync(null);
-        Assert.False(draw.IsCompleted);
-        var freshAt = DateTimeOffset.UtcNow;
-        fixture.Publish(4, freshAt, claimedCalgaryCount: 4, claimedCalgaryColor: null);
-        Assert.False(draw.IsCompleted);
-        fixture.Publish(5, freshAt.AddSeconds(1.1), claimedCalgaryCount: 4, claimedCalgaryColor: null);
-        await draw.WaitAsync(TimeSpan.FromSeconds(7), TestContext.Current.CancellationToken);
-
-        Assert.Equal(before.Version + 1, fixture.Coordinator.Public.StateVersion);
-        Assert.Equal(before.Turn, fixture.Coordinator.Public.TurnNumber);
-        Assert.Equal(before.Seat, fixture.Coordinator.Public.ActiveSeatId);
-        Assert.Equal(TurnPhase.AwaitingSecondTrainCard, fixture.Coordinator.Public.TurnPhase);
-        Assert.Equal(handCount + 1, fixture.Coordinator.Public.SeatOf(before.Seat).TrainCardCount);
-        Assert.Equal(7, fixture.Coordinator.Public.SeatOf(before.Seat).RouteScore);
-        Assert.Equal(before.Seat, fixture.Coordinator.Public.RouteOwners[new RouteId("calgary--helena")]);
-        Assert.Null(fixture.Coordinator.Public.PendingClaim);
-        Assert.Null(model.BoardFirstProposal);
+        Assert.Equal(6, fixture.Coordinator.Public.SeatOf(seat).TrainCardCount);
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Committed_color_reuse_still_blocks_missing_or_extra_trains_without_spending_another_card(bool extra)
+    public async Task Missing_or_extra_claimed_route_trains_block_only_the_handoff_after_cards_are_awarded(bool extra)
     {
         await using var fixture = await Fixture.CreateAsync(claimedCalgary: true);
         var model = fixture.Model;
-        await model.DrawSoloBlindCommand.ExecuteAsync(null); // No camera has been used yet.
-        Assert.Equal(TurnPhase.AwaitingSecondTrainCard, fixture.Coordinator.Public.TurnPhase);
-        var before = await fixture.SnapshotAsync();
-        var faceUp = model.Table.Market.First(slot => model.DrawSoloFaceUpCommand.CanExecute(slot));
+        var seat = fixture.Coordinator.Public.ActiveSeatId;
+        var beforeCount = fixture.Coordinator.Public.SeatOf(seat).TrainCardCount;
         model.Camera.IsGameTablePreviewUpright = true;
         var at = DateTimeOffset.UtcNow;
-        fixture.Publish(1, at, blackTrains: extra, claimedCalgaryCount: extra ? 4 : 3,
-            claimedCalgaryColor: null);
-
-        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
-        Assert.False(model.DrawSoloFaceUpCommand.CanExecute(faceUp));
-        Assert.Contains(extra ? "You already chose to draw cards" : "The claim is still recorded",
-            model.Game.GuidanceInstruction);
-        Assert.Null(model.BoardFirstProposal);
-        await model.DrawSoloFaceUpCommand.ExecuteAsync(faceUp);
-        await fixture.AssertUnchangedAsync(before);
-
+        fixture.Publish(1, at, claimedCalgaryCount: 4, claimedCalgaryColor: null);
         fixture.Publish(2, at.AddSeconds(1.1), claimedCalgaryCount: 4, claimedCalgaryColor: null);
+        await ImmediateAsync(() => model.DrawSoloBlindCommand.ExecuteAsync(null));
+        fixture.Publish(3, at.AddSeconds(2.2), blackTrains: extra,
+            claimedCalgaryCount: extra ? 4 : 3, claimedCalgaryColor: null);
         Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
-        fixture.Publish(3, at.AddSeconds(2.2), claimedCalgaryCount: 4, claimedCalgaryColor: null);
-        Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
-        Assert.True(model.DrawSoloFaceUpCommand.CanExecute(faceUp));
-        await fixture.AssertUnchangedAsync(before);
-        Assert.Equal(before.Seat, fixture.Coordinator.Public.RouteOwners[new RouteId("calgary--helena")]);
+        await ImmediateAsync(() => model.DrawSoloBlindCommand.ExecuteAsync(null));
+        Assert.Equal(beforeCount + 2, fixture.Coordinator.Public.SeatOf(seat).TrainCardCount);
+
+        fixture.Publish(4, at.AddSeconds(3.3), blackTrains: extra,
+            claimedCalgaryCount: extra ? 4 : 3, claimedCalgaryColor: null);
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
+        Assert.NotEmpty(model.Game.PlacementTargets);
+        Assert.Equal(0, fixture.Ai.Decisions);
+        Assert.Equal(seat, fixture.Coordinator.Public.RouteOwners[new RouteId("calgary--helena")]);
+        Assert.Equal(7, fixture.Coordinator.Public.SeatOf(seat).RouteScore);
+
+        fixture.Publish(5, at.AddSeconds(4.4), claimedCalgaryCount: 4, claimedCalgaryColor: null);
+        fixture.Publish(6, at.AddSeconds(5.5), claimedCalgaryCount: 4, claimedCalgaryColor: null);
+        await fixture.WaitForNextHumanTurnAsync();
+        Assert.Equal(beforeCount + 2, fixture.Coordinator.Public.SeatOf(seat).TrainCardCount);
     }
 
     [Fact]
-    public async Task Black_trains_after_the_first_card_block_the_second_card_until_removed()
-    {
-        await using var fixture = await Fixture.CreateAsync();
-        var model = fixture.Model;
-        await model.DrawSoloBlindCommand.ExecuteAsync(null); // Explicit manual/no-camera path.
-        Assert.Equal(TurnPhase.AwaitingSecondTrainCard, fixture.Coordinator.Public.TurnPhase);
-        var faceUp = model.Table.Market.First(slot => model.DrawSoloFaceUpCommand.CanExecute(slot));
-        var before = await fixture.SnapshotAsync();
-
-        model.Camera.IsGameTablePreviewUpright = true;
-        var at = DateTimeOffset.UtcNow;
-        fixture.Publish(1, at, blackTrains: true);
-        fixture.Publish(2, at.AddSeconds(1.1), blackTrains: true);
-
-        Assert.False(model.DrawSoloFaceUpCommand.CanExecute(faceUp));
-        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
-        Assert.Null(model.BoardFirstProposal);
-        await model.DrawSoloFaceUpCommand.ExecuteAsync(faceUp);
-        await fixture.AssertUnchangedAsync(before);
-        Assert.Equal(TurnPhase.AwaitingSecondTrainCard, fixture.Coordinator.Public.TurnPhase);
-        Assert.True(model.IsSoloHumanTurn);
-
-        fixture.Publish(3, at.AddSeconds(2.2));
-        Assert.True(model.DrawSoloFaceUpCommand.CanExecute(faceUp));
-        fixture.Publish(4, at.AddSeconds(3.3));
-        Assert.True(model.DrawSoloFaceUpCommand.CanExecute(faceUp));
-        Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
-        Assert.Null(model.BoardFirstProposal);
-        await fixture.AssertUnchangedAsync(before);
-    }
-
-    [Fact]
-    public async Task Payable_trains_detected_after_click_show_a_claim_instead_of_spending_the_turn()
+    public async Task Payable_trains_detected_after_a_card_cannot_replace_the_already_started_draw_turn()
     {
         await using var fixture = await Fixture.CreateAsync(payableRoute: true);
         var model = fixture.Model;
-        Assert.Contains((await fixture.Coordinator.GetLegalActionsAsync(
-            fixture.Coordinator.Public.ActiveSeatId, cancellationToken: TestContext.Current.CancellationToken)).Claims,
-            claim => claim.RouteId.Value == "little-rock--saint-louis");
         fixture.PublishCleanBaseline();
-        var before = await fixture.SnapshotAsync();
-        var draw = model.DrawSoloBlindCommand.ExecuteAsync(null);
-        Assert.False(draw.IsCompleted);
-
+        var seat = fixture.Coordinator.Public.ActiveSeatId;
+        await ImmediateAsync(() => model.DrawSoloBlindCommand.ExecuteAsync(null));
         var at = DateTimeOffset.UtcNow;
-        fixture.Publish(3, at, blackTrains: true);
-        await draw.WaitAsync(TimeSpan.FromSeconds(7), TestContext.Current.CancellationToken);
-
-        await fixture.AssertUnchangedAsync(before);
-        Assert.Equal(TurnPhase.TurnStart, fixture.Coordinator.Public.TurnPhase);
-        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
-        Assert.False(model.DrawSoloTicketsCommand.CanExecute(null));
-        await model.DrawSoloTicketsCommand.ExecuteAsync(null);
-        await fixture.AssertUnchangedAsync(before);
-        Assert.False(model.ShowSoloTicketOffer);
-
-        // Wait for cancellation before publishing the route proof: frames sent while the
-        // draw is still pending are intentionally ignored by the board-first observer.
-        // Two frames discover the route; the third completes whole-board verification
-        // before payment is offered. Waiting alone must not substitute for camera evidence.
-        fixture.Publish(4, at.AddSeconds(1.1), blackTrains: true);
+        for (var sequence = 3; sequence <= 6; sequence++)
+            fixture.Publish(sequence, at.AddSeconds((sequence - 3) * 1.1), blackTrains: true);
         Assert.Null(model.BoardFirstProposal);
-        fixture.Publish(5, at.AddSeconds(2.2), blackTrains: true);
+        Assert.Equal(TurnPhase.AwaitingSecondTrainCard, fixture.Coordinator.Public.TurnPhase);
+        Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
+        await ImmediateAsync(() => model.DrawSoloBlindCommand.ExecuteAsync(null));
+        Assert.Equal(6, fixture.Coordinator.Public.SeatOf(seat).TrainCardCount);
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
+        fixture.Publish(7, at.AddSeconds(4.4), blackTrains: true);
+        Assert.NotEmpty(model.Game.PlacementTargets);
         Assert.Null(model.BoardFirstProposal);
         Assert.Null(fixture.Coordinator.Public.PendingClaim);
-        await fixture.AssertUnchangedAsync(before);
-        fixture.Publish(6, at.AddSeconds(3.3), blackTrains: true);
-        var proposal = Assert.IsType<BoardFirstClaimProposal>(model.BoardFirstProposal);
-        Assert.Equal("little-rock--saint-louis", proposal.RouteId.Value);
-        Assert.NotEmpty(proposal.Payments);
-        Assert.Contains("Choose which train cards to spend", model.Game.GuidanceInstruction);
-        Assert.Null(fixture.Coordinator.Public.PendingClaim);
-        await fixture.AssertUnchangedAsync(before);
+        Assert.Equal(0, fixture.Ai.Decisions);
     }
 
     [Fact]
-    public async Task Cached_and_inflight_clean_frames_cannot_authorize_a_new_card_draw()
+    public async Task Cached_and_inflight_frames_cannot_release_the_next_player_after_cards_are_saved()
     {
         await using var fixture = await Fixture.CreateAsync();
         var model = fixture.Model;
         fixture.PublishCleanBaseline();
-        var before = await fixture.SnapshotAsync();
-        var capturedBeforeClick = DateTimeOffset.UtcNow.AddMilliseconds(-20);
-        var draw = model.DrawSoloBlindCommand.ExecuteAsync(null);
-        Assert.False(draw.IsCompleted);
-        await fixture.AssertUnchangedAsync(before);
+        var capturedBeforeCompletion = DateTimeOffset.UtcNow.AddMilliseconds(-20);
+        await ImmediateAsync(() => model.DrawSoloBlindCommand.ExecuteAsync(null));
+        await ImmediateAsync(() => model.DrawSoloBlindCommand.ExecuteAsync(null));
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
+        var awarded = await fixture.SnapshotAsync();
 
-        // New analysis sequences can still contain frames captured before this click.
-        fixture.Publish(3, capturedBeforeClick.AddSeconds(-1.1));
-        fixture.Publish(4, capturedBeforeClick);
-        // A reused pre-click sequence cannot become new evidence by changing its timestamp.
+        fixture.Publish(3, capturedBeforeCompletion.AddSeconds(-1.1));
+        fixture.Publish(4, capturedBeforeCompletion);
         fixture.Publish(2, DateTimeOffset.UtcNow);
-        // A recently published result can also carry an old capture timestamp internally.
         fixture.Publish(5, DateTimeOffset.UtcNow, stale: true);
-        await Task.Delay(30, TestContext.Current.CancellationToken);
-        Assert.False(draw.IsCompleted);
-        await fixture.AssertUnchangedAsync(before);
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
+        Assert.Equal(0, fixture.Ai.Decisions);
+        await fixture.AssertUnchangedAsync(awarded);
 
-        var freshAt = DateTimeOffset.UtcNow;
-        fixture.Publish(6, freshAt);
-        Assert.False(draw.IsCompleted);
-        await fixture.AssertUnchangedAsync(before);
-        fixture.Publish(7, freshAt.AddSeconds(1.1));
-        await draw.WaitAsync(TimeSpan.FromSeconds(7), TestContext.Current.CancellationToken);
-
-        Assert.Equal(before.Version + 1, fixture.Coordinator.Public.StateVersion);
-        Assert.Equal(before.Turn, fixture.Coordinator.Public.TurnNumber);
-        Assert.Equal(before.Seat, fixture.Coordinator.Public.ActiveSeatId);
-        Assert.Equal(TurnPhase.AwaitingSecondTrainCard, fixture.Coordinator.Public.TurnPhase);
-        Assert.NotEqual(before.Hash, await fixture.Coordinator.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken));
+        var at = DateTimeOffset.UtcNow;
+        fixture.Publish(6, at);
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
+        fixture.Publish(7, at.AddSeconds(1.1));
+        await fixture.WaitForNextHumanTurnAsync();
     }
 
     [Fact]
-    public async Task Requested_camera_without_analysis_cannot_fall_back_to_manual_draws()
+    public async Task Requested_camera_without_analysis_allows_card_awards_but_holds_the_next_turn()
     {
         await using var fixture = await Fixture.CreateAsync();
         var model = fixture.Model;
         model.SetGameLayerVisible(true);
         typeof(CameraViewModel).GetField("_gameTablePreviewRequested",
             BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(model.Camera, true);
-        model.Camera.IsGameTablePreviewUpright = false;
         Assert.Null(model.Camera.GameTableAnalysis);
-        var before = await fixture.SnapshotAsync();
+        var seat = fixture.Coordinator.Public.ActiveSeatId;
+        await ImmediateAsync(() => model.DrawSoloBlindCommand.ExecuteAsync(null));
+        Assert.False(model.IsCheckingBoardBeforeNextTurn);
+        await ImmediateAsync(() => model.DrawSoloBlindCommand.ExecuteAsync(null));
+        Assert.Equal(6, fixture.Coordinator.Public.SeatOf(seat).TrainCardCount);
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
+        Assert.Equal(0, fixture.Ai.Decisions);
+        Assert.False(model.CanRevealPrivateSeat);
 
-        await model.DrawSoloBlindCommand.ExecuteAsync(null)
-            .WaitAsync(TimeSpan.FromSeconds(7), TestContext.Current.CancellationToken);
-
-        await fixture.AssertUnchangedAsync(before);
-        Assert.Equal(TurnPhase.TurnStart, fixture.Coordinator.Public.TurnPhase);
-        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
-        Assert.False(model.DrawSoloTicketsCommand.CanExecute(null));
+        model.Camera.IsGameTablePreviewUpright = true;
+        var at = DateTimeOffset.UtcNow;
+        fixture.Publish(1, at);
+        fixture.Publish(2, at.AddSeconds(1.1));
+        await fixture.WaitForNextHumanTurnAsync();
     }
 
     [Fact]
-    public async Task Losing_focus_cancels_a_pending_draw_even_if_clean_frames_arrive_later()
+    public async Task Focus_loss_preserves_awarded_cards_and_requires_new_board_evidence_on_return()
     {
         await using var fixture = await Fixture.CreateAsync();
         var model = fixture.Model;
         fixture.PublishCleanBaseline();
-        var before = await fixture.SnapshotAsync();
-        var draw = model.DrawSoloBlindCommand.ExecuteAsync(null);
-        Assert.False(draw.IsCompleted);
+        var seat = fixture.Coordinator.Public.ActiveSeatId;
+        await ImmediateAsync(() => model.DrawSoloBlindCommand.ExecuteAsync(null));
+        await ImmediateAsync(() => model.DrawSoloBlindCommand.ExecuteAsync(null));
+        var awarded = await fixture.SnapshotAsync();
+        model.SetWindowActive(false);
         var at = DateTimeOffset.UtcNow;
         fixture.Publish(3, at);
-        Assert.False(draw.IsCompleted);
-
-        model.SetWindowActive(false);
         fixture.Publish(4, at.AddSeconds(1.1));
-        await draw.WaitAsync(TimeSpan.FromSeconds(7), TestContext.Current.CancellationToken);
-        await fixture.AssertUnchangedAsync(before);
-        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
+        Assert.Equal(0, fixture.Ai.Decisions);
+        await fixture.AssertUnchangedAsync(awarded);
 
-        // Returning to the table requires another click; later good frames must not revive it.
         model.SetWindowActive(true);
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
+        Assert.False(model.CanRevealPrivateSeat);
         fixture.Publish(5, at.AddSeconds(2.2));
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
         fixture.Publish(6, at.AddSeconds(3.3));
-        await fixture.AssertUnchangedAsync(before);
-        Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
-        Assert.Equal(TurnPhase.TurnStart, fixture.Coordinator.Public.TurnPhase);
+        await fixture.WaitForNextHumanTurnAsync();
+        Assert.Equal(6, fixture.Coordinator.Public.SeatOf(seat).TrainCardCount);
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Technical_private_card_actions_also_require_post_click_board_confirmation(bool tickets)
+    public async Task Technical_private_card_actions_save_immediately_and_verify_only_when_the_turn_completes(bool tickets)
     {
         await using var fixture = await Fixture.CreateAsync();
         var model = fixture.Model;
         fixture.PublishCleanBaseline();
+        var seat = fixture.Coordinator.Public.ActiveSeatId;
+        var ticketCount = fixture.Coordinator.Public.SeatOf(seat).TicketCount;
         await model.RevealPrivateSeatAsync();
-        Assert.NotNull(model.PrivateSeat);
-        var before = await fixture.SnapshotAsync();
-
-        var action = tickets ? model.DrawTicketsAsync() : model.DrawBlindCardAsync();
-        Assert.False(action.IsCompleted);
-        await fixture.AssertUnchangedAsync(before);
-        var at = DateTimeOffset.UtcNow;
-        fixture.Publish(3, at);
-        Assert.False(action.IsCompleted);
-        fixture.Publish(4, at.AddSeconds(1.1));
-        await action.WaitAsync(TimeSpan.FromSeconds(7), TestContext.Current.CancellationToken);
-        Assert.Equal(before.Version + 1, fixture.Coordinator.Public.StateVersion);
+        await ImmediateAsync(tickets ? model.DrawTicketsAsync : model.DrawBlindCardAsync);
         Assert.Equal(tickets ? TurnPhase.AwaitingTicketKeep : TurnPhase.AwaitingSecondTrainCard,
             fixture.Coordinator.Public.TurnPhase);
-
-        if (!tickets) return;
+        Assert.False(model.IsCheckingBoardBeforeNextTurn);
         await model.RevealPrivateSeatAsync();
-        Assert.True(model.PrivateSeat!.MustChooseTickets);
-        var offer = await fixture.SnapshotAsync();
-        var keep = model.CommitTicketsAsync();
-        Assert.False(keep.IsCompleted);
-        at = DateTimeOffset.UtcNow;
-        fixture.Publish(5, at, blackTrains: true);
-        fixture.Publish(6, at.AddSeconds(1.1), blackTrains: true);
-        await keep.WaitAsync(TimeSpan.FromSeconds(7), TestContext.Current.CancellationToken);
-        await fixture.AssertUnchangedAsync(offer);
-        Assert.Equal(TurnPhase.AwaitingTicketKeep, fixture.Coordinator.Public.TurnPhase);
-        Assert.Null(model.BoardFirstProposal);
+        var offered = model.PrivateSeat!.Offer.Count;
+        await ImmediateAsync(tickets ? model.CommitTicketsAsync : model.DrawBlindCardAsync);
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
+        Assert.Equal(tickets ? 4 : 6, fixture.Coordinator.Public.SeatOf(seat).TrainCardCount);
+        Assert.Equal(tickets ? ticketCount + offered : ticketCount,
+            fixture.Coordinator.Public.SeatOf(seat).TicketCount);
+        Assert.Equal(0, fixture.Ai.Decisions);
+        var at = DateTimeOffset.UtcNow;
+        fixture.Publish(3, at);
+        fixture.Publish(4, at.AddSeconds(1.1));
+        await fixture.WaitForNextHumanTurnAsync();
     }
 
+    [Fact]
+    public async Task Face_up_locomotive_is_awarded_immediately_then_requires_the_handoff_board_check()
+    {
+        await using var fixture = await Fixture.CreateAsync(visibleLocomotive: true);
+        fixture.PublishCleanBaseline();
+        var model = fixture.Model;
+        var seat = fixture.Coordinator.Public.ActiveSeatId;
+        var before = await fixture.Coordinator.GetSeatViewAsync(seat, TestContext.Current.CancellationToken);
+        var locomotive = model.Table.Market.First(slot => slot.Kind == TrainCardKind.Locomotive);
+        await ImmediateAsync(() => model.DrawSoloFaceUpCommand.ExecuteAsync(locomotive));
+        var after = await fixture.Coordinator.GetSeatViewAsync(seat, TestContext.Current.CancellationToken);
+        Assert.Equal(TrainCardKind.Locomotive, Assert.Single(after.Hand.Except(before.Hand)).Kind);
+        Assert.Equal(5, after.Hand.Length);
+        Assert.True(model.IsCheckingBoardBeforeNextTurn);
+        Assert.Equal(0, fixture.Ai.Decisions);
+        Assert.NotEqual(seat, fixture.Coordinator.Public.ActiveSeatId);
+        var at = DateTimeOffset.UtcNow;
+        fixture.Publish(3, at);
+        fixture.Publish(4, at.AddSeconds(1.1));
+        await fixture.WaitForNextHumanTurnAsync();
+    }
+
+    private static Task ImmediateAsync(Func<Task> action) =>
+        action().WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+
     private sealed record Snapshot(long Version, int Turn, SeatId Seat, string Hash);
+
+    private sealed class CountingDrawPolicy : IAiPolicy
+    {
+        public int Decisions { get; private set; }
+
+        public ValueTask<AiDecision> ChooseAsync(SeatView view, BoardManifest manifest,
+            DecisionBudget budget, DeterministicRandom random, CancellationToken cancellationToken)
+        {
+            Decisions++;
+            return ValueTask.FromResult<AiDecision>(new AiDrawTrainCard(null));
+        }
+    }
 
     private sealed class Fixture(MainViewModel model) : IAsyncDisposable
     {
         public MainViewModel Model { get; } = model;
         public GameCoordinator Coordinator { get; } = Assert.IsType<GameCoordinator>(typeof(MainViewModel)
             .GetField("_coordinator", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(model));
+        public CountingDrawPolicy Ai { get; } = new();
 
-        public static async Task<Fixture> CreateAsync(bool payableRoute = false, bool claimedCalgary = false)
+        public static async Task<Fixture> CreateAsync(bool payableRoute = false, bool claimedCalgary = false,
+            bool visibleLocomotive = false)
         {
             var token = TestContext.Current.CancellationToken;
             var manifest = ManifestLoader.LoadClassicUs();
             var store = new InMemorySessionStore();
-            var model = new MainViewModel(manifest, store);
+            var model = new MainViewModel(manifest, store,
+                camera: new CameraViewModel(capture: new FakeCameraCapture()));
             model.Setup.ManualVerificationAccepted = true;
             model.Setup.Seats[0].Color = PlayerColor.Black;
             model.Setup.Seats[1].Color = PlayerColor.Red;
             model.Setup.Seats[2].Color = PlayerColor.Blue;
             for (var index = 0; index < model.Setup.Seats.Count; index++)
                 model.Setup.Seats[index].IsComputer = index != 0;
-            if (payableRoute || claimedCalgary)
+            if (payableRoute || claimedCalgary || visibleLocomotive)
             {
                 // Seed 42 starts with a legal two-pink-card payment for Little Rock-Saint Louis.
-                var game = await GameCoordinator.CreateAsync(new GameRules(manifest,
-                        CardCatalog.FromManifest(manifest)), store, model.Setup.TryBuildSetup()!,
-                    DeterministicRandom.SeedFrom(42), token);
+                var rules = new GameRules(manifest, CardCatalog.FromManifest(manifest));
+                var setup = model.Setup.TryBuildSetup()!;
+                var seed = visibleLocomotive
+                    ? Enumerable.Range(1, 100).First(candidate => rules.ProjectPublic(rules.CreateSession(
+                        setup, DeterministicRandom.SeedFrom((ulong)candidate)).State).FaceUp
+                        .Contains(TrainCardKind.Locomotive))
+                    : 42;
+                var game = await GameCoordinator.CreateAsync(rules, store, setup,
+                    DeterministicRandom.SeedFrom((ulong)seed), token);
                 foreach (var seat in game.Seats)
                 {
                     var view = await game.GetSeatViewAsync(seat.SeatId, token);
@@ -385,6 +369,8 @@ public sealed class DesktopCardActionBoardTests
                 await model.CommitTicketsAsync();
             }
             var fixture = new Fixture(model);
+            typeof(MainViewModel).GetField("_driver", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(model, new ComputerSeatDriver(fixture.Coordinator, fixture.Ai, aiSeed: 1));
             Assert.Equal(TurnPhase.TurnStart, fixture.Coordinator.Public.TurnPhase);
             Assert.Equal(PlayerColor.Black, fixture.Coordinator.Public.SeatOf(
                 fixture.Coordinator.Public.ActiveSeatId).Color);
@@ -432,6 +418,18 @@ public sealed class DesktopCardActionBoardTests
             Assert.Equal(before.Turn, Coordinator.Public.TurnNumber);
             Assert.Equal(before.Seat, Coordinator.Public.ActiveSeatId);
             Assert.Equal(before.Hash, await Coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken));
+        }
+
+        public async Task WaitForNextHumanTurnAsync()
+        {
+            for (var attempt = 0; attempt < 200 &&
+                 (Model.IsCheckingBoardBeforeNextTurn || Ai.Decisions < 4 ||
+                  !Model.DrawSoloBlindCommand.CanExecute(null)); attempt++)
+                await Task.Delay(10, TestContext.Current.CancellationToken);
+            Assert.False(Model.IsCheckingBoardBeforeNextTurn);
+            Assert.Equal(4, Ai.Decisions);
+            Assert.True(Model.IsSoloHumanTurn);
+            Assert.True(Model.DrawSoloBlindCommand.CanExecute(null));
         }
 
         public void PublishCleanBaseline()

@@ -48,9 +48,11 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         Func<string, bool, IBoardCornerDetector>? boardCornerModelFactory = null,
         Func<CancellationToken, Task<IReadOnlyList<CameraDevice>>>? enumerateDevices = null,
         Func<CameraDevice, CancellationToken, Task<IReadOnlyList<CameraFormat>>>? getCameraFormats = null,
-        ICameraCapture? capture = null)
+        ICameraCapture? capture = null, string? cameraSettingsPath = null)
     {
         _processingSettingsPath = processingSettingsPath;
+        _cameraSettingsPath = cameraSettingsPath;
+        _preferredCamera = Services.CameraDevicePreferences.Load(cameraSettingsPath);
         _pieceModelDirectory = pieceModelDirectory ?? Path.Combine(AppContext.BaseDirectory, "models", "pieces");
         _pieceModelFactory = pieceModelFactory ?? ((directory, preferGpu) => LearnedPieceDetector.Load(directory, preferGpu));
         _boardCornerModelDirectory = boardCornerModelDirectory ?? Path.Combine(AppContext.BaseDirectory, "models", "board-corners");
@@ -145,30 +147,42 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
             timeout.CancelAfter(TimeSpan.FromSeconds(10));
-            var selectedId = SelectedDevice?.Id;
             var devices = await _enumerateDevices(timeout.Token);
+            if (_disposed) return;
             _cameraCapabilitiesEnabled = true;
             // Retain existing items so a bound picker does not transiently deselect the
             // current camera and discard its quality preference during a refresh.
-            var connectedIds = devices.Select(device => device.Id).ToHashSet(StringComparer.Ordinal);
-            foreach (var removed in Devices.Where(device => !connectedIds.Contains(device.Id)).ToArray())
-                Devices.Remove(removed);
-            for (var index = 0; index < devices.Count; index++)
+            _refreshingDeviceList = true;
+            try
             {
-                var existing = Devices.FirstOrDefault(device => device.Id == devices[index].Id);
-                if (existing is null) Devices.Insert(index, devices[index]);
-                else if (Devices.IndexOf(existing) != index) Devices.Move(Devices.IndexOf(existing), index);
+                var connectedIds = devices.Select(device => device.Id).ToHashSet(StringComparer.Ordinal);
+                foreach (var removed in Devices.Where(device => !connectedIds.Contains(device.Id)).ToArray())
+                    Devices.Remove(removed);
+                for (var index = 0; index < devices.Count; index++)
+                {
+                    var existing = Devices.FirstOrDefault(device => device.Id == devices[index].Id);
+                    if (existing is null) Devices.Insert(index, devices[index]);
+                    else if (Devices.IndexOf(existing) != index) Devices.Move(Devices.IndexOf(existing), index);
+                }
             }
-            var selected = Devices.FirstOrDefault(d => d.Id == selectedId) ?? Devices.FirstOrDefault();
+            finally { _refreshingDeviceList = false; }
+            var selected = FindPreferredCamera();
+            if (selected is not null) RememberCamera(selected);
             if (SelectedDevice == selected) await RefreshSelectedCameraCapabilitiesAsync();
             else
             {
                 SelectedDevice = selected;
                 await _cameraCapabilitiesWork;
             }
-            Status = Devices.Count == 0
+            if (_disposed) return;
+            // A user can select a different webcam while the capability probe awaits.
+            // Its selection and saved identity take precedence over this refresh.
+            selected = SelectedDevice;
+            Status = selected is null && _preferredCamera is not null ? GameTableCameraConnectionMessage : Devices.Count == 0
                 ? "No camera found. Set the Pixel USB connection to Webcam, or connect a UVC camera, then refresh."
                 : $"{Devices.Count} camera(s) found. Choose the overhead camera and start preview.";
+            if (selected is null && _gameTablePreviewRequested)
+                GameTablePreviewStatus = GameTableCameraConnectionMessage;
         }
         catch (Exception ex)
         {
@@ -183,7 +197,11 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     private async Task StartAsync()
     {
         if (IsBusy || _disposed) return;
-        if (SelectedDevice is null) { Problem = "Refresh the camera list and select a camera first."; return; }
+        if (SelectedDevice is null)
+        {
+            Problem = _preferredCamera is null ? "Refresh the camera list and select a camera first." : GameTableCameraConnectionMessage;
+            return;
+        }
         IsBusy = true;
         Problem = null;
         Status = "Starting camera… Windows may request camera permission.";
@@ -203,6 +221,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
                 throw new InvalidOperationException(CameraCompatibilityMessage);
             }
             await InitializeProcessingAsync();
+            if (_disposed || selected != SelectedDevice) return;
             await Capture.StartAsync(selected, SelectedPreference.Value, _lifetime.Token);
             if (_disposed) return;
             if (selected != SelectedDevice)
@@ -287,7 +306,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             if (_gameTablePreviewRequested)
                 GameTablePreviewStatus = Capture.IsRunning
                     ? "Waiting for the webcam image…"
-                    : Capture.LastError ?? GameTableCameraConnectionMessage;
+                    : _gameTableCameraAutoStart ? GameTableCameraConnectionMessage : Capture.LastError ?? GameTableCameraConnectionMessage;
             ExpireGameBoardFraming(null);
             ClearDetectionPreview();
             _monitor.MarkStale();
@@ -676,9 +695,6 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         _gameTablePhotoAlignment = null;
         InvalidateGameTablePreview();
     }
-
-    private const string GameTableCameraConnectionMessage =
-        "Please connect a webcam. The game will find it and check the board automatically.";
 
     public void SetGameTableCameraRecoveryEnabled(bool enabled)
     {

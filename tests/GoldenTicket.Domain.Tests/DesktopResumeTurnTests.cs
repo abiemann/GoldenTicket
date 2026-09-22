@@ -318,6 +318,44 @@ public sealed class DesktopResumeTurnTests
         finally { await model.DisposeToolsAsync(); }
     }
 
+    [Theory]
+    [InlineData(BoardInventoryState.MissingTrains, 0)]
+    [InlineData(BoardInventoryState.MissingTrains, 1)]
+    [InlineData(BoardInventoryState.Ambiguous, 0)]
+    [InlineData(BoardInventoryState.Ambiguous, 1)]
+    public async Task Inventory_problem_marks_only_the_identified_route_space(BoardInventoryState state, int slot)
+    {
+        var model = new MainViewModel(TestManifest.Manifest, new InMemorySessionStore());
+        try
+        {
+            var preview = BitmapSource.Create(960, 600, 96, 96, PixelFormats.Bgra32,
+                null, new byte[960 * 600 * 4], 960 * 4);
+            preview.Freeze();
+            model.Camera.GameTablePreview = preview;
+            model.Camera.IsGameTablePreviewUpright = true;
+            const string routeId = "boston--new-york--a";
+            var problem = new BoardInventoryObservation(state, new Dictionary<MarkerColor, int>(), routeId)
+            {
+                UnverifiedSlotMask = 1 << slot
+            };
+            var update = typeof(GameScreenViewModel).GetMethod("UpdateInventoryProblemMarkers",
+                BindingFlags.Instance | BindingFlags.NonPublic)!;
+            update.Invoke(model.Game, ["card", problem, null]);
+
+            Assert.True(PlacementBoardOverlay.TryGetTargets(TestManifest.Manifest, new RouteId(routeId), 2,
+                out var slots));
+            var target = Assert.Single(model.Game.PlacementTargets);
+            Assert.Equal(slots[slot].X, target.X);
+            Assert.Equal(slots[slot].Y, target.Y);
+            Assert.Contains($"space {slot + 1}", target.ProblemDescription);
+
+            // A partially rebuilt checkpoint must never ask for spaces not saved as occupied.
+            update.Invoke(model.Game, ["card", problem, 1 << (1 - slot)]);
+            Assert.Empty(model.Game.PlacementTargets);
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
     private static async Task<GameCoordinator> CreateAsync(ISessionStore store, bool computer,
         bool completeSetup = true)
     {

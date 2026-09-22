@@ -258,7 +258,7 @@ async function blockedDrawCases(page, viewport) {
       await button.evaluate(node=>node.scrollIntoView({block:'center',inline:'nearest'}));
       const before=await page.evaluate(()=>({y:scrollY,x:document.querySelector('.held-tickets').scrollLeft}));
       delayedCommand={rejectBoardCheck:true};await button.tap();
-      await help.filter({hasText:`Checking the board before drawing your ${kind} card…`}).waitFor();
+      await help.filter({hasText:`Drawing your ${kind} card…`}).waitFor();
       await sessionDelivered(page);
       assert.equal(await page.locator('#private').isVisible(),true);
       assert.deepEqual(await handCount(),hand,'A pending check has not awarded a card.');

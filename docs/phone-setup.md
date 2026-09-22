@@ -56,10 +56,11 @@ update in place. Choose your second card without revealing again or losing your 
 Drawing destination tickets also opens the offer directly during your turn. When the turn ends,
 the cards are covered for the next player.
 
-While a draw is checked, its status appears beside the card picker. If the camera blocks it,
-your hand stays open and the message says no card was drawn and it is still your turn.
-Correct the indicated board issue and choose again. The game saves an awarded card before
-advancing to the next player; a blocked draw never consumes the turn.
+Draw choices are saved immediately, without waiting for a camera check between clicks. Once
+your turn is complete, the camera checks the board before the next player can act. Any discrepancy
+appears on the live map with yellow spheres and instructions. Correcting the board lets play
+continue automatically; your awarded cards stay saved and you do not need to choose again.
+If the rules reject a card choice, its message appears beside the picker and it is still your turn.
 
 Your destination tickets appear in one horizontal row. Swipe or scroll through the cards to see
 each starting city, destination city and point value without lengthening the page.
