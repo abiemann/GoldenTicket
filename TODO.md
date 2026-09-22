@@ -60,6 +60,7 @@ See the
   badge for duplicates so large hands remain easy to count.
 - [x] Replace the technical final-score list with themed portrait standings over the live board,
   horizontal player navigation, full scoring details and scrollable longest-route trails.
+  Keep player cards equal in height, including the full-text shared results image.
 - [x] Record full-turn time per player, including physical placement and scoring-marker movement,
   with total/average time shown only in the final standings. Exclude menus, technical tools,
   inactivity, sleep and reload checks; preserve timing across saves without inventing old history.
@@ -198,6 +199,9 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
 - [x] Replace the unavailable browser reveal button during computer turns with the upright board
   preview and the laptop's gold placement dots. Signal new frames through SSE at a bounded rate,
   mirror correction subsets, and restore human reveal after placement/scoring completes.
+- [x] Open a live map of all held destinations when a browser ticket is tapped, with the same
+  dashed connections and city rings as single-player. Animate the ticket/map swap and action
+  controls, preserve the map through the first draw, and clear private overlays at handoff.
 - [x] Confine save paths and reject linked/unsupported paths before filesystem operations.
 - [x] Check snapshot/journal/version integrity and prevent competing writers for supported saves.
 - [x] Keep unreadable saves visible, sanitize recovery errors, and block gameplay after uncertain writes.
@@ -537,8 +541,13 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
 - [ ] Implement and evaluate the specified Challenging AI sampled lookahead; current difficulty
   choices tune a heuristic. Keep opponent hands/deck state inaccessible and report strength honestly.
 - [x] Add per-computer Standard/Aggressive badges to character selection, with a spinning toggle
-  and saved style choices. Aggressive claims and card demand use public human networks to favour
-  short blocks and continuous-route interference; Standard behaviour is preserved.
+  and saved style choices. Aggressive uses public human networks for opportunistic blocks and
+  continuous-route interference.
+- [x] Give computer play a shared destination/card plan, train and tempo reserves, compatible ticket
+  selection, and completion priority over speculative sabotage. Add regressions and a reproducible
+  frozen-policy comparison that exercises public human-network targeting across all seat positions.
+  Final screening and held-out cohorts completed 640 games with no fallback or invalid actions;
+  [recorded results](docs/ai-strategy-evidence.md) show stronger scores and ticket completion.
 - [ ] Playtest Aggressive against humans across seat counts and seeds, measuring disruption,
   game completion and decision time before making comparative difficulty claims.
 - [ ] **M7: distribution completion.** Validate the self-contained x64 ZIP on clean Windows, add an

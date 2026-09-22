@@ -1,9 +1,11 @@
 using System.Reflection;
 using GoldenTicket.Application;
 using GoldenTicket.Desktop.ViewModels;
+using GoldenTicket.Domain.Ai;
 using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Domain.Model;
+using GoldenTicket.Domain.Projections;
 using GoldenTicket.Domain.Randomness;
 using GoldenTicket.Persistence;
 using GoldenTicket.Vision;
@@ -12,8 +14,11 @@ namespace GoldenTicket.Domain.Tests;
 
 public sealed class DesktopSingleHumanTests
 {
-    [Fact]
-    public async Task Solo_table_draw_pile_and_market_take_cards_without_opening_private_view()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Solo_table_draw_pile_and_market_take_cards_without_opening_private_view(
+        bool computerClaimsRoute)
     {
         var model = NewSingleHumanMatch();
         try
@@ -23,6 +28,8 @@ public sealed class DesktopSingleHumanTests
             await model.CommitTicketsAsync();
             Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
             Assert.True(model.DrawSoloTicketsCommand.CanExecute(null));
+            var coordinator = UseComputerPolicy(model, new DrawOrClaimPolicy(computerClaimsRoute));
+            var firstTurn = coordinator.Public.TurnNumber;
             var firstCount = model.Table.Seats.Single(seat => seat.Operator == "human").CardCount;
 
             await model.DrawSoloBlindCommand.ExecuteAsync(null);
@@ -38,10 +45,34 @@ public sealed class DesktopSingleHumanTests
 
             var faceUp = model.Table.Market.First(slot =>
                 model.DrawSoloFaceUpCommand.CanExecute(slot));
+            var human = coordinator.Public.ActiveSeatId;
+            var handBeforeFaceUp = await coordinator.GetSeatViewAsync(human,
+                TestContext.Current.CancellationToken);
             await model.DrawSoloFaceUpCommand.ExecuteAsync(faceUp);
-            Assert.False(model.IsSoloHumanTurn);
-            Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
-            Assert.False(model.DrawSoloTicketsCommand.CanExecute(null));
+            var handAfterFaceUp = await coordinator.GetSeatViewAsync(human,
+                TestContext.Current.CancellationToken);
+            Assert.Equal(firstCount + 2,
+                model.Table.Seats.Single(seat => seat.Operator == "human").CardCount);
+            var awarded = Assert.Single(handAfterFaceUp.Hand.Except(handBeforeFaceUp.Hand));
+            Assert.Equal(faceUp.Kind, awarded.Kind);
+            if (computerClaimsRoute)
+            {
+                Assert.NotNull(model.Table.Placement);
+                Assert.False(model.IsSoloHumanTurn);
+                Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+                Assert.False(model.DrawSoloTicketsCommand.CanExecute(null));
+                Assert.Equal(firstTurn + 1, coordinator.Public.TurnNumber);
+            }
+            else
+            {
+                // PumpAsync completes card-only computer turns before returning. In that case
+                // the human is already allowed to play again, rather than stuck on an AI turn.
+                Assert.Null(model.Table.Placement);
+                Assert.True(model.IsSoloHumanTurn);
+                Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
+                Assert.True(model.DrawSoloTicketsCommand.CanExecute(null));
+                Assert.Equal(firstTurn + coordinator.Seats.Length, coordinator.Public.TurnNumber);
+            }
             Assert.Null(model.PrivateSeat);
             Assert.Equal(Screen.Table, model.Screen);
         }
@@ -293,6 +324,7 @@ public sealed class DesktopSingleHumanTests
         {
             await model.StartMatchAsync();
             await model.CommitTicketsAsync();
+            UseComputerPolicy(model, new DrawOrClaimPolicy(claim: true));
             await model.RevealPrivateSeatAsync();
             await model.DrawBlindCardAsync();
             await model.RevealPrivateSeatAsync();
@@ -617,6 +649,32 @@ public sealed class DesktopSingleHumanTests
         for (var index = 0; index < model.Setup.Seats.Count; index++)
             model.Setup.Seats[index].IsComputer = index != humanIndex;
         return model;
+    }
+
+    private static GameCoordinator UseComputerPolicy(MainViewModel model, IAiPolicy policy)
+    {
+        var coordinator = (GameCoordinator)typeof(MainViewModel)
+            .GetField("_coordinator", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(model)!;
+        typeof(MainViewModel).GetField("_driver", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(model, new ComputerSeatDriver(coordinator, policy, aiSeed: 1));
+        return coordinator;
+    }
+
+    private sealed class DrawOrClaimPolicy(bool claim) : IAiPolicy
+    {
+        public ValueTask<AiDecision> ChooseAsync(SeatView view, BoardManifest manifest,
+            DecisionBudget budget, DeterministicRandom random, CancellationToken cancellationToken)
+        {
+            // A fresh classic board always offers a one-train grey route affordable from the
+            // four-card starting hand. Use it to keep the turn awaiting physical placement.
+            if (claim)
+            {
+                var route = LegalActionCalculator.For(view, manifest).Claims
+                    .OrderBy(route => route.Length).ThenBy(route => route.RouteId.Value).First();
+                return ValueTask.FromResult<AiDecision>(new AiClaimRoute(route.RouteId, route.Payments[0]));
+            }
+            return ValueTask.FromResult<AiDecision>(new AiDrawTrainCard(null));
+        }
     }
 
     [Fact]

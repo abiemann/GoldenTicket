@@ -69,7 +69,9 @@ public sealed partial class AutomaticPhysicalFlowTests
             var at = DateTimeOffset.UtcNow;
             PublishScore(model.Camera, 1, at, color, target);
             PublishScore(model.Camera, 2, at.AddSeconds(1.1), color, target);
-            await WaitUntilAsync(() => model.Game.GuidanceTurn != "Scoring");
+            // Guidance clears before the asynchronous turn refresh releases its
+            // input gate. Wait for the human turn to be ready, not only its heading.
+            await WaitUntilAsync(() => model.Game.GuidanceTurn != "Scoring" && model.CanRevealPrivateSeat);
             Assert.True(updates.Changes.Reader.TryRead(out _));
             var next = await bridge.ReadPublicAsync(token);
             Assert.Equal(scoring.Game.StateVersion, next.Game!.StateVersion);

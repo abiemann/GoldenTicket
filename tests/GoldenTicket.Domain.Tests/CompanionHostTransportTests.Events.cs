@@ -48,7 +48,7 @@ public partial class CompanionHostTransportTests
         Assert.Equal("session", initial.Name);
         Assert.True(initial.Data.GetProperty("paired").GetBoolean());
         Assert.False(initial.Data.GetProperty("pending").GetBoolean());
-        Assert.Equal("13", initial.Data.GetProperty("assetsVersion").GetString());
+        Assert.Equal("15", initial.Data.GetProperty("assetsVersion").GetString());
         Assert.False(initial.Data.TryGetProperty("data", out _));
         Assert.DoesNotContain("heldTickets", initial.Data.GetRawText());
         Assert.DoesNotContain("offeredTickets", initial.Data.GetRawText());

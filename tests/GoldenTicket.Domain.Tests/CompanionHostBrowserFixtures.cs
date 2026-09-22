@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using GoldenTicket.Application;
 using GoldenTicket.CompanionHost;
+using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Model;
 using GoldenTicket.Domain.Randomness;
@@ -74,6 +75,29 @@ public class CompanionHostBrowserFixtures
                     [new(558, 215, 1), new(587, 223, 2), new(620, 229, 3)])
             },
             data = (CompanionPrivateSnapshot?)null
+        };
+        var destinationGame = await Create(true);
+        var destinationBridge = new CoordinatorCompanionBridge(() => destinationGame);
+        var destinationPublic = await destinationBridge.ReadPublicAsync(token);
+        var destinationPrivate = await destinationBridge.ReadPrivateAsync(new(1), destinationPublic.Game!.StateVersion, token);
+        Assert.NotNull(destinationPrivate);
+        Assert.Equal(2, destinationPrivate.HeldTickets.Count);
+        var cities = DestinationBoardOverlay.BuildAllCities(TestManifest.Manifest)
+            .Select(city => new CompanionMapCity(city.CityId.Value, city.CityName, city.CenterX, city.CenterY)).ToArray();
+        Assert.Equal(TestManifest.Manifest.Cities.Length, cities.Length);
+        Assert.All(destinationPrivate.HeldTickets, ticket =>
+        {
+            Assert.Contains(cities, city => city.Id == ticket.FromCityId);
+            Assert.Contains(cities, city => city.Id == ticket.ToCityId);
+        });
+        fixtures["destinationMap"] = new
+        {
+            snapshot = destinationPublic with
+            {
+                BoardMap = new(boardImageId, [], cities),
+                BoardInteraction = new(true, false, null)
+            },
+            data = destinationPrivate
         };
         var directory = Environment.GetEnvironmentVariable("GOLDENTICKET_COMPANION_FIXTURE_DIRECTORY");
         if (!string.IsNullOrWhiteSpace(directory))

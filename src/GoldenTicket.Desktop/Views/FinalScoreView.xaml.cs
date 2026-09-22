@@ -17,7 +17,8 @@ public partial class FinalScoreView : UserControl
         ResultCards.Height = double.NaN;
         ResultsScroll.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
         ResultCards.Measure(new Size(width - 48, double.PositiveInfinity));
-        foreach (var panel in Descendants<Border>(ResultCards).Where(panel => panel.Name == "PlayerResultPanel"))
+        var panels = Descendants<Border>(ResultCards).Where(panel => panel.Name == "PlayerResultPanel").ToArray();
+        foreach (var panel in panels)
             panel.MaxHeight = double.PositiveInfinity;
         foreach (var scroll in Descendants<ScrollViewer>(ResultCards).Where(scroll => scroll.Name == "WitnessTrailScroll"))
             scroll.VerticalScrollBarVisibility = ScrollBarVisibility.Disabled;
@@ -26,8 +27,16 @@ public partial class FinalScoreView : UserControl
             name.TextTrimming = TextTrimming.None;
             name.TextWrapping = TextWrapping.Wrap;
         }
+        // Measure the detached cards directly after lifting their on-screen bounds;
+        // the parent row may still carry the old viewport measurement in this pass.
+        var cardHeight = 0d;
+        foreach (var panel in panels)
+        {
+            panel.Measure(new Size(panel.Width + panel.Margin.Left + panel.Margin.Right, double.PositiveInfinity));
+            cardHeight = Math.Max(cardHeight, panel.DesiredSize.Height);
+        }
         ResultCards.Measure(new Size(width - 48, double.PositiveInfinity));
-        return Math.Max(1000, ResultCards.DesiredSize.Height + 190);
+        return Math.Max(1000, cardHeight + 190);
     }
 
     private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject

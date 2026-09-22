@@ -10,20 +10,22 @@ const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve()
 function deferred() { let resolve; const promise = new Promise(r => resolve = r); return { promise, resolve }; }
 function page(options = {}) {
   const nodes = new Map(), listeners = {}, intervals = [], timeouts = new Map(), requests = [], objectUrls = [], revokedUrls = [], streams = [];
-  let nextTimer = 0, uuid = 0, now = Date.now();
+  let nextTimer = 0, uuid = 0, now = Date.now(), focusedNode = null;
   class Node {
-    constructor(tag = 'div') { this.tag = tag; this.textContent = ''; this.hidden = false; this.value = ''; this.disabled = false; this.children = []; this.dataset = {}; this.events = {}; }
+    constructor(tag = 'div') { this.tag = tag; this.tagName=tag.toUpperCase(); this.textContent = ''; this.hidden = false; this.value = ''; this.disabled = false; this.children = []; this.dataset = {}; this.events = {}; this.scrollLeft=0; this.style={removeProperty(name){delete this[name];}}; }
     addEventListener(event, callback) { this.events[event] = callback; }
     append(...children) { this.children.push(...children); if (this.tag === 'select' && !this.value) this.value = this.children[0]?.value || ''; }
     replaceChildren(...children) { this.children = children; this.textContent = ''; if (this.tag === 'select') this.value = this.children[0]?.value || ''; }
     setAttribute(name, value) { this[name] = value; }
     removeAttribute(name) { delete this[name]; }
-    querySelectorAll() { return descendants(this).filter(node => ['button', 'input', 'select'].includes(node.tag) && !node.className?.includes('private-hide')); }
+    querySelectorAll() { return descendants(this).filter(node => ['button', 'input', 'select'].includes(node.tag) && !node.className?.includes('private-hide') && !node.className?.includes('private-view-control')); }
+    getBoundingClientRect() { return {width:384,height:this.className==='destination-map'?244:150}; }
+    focus() { focusedNode=this; }
     set innerHTML(value) { throw new Error('Private UI must not interpolate HTML'); }
   }
-  const get = id => { if (!nodes.has(id)) nodes.set(id, new Node()); return nodes.get(id); };
+  const get = id => { const live=[...nodes.values()].flatMap(descendants).find(node=>node.id===id);if(live)return live;if (!nodes.has(id)) nodes.set(id, new Node()); return nodes.get(id); };
   const state = {
-    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '13', controllerGeneration: 1, handoffGeneration: 1,
+    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '15', controllerGeneration: 1, handoffGeneration: 1,
     snapshot: { canControl: true, revealSeatId: 1, message: 'Pass this device to Alex.', profileId: 'classic-us', manifestHash: 'hash', routes: [],
       game: { sessionId: 'match', stateVersion: 1, activeSeatId: 1, turnNumber: 1, turnPhase: 'TurnStart', seats: [{ seatId: 1, displayName: 'Alex', symbol: 'A', color: 'Blue', routeScore: 0, trainsRemaining: 45 }], pendingClaim: null } }
   };
@@ -32,14 +34,15 @@ function page(options = {}) {
   const context = vm.createContext({
     console, Promise, AbortController, Blob, Uint8Array, TextDecoder, structuredClone,
     Image: class { async decode() { if (options.decode) await options.decode(); } },
+    ResizeObserver: class { observe() {} disconnect() {this.disconnected=true;} },
     URL: class extends URL { static createObjectURL(blob) { const url = `blob:results-${objectUrls.length}`; objectUrls.push({url, blob}); return url; } static revokeObjectURL(url) { revokedUrls.push(url); } },
     Date: class extends Date { static now() { return now; } },
     // getRandomValues remains available in an insecure context; randomUUID does not.
     crypto: { getRandomValues: bytes => { bytes.fill(++uuid); return bytes; } },
     setTimeout: (fn, ms) => { const id = ++nextTimer; timeouts.set(id, {fn, ms}); return id; }, clearTimeout: id => timeouts.delete(id),
     setInterval: (fn, ms) => intervals.push({fn, ms}),
-    document: { hidden: false, getElementById: get, createElement: tag => new Node(tag), createElementNS: (_, tag) => new Node(tag), addEventListener: (name, fn) => listeners['document:' + name] = fn },
-    window: { isSecureContext: options.secure !== false, addEventListener: (name, fn) => listeners['window:' + name] = fn },
+    document: { hidden: false, get activeElement(){return focusedNode;}, getElementById: get, createElement: tag => new Node(tag), createElementNS: (_, tag) => new Node(tag), addEventListener: (name, fn) => listeners['document:' + name] = fn },
+    window: { isSecureContext: options.secure !== false, scrollX:0, scrollY:0, scrollTo({left,top}) {this.scrollX=left;this.scrollY=top;}, matchMedia:()=>({matches:options.reducedMotion===true}), addEventListener: (name, fn) => listeners['window:' + name] = fn },
     navigator: { onLine: options.internetAvailable !== false },
     fetch: async (url, request) => {
       requests.push({url, request});
@@ -64,7 +67,7 @@ function page(options = {}) {
     }
   });
   let source = fs.readFileSync(path.join(sourceDir, 'app.js'), 'utf8');
-  source = source.replace(/\}\)\(\);\s*$/, 'globalThis.clientTest = { reveal, hide, submit, clearPrivate, state: () => ({paired, busy, privateData, grant, revealGeneration, handoffGeneration, resultKey, resultUrl, snapshot, eventsAbort, reconnectTimer, needsReload, boardUrl, boardImageId, boardAbort}) }; })();');
+  source = source.replace(/\}\)\(\);\s*$/, 'globalThis.clientTest = { reveal, hide, submit, clearPrivate, state: () => ({paired, busy, privateData, grant, revealGeneration, handoffGeneration, resultKey, resultUrl, snapshot, eventsAbort, reconnectTimer, needsReload, boardUrl:publicMapImage?.state.url??null, boardImageId:publicMapImage?.state.id??null, boardAbort:publicMapImage?.state.abort??null, destinationView}) }; })();');
   vm.runInContext(source, context);
   async function retry() {
     const timer=context.clientTest.state().reconnectTimer;
@@ -163,7 +166,7 @@ test('SSE parses fragmented CRLF, multiline JSON and split UTF-8 without partial
 test('malformed or oversized SSE events cover cards and reconnect without accepting partial data', async () => {
   for(const invalid of [
     'event: session\ndata: {bad json}\n\n',
-    'event: session\ndata: {"paired":true,"pending":false,"apiVersion":"1","assetsVersion":"13"}\n\n',
+    'event: session\ndata: {"paired":true,"pending":false,"apiVersion":"1","assetsVersion":"15"}\n\n',
     'data: '+ 'x'.repeat(1024*1024+1),
     Uint8Array.of(0xff)
   ]) {
@@ -539,6 +542,30 @@ test('command keeps the hand visible during transport and duplicate tap cannot s
   assert.equal(p.client.state().busy,false); assert.equal(p.client.state().privateData,null);
 });
 
+test('a pending face-up draw names the chosen card beside the picker until the board check finishes', async () => {
+  const reply=deferred();const p=page({fetch:url=>url==='/api/command'?reply.promise:undefined});
+  await flush();cameraTurn(p);await p.push();await p.client.reveal();
+  assert.equal(privateNode(p,'Red · slot 1').disabled,false,'Reveal itself must not leave draw controls busy');
+  const help=p.get('train-draw-help');const sending=p.client.submit('drawTrain',{slot:0});await flush();
+  assert.equal(help.textContent,'Checking the board before drawing your Red card…');assert.equal(help.style.minHeight,'150px');
+  assert.equal(p.get('private').hidden,false);assert.equal(help.role,'status');
+  assert.ok(descendants(p.get('private')).filter(node=>node.className==='market-card').every(node=>node.disabled));
+  const continuation=secondDrawContinuation(p);reply.resolve(p.response(continuation));await sending;
+  assert.equal(help.textContent,'Choose your second card. A visible locomotive cannot be the second draw.');
+  assert.equal(p.get('private').hidden,false);
+});
+
+test('a camera-blocked draw explains the actual reason beside the disabled face-up cards', async () => {
+  const p=page();await flush();cameraTurn(p);await p.push();await p.client.reveal();
+  p.state.snapshot.boardInteraction.cardActionsBlocked=true;
+  p.state.snapshot.boardInteraction.message='The camera sees an unclaimed Yellow train. Remove it before drawing cards.';
+  await p.push();
+  assert.equal(p.get('train-draw-help').textContent,p.state.snapshot.boardInteraction.message);
+  assert.equal(p.get('private').hidden,false);
+  assert.ok(descendants(p.get('private')).filter(node=>node.className==='market-card').every(node=>node.disabled));
+  assert.equal(p.requests.some(r=>r.url==='/api/command'),false);
+});
+
 function secondDrawContinuation(p) {
   p.state.snapshot.game.stateVersion++;
   p.state.snapshot.game.turnPhase='AwaitingSecondTrainCard';
@@ -551,6 +578,103 @@ function secondDrawContinuation(p) {
   p.data.actions.claims=[];
   return {accepted:true,message:'Saved.',continuation:{grant:'second-draw-grant',handoffGeneration:p.state.handoffGeneration,snapshot:structuredClone(p.state.snapshot),data:structuredClone(p.data)}};
 }
+
+function boardCheckContinuation(p) {
+  p.state.handoffGeneration++;
+  p.state.snapshot.boardInteraction={useCameraClaims:true,cardActionsBlocked:true,message:'The camera sees an unclaimed Yellow train.',detectedRoute:null};
+  return {accepted:false,code:'BoardCheckRequired',stateVersion:p.state.snapshot.game.stateVersion,message:p.state.snapshot.boardInteraction.message,
+    continuation:{grant:'retry-draw-grant',handoffGeneration:p.state.handoffGeneration,snapshot:structuredClone(p.state.snapshot),data:structuredClone(p.data)}};
+}
+
+test('a refused first or second draw keeps its unchanged hand and turn with an explicit no-card message', async () => {
+  for(const second of [false,true]) {
+    const reply=deferred(),p=page({fetch:url=>url==='/api/command'?reply.promise:undefined});
+    await flush();cameraTurn(p);if(second)secondDrawContinuation(p);await p.push();await p.client.reveal();
+    const hand=p.get('private').children[3],view=p.client.state().destinationView;
+    const before=structuredClone(p.client.state().privateData.view),version=p.state.snapshot.game.stateVersion;
+    const sending=p.client.submit('drawTrain',{slot:0});await flush();const result=boardCheckContinuation(p);await p.push();
+    reply.resolve(p.response(result));await sending;
+    assert.equal(p.get('private').hidden,false);assert.equal(p.get('private').children[3],hand);assert.equal(p.client.state().destinationView,view);
+    assert.deepEqual(p.client.state().privateData.view.hand,before.hand);assert.equal(p.client.state().privateData.view.public.turnPhase,before.public.turnPhase);
+    assert.equal(p.client.state().snapshot.game.stateVersion,version);assert.equal(p.client.state().grant,'retry-draw-grant');
+    assert.equal(p.get('train-draw-help').textContent,'No card drawn. It is still your turn. The camera sees an unclaimed Yellow train.');
+    assert.equal(p.requests.filter(r=>r.url==='/api/command').length,1,'Rejection never silently retries the draw');
+    p.state.snapshot.boardInteraction.message='The camera sees an unclaimed Blue train.';await p.push();
+    assert.equal(p.get('train-draw-help').textContent,'No card drawn. It is still your turn. The camera sees an unclaimed Blue train.');
+    p.state.snapshot.boardInteraction.cardActionsBlocked=false;p.state.snapshot.boardInteraction.message=null;await p.push();
+    assert.equal(p.get('train-draw-help').textContent,'No card drawn. It is still your turn. Choose a card to try again.');
+    p.options.fetch=url=>url==='/api/command'?p.response({accepted:true,message:'Card added to your hand.'}):undefined;
+    await p.client.submit('drawTrain',{slot:0});
+    const retry=JSON.parse(p.requests.filter(r=>r.url==='/api/command').at(-1).request.body);
+    assert.equal(retry.grant,'retry-draw-grant');assert.equal(retry.command.expectedStateVersion,version);
+  }
+});
+
+test('a rejected draw continuation never restores after manual Hide, disconnect, background or handoff', async () => {
+  for(const reason of ['hide','offline','background','turn','revoked','handoff']) {
+    const reply=deferred(),p=page({fetch:url=>url==='/api/command'?reply.promise:undefined});
+    await flush();cameraTurn(p);await p.push();await p.client.reveal();
+    const sending=p.client.submit('drawTrain',{slot:0});await flush();const result=boardCheckContinuation(p);
+    if(reason==='hide')p.client.hide();
+    if(reason==='offline'){p.options.offline=true;await p.push();p.options.offline=false;}
+    if(reason==='background'){p.context.document.hidden=true;await p.event('document','visibilitychange');}
+    if(reason==='turn'){p.state.snapshot.game.turnNumber++;p.state.snapshot.game.activeSeatId=2;p.state.snapshot.revealSeatId=2;await p.push();}
+    if(reason==='revoked'){p.state.paired=false;await p.push();}
+    if(reason==='handoff'){p.state.handoffGeneration++;await p.push();}
+    reply.resolve(p.response(result));await sending;
+    assert.equal(p.get('private').hidden,true,reason);assert.equal(p.client.state().grant,null,reason);
+    assert.equal(p.client.state().privateData,null,reason);
+  }
+});
+
+test('only unchanged BoardCheckRequired receipts can carry a rejected private continuation', async () => {
+  for(const change of ['other-code','advanced-receipt','advanced-snapshot','older-snapshot','changed-private-turn','newer-stream']) {
+    const reply=deferred(),p=page({fetch:url=>url==='/api/command'?reply.promise:undefined});
+    await flush();cameraTurn(p);await p.push();await p.client.reveal();
+    const sending=p.client.submit('drawTrain',{slot:0});await flush();const result=boardCheckContinuation(p);
+    if(change==='other-code')result.code='LaptopBusy';
+    if(change==='advanced-receipt')result.stateVersion++;
+    if(change==='advanced-snapshot')result.continuation.snapshot.game.stateVersion++;
+    if(change==='older-snapshot')result.continuation.snapshot.game.stateVersion--;
+    if(change==='changed-private-turn')result.continuation.data.view.public.turnNumber++;
+    if(change==='newer-stream'){p.state.snapshot.game.stateVersion++;await p.push();}
+    reply.resolve(p.response(result));await sending;
+    assert.equal(p.get('private').hidden,true,change);assert.equal(p.client.state().grant,null,change);
+  }
+});
+
+test('a rejected receipt does not rewind newer same-version camera status received through SSE', async () => {
+  const reply=deferred(),p=page({fetch:url=>url==='/api/command'?reply.promise:undefined});
+  await flush();cameraTurn(p);await p.push();await p.client.reveal();
+  const sending=p.client.submit('drawTrain',{slot:0});await flush();const result=boardCheckContinuation(p);
+  p.state.snapshot.boardInteraction.cardActionsBlocked=false;p.state.snapshot.boardInteraction.message='The board is now clear.';await p.push();
+  reply.resolve(p.response(result));await sending;
+  assert.equal(p.get('private').hidden,false);assert.equal(p.client.state().snapshot.boardInteraction.message,'The board is now clear.');
+  assert.equal(privateNode(p,'Red · slot 1').disabled,false);
+  assert.equal(p.get('train-draw-help').textContent,'No card drawn. It is still your turn. Choose a card to try again.');
+});
+
+test('a rejected receipt explains its camera refusal even when the last streamed status still says checking', async () => {
+  const reply=deferred(),p=page({fetch:url=>url==='/api/command'?reply.promise:undefined});
+  await flush();cameraTurn(p);await p.push();await p.client.reveal();
+  const sending=p.client.submit('drawTrain',{slot:0});await flush();
+  p.state.snapshot.boardInteraction={useCameraClaims:true,cardActionsBlocked:true,message:'Checking the board before drawing cards.',detectedRoute:null};await p.push();
+  const result=boardCheckContinuation(p);reply.resolve(p.response(result));await sending;
+  assert.equal(p.get('private').hidden,false);
+  assert.equal(p.get('train-draw-help').textContent,'No card drawn. It is still your turn. The camera sees an unclaimed Yellow train.');
+});
+
+test('a rejected ticket choice preserves checked destinations and uses choice-specific feedback', async () => {
+  const reply=deferred(),p=page({fetch:url=>url==='/api/command'?reply.promise:undefined});
+  const choices=await ticketOffer(p);assert.equal(choices[0].disabled,false,'A fresh reveal leaves checkboxes interactive');
+  await checkTicket(choices[1],true);const sending=p.client.submit('keepTickets',{keptTickets:['second'],returnedTickets:['first']});await flush();
+  const result=boardCheckContinuation(p);reply.resolve(p.response(result));await sending;
+  assert.equal(p.get('private').hidden,false);assert.equal(choices[1].checked,true);assert.equal(choices[1].disabled,false);
+  assert.ok(descendants(p.get('private')).some(node=>node.textContent==='Choice not saved. It is still your turn. The camera sees an unclaimed Yellow train.'));
+  p.state.snapshot.boardInteraction.cardActionsBlocked=false;await p.push();
+  assert.equal(descendants(p.get('private')).find(node=>node.textContent==='Keep selected tickets').disabled,false);
+  assert.equal(descendants(p.get('private')).find(node=>node.textContent==='Reverse return order').disabled,false);
+});
 
 test('first face-up draw refreshes in place and the next draw uses the new version and grant', async () => {
   const reply=deferred(), p=page({fetch:url=>url==='/api/command'?reply.promise:undefined});
@@ -631,6 +755,121 @@ const boardIds = ['a'.repeat(32), 'b'.repeat(32), 'c'.repeat(32)];
 const boardJpeg = Uint8Array.of(255,216,255,224,0,16,255,217);
 const boardResponse = () => imageResponse(boardJpeg, 'image/jpeg');
 const settleImages = async () => { await new Promise(resolve => setImmediate(resolve)); await flush(); };
+async function privateDestinationMap(p) {
+  await flush(); cameraTurn(p);
+  p.data.heldTickets=[
+    {id:'ticket-ab',from:'A',to:'B',fromCityId:'a',toCityId:'b',label:'A – B',points:8},
+    {id:'ticket-cd',from:'C',to:'D',fromCityId:'c',toCityId:'d',label:'C – D',points:11}
+  ];
+  p.state.snapshot.boardMap={imageId:boardIds[0],targets:[],cities:[
+    {id:'a',name:'A',x:100,y:100},{id:'b',name:'B',x:500,y:400},
+    {id:'c',name:'C',x:200,y:200},{id:'d',name:'D',x:800,y:100},
+    {id:'unheld',name:'Another city',x:40,y:560}
+  ]};
+  await p.push();await p.client.reveal();return p.client.state().destinationView;
+}
+async function openDestinationMap(p, index=0) {
+  const view=p.client.state().destinationView;view.row.children[index].events.click();await settleImages();return view;
+}
+function finishMapAnimation(p, view=p.client.state().destinationView) {
+  const timer=p.timeouts.get(view.animation);
+  if(timer) {p.timeouts.delete(view.animation);timer.fn();}
+}
+function overlayNodes(view,className) {return view.overlay.children.filter(node=>node.class===className);}
+
+test('any held ticket reveals all and only its owner’s destination connections inside the private hand', async () => {
+  const p=page({fetch:url=>url.startsWith('/api/board-image/')?boardResponse():undefined});
+  const view=await privateDestinationMap(p);
+  assert.equal(p.requests.some(r=>r.url.startsWith('/api/board-image/')),false,'A closed ticket row does not download camera images');
+  await openDestinationMap(p,1);finishMapAnimation(p);
+  assert.equal(view.open,true);assert.equal(view.row.hidden,true);assert.equal(view.map.hidden,false);
+  assert.deepEqual(overlayNodes(view,'destination-connection').map(node=>node['data-ticket-id']),['ticket-ab','ticket-cd']);
+  assert.deepEqual(overlayNodes(view,'destination-city-marker').map(node=>node['data-city-id']),['a','b','c','d']);
+  const first=overlayNodes(view,'destination-connection')[0].children[0];
+  assert.ok(Math.abs(Math.hypot(Number(first.x1)-100,Number(first.y1)-100)-22)<1e-9);
+  assert.ok(Math.abs(Math.hypot(Number(first.x2)-500,Number(first.y2)-400)-22)<1e-9);
+  assert.equal(p.client.state().boardUrl,null);assert.equal(p.get('board-targets').children.length,0);
+  assert.equal(p.get('curtain').hidden,true);assert.equal(p.get('private').hidden,false);
+  assert.equal(p.requests.filter(r=>r.url==='/api/reveal').length,1);
+  const original=overlayNodes(view,'destination-connection')[0];await p.push();await elapse(p,30000);
+  assert.equal(overlayNodes(view,'destination-connection')[0],original,'Same-frame SSE updates leave destination overlays intact');
+  assert.equal(p.requests.filter(r=>r.url.startsWith('/api/board-image/')).length,1);
+});
+
+test('destination map Back restores ticket focus and horizontal position; rapid toggles cancel old transitions', async () => {
+  const p=page({fetch:url=>url.startsWith('/api/board-image/')?boardResponse():undefined});const view=await privateDestinationMap(p);
+  view.row.scrollLeft=128;await openDestinationMap(p,1);
+  assert.equal(p.context.document.activeElement,view.back);assert.equal(p.timeouts.get(view.animation).ms,300);
+  view.back.events.click();const closing=view.animation;
+  view.row.children[0].events.click();assert.equal(p.timeouts.has(closing),false);
+  finishMapAnimation(p);assert.equal(view.map.hidden,false);assert.equal(view.row.hidden,true);
+  view.back.events.click();finishMapAnimation(p);
+  assert.equal(view.map.hidden,true);assert.equal(view.row.hidden,false);assert.equal(view.row.scrollLeft,128);
+  assert.equal(p.context.document.activeElement,view.row.children[0]);
+  assert.equal(view.loader.state.url,null);assert.equal(view.overlay.children.length,0);
+  assert.equal(view.viewport.style.height,undefined);assert.equal(view.viewport.dataset.animating,undefined);
+});
+
+test('reduced motion switches destination maps immediately while preserving keyboard focus', async () => {
+  const p=page({reducedMotion:true,fetch:url=>url.startsWith('/api/board-image/')?boardResponse():undefined});const view=await privateDestinationMap(p);
+  await openDestinationMap(p);assert.equal(view.animation,null);assert.equal(view.row.hidden,true);assert.equal(view.map.hidden,false);
+  assert.equal(p.context.document.activeElement,view.back);
+  view.back.events.click();assert.equal(view.animation,null);assert.equal(view.row.hidden,false);assert.equal(view.map.hidden,true);
+  assert.equal(p.context.document.activeElement,view.row.children[0]);
+});
+
+test('destination connections stay aligned with the displayed JPEG until the next frame is decoded', async () => {
+  const delayed=deferred();
+  const p=page({fetch:url=>url.startsWith('/api/board-image/')?(url.endsWith(boardIds[1])?delayed.promise:boardResponse()):undefined});
+  const view=await privateDestinationMap(p);await openDestinationMap(p);finishMapAnimation(p);
+  const old=view.loader.state.url,marker=overlayNodes(view,'destination-city-marker')[0];
+  p.state.snapshot.boardMap.imageId=boardIds[1];p.state.snapshot.boardMap.cities[0].x=120;await p.push();
+  assert.equal(view.loader.state.url,old);assert.equal(overlayNodes(view,'destination-city-marker')[0],marker);
+  assert.equal(marker.transform,'translate(100 100)');
+  delayed.resolve(boardResponse());await settleImages();
+  assert.notEqual(view.loader.state.url,old);assert.equal(overlayNodes(view,'destination-city-marker')[0].transform,'translate(120 100)');
+  assert.equal(p.revokedUrls.includes(old),true);assert.equal(p.client.state().destinationView,view);
+});
+
+test('the first train-card draw preserves an open destination map and its local controls', async () => {
+  const reply=deferred();
+  const p=page({fetch:url=>url==='/api/command'?reply.promise:url.startsWith('/api/board-image/')?boardResponse():undefined});
+  const view=await privateDestinationMap(p);view.row.scrollLeft=64;await openDestinationMap(p);finishMapAnimation(p);
+  const image=view.loader.state.url,overlay=view.overlay.children[0];const sending=p.client.submit('drawTrain',{slot:0});await flush();
+  assert.equal(view.back.disabled,false);assert.equal(view.row.children[0].disabled,false);
+  const result=secondDrawContinuation(p);await p.push();reply.resolve(p.response(result));await sending;
+  assert.equal(p.client.state().destinationView,view);assert.equal(view.open,true);assert.equal(view.loader.state.url,image);
+  assert.equal(view.overlay.children[0],overlay);assert.equal(view.row.scrollLeft,64);assert.equal(p.get('private').hidden,false);
+});
+
+test('private destination maps and pending downloads are erased on Hide, background, disconnect and handoff', async () => {
+  for(const action of ['hide','background','disconnect','handoff','revoke']) {
+    const delayed=deferred();const p=page({fetch:url=>url.startsWith('/api/board-image/')?(url.endsWith(boardIds[1])?delayed.promise:boardResponse()):undefined});
+    const view=await privateDestinationMap(p);await openDestinationMap(p);finishMapAnimation(p);const url=view.loader.state.url;
+    p.state.snapshot.boardMap.imageId=boardIds[1];await p.push();const active=view.loader.state.abort;
+    if(action==='hide')p.client.hide();
+    if(action==='background'){p.context.document.hidden=true;await p.event('document','visibilitychange');}
+    if(action==='disconnect'){p.options.offline=true;await p.push();}
+    if(action==='handoff'){p.state.snapshot.game.turnNumber++;p.state.snapshot.game.activeSeatId=2;p.state.snapshot.revealSeatId=2;await p.push();}
+    if(action==='revoke'){p.state.paired=false;await p.push();}
+    assert.equal(active.signal.aborted,true,action);assert.equal(view.observer.disconnected,true,action);
+    assert.equal(p.revokedUrls.includes(url),true,action);assert.equal(view.overlay.children.length,0,action);
+    delayed.resolve(boardResponse());await settleImages();
+    assert.equal(p.client.state().destinationView,null,action);assert.equal(view.loader.state.url,null,action);
+    assert.equal(p.get('private').hidden,true,action);assert.equal(p.get('private').children.length,0,action);
+  }
+});
+
+test('destination overlays require private endpoint IDs and reject missing or invalid public coordinates', async () => {
+  const p=page({fetch:url=>url.startsWith('/api/board-image/')?boardResponse():undefined});await privateDestinationMap(p);
+  p.client.hide();p.data.heldTickets.push({id:'legacy',from:'A',to:'Another city',label:'A – Another city',points:7});
+  p.state.snapshot.boardMap.cities[3].x=-1;await p.push();await p.client.reveal();const view=await openDestinationMap(p);
+  assert.deepEqual(overlayNodes(view,'destination-connection').map(node=>node['data-ticket-id']),['ticket-ab']);
+  assert.deepEqual(overlayNodes(view,'destination-city-marker').map(node=>node['data-city-id']),['a','b']);
+  p.state.snapshot.boardMap=null;await p.push();assert.equal(view.overlay.children.length,0);assert.equal(view.loader.state.url,null);
+  assert.equal(view.map.hidden,false,'Unavailable camera retains the map area without reflowing the hand');
+});
+
 async function computerBoard(p, imageId = boardIds[0], targets = [{x:524,y:340,number:1},{x:515,y:365,number:2}]) {
   p.state.snapshot.canControl = false; p.state.snapshot.revealSeatId = null;
   p.state.snapshot.guidance = {title:'Computer 1',instruction:'Place 2 Green trains on Kansas City - Oklahoma City.'};

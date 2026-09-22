@@ -56,8 +56,17 @@ update in place. Choose your second card without revealing again or losing your 
 Drawing destination tickets also opens the offer directly during your turn. When the turn ends,
 the cards are covered for the next player.
 
+While a draw is checked, its status appears beside the card picker. If the camera blocks it,
+your hand stays open and the message says no card was drawn and it is still your turn.
+Correct the indicated board issue and choose again. The game saves an awarded card before
+advancing to the next player; a blocked draw never consumes the turn.
+
 Your destination tickets appear in one horizontal row. Swipe or scroll through the cards to see
 each starting city, destination city and point value without lengthening the page.
+Tap any held ticket to replace the row with the live board and dashed connections for all your
+destinations, matching single-player. The section expands smoothly and moves the controls below;
+**Back** returns to the tickets. The map stays open through your first train-card draw and clears
+with your private hand when you hide it or the turn ends.
 
 To claim a route with the camera, place your trains on the board. Once the laptop verifies the
 route, the revealed browser view automatically shows its name and legal payment choices. Choose

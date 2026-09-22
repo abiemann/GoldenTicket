@@ -262,13 +262,24 @@ and clears when the physical step ends or gameplay is suspended.
 
 During a computer turn, the companion also displays the accepted upright camera crop and the
 same public `Game.PlacementTargets` used by the laptop. The map replaces the unavailable reveal
-button, stays through that computer's physical scoring step, and clears for human play or a
-suspended/unavailable game. Camera loss clears the old image and shows a waiting state.
+button, stays through that computer's physical scoring step, and gives way to the human's card
+controls at handoff. A suspended/unavailable game clears the map. Camera loss clears the old
+image and shows a waiting state.
 SSE carries image IDs and dot coordinates in the laptop's 960-by-600 board coordinate system.
 Approved clients fetch JPEGs through `/api/board-image/{id}`; no private card or destination
 overlays are captured. Encoding runs off the UI thread, is limited to one frame per second and
 one concurrent encode, and retains only the current and previous frames. Images are bounded,
 not cached by HTTP, and cannot authorize or verify a move.
+
+The same raw board preview is available during an active human turn. Its public metadata includes
+every mapped city, aligned against the same frozen camera frame with the single-player city-dot
+locator. It contains no destination selections. Revealed held-ticket data carries endpoint city
+IDs; the browser uses only that private data to draw the player's city rings and dashed connections.
+Tapping any held ticket swaps the ticket row for a map of all held destinations. The row fades out
+as its container grows, moving the action controls below smoothly; Back reverses the transition.
+Reduced-motion preferences suppress the animation. Camera updates and a first train-card draw
+preserve the open map; Hide, backgrounding, lost connection and turn handoff clear the private
+overlay immediately. These destination connections are never added to the public laptop view.
 
 If the player started a route during an already selected card action, explain the conflict and guide them to restore the physical board. Do not reinterpret the card action as a claim or discard an already revealed card to make the history fit.
 
@@ -1128,6 +1139,21 @@ For each private ticket, estimate useful paths through owned, unclaimed, and opp
 
 Evaluate claims using immediate public value, private network improvement, resource cost, alternative-route loss, competition inferred from public play, and final-round risk. AI may block an opponent based on public evidence; it must not consult that opponent's real ticket list.
 
+The implemented policy compares the required destination bundles and keeps extra tickets only
+when their shared route plan is a cheap, feasible extension. The planner uses owned links for free
+and estimates each new link's claim turn plus missing-card draw cost. A bounded set of shared
+network construction orders competes with independent paths; the union charges each route once
+and allocates the current colored cards and locomotives once. The separate human-facing
+`EstimateCost` remains a minimum-train calculation.
+
+During play, one reachable destination drives claims and card collection, with compatible tickets
+sharing its infrastructure. Public train stocks and hand sizes give an estimated remaining-turn
+budget; the actual final round overrides it. If a ticket becomes infeasible, another reachable
+ticket can take priority. Off-plan claims cannot consume its reserved train stock or increase the
+remaining plan's card-draw cost, and must leave a time margin. Payment choices protect useful
+color sets. On the last turn, an affordable scoring claim takes precedence over drawing unused
+cards. These are bounded heuristics, not exact future-turn or draw-probability predictions.
+
 ### 15.3 Difficulty
 
 | Level | Initial behavior | Target decision budget |
@@ -1135,7 +1161,7 @@ Evaluate claims using immediate public value, private network improvement, resou
 | Relaxed | Legal heuristic with bounded variation and forgiving planning | About 0.25–0.75 seconds |
 | Standard | Better route alternatives, resource planning, and public opponent signals | About 1–2 seconds |
 | Challenging | Bounded sampled lookahead with stronger evaluation | About 3–5 seconds |
-| Aggressive | Existing heuristic plus public human-network blocking, especially short connections and continuous-route extensions | About 1–2 seconds |
+| Aggressive | Destination planning with opportunistic public human-network blocking | About 1–2 seconds |
 
 These are initial latency targets, not strength claims. Difficulty changes computation and decision policy, never private-information access or deck order. Personality changes wording and optional strategic preferences, but cannot grant illegal actions.
 
@@ -1144,11 +1170,15 @@ a separate badge at the bottom-right of each computer portrait. Clicking the bad
 changes only that computer's style; keyboard activation works too, and reduced-motion preferences
 skip the animation. Human and unselected characters have no badge. New games and changing a
 computer back to an unselected character reset to Standard. The existing per-seat difficulty field
-persists this choice; older difficulty values and Standard's decision path remain unchanged.
+persists this choice; older difficulty values remain compatible. All styles share the improved
+destination planner; Aggressive adds public human-network blocking preferences.
 
 Aggressive evaluation uses only public human-owned routes to reward adjacent short claims,
 connections between human networks, and opportunities to obstruct continuous-route extensions.
-It may collect cards for those targets but still considers its own tickets, score and payment cost.
+Blocking can break ties between useful destination links. Unrelated sabotage must satisfy the
+destination resource and time reserves; it cannot divert card collection from the current objective.
+After feasible destination commitments are complete or no longer possible, public blocking targets
+can influence which scoring routes to fund.
 A spare parallel lane in a four- or five-player game prevents a claim being treated as a block.
 Search is bounded and cancellable. This is a heuristic preference, not knowledge of human
 destinations or a guarantee of stronger play or denying the longest-route bonus.
@@ -1168,6 +1198,14 @@ On timeout, use the best already validated candidate. On an exception, fall back
 ### 15.6 Evaluation
 
 Run reproducible simulated matches with seat and color permutations. Compare completion rate, illegal-action rate, time per decision, strength against baseline, and diverse play patterns. Inspect held-out seeds rather than tuning repeatedly on a small set of wins. An AI that finishes games reliably is required before cosmetic personalities.
+
+`benchmark-ai` loads a frozen old AI assembly and changes only the focal policy in paired games,
+rotating every seat in three- and five-player matches. Rivals remain fixed old Standard policies.
+Their public labels are projected as human to exercise Aggressive behavior; ordinary all-computer
+simulations do not test that behavior. An old-versus-old self-check verifies identical fingerprints.
+Reports include ticket completion, score, penalties, wins, decision latency, rejected commands,
+fallbacks, invariants and replay equality. See the [benchmark guide](tools/GoldenTicket.Simulator/README.md)
+for the command and the limits of synthetic-opponent comparisons.
 
 ## 16. Story mode and sound
 
@@ -1658,6 +1696,12 @@ number and current revision before rotating the still-valid original grant. The 
 the first train draw visible and updates its hand and market in place; commands remain disabled
 while awaiting the receipt. A Hide, turn change, revocation or lost connection prevents a late
 response from uncovering the view. Duplicate receipts contain no private continuation.
+
+A camera-blocked card choice may renew the existing reveal at the unchanged revision only
+while the same human's turn and original grant remain valid. The tablet keeps the hand open,
+shows that no card was drawn and the turn is still theirs, and displays the camera's reason
+beside the picker. A successful draw adds its exact card before any turn-completion event;
+both are saved in the same transaction before the next player's turn is published.
 
 Pairing and pass-and-hide do not authenticate the human holding the shared device. Players still follow the social handoff convention. No online account, per-person password, or remote identity service is introduced.
 

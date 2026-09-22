@@ -29,6 +29,8 @@ Run this on Android Chrome and repeat on iPhone/iPad Safari when hardware is ava
 | Opening tickets | Each human sees only their own offer and can keep the required selection. |
 | Normal card/ticket/route choices | Correct active-seat options work; laptop retains train-placement verification and authoritative game state. |
 | First train-card draw | Hand stays visible, count and face-up market update, scroll position remains, and a second legal card can be drawn without another reveal. The second draw or a first face-up locomotive covers the hand for the next turn. |
+| Camera-blocked train draw | Checking feedback appears beside the picker. A refused first or second draw leaves the hand, awarded cards and current turn intact; the camera reason and retry guidance appear inline. A successful retry awards exactly one card before any handoff. |
+| Held destination map | Tap any held ticket: the row animates into the live board with all that player's destination cities connected by dashed lines. Claim controls move smoothly; Back restores the row and its scroll position. The map remains open through the first draw and clears on Hide, backgrounding, connection loss and handoff. Check portrait, landscape and reduced motion. |
 | Place trains before paying | The revealed phone updates to the camera-detected route, offers only its legal payments, and commits after Pay with current board evidence. The hidden phone and public laptop expose no payment choices. |
 | Computer placement and score markers | The browser and laptop show the same current placement, correction and score-marker instructions. During the computer's turn the browser replaces Reveal with the upright board image and matching gold train-space dots; correction subsets update, and the map clears when the next human can reveal. Check dots stay aligned in portrait and landscape. |
 | Move/remove trains while choosing payment | Pay pauses or the proposal clears; an old proposal cannot spend cards. Phone card draws also wait for the recorded board to match. |
@@ -77,6 +79,24 @@ checked against it. Automated coverage also checks map continuity through comput
 camera loss, bounded frame updates and clearing at human handoff. Evidence is in
 `artifacts/companion-computer-map-20260921/`; this remains browser simulation, not physical-tablet
 or live-camera acceptance.
+
+The destination-map update passed 161 targeted .NET checks and 62 JavaScript tests. Twenty-one
+focused Chromium scenarios covered 320, 448, 768 and 1024-pixel layouts, plus intermediate phone
+widths. They verify smooth height changes, the Back touch target, all held destination connections,
+matching image/overlay frames, preserved scroll through the first draw, and immediate privacy
+cleanup. Another 15 computer-map and 27 card/SSE workflow regression scenarios passed, for 63
+browser checks in total. Phone and tablet renders were visually checked. Evidence is in
+`artifacts/companion-destination-map-20260921/`; the same physical-device acceptance gap remains.
+
+The blocked-draw follow-up passed a warnings-as-errors build, 164 targeted .NET checks,
+70 JavaScript client tests and 20 Chromium workflows at 320 and 768 CSS pixels. Checks cover
+rejected first/second draws retaining the same hand and turn, exact-card retries before handoff,
+stale/duplicate/concurrent requests, and inline feedback without losing scroll position. The
+separate standings adjustment passed 12 actual WPF render cases for 2–5 players, including small
+windows and full-text exports, with equal card heights and no binding warnings. Evidence is in
+`artifacts/card-draw-audit-20260921/`, `artifacts/companion-blocked-draw-20260921/` and
+`artifacts/final-equal-height-20260921/`. These are bounded automated checks, not a new
+physical-tablet acceptance run.
 
 Quick play and PRACTICAL implementation have automated coverage; full current-mode device
 acceptance is pending. Earlier September 12 Android evidence established reachability of the old

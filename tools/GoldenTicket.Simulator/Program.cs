@@ -15,6 +15,7 @@ return command switch
 {
     "verify-data" => VerifyData(args),
     "simulate" => await SimulateAsync(args),
+    "benchmark-ai" => await BenchmarkAiAsync(args),
     _ => Help(),
 };
 
@@ -30,6 +31,13 @@ static int Help()
           simulate [--games N] [--seed S] [--seats N] [--difficulty Relaxed|Standard|Challenging|Aggressive]
                    [--verbose]
               Plays reproducible all-computer matches and checks invariants and replay equality.
+
+          benchmark-ai --baseline PATH [--output PATH] [--seeds N] [--seed S] [--seats 3,5]
+                       [--difficulties Standard,Aggressive] [--self-check] [--max-seconds 180]
+              Compares a frozen GoldenTicket.AI.dll against the current policy with paired seeds
+              and every focal seat position. Rivals use the frozen Standard policy; their public
+              labels appear Human to the policy so Aggressive blocking is exercised.
+              --self-check compares the frozen policy with itself to verify deterministic setup.
         """);
 
     return 0;
@@ -214,6 +222,20 @@ static int ReadInt(string[] args, string name, int fallback) =>
     int.TryParse(ReadString(args, name, null), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
         ? value
         : fallback;
+
+static async Task<int> BenchmarkAiAsync(string[] args)
+{
+    var baseline = ReadString(args, "--baseline", null)
+        ?? throw new ArgumentException("benchmark-ai requires --baseline PATH to a preserved GoldenTicket.AI.dll.");
+    var seats = ReadString(args, "--seats", "3,5")!.Split(',').Select(value => int.Parse(value, CultureInfo.InvariantCulture)).ToArray();
+    var difficulties = ReadString(args, "--difficulties", "Standard,Aggressive")!.Split(',')
+        .Select(value => Enum.Parse<AiDifficulty>(value, ignoreCase: true)).ToArray();
+    return await PolicyBenchmark.RunAsync(new(baseline,
+        ReadString(args, "--output", "artifacts/ai-policy-benchmark.json")!,
+        ulong.Parse(ReadString(args, "--seed", "1")!, CultureInfo.InvariantCulture),
+        ReadInt(args, "--seeds", 10), seats, difficulties, args.Contains("--self-check"),
+        ReadInt(args, "--max-seconds", 180)));
+}
 
 static string? ReadString(string[] args, string name, string? fallback)
 {

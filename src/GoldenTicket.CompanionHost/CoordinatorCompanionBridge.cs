@@ -1,6 +1,7 @@
 using GoldenTicket.Application;
 using GoldenTicket.Domain;
 using GoldenTicket.Domain.Engine;
+using GoldenTicket.Domain.Events;
 
 namespace GoldenTicket.CompanionHost;
 
@@ -79,7 +80,7 @@ public sealed class CoordinatorCompanionBridge(
             var ticket = manifest.Ticket(id);
             var from = manifest.City(ticket.CityA).DisplayName;
             var to = manifest.City(ticket.CityB).DisplayName;
-            return new(id.Value, $"{from} – {to}", ticket.Points, from, to);
+            return new(id.Value, $"{from} – {to}", ticket.Points, from, to, ticket.CityA.Value, ticket.CityB.Value);
         }
         var offer = !view.SetupOffer.IsEmpty ? view.SetupOffer : view.Offer?.Offered ?? [];
         return new(view, LegalActionCalculator.For(view, manifest), view.Tickets.Select(Ticket).ToArray(),
@@ -120,7 +121,10 @@ public sealed class CoordinatorCompanionBridge(
         if (action is null) return Refused("ActionNotAllowed", "Choose one of the available actions. Physical verification stays on the laptop.");
         var outcome = await game.SubmitAsync(action, cancellationToken);
         if (outcome.IsAccepted && afterAcceptedCommand is not null) await afterAcceptedCommand(cancellationToken);
+        var savedMessage = outcome.Result.Transition?.Events.OfType<FaceUpCardTaken>().FirstOrDefault() is { } drawn
+            ? $"{drawn.Kind} card added to your hand."
+            : command.Kind == "drawTrain" ? "Card added to your hand." : "Choice saved on the laptop.";
         return new(outcome.IsAccepted, outcome.WasDuplicate, game.Public.StateVersion,
-            outcome.Result.Rejection?.Code, outcome.IsAccepted ? "Choice saved on the laptop." : outcome.Result.Rejection!.Message);
+            outcome.Result.Rejection?.Code, outcome.IsAccepted ? savedMessage : outcome.Result.Rejection!.Message);
     }
 }

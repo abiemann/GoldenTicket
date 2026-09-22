@@ -194,6 +194,20 @@ public static class DestinationBoardOverlay
     internal static bool TryGetReferenceCityCenter(CityId cityId, out (int X, int Y) center) =>
         CityCenters.TryGetValue(cityId.Value, out center);
 
+    /// <summary>Public city geometry for the entire board, independent of any player's tickets.</summary>
+    public static IReadOnlyList<DestinationMarkerRow> BuildAllCities(BoardManifest manifest)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        if (manifest.ProfileId != "ttr-us-classic-en-v1") return [];
+        return manifest.Cities.Where(city => CityCenters.ContainsKey(city.StableId.Value))
+            .Select(city =>
+            {
+                var point = CityCenters[city.StableId.Value];
+                return new DestinationMarkerRow(city.StableId, city.DisplayName,
+                    point.X / 1996d, point.Y / 1248d, []);
+            }).ToArray();
+    }
+
     public static IReadOnlyList<DestinationMarkerRow> Build(BoardManifest manifest,
         IEnumerable<TicketChoiceRow> offer)
     {

@@ -4,6 +4,7 @@
 // NODE_PATH must point to the existing bundled node_modules containing Playwright. No npm install.
 // Optional visual iteration: GOLDENTICKET_BROWSER_DRAW_ONLY=1 and
 // GOLDENTICKET_BROWSER_VIEWPORTS=pixel,small-phone,tablet,wide-tablet.
+// Camera rejection/retry checks: GOLDENTICKET_BROWSER_BLOCKED_DRAW_ONLY=1.
 // Computer-map checks: GOLDENTICKET_BROWSER_MAP_ONLY=1; optionally provide an upright
 // PNG without overlays through GOLDENTICKET_BOARD_IMAGE_FIXTURE for visual evidence.
 const fs = require('node:fs');
@@ -25,7 +26,9 @@ fs.mkdirSync(output, { recursive: true });
 const mime = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.svg':'image/svg+xml' };
 const results = [];
 const drawOnly=process.env.GOLDENTICKET_BROWSER_DRAW_ONLY==='1';
+const blockedDrawOnly=process.env.GOLDENTICKET_BROWSER_BLOCKED_DRAW_ONLY==='1';
 const mapOnly=process.env.GOLDENTICKET_BROWSER_MAP_ONLY==='1';
+const destinationMapOnly=process.env.GOLDENTICKET_BROWSER_DESTINATION_MAP_ONLY==='1';
 const viewports=[{name:'pixel',width:448,height:900},{name:'small-phone',width:320,height:740},{name:'tablet',width:768,height:1024},{name:'wide-tablet',width:1024,height:768}]
   .filter(viewport=>process.env.GOLDENTICKET_BROWSER_VIEWPORTS ? process.env.GOLDENTICKET_BROWSER_VIEWPORTS.split(',').includes(viewport.name) : viewport.name!=='wide-tablet');
 assert.ok(viewports.length,'GOLDENTICKET_BROWSER_VIEWPORTS must select an existing viewport.');
@@ -34,7 +37,7 @@ let resultImageBytes = null, boardImageBytes = null, delayedBoardImage = null, a
 let sessionRevision=0, controllerGeneration=1, suppressHeartbeats=false;
 const eventStreams=new Set();
 function sessionEnvelope() {
-  return paired ? {paired,pending:false,csrf:'test-csrf',handoffGeneration:generation,controllerGeneration,apiVersion:'1',assetsVersion:'13',snapshot:fixture.snapshot} : {paired,pending,apiVersion:'1',assetsVersion:'13'};
+  return paired ? {paired,pending:false,csrf:'test-csrf',handoffGeneration:generation,controllerGeneration,apiVersion:'1',assetsVersion:'15',snapshot:fixture.snapshot} : {paired,pending,apiVersion:'1',assetsVersion:'15'};
 }
 function publishSession(target) {
   const revision=++sessionRevision, frame=`id: ${revision}\nevent: session\ndata: ${JSON.stringify(sessionEnvelope())}\n\n`;
@@ -57,6 +60,7 @@ function sameTurnFixture(next, previous) {
   }
   value.snapshot.revealSeatId=previous.snapshot.revealSeatId;
   value.snapshot.boardInteraction=structuredClone(previous.snapshot.boardInteraction);
+  value.snapshot.boardMap=structuredClone(previous.snapshot.boardMap);
   value.data.view.seatId=previous.data.view.seatId;
   value.data.actions.stateVersion=before.stateVersion+1;
   value.data.heldTickets=structuredClone(previous.data.heldTickets);
@@ -102,6 +106,16 @@ const requestHandler = async (request, response) => {
         body.command.sessionId!==activeGrant.sessionId || body.command.expectedStateVersion!==activeGrant.version) return send(response,{},409);
       const previous=fixture, board=fixture.snapshot.boardInteraction;
       if(board?.cardActionsBlocked && ['drawTrain','drawTickets','keepTickets'].includes(body.command.kind)) return send(response,{},409);
+      if(delayedCommand?.rejectBoardCheck && body.command.kind==='drawTrain') {
+        fixture=structuredClone(previous);generation++;
+        fixture.snapshot.boardInteraction={useCameraClaims:true,cardActionsBlocked:true,message:'The camera sees an unclaimed Yellow train. Remove it before drawing cards.',detectedRoute:null};
+        const continuation={grant:`test-retry-grant-${generation}`,handoffGeneration:generation,snapshot:structuredClone(fixture.snapshot),data:structuredClone(fixture.data)};
+        activeGrant={seat:body.seat,sessionId:fixture.snapshot.game.sessionId,version:fixture.snapshot.game.stateVersion,grant:continuation.grant,handoffGeneration:generation};
+        publishSession();
+        delayedCommand.response=response;
+        delayedCommand.reply={accepted:false,code:'BoardCheckRequired',stateVersion:fixture.snapshot.game.stateVersion,message:fixture.snapshot.boardInteraction.message,continuation};
+        return;
+      }
       if(body.command.kind === 'payDetectedRoute') {
         const detected=board?.detectedRoute;
         const choices=fixture.data.actions.claims.find(claim=>claim.routeId===detected?.routeId)?.payments || [];
@@ -123,6 +137,7 @@ const requestHandler = async (request, response) => {
       if(body.command.kind === 'planClaim') fixture = sameTurnFixture(fixtures.physicalPlacement,previous);
       generation++; activeGrant=null;
       const reply={accepted:true,duplicate:false,stateVersion:fixture.snapshot.game.stateVersion,message:'Choice saved on the laptop.',continuation:null};
+      if(body.command.kind==='drawTrain') reply.message=body.command.slot===null?'Card added to your hand.':`${previous.snapshot.game.faceUp[body.command.slot]} card added to your hand.`;
       if(fixture.snapshot.canControl && fixture.snapshot.revealSeatId===body.seat &&
         fixture.snapshot.game.sessionId===previous.snapshot.game.sessionId && fixture.snapshot.game.turnNumber===previous.snapshot.game.turnNumber) {
         reply.continuation={grant:`test-private-grant-${generation}`,handoffGeneration:generation,snapshot:fixture.snapshot,data:fixture.data};
@@ -177,7 +192,7 @@ async function noOverflow(page) {
   assert.ok(metrics.body<=metrics.width+1 && metrics.html<=metrics.width+1, JSON.stringify(metrics));
 }
 async function expectLastDestination(row) {
-  const last=row.locator('article').last();
+  const last=row.locator('.destination-ticket').last();
   assert.equal(await last.locator('.destination-city').first().textContent(),'Kansas City');
   assert.equal(await last.locator('.destination-city').last().textContent(),'Nashville');
   const bounds=await row.boundingBox(), card=await last.boundingBox();
@@ -222,6 +237,69 @@ async function drawPicker(page, name) {
   }));
   for(const label of pileLabels) assert.ok(label.lines===1 && label.left>=label.panelLeft && label.right<=label.panelRight,`The complete ${label.name} pile label must fit on one line: ${JSON.stringify(label)}`);
   await noOverflow(page);
+}
+async function blockedDrawCases(page, viewport) {
+  await record(viewport.name+': camera-rejected first and second draws retain the hand and allow an explicit retry',async()=>{
+    fixtures.blockedDraw=structuredClone(fixtures.turnStart);
+    fixtures.blockedDraw.snapshot.boardInteraction={useCameraClaims:true,cardActionsBlocked:false,message:null,detectedRoute:null};
+    fixtures.blockedDraw.snapshot.boardMap=null;
+    fixtures.blockedDraw.data.heldTickets=Array.from({length:8},(_,index)=>({...fixtures.turnStart.data.heldTickets[index%fixtures.turnStart.data.heldTickets.length],id:`blocked-draw-ticket-${index}`}));
+    await changeFixture(page,'blockedDraw');await reveal(page);
+    const row=page.locator('.held-tickets'),help=page.locator('#train-draw-help');
+    await row.evaluate(node=>{node.scrollLeft=node.scrollWidth;node.dataset.identity='retained-draw-tickets';});
+    await page.locator('#private h2').evaluate(node=>node.dataset.identity='retained-draw-heading');
+    const reveals=requests.filter(request=>request.url==='/api/reveal').length;
+    for(const draw of [0,1]) {
+      const version=fixture.snapshot.game.stateVersion,phase=fixture.snapshot.game.turnPhase;
+      const slot=fixture.data.actions.drawableFaceUpSlots.find(index=>fixture.snapshot.game.faceUp[index]!=='Locomotive');
+      const kind=fixture.snapshot.game.faceUp[slot],button=page.getByRole('button',{name:`${kind} · slot ${slot+1}`,exact:true});
+      const handCount=()=>page.locator('.cards .card').evaluateAll(nodes=>Object.fromEntries(nodes.map(node=>[node.dataset.color,Number(node.querySelector('strong').textContent)])));
+      const hand=await handCount();
+      await button.evaluate(node=>node.scrollIntoView({block:'center',inline:'nearest'}));
+      const before=await page.evaluate(()=>({y:scrollY,x:document.querySelector('.held-tickets').scrollLeft}));
+      delayedCommand={rejectBoardCheck:true};await button.tap();
+      await help.filter({hasText:`Checking the board before drawing your ${kind} card…`}).waitFor();
+      await sessionDelivered(page);
+      assert.equal(await page.locator('#private').isVisible(),true);
+      assert.deepEqual(await handCount(),hand,'A pending check has not awarded a card.');
+      assert.ok(await page.locator('.market-card').evaluateAll(nodes=>nodes.every(node=>node.disabled)));
+      const rejected=delayedCommand;assert.ok(rejected.response);
+      const receipt=page.waitForResponse(response=>response.url().endsWith('/api/command'));
+      send(rejected.response,rejected.reply);delayedCommand=null;await receipt;
+      await help.filter({hasText:'No card drawn. It is still your turn. The camera sees an unclaimed Yellow train.'}).waitFor();
+      assert.equal(fixture.snapshot.game.stateVersion,version);assert.equal(fixture.snapshot.game.turnPhase,phase);
+      assert.equal(await page.locator('#private h2').getAttribute('data-identity'),'retained-draw-heading');
+      assert.equal(await row.getAttribute('data-identity'),'retained-draw-tickets');
+      assert.deepEqual(await handCount(),hand,draw===1?'The first awarded card survives rejection of the second draw.':'The rejected first draw leaves the hand unchanged.');
+      assert.equal(await page.locator('#curtain').isVisible(),false);
+      const after=await page.evaluate(()=>({y:scrollY,max:document.documentElement.scrollHeight-innerHeight,help:document.getElementById('train-draw-help').getBoundingClientRect().height}));
+      assert.ok(Math.abs(after.y-before.y)<2,`Rejected drawing keeps vertical scroll: ${JSON.stringify({draw,before,after})}`);
+      assert.ok(Math.abs(await row.evaluate(node=>node.scrollLeft)-before.x)<2,'Rejected drawing keeps destination scroll.');
+      assert.equal(requests.filter(request=>request.url==='/api/reveal').length,reveals);
+      await page.screenshot({path:path.join(output,`${viewport.name}-rejected-draw-${draw+1}.png`)});
+      fixture.snapshot.boardInteraction.message='The camera sees an unclaimed Blue train.';
+      await sessionDelivered(page,publishSession());
+      await help.filter({hasText:'No card drawn. It is still your turn. The camera sees an unclaimed Blue train.'}).waitFor();
+      fixture.snapshot.boardInteraction.cardActionsBlocked=false;fixture.snapshot.boardInteraction.message=null;
+      await sessionDelivered(page,publishSession());
+      await help.filter({hasText:'No card drawn. It is still your turn. Choose a card to try again.'}).waitFor();
+      assert.equal(await button.isEnabled(),true);
+      const retry=page.waitForResponse(response=>response.url().endsWith('/api/command'));
+      await button.tap();await retry;
+      const submitted=requests.filter(request=>request.url==='/api/command').at(-1).body;
+      assert.equal(submitted.grant,rejected.reply.continuation.grant);
+      assert.equal(submitted.command.expectedStateVersion,version);
+      if(draw===0) {
+        await help.filter({hasText:'Choose your second card.'}).waitFor();
+        assert.equal((await handCount())[kind],(hand[kind]||0)+1);
+        assert.equal(await page.locator('#private').isVisible(),true);
+      } else {
+        await waitCovered(page);await page.getByText('Pass this device to Jordan.',{exact:true}).waitFor();
+        assert.equal(await page.locator('#notice').textContent(),`${kind} card added to your hand.`);
+      }
+    }
+    await noOverflow(page);
+  });
 }
 async function syntheticStandingsPng(page) {
   if(process.env.GOLDENTICKET_RESULT_IMAGE_FIXTURE) return fs.readFileSync(process.env.GOLDENTICKET_RESULT_IMAGE_FIXTURE);
@@ -283,6 +361,9 @@ async function computerMapCases(page,viewport) {
   assert.ok(fixtures.computerMap,'Export the current .NET computerMap fixture before browser checks.');
   boardImageBytes=await boardJpeg(page);
   await record(viewport.name+': computer placement replaces Reveal with the public map and aligned gold targets',async()=>{
+    // Destination-map scenarios can request this same seeded frame beforehand.
+    // Count only this transition into the computer map, not the shared request log.
+    const requestStart=requests.length;
     const reveals=requests.filter(request=>request.url==='/api/reveal').length;
     await showComputerMap(page,false);
     assert.equal(await page.locator('#reveal').isVisible(),false);
@@ -293,7 +374,7 @@ async function computerMapCases(page,viewport) {
     assert.equal(await page.locator('#handoff').textContent(),'Computer 1');
     assert.equal(await page.locator('#curtain-detail').textContent(),fixture.snapshot.guidance.instruction);
     await checkMapTargets(page,fixture.snapshot.boardMap.targets);await noOverflow(page);
-    const received=requests.filter(request=>request.url===`/api/board-image/${fixture.snapshot.boardMap.imageId}`);
+    const received=requests.slice(requestStart).filter(request=>request.url===`/api/board-image/${fixture.snapshot.boardMap.imageId}`);
     assert.equal(received.length,1);assert.ok(received[0].headers['x-goldenticket-tab']);
     assert.equal(requests.filter(request=>request.url==='/api/reveal').length,reveals);
     await screenshot(page,viewport.name+'-computer-map-placement');
@@ -349,6 +430,134 @@ async function computerMapCases(page,viewport) {
     paired=false;await sessionDelivered(page,publishSession());
     assert.equal(await page.locator('#board-map').isVisible(),false);assert.equal(await page.locator('#board-image').getAttribute('src'),null);
     fixture=fixtures.setup;paired=true;generation++;controllerGeneration++;await sessionDelivered(page,publishSession());await waitCovered(page);
+  });
+}
+async function showDestinationHand(page) {
+  fixture=structuredClone(fixtures.destinationMap);generation++;controllerGeneration++;
+  await sessionDelivered(page,publishSession());await waitCovered(page);await reveal(page);
+  assert.equal(await page.locator('#board-map').isVisible(),false,'Human public map metadata must not display the computer panel.');
+  await page.locator('.held-tickets').waitFor({state:'visible'});
+}
+async function waitDestinationMap(page) {
+  await page.locator('#destination-map').waitFor({state:'visible'});
+  await page.waitForFunction(()=>document.getElementById('destination-map-image')?.naturalWidth===960);
+}
+async function destinationMapCases(page,viewport) {
+  assert.ok(fixtures.destinationMap,'Export the destinationMap .NET fixture before browser checks.');
+  boardImageBytes=await boardJpeg(page);
+  const back=page.getByRole('button',{name:'Back to destination tickets',exact:true});
+  await record(viewport.name+': a held ticket opens all private destinations and smoothly moves route controls',async()=>{
+    await showDestinationHand(page);
+    const row=page.locator('.held-tickets');
+    await row.evaluate(node=>node.scrollLeft=node.scrollWidth);
+    const cards=row.locator('.destination-ticket');const chosen=cards.last();
+    await chosen.evaluate(node=>{node.scrollIntoView({block:'center'});node.dataset.focusOrigin='destination-test';node.focus({preventScroll:true});});
+    const rowScroll=await row.evaluate(node=>node.scrollLeft);
+    const samples=await chosen.evaluate(async node=>{
+      const view=document.querySelector('.destination-viewport'),claim=document.querySelector('.detected-route');
+      const values=[],start=performance.now();
+      const sample=()=>values.push({time:performance.now()-start,height:view.getBoundingClientRect().height,claim:claim.getBoundingClientRect().top+scrollY});
+      sample();node.click();
+      await new Promise(resolve=>{function frame(){sample();if(performance.now()-start<500) requestAnimationFrame(frame);else resolve();}requestAnimationFrame(frame);});
+      return values;
+    });
+    await waitDestinationMap(page);
+    const start=samples[0],end=samples.at(-1),distance=end.height-start.height;
+    assert.ok(Math.abs((end.claim-start.claim)-distance)<2,`The claim panel must move by the animated destination-height change (${JSON.stringify({start,end,distance})}).`);
+    if(Math.abs(distance)>8) assert.ok(samples.some(sample=>Math.abs(sample.height-start.height)>2&&Math.abs(sample.height-end.height)>2),'Destination height must pass through intermediate positions, not jump.');
+    const tickets=fixture.data.heldTickets,cities=new Map(fixture.snapshot.boardMap.cities.map(city=>[city.id,city]));
+    assert.ok(cities.size>new Set(tickets.flatMap(ticket=>[ticket.fromCityId,ticket.toCityId])).size);
+    const connections=page.locator('#destination-map-targets .destination-connection');
+    assert.equal(await connections.count(),tickets.length,'One click must show every held destination.');
+    for(const ticket of tickets) {
+      const found=page.locator(`#destination-map-targets .destination-connection[data-ticket-id="${ticket.id}"]`);
+      assert.equal(await found.count(),1);
+      const endpoints=await found.locator('line').last().evaluate(line=>({x1:Number(line.getAttribute('x1')),y1:Number(line.getAttribute('y1')),x2:Number(line.getAttribute('x2')),y2:Number(line.getAttribute('y2')),dash:getComputedStyle(line).strokeDasharray}));
+      const from=cities.get(ticket.fromCityId),to=cities.get(ticket.toCityId),length=Math.hypot(to.x-from.x,to.y-from.y);
+      const dx=(to.x-from.x)/length*22,dy=(to.y-from.y)/length*22;
+      for(const [key,value] of Object.entries({x1:from.x+dx,y1:from.y+dy,x2:to.x-dx,y2:to.y-dy})) assert.ok(Math.abs(endpoints[key]-value)<0.1,`${ticket.id} ${key} must connect its private city endpoints.`);
+      assert.notEqual(endpoints.dash,'none');
+    }
+    const markers=page.locator('#destination-map-targets .destination-city-marker');
+    const ids=await markers.evaluateAll(nodes=>nodes.map(node=>node.dataset.cityId).sort());
+    assert.deepEqual(ids,[...new Set(tickets.flatMap(ticket=>[ticket.fromCityId,ticket.toCityId]))].sort(),'Only held-ticket cities may be highlighted.');
+    await noOverflow(page);await screenshot(page,viewport.name+'-destination-map');
+    const backBounds=await back.boundingBox();
+    await page.touchscreen.tap(backBounds.x+backBounds.width/2,backBounds.y+backBounds.height+7);
+    await row.waitFor({state:'visible'});
+    await page.waitForFunction(()=>document.activeElement?.dataset.focusOrigin==='destination-test');
+    assert.ok(Math.abs(await row.evaluate(node=>node.scrollLeft)-rowScroll)<1,'Back must restore the ticket row scroll.');
+  });
+  if(viewport.name==='pixel') await record('phone widths 360/375/390/414: Back does not reflow the destination heading',async()=>{
+    for(const width of [360,375,390,414]) {
+      await page.setViewportSize({width,height:viewport.height});
+      await page.waitForTimeout(350);
+      const heading=page.locator('.destination-heading');
+      const closed=await heading.evaluate(node=>node.getBoundingClientRect().height);
+      await page.locator('.destination-ticket').first().click();await waitDestinationMap(page);
+      const open=await heading.evaluate(node=>node.getBoundingClientRect().height);
+      assert.ok(Math.abs(open-closed)<1,`Back must not reflow the heading at ${width}px (${closed} to ${open}).`);
+      await back.click();await page.locator('.held-tickets').waitFor({state:'visible'});
+    }
+    await page.setViewportSize({width:viewport.width,height:viewport.height});await page.waitForTimeout(350);
+  });
+  await record(viewport.name+': destination map stays open through camera frames and the first train draw',async()=>{
+    await page.locator('.held-tickets .destination-ticket').first().click();await waitDestinationMap(page);
+    await page.locator('#destination-map').evaluate(node=>node.dataset.identity='open-destination-map');
+    await page.waitForTimeout(350);
+    const cameraScroll=await page.evaluate(()=>scrollY);
+    const oldSource=await page.locator('#destination-map-image').getAttribute('src');
+    fixture.snapshot.boardMap.imageId='00112233445566778899aabbccddee10';publishSession();
+    await page.waitForFunction(previous=>{const image=document.getElementById('destination-map-image');return image.naturalWidth===960&&image.getAttribute('src')!==previous;},oldSource);
+    assert.equal(await page.locator('#destination-map').getAttribute('data-identity'),'open-destination-map');
+    assert.ok(Math.abs(await page.evaluate(()=>scrollY)-cameraScroll)<2,'New camera frames must preserve the open destination view and page scroll.');
+    const requestCount=requests.filter(request=>request.url.startsWith('/api/board-image/')).length;
+    await heartbeatDelivered(page);
+    assert.equal(requests.filter(request=>request.url.startsWith('/api/board-image/')).length,requestCount);
+    const slot=fixture.data.actions.drawableFaceUpSlots.find(index=>fixture.snapshot.game.faceUp[index]!=='Locomotive');
+    const card=page.getByRole('button',{name:`${fixture.snapshot.game.faceUp[slot]} · slot ${slot+1}`,exact:true});
+    await card.evaluate(node=>node.scrollIntoView({block:'center'}));
+    const scrollBefore=await page.evaluate(()=>scrollY);await card.click();
+    await page.getByText('Choose your second card.',{exact:false}).waitFor();
+    assert.equal(await page.locator('#destination-map').getAttribute('data-identity'),'open-destination-map');
+    assert.equal(await page.locator('#destination-map').isVisible(),true);
+    assert.ok(Math.abs(await page.evaluate(()=>scrollY)-scrollBefore)<2,'First draw must not disturb an open destination map or scrolling.');
+    await noOverflow(page);
+  });
+  await record(viewport.name+': destination map handles rapid reversal, resizing and reduced motion',async()=>{
+    await back.click();await page.locator('.held-tickets').waitFor({state:'visible'});
+    await page.evaluate(()=>{const card=document.querySelector('.destination-ticket');card.click();document.querySelector('.destination-map-back').click();card.click();});
+    await waitDestinationMap(page);
+    await page.setViewportSize({width:viewport.width+64,height:viewport.height});
+    await page.waitForTimeout(350);await noOverflow(page);
+    const metrics=await page.locator('.destination-viewport').evaluate(node=>({height:node.getBoundingClientRect().height,content:document.getElementById('destination-map').getBoundingClientRect().height}));
+    assert.ok(Math.abs(metrics.height-metrics.content)<3,'Resizing must fit the full destination map inside its animated area.');
+    await page.setViewportSize({width:viewport.width,height:viewport.height});await page.waitForTimeout(350);
+    await back.click();await page.locator('.held-tickets').waitFor({state:'visible'});
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await page.locator('.destination-ticket').first().click();await waitDestinationMap(page);
+    const movement=await page.locator('.destination-viewport').evaluate(async node=>{
+      const start=node.getBoundingClientRect().height;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return Math.abs(node.getBoundingClientRect().height-start);
+    });
+    assert.ok(movement<1,'Reduced-motion mode must settle without a height animation.');
+    await back.click();await page.emulateMedia({reducedMotion:'no-preference'});await noOverflow(page);
+  });
+  await record(viewport.name+': private destination overlays disappear immediately on Hide, background and handoff',async()=>{
+    await showDestinationHand(page);await page.locator('.destination-ticket').first().click();await waitDestinationMap(page);
+    await page.locator('#hide').click();await waitCovered(page);
+    assert.equal(await page.locator('.destination-city-marker,.destination-connection').count(),0);
+    await reveal(page);await page.locator('.destination-ticket').first().click();await waitDestinationMap(page);
+    await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
+    assert.equal(await page.locator('.destination-city-marker,.destination-connection').count(),0);
+    const next=sessionRevision+1;await page.evaluate(()=>{delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));});await sessionDelivered(page,next);await reveal(page);
+    await page.locator('.destination-ticket').first().click();await waitDestinationMap(page);
+    delayedBoardImage={};fixture.snapshot.boardMap.imageId='00112233445566778899aabbccddee11';publishSession();
+    while(!delayedBoardImage.response) await new Promise(resolve=>setTimeout(resolve,20));
+    const old=delayedBoardImage;delayedBoardImage=null;
+    fixture=structuredClone(fixtures.nextHuman);generation++;controllerGeneration++;await sessionDelivered(page,publishSession());await waitCovered(page);
+    sendBoardImage(old.response,old.bytes);await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    assert.equal(await page.locator('#destination-map,.destination-city-marker,.destination-connection').count(),0,'An old image response must not restore the previous player’s private destinations.');
+    fixture=fixtures.setup;generation++;controllerGeneration++;await sessionDelivered(page,publishSession());await waitCovered(page);
   });
 }
 async function main() {
@@ -429,6 +638,11 @@ async function main() {
         await page.locator('#curtain').waitFor({state:'visible'}); await noOverflow(page);
         await screenshot(page,viewport.name+'-curtain');
       });
+      if(!mapOnly&&!destinationMapOnly) await blockedDrawCases(page,viewport);
+      if(blockedDrawOnly) {assert.deepEqual(errors,[]);assert.deepEqual([...outsideLaptop],[]);await context.close();continue;}
+      if(!mapOnly&&!destinationMapOnly) await changeFixture(page,'setup');
+      if(!drawOnly&&!mapOnly) await destinationMapCases(page,viewport);
+      if(destinationMapOnly) {assert.deepEqual(errors,[]);assert.deepEqual([...outsideLaptop],[]);await context.close();continue;}
       if(!drawOnly) await computerMapCases(page,viewport);
       if(mapOnly) {assert.deepEqual(errors,[]);assert.deepEqual([...outsideLaptop],[]);await context.close();continue;}
       await record(viewport.name+': destination checks and outside taps preserve the private hand',async()=>{
@@ -494,7 +708,7 @@ async function main() {
         const initialHeight=(await row.boundingBox()).height;
         fixtures.manyDestinations.data.heldTickets=held;
         await changeFixture(page,'manyDestinations'); await reveal(page);
-        assert.equal(await row.locator('article').count(),12);
+        assert.equal(await row.locator('.destination-ticket').count(),12);
         const metrics=await row.evaluate(node=>({height:node.getBoundingClientRect().height,width:node.clientWidth,scrollWidth:node.scrollWidth,top:[...node.children].map(card=>card.getBoundingClientRect().top),firstWidth:node.firstElementChild.getBoundingClientRect().width,overflow:getComputedStyle(node).overflowX,scrollbar:getComputedStyle(node).scrollbarWidth}));
         assert.ok(Math.abs(metrics.height-initialHeight)<1,'More tickets must not make the row taller.');
         assert.ok(metrics.top.every(top=>Math.abs(top-metrics.top[0])<1),'All cards must remain on the same row.');
@@ -509,7 +723,7 @@ async function main() {
         const savedScroll=await row.evaluate(node=>{node.dataset.identity='original-destination-row';return node.scrollLeft;});
         fixture.snapshot.boardInteraction={useCameraClaims:true,cardActionsBlocked:true,message:'Keep the board still while the camera checks the trains.',detectedRoute:null};
         publishSession();
-        await page.getByText('Keep the board still while the camera checks the trains.',{exact:true}).waitFor();
+        await page.locator('#train-draw-help').filter({hasText:'Keep the board still while the camera checks the trains.'}).waitFor();
         assert.equal(await row.getAttribute('data-identity'),'original-destination-row');
         assert.ok(Math.abs(await row.evaluate(node=>node.scrollLeft)-savedScroll)<1,'Camera-only updates must preserve destination scroll position.');
         await noOverflow(page);
@@ -684,7 +898,7 @@ async function main() {
         fixture.snapshot.boardInteraction.detectedRoute={...proposal,ready:false};
         fixture.snapshot.boardInteraction.message='Confirming the trains on the board.';
         publishSession();
-        await page.getByText('Confirming the trains on the board.',{exact:true}).waitFor();
+        await page.getByRole('region',{name:'Detected route payment',exact:true}).getByText('Confirming the trains on the board.',{exact:true}).waitFor();
         assert.equal(await pay.isDisabled(),true); assert.equal(await page.locator('.payment-choice').nth(paymentIndex).getAttribute('aria-pressed'),'true');
         fixture.snapshot.boardInteraction.detectedRoute={...proposal}; fixture.snapshot.boardInteraction.message=null;
         publishSession();
@@ -852,7 +1066,7 @@ async function main() {
       });
       await context.close();
     }
-    fs.writeFileSync(path.join(output,'browser-ui-results.json'),JSON.stringify({browser:'Chromium '+browserVersion,scope:mapOnly?'Focused computer map and image lifecycle over SSE':drawOnly?'Focused draw controls and opening-ticket flow over SSE':'Complete companion workflow over SSE',fixtureFile:fixturePath,fixtureTransport:'Real insecure HTTP and fetch-streamed SSE on goldenticket.test mapped to loopback; no browser security overrides or certificate dependencies; no real-phone acceptance claim.',eventDelivery:'Session snapshots are published only on fixture or authorization changes. Two-second heartbeats contain no game snapshot. The former session polling endpoint returns 410.',internetIsolation:'Page requests outside the laptop fixture origin are blocked and recorded; navigator.onLine is false. Browser/OS background traffic is outside this harness.',viewports:viewports.map(v=>`${v.width}×${v.height}`),screenshots:process.env.GOLDENTICKET_BOARD_IMAGE_FIXTURE?'Synthetic player data with local upright board camera fixture; gold targets rendered by the browser':'Synthetic player data and public calibration board only',results},null,2));
+    fs.writeFileSync(path.join(output,'browser-ui-results.json'),JSON.stringify({browser:'Chromium '+browserVersion,scope:blockedDrawOnly?'Focused camera-rejected draws, explicit retry and hand continuity over SSE':destinationMapOnly?'Focused private destination map transitions and lifecycle':mapOnly?'Focused computer map and image lifecycle over SSE':drawOnly?'Focused draw controls and opening-ticket flow over SSE':'Complete companion workflow over SSE',fixtureFile:fixturePath,fixtureTransport:'Real insecure HTTP and fetch-streamed SSE on goldenticket.test mapped to loopback; no browser security overrides or certificate dependencies; no real-phone acceptance claim.',eventDelivery:'Session snapshots are published only on fixture or authorization changes. Two-second heartbeats contain no game snapshot. The former session polling endpoint returns 410.',internetIsolation:'Page requests outside the laptop fixture origin are blocked and recorded; navigator.onLine is false. Browser/OS background traffic is outside this harness.',viewports:viewports.map(v=>`${v.width}×${v.height}`),screenshots:process.env.GOLDENTICKET_BOARD_IMAGE_FIXTURE?'Synthetic player data with local upright board camera fixture; gold targets rendered by the browser':'Synthetic player data and public calibration board only',results},null,2));
     console.log(`${results.length} browser UI scenarios passed.`);
   } finally { await browser.close(); clearInterval(heartbeatTimer); disconnectStreams(); await new Promise(resolve=>server.close(resolve)); }
 }

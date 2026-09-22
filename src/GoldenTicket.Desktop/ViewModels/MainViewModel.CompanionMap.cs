@@ -12,6 +12,7 @@ public sealed partial class MainViewModel
     private CompanionBoardMap? _companionBoardMap;
     private CompanionBoardImage? _companionBoardImage;
     private CompanionBoardImage? _previousCompanionBoardImage;
+    private IReadOnlyList<CompanionMapCity> _companionMapCities = [];
     private BitmapSource? _lastCompanionMapSource;
     private (SessionId SessionId, SeatId SeatId)? _companionMapContext;
     private bool _companionMapEncoding;
@@ -36,7 +37,8 @@ public sealed partial class MainViewModel
         if (view.Lifecycle != SessionLifecycle.Active &&
             !(view.Lifecycle == SessionLifecycle.Finished && (scoring || completing))) return null;
         var seat = scoring ? _scoreMarkerStep!.SeatId : completing ? _companionMapContext!.Value.SeatId : view.ActiveSeatId;
-        return view.SeatOf(seat).Kind == SeatKind.Computer ? (coordinator.SessionId, seat) : null;
+        return view.SeatOf(seat).Kind == SeatKind.Computer || CanCompanionControl
+            ? (coordinator.SessionId, seat) : null;
     }
 
     private bool HasCompanionMapFrame => Camera.IsGameTablePreviewRequested && Camera.IsRunning &&
@@ -81,7 +83,8 @@ public sealed partial class MainViewModel
         }
 
         // These are the very same targets shown on the laptop, including correction
-        // subsets. Private destination markers are intentionally never read here.
+        // subsets. Destination cities below cover the whole board; the browser alone
+        // combines them with the revealed player's private tickets.
         var targets = Game.PlacementTargets.Select(point => new CompanionMapPoint(point.X, point.Y, point.Number)).ToArray();
         SetCompanionMap(_companionBoardImage?.Id, targets);
         var source = Camera.GameTablePreview!;
@@ -96,8 +99,9 @@ public sealed partial class MainViewModel
 
     private void SetCompanionMap(string? imageId, IReadOnlyList<CompanionMapPoint> targets)
     {
-        if (_companionBoardMap is { } map && map.ImageId == imageId && map.Targets.SequenceEqual(targets)) return;
-        _companionBoardMap = new(imageId, targets);
+        if (_companionBoardMap is { } map && map.ImageId == imageId && map.Targets.SequenceEqual(targets) &&
+            map.Cities is not null && map.Cities.SequenceEqual(_companionMapCities)) return;
+        _companionBoardMap = new(imageId, targets, _companionMapCities);
     }
 
     private void ResetCompanionMap()
@@ -108,14 +112,15 @@ public sealed partial class MainViewModel
         _companionBoardMap = null;
         _companionBoardImage = null;
         _previousCompanionBoardImage = null;
+        _companionMapCities = [];
         _lastCompanionMapSource = null;
         _lastCompanionMapEncodeAt = 0;
     }
 
     private async Task PublishCompanionMapAsync(BitmapSource source, long generation)
     {
-        byte[]? jpeg = null;
-        try { jpeg = await Task.Run(() => CompanionBoardImageEncoder.Encode(source)).ConfigureAwait(false); }
+        CompanionBoardImageEncoder.Preview? preview = null;
+        try { preview = await Task.Run(() => CompanionBoardImageEncoder.Encode(source, _manifest)).ConfigureAwait(false); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or
             NotSupportedException or System.IO.IOException or System.Runtime.InteropServices.COMException)
         {
@@ -129,12 +134,13 @@ public sealed partial class MainViewModel
             _companionMapEncoding = false;
             if (_toolsDisposed || generation != _companionMapGeneration ||
                 CompanionMapContext() != _companionMapContext || !HasCompanionMapFrame) return;
-            if (jpeg is not null)
+            if (preview is not null)
             {
                 // Keep one previous frame so an in-flight authorized request survives
                 // the next publish, with a fixed two-frame memory bound and no history.
                 _previousCompanionBoardImage = _companionBoardImage;
-                _companionBoardImage = new(Guid.NewGuid().ToString("N"), jpeg);
+                _companionBoardImage = new(Guid.NewGuid().ToString("N"), preview.Jpeg);
+                _companionMapCities = preview.Cities;
             }
             NotifyCompanionPresentationChanged();
         }

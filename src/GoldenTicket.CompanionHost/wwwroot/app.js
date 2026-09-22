@@ -10,7 +10,7 @@
   let revealGeneration = 0, handoffGeneration = -1, paired = false, pending = false;
   let busy = false, lastHeartbeat = 0;
   let privateActionsTarget = null, ticketOfferControls = null, renderedBoardInteraction = null, detectedPayment = null;
-  let pendingClaimInstruction = null;
+  let pendingClaimInstruction = null, privateActionFeedback = null;
   let pendingCommand = null;
   let privateHandTarget = null, drawControls = null;
   let connectionGeneration = 0, controllerGeneration = null;
@@ -18,15 +18,32 @@
   const maxResultBytes = 16 * 1024 * 1024;
   let resultKey = null, resultGeneration = 0, resultUrl = null, resultAbort = null;
   const maxBoardBytes = 4 * 1024 * 1024;
-  let boardTurnKey = null, boardImageId = null, boardDesiredImage = null, boardUrl = null, boardAbort = null, boardGeneration = 0, boardTargetsKey = null;
+  let boardTurnKey = null, boardTargetsKey = null, publicMapImage = null, destinationView = null;
   const trainCount = count => `${count} train${count === 1 ? "" : "s"}`;
 
   function notice(message) { byId("notice").textContent = message; }
+  function actionFeedback() {
+    if (!privateActionFeedback) return "";
+    const board = snapshot?.boardInteraction, feedback = privateActionFeedback;
+    const detail = !board?.cardActionsBlocked
+      ? feedback.kind === "drawTrain" ? "Choose a card to try again." : "Try your choice again."
+      : JSON.stringify(board) === feedback.boardKey ? feedback.reason : board.message || feedback.reason;
+    return `${feedback.kind === "drawTrain" ? "No card drawn." : "Choice not saved."} It is still your turn. ${detail}`;
+  }
+  function updatePrivateInPlace(update) {
+    const left = window.scrollX, top = window.scrollY;
+    update();
+    // Camera guidance can wrap onto another line. Keep the player's viewport
+    // steady instead of anchoring to public content below the private hand.
+    window.scrollTo({ left, top, behavior: "instant" });
+  }
   function clearPrivate() {
+    disposeDestinationView();
     revealGeneration++;
     privateData = null; grant = null;
     privateActionsTarget = null; ticketOfferControls = null; renderedBoardInteraction = null; detectedPayment = null;
     pendingClaimInstruction = null;
+    privateActionFeedback = null;
     pendingCommand = null; privateHandTarget = null; drawControls = null;
     byId("private").replaceChildren(); byId("private").hidden = true;
     byId("curtain").hidden = !paired || resultKey !== null;
@@ -61,7 +78,7 @@
   function turnIdentity(value) { return value?.game && value.canControl ? `${value.game.sessionId}:${value.game.turnNumber}:${value.game.activeSeatId}:${value.revealSeatId}` : "none"; }
   function receiveSession(result) {
     if (!result || typeof result.paired !== "boolean" || typeof result.pending !== "boolean") throw new Error("The laptop sent an invalid update.");
-    if (result.apiVersion !== "1" || result.assetsVersion !== "13") {
+    if (result.apiVersion !== "1" || result.assetsVersion !== "15") {
       needsReload = true; throw new Error("The companion needs an update. Reload from the laptop before playing.");
     }
     lastHeartbeat = Date.now(); reconnectDelay = 1000;
@@ -91,7 +108,7 @@
     handoffGeneration = Math.max(handoffGeneration, result.handoffGeneration);
     byId("connect").hidden = true; byId("curtain").hidden = privateData !== null;
     byId("connection").textContent = "Synchronized · Private LAN";
-    renderPublic(); syncBoardMap(); syncResultImage(); syncBoardActions();
+    renderPublic(); syncBoardMap(); syncDestinationMap(); syncResultImage(); syncBoardActions();
   }
   function stopEvents() {
     clearBoardMap();
@@ -162,18 +179,17 @@
   function button(text, callback, className) {
     const node = element("button", text, className); node.type = "button"; node.addEventListener("click", callback); return node;
   }
-  function clearBoardImage() {
-    boardGeneration++; boardAbort?.abort(); boardAbort = null;
-    boardDesiredImage = null; boardImageId = null;
-    byId("board-image").removeAttribute("src"); byId("board-stage").hidden = true;
-    if (boardUrl) URL.revokeObjectURL(boardUrl);
-    boardUrl = null;
+  function syncPrivacyControls() {
+    const finished = snapshot?.game?.lifecycle === "Finished";
+    byId("hide").hidden = !paired || finished;
+    byId("reveal").hidden = finished || boardTurnKey !== null;
+    byId("curtain-privacy").hidden = finished || boardTurnKey !== null;
   }
   function clearBoardMap() {
-    clearBoardImage(); boardTurnKey = null; boardTargetsKey = null;
+    publicMapImage?.clear(); boardTurnKey = null; boardTargetsKey = null;
     byId("board-targets").replaceChildren(); byId("board-map").hidden = true;
     byId("board-status").textContent = "";
-    byId("reveal").hidden = false; byId("curtain-privacy").hidden = false;
+    syncPrivacyControls();
   }
   function syncBoardMap() {
     const board = paired && !document.hidden && snapshot?.game && !snapshot.canControl && snapshot.boardMap;
@@ -183,7 +199,7 @@
     // map present for that instruction and removes it at the actual handoff.
     const key = snapshot.game.sessionId;
     if (boardTurnKey !== key) { clearBoardMap(); boardTurnKey = key; }
-    byId("board-map").hidden = false; byId("reveal").hidden = true; byId("curtain-privacy").hidden = true;
+    byId("board-map").hidden = false; syncPrivacyControls();
     const targets = byId("board-targets");
     // Positions use the laptop's canonical board coordinates, independent of
     // viewport size and image arrival. No server-provided markup or URLs enter the DOM.
@@ -202,60 +218,78 @@
         targets.append(marker);
       }
     }
-    const imageId = typeof board.imageId === "string" && /^[a-f0-9]{32}$/.test(board.imageId) ? board.imageId : null;
-    if (!imageId) {
-      if (boardUrl || boardAbort) clearBoardImage();
-      byId("board-status").textContent = "Waiting for the laptop’s map…"; return;
-    }
-    boardDesiredImage = imageId;
-    if (!boardUrl) byId("board-status").textContent = "Receiving the map…";
-    loadBoardImage();
+    publicMapImage ??= createBoardImageLoader(byId("board-image"), byId("board-stage"), byId("board-status"));
+    publicMapImage.update(board.imageId);
   }
-  async function loadBoardImage() {
-    if (!boardDesiredImage || boardDesiredImage === boardImageId || boardAbort || !boardTurnKey) return;
-    const imageId = boardDesiredImage, generation = boardGeneration;
-    const abort = new AbortController(); boardAbort = abort;
-    const timeout = setTimeout(() => abort.abort(), 5000);
-    let nextUrl = null;
-    abort.signal.addEventListener("abort", () => { if (nextUrl) { URL.revokeObjectURL(nextUrl); nextUrl = null; } }, { once: true });
-    try {
-      const response = await fetch(`/api/board-image/${imageId}`, {
-        headers: { "X-GoldenTicket-Tab": tab }, credentials: "same-origin", cache: "no-store", signal: abort.signal
-      });
-      if (!response.ok || response.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "image/jpeg" || !response.body || Number(response.headers.get("Content-Length")) > maxBoardBytes)
-        throw new Error("The map is unavailable.");
-      const reader = response.body.getReader(), chunks = [];
-      let size = 0;
+  // Public computer maps and private destination maps share the same bounded,
+  // authenticated image transport. Private overlays never enter this loader.
+  function createBoardImageLoader(target, stage, status, displayed = () => {}, reserveSpace = false) {
+    const state = { id: null, url: null, abort: null };
+    target.hidden = true; stage.hidden = !reserveSpace;
+    let desired = null, generation = 0;
+    function clear() {
+      generation++; state.abort?.abort(); state.abort = null; desired = null; state.id = null;
+      target.removeAttribute("src"); target.hidden = true; stage.hidden = !reserveSpace;
+      if (state.url) URL.revokeObjectURL(state.url);
+      state.url = null; displayed(null);
+    }
+    function update(id, metadata = null) {
+      if (typeof id !== "string" || !/^[a-f0-9]{32}$/.test(id)) {
+        if (state.url || state.abort) clear();
+        status.textContent = "Waiting for the laptop’s map…"; return;
+      }
+      desired = { id, metadata };
+      if (id === state.id) { displayed(metadata); return; }
+      if (!state.url) status.textContent = "Receiving the map…";
+      load();
+    }
+    async function load() {
+      if (!desired || desired.id === state.id || state.abort) return;
+      const request = desired, version = generation;
+      const abort = new AbortController(); state.abort = abort;
+      const timeout = setTimeout(() => abort.abort(), 5000);
+      let nextUrl = null;
+      abort.signal.addEventListener("abort", () => { if (nextUrl) { URL.revokeObjectURL(nextUrl); nextUrl = null; } }, { once: true });
       try {
-        while (true) {
-          const { value, done } = await reader.read(); if (done) break;
-          size += value.byteLength; if (size > maxBoardBytes) throw new Error("The map is too large.");
-          chunks.push(value);
+        const response = await fetch(`/api/board-image/${request.id}`, {
+          headers: { "X-GoldenTicket-Tab": tab }, credentials: "same-origin", cache: "no-store", signal: abort.signal
+        });
+        if (!response.ok || response.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "image/jpeg" || !response.body || Number(response.headers.get("Content-Length")) > maxBoardBytes)
+          throw new Error("The map is unavailable.");
+        const reader = response.body.getReader(), chunks = [];
+        let size = 0;
+        try {
+          while (true) {
+            const { value, done } = await reader.read(); if (done) break;
+            size += value.byteLength; if (size > maxBoardBytes) throw new Error("The map is too large.");
+            chunks.push(value);
+          }
+        } catch (error) { await reader.cancel().catch(() => {}); throw error; }
+        finally { reader.releaseLock(); }
+        const blob = new Blob(chunks, { type: "image/jpeg" });
+        const signature = new Uint8Array(await blob.slice(0, 3).arrayBuffer());
+        if (signature.length !== 3 || signature[0] !== 255 || signature[1] !== 216 || signature[2] !== 255) throw new Error("The map could not be read.");
+        if (version !== generation || abort.signal.aborted) return;
+        nextUrl = URL.createObjectURL(blob);
+        const image = new Image(); image.src = nextUrl; await image.decode();
+        if (version !== generation || abort.signal.aborted || document.hidden || !paired) return;
+        const previousUrl = state.url; state.url = nextUrl; nextUrl = null; state.id = request.id;
+        target.src = state.url; target.hidden = false; stage.hidden = false; status.textContent = "";
+        displayed(request.metadata);
+        if (previousUrl) URL.revokeObjectURL(previousUrl);
+      } catch {
+        if (version === generation) status.textContent = state.url ? "Waiting for the latest map…" : "Waiting for the laptop’s map…";
+      } finally {
+        if (nextUrl) { URL.revokeObjectURL(nextUrl); nextUrl = null; }
+        clearTimeout(timeout); abort.abort();
+        if (version === generation) {
+          state.abort = null;
+          // Continuous camera updates cannot starve a slower tablet connection.
+          if (desired?.id !== request.id) load();
         }
-      } catch (error) { await reader.cancel().catch(() => {}); throw error; }
-      finally { reader.releaseLock(); }
-      const blob = new Blob(chunks, { type: "image/jpeg" });
-      const signature = new Uint8Array(await blob.slice(0, 3).arrayBuffer());
-      if (signature.length !== 3 || signature[0] !== 255 || signature[1] !== 216 || signature[2] !== 255) throw new Error("The map could not be read.");
-      if (generation !== boardGeneration || abort.signal.aborted) return;
-      nextUrl = URL.createObjectURL(blob);
-      const image = new Image(); image.src = nextUrl; await image.decode();
-      if (generation !== boardGeneration || abort.signal.aborted || document.hidden || !paired) return;
-      const previousUrl = boardUrl; boardUrl = nextUrl; nextUrl = null; boardImageId = imageId;
-      byId("board-image").src = boardUrl; byId("board-stage").hidden = false; byId("board-status").textContent = "";
-      if (previousUrl) URL.revokeObjectURL(previousUrl);
-    } catch {
-      if (generation === boardGeneration) byId("board-status").textContent = boardUrl ? "Waiting for the latest map…" : "Waiting for the laptop’s map…";
-    } finally {
-      if (nextUrl) { URL.revokeObjectURL(nextUrl); nextUrl = null; }
-      clearTimeout(timeout); abort.abort();
-      if (generation === boardGeneration) {
-        boardAbort = null;
-        // Finish the current frame before fetching the newest pending one so
-        // continuous camera updates cannot starve a slower tablet connection.
-        if (boardDesiredImage !== imageId) loadBoardImage();
       }
     }
+    return { clear, update, state };
   }
   function resultMetadata() {
     const value = snapshot?.resultImage;
@@ -347,7 +381,7 @@
     try {
       const result = await api("/api/reveal", { seat: snapshot.revealSeatId, sessionId: snapshot.game.sessionId, version: snapshot.game.stateVersion, handoffGeneration });
       if (generation !== revealGeneration || document.hidden || identity !== currentIdentity(snapshot) || Date.now() - lastHeartbeat >= 6000 || result.handoffGeneration < handoffGeneration) return;
-      grant = result.grant; privateData = result.data; handoffGeneration = result.handoffGeneration;
+      grant = result.grant; privateData = result.data; handoffGeneration = result.handoffGeneration; privateActionFeedback = null;
       byId("curtain").hidden = true; renderPrivate(); notice("");
     } catch (error) { clearPrivate(); notice(error.message); }
     finally { busy = false; if (snapshot) byId("reveal").disabled = !snapshot.canControl || !lastHeartbeat; }
@@ -368,30 +402,39 @@
       }
     }
     busy = true;
+    privateActionFeedback = null;
     const payload = { seat: privateData.view.seatId, grant, command: { commandId: randomId(), sessionId: privateData.view.public.sessionId, expectedStateVersion: privateData.view.public.stateVersion, kind, ...details } };
     // Keep the current hand in place while saving. Only the host can renew it
     // for this same player's turn; a handoff or an explicit Hide wins the race.
-    const operation = { identity: turnIdentity(snapshot) };
+    const operation = { identity: turnIdentity(snapshot), snapshot, kind,
+      drawLabel: kind === "drawTrain" ? details.slot == null ? "blind card" : `${privateData.view.public.faceUp?.[details.slot] || "train"} card` : null };
     pendingCommand = operation;
+    if (kind === "drawTrain") drawControls?.showPending();
     byId("private").setAttribute("aria-busy", "true");
-    for (const control of byId("private").querySelectorAll("button:not(.private-hide), input, select")) control.disabled = true;
+    for (const control of byId("private").querySelectorAll("button:not(.private-hide):not(.private-view-control), input, select")) control.disabled = true;
     byId("reveal").disabled = true;
     try {
       const result = await api("/api/command", payload);
       const next = result.continuation;
-      if (pendingCommand === operation && !document.hidden && Date.now() - lastHeartbeat < 6000 && result.accepted && next?.grant &&
+      const blockedContinuation = result.accepted === false && result.code === "BoardCheckRequired" &&
+        ["drawTrain", "drawTickets", "keepTickets"].includes(kind) && result.stateVersion === payload.command.expectedStateVersion &&
+        next?.snapshot?.game?.stateVersion === payload.command.expectedStateVersion;
+      if (pendingCommand === operation && !document.hidden && Date.now() - lastHeartbeat < 6000 && (result.accepted === true || blockedContinuation) && next?.grant &&
           next.handoffGeneration >= handoffGeneration && turnIdentity(next.snapshot) === operation.identity &&
           turnIdentity(snapshot) === operation.identity && next.snapshot.game.stateVersion >= snapshot.game.stateVersion &&
           next.data?.view.seatId === payload.seat && next.data.view.public.sessionId === payload.command.sessionId &&
-          next.data.view.public.stateVersion === next.snapshot.game.stateVersion) {
+          next.data.view.public.stateVersion === next.snapshot.game.stateVersion &&
+          next.data.view.public.turnNumber === next.snapshot.game.turnNumber && next.data.view.public.activeSeatId === next.snapshot.game.activeSeatId) {
         // The stream can deliver this command's new revision plus newer camera
         // guidance before its HTTP receipt arrives. Keep that public update;
         // a snapshot from before the command cannot satisfy the newer version.
-        if (snapshot.game.stateVersion !== next.snapshot.game.stateVersion ||
-            snapshot.game.stateVersion <= payload.command.expectedStateVersion) snapshot = next.snapshot;
+        if (snapshot.game.stateVersion !== next.snapshot.game.stateVersion || snapshot === operation.snapshot) snapshot = next.snapshot;
         privateData = next.data; grant = next.grant;
         handoffGeneration = next.handoffGeneration; pendingCommand = null; busy = false;
-        if (kind === "drawTrain" && drawControls && !privateData.actions.mustCommitTicketSelection && !privateData.actions.mustResolvePendingClaim) {
+        if (blockedContinuation) {
+          privateActionFeedback = { kind, reason: result.message, boardKey: JSON.stringify(snapshot.boardInteraction) };
+          updatePrivateInPlace(() => { drawControls?.update(); ticketOfferControls?.update(); });
+        } else if (kind === "drawTrain" && drawControls && !privateData.actions.mustCommitTicketSelection && !privateData.actions.mustResolvePendingClaim) {
           renderHand(privateHandTarget); drawControls.update();
         } else renderPrivate();
         renderPublic();
@@ -399,7 +442,7 @@
         clearPrivate(); notice(result.message);
       }
     } catch (error) { reconnectEvents("The result is not confirmed on this device. Check the current turn on the laptop before choosing again."); }
-    finally { busy = false; pendingCommand = null; byId("private").removeAttribute("aria-busy"); if (snapshot) { renderPublic(); syncBoardActions(); } }
+    finally { busy = false; pendingCommand = null; byId("private").removeAttribute("aria-busy"); if (snapshot) { renderPublic(); syncDestinationMap(); syncBoardActions(); } }
   }
   function card(kind, count) {
     const node = element("div", undefined, "card"); node.dataset.color = kind;
@@ -416,7 +459,118 @@
     if (!current.length) current.push(element("p", "Your train-card hand is empty.", "empty"));
     cards.replaceChildren(...current);
   }
+  function disposeDestinationView() {
+    const view = destinationView; destinationView = null;
+    if (!view) return;
+    clearTimeout(view.animation); view.observer?.disconnect(); view.loader.clear();
+    view.overlay.replaceChildren();
+  }
+  function svgElement(tag, attributes) {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, String(value));
+    return node;
+  }
+  function renderDestinationConnections(view, cities) {
+    if (destinationView !== view || !privateData || !view.open) return;
+    const positions = new Map((Array.isArray(cities) ? cities : []).filter(city =>
+      city && typeof city.id === "string" && Number.isFinite(city.x) && Number.isFinite(city.y) &&
+      city.x >= 0 && city.x <= 960 && city.y >= 0 && city.y <= 600).map(city => [city.id, city]));
+    const connections = privateData.heldTickets.map(ticket => ({ ticket, from: positions.get(ticket.fromCityId), to: positions.get(ticket.toCityId) }))
+      .filter(link => link.from && link.to && link.from.id !== link.to.id);
+    const key = JSON.stringify(connections.map(({ ticket, from, to }) => [ticket.id, from.id, from.x, from.y, to.id, to.x, to.y]));
+    if (view.overlayKey === key) return;
+    view.overlayKey = key; view.overlay.replaceChildren();
+    const endpoints = new Map();
+    for (const { ticket, from, to } of connections) {
+      const dx = to.x - from.x, dy = to.y - from.y, distance = Math.hypot(dx, dy);
+      endpoints.set(from.id, from); endpoints.set(to.id, to);
+      if (distance <= 44) continue;
+      const group = svgElement("g", { class: "destination-connection", "data-ticket-id": ticket.id });
+      const points = { x1: from.x + dx * 22 / distance, y1: from.y + dy * 22 / distance, x2: to.x - dx * 22 / distance, y2: to.y - dy * 22 / distance };
+      group.append(svgElement("line", { ...points, class: "destination-line-shadow" }), svgElement("line", { ...points, class: "destination-line-gold" }));
+      view.overlay.append(group);
+    }
+    for (const city of endpoints.values()) {
+      const group = svgElement("g", { class: "destination-city-marker", "data-city-id": city.id, transform: `translate(${city.x} ${city.y})` });
+      group.append(svgElement("circle", { r: 20, class: "destination-ring-shadow" }), svgElement("circle", { r: 20, class: "destination-ring-gold" }));
+      view.overlay.append(group);
+    }
+  }
+  function syncDestinationMap() {
+    const view = destinationView;
+    if (!view?.open || !privateData || !grant || document.hidden) return;
+    const board = snapshot?.boardMap;
+    view.loader.update(board?.imageId, board?.cities);
+  }
+  function toggleDestinationMap(view, open, opener = null) {
+    if (destinationView !== view || !privateData || document.hidden || view.open === open) return;
+    const height = view.viewport.getBoundingClientRect().height;
+    clearTimeout(view.animation); view.open = open;
+    if (open) { view.opener = opener; view.scrollLeft = view.row.scrollLeft; syncDestinationMap(); }
+    view.back.style.visibility = open ? "visible" : "hidden"; view.back.inert = !open;
+    view.back.setAttribute("aria-hidden", String(!open)); view.back.tabIndex = open ? 0 : -1;
+    for (const ticket of view.row.children) if (ticket.tagName === "BUTTON") ticket.setAttribute("aria-expanded", String(open));
+    view.row.inert = open; view.map.inert = !open;
+    view.row.hidden = false; view.map.hidden = false;
+    view.viewport.style.height = `${height}px`; view.viewport.dataset.animating = "true";
+    // Keep the current interpolated height when reversing an unfinished animation.
+    view.viewport.getBoundingClientRect();
+    view.viewport.dataset.open = String(open);
+    const finish = () => {
+      if (destinationView !== view || view.open !== open) return;
+      view.animation = null; view.row.hidden = open; view.map.hidden = !open;
+      delete view.viewport.dataset.animating; view.viewport.style.removeProperty("height");
+      if (!open) {
+        view.loader.clear(); view.overlay.replaceChildren(); view.overlayKey = null;
+        view.row.scrollLeft = view.scrollLeft; view.opener?.focus({ preventScroll: true });
+      }
+    };
+    if (open) view.back.focus({ preventScroll: true });
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { finish(); return; }
+    view.viewport.style.height = `${(open ? view.map : view.row).getBoundingClientRect().height}px`;
+    view.animation = setTimeout(finish, 300);
+  }
+  function renderDestinationTickets(target) {
+    const heading = element("div", undefined, "destination-heading"), title = element("h3", "Your destination tickets");
+    const back = button("←", () => toggleDestinationMap(view, false), "secondary destination-map-back private-view-control");
+    back.setAttribute("aria-label", "Back to destination tickets"); back.setAttribute("aria-hidden", "true");
+    back.style.visibility = "hidden"; back.inert = true; back.tabIndex = -1;
+    heading.append(title, back); target.append(heading);
+    const viewport = element("div", undefined, "destination-viewport"); viewport.dataset.open = "false";
+    const tickets = element("div", undefined, "tickets held-tickets");
+    const map = element("div", undefined, "destination-map"); map.id = "destination-map"; map.hidden = true; map.inert = true;
+    const stage = element("div", undefined, "board-stage"), image = element("img"); image.id = "destination-map-image"; image.hidden = true;
+    image.alt = "Your destination tickets on the game board";
+    const overlay = svgElement("svg", { id: "destination-map-targets", viewBox: "0 0 960 600", "aria-hidden": "true" });
+    const status = element("p", undefined, "fine-print destination-map-status"); status.id = "destination-map-status"; status.setAttribute("role", "status");
+    stage.append(image, overlay, status); map.append(stage); viewport.append(tickets, map); target.append(viewport);
+    const view = { row: tickets, map, viewport, back, overlay, open: false, animation: null, overlayKey: null, scrollLeft: 0, opener: null };
+    view.loader = createBoardImageLoader(image, stage, status, cities => renderDestinationConnections(view, cities), true);
+    view.observer = new ResizeObserver(() => {
+      const width = viewport.getBoundingClientRect().width;
+      if (view.width === width) return;
+      view.width = width;
+      if (view.animation) viewport.style.height = `${(view.open ? map : tickets).getBoundingClientRect().height}px`;
+    });
+    view.observer.observe(viewport); destinationView = view;
+    if (privateData.heldTickets.length) {
+      tickets.tabIndex = 0; tickets.setAttribute("role", "region"); tickets.setAttribute("aria-label", "Your destination tickets");
+    }
+    for (const ticket of privateData.heldTickets) {
+      const item = button(undefined, () => toggleDestinationMap(view, true, item), "ticket destination-ticket private-view-control");
+      item.setAttribute("aria-controls", map.id); item.setAttribute("aria-expanded", "false");
+      const cities = ticket.from && ticket.to ? [ticket.from, ticket.to] : ticket.label.split(" – ");
+      if (cities.length === 2 && cities.every(city => city.trim())) {
+        const arrow = element("span", "↓", "destination-arrow"); arrow.setAttribute("aria-hidden", "true");
+        item.setAttribute("aria-label", `${cities[0]} to ${cities[1]}`);
+        item.append(element("span", cities[0], "destination-city"), arrow, element("span", cities[1], "destination-city"));
+      } else item.append(element("span", ticket.label, "destination-label"));
+      item.append(element("span", `${ticket.points} points`, "destination-points")); tickets.append(item);
+    }
+    if (!privateData.heldTickets.length) tickets.append(element("p", "Choose your opening tickets below.", "empty"));
+  }
   function renderPrivate() {
+    disposeDestinationView();
     const target = byId("private"); target.replaceChildren();
     privateActionsTarget = null; ticketOfferControls = null; detectedPayment = null;
     pendingClaimInstruction = null;
@@ -427,23 +581,7 @@
     privateHandTarget = cards; renderHand(cards);
     target.append(cards);
     if (privateData.view.reservedCards.length) target.append(element("p", `${privateData.view.reservedCards.length} cards are reserved for the pending route. Complete placement on the laptop.`, "badge"));
-    target.append(element("h3", "Your destination tickets"));
-    const tickets = element("div", undefined, "tickets held-tickets");
-    if (privateData.heldTickets.length) {
-      tickets.tabIndex = 0; tickets.setAttribute("role", "region"); tickets.setAttribute("aria-label", "Your destination tickets");
-    }
-    for (const ticket of privateData.heldTickets) {
-      const item = element("article", undefined, "ticket destination-ticket");
-      const cities = ticket.from && ticket.to ? [ticket.from, ticket.to] : ticket.label.split(" – ");
-      if (cities.length === 2 && cities.every(city => city.trim())) {
-        const arrow = element("span", "↓", "destination-arrow"); arrow.setAttribute("aria-hidden", "true");
-        item.setAttribute("aria-label", `${cities[0]} to ${cities[1]}`);
-        item.append(element("span", cities[0], "destination-city"), arrow, element("span", cities[1], "destination-city"));
-      } else item.append(element("span", ticket.label, "destination-label"));
-      item.append(element("span", `${ticket.points} points`, "destination-points")); tickets.append(item);
-    }
-    if (!privateData.heldTickets.length) tickets.append(element("p", "Choose your opening tickets below.", "empty"));
-    target.append(tickets);
+    renderDestinationTickets(target);
     if (privateData.actions.mustCommitTicketSelection) renderOffer(target);
     else if (privateData.actions.mustResolvePendingClaim) {
       pendingClaimInstruction = element("h3", snapshot.guidance?.instruction || "Follow the placement instructions on the laptop.");
@@ -459,7 +597,8 @@
   function renderOffer(target) {
     const offered = privateData.offeredTickets;
     const selected = new Set();
-    let reversed = false;
+    let reversed = false, reverseButton;
+    const offerChecks = [];
     target.append(element("h3", "Choose destination tickets"), element("p", `Keep at least ${privateData.minimumKeep}. Kept tickets stay with you for the entire game; unfinished tickets lose their points.`));
     const list = element("div", undefined, "tickets");
     const kept = button("Keep selected tickets", () => submit("keepTickets", { keptTickets: offered.filter(t => selected.has(t.id)).map(t => t.id), returnedTickets: returns().map(t => t.id) }));
@@ -469,18 +608,22 @@
     const returns = () => { const values = offered.filter(t => !selected.has(t.id)); return reversed ? values.reverse() : values; };
     function update() {
       const board = snapshot.boardInteraction;
-      kept.disabled = selected.size < privateData.minimumKeep || Boolean(board?.cardActionsBlocked);
-      boardWarning.hidden = !board?.cardActionsBlocked;
-      boardWarning.textContent = board?.cardActionsBlocked ? board.message || "Finish the train placement before keeping tickets." : "";
+      const submitting = pendingCommand !== null;
+      kept.disabled = submitting || selected.size < privateData.minimumKeep || Boolean(board?.cardActionsBlocked);
+      for (const check of offerChecks) check.disabled = submitting;
+      if (reverseButton) reverseButton.disabled = submitting;
+      boardWarning.hidden = !privateActionFeedback && !board?.cardActionsBlocked;
+      boardWarning.textContent = actionFeedback() || (board?.cardActionsBlocked ? board.message || "Finish the train placement before keeping tickets." : "");
       returned.textContent = `Return order: ${returns().map(t => t.label).join("; ") || "keep all"}`;
     }
     for (const ticket of offered) {
       const label = element("label", undefined, "ticket ticket-choice");
       const check = document.createElement("input"); check.type = "checkbox";
+      offerChecks.push(check);
       check.addEventListener("change", () => { if (!privateData) return; check.checked ? selected.add(ticket.id) : selected.delete(ticket.id); update(); });
       label.append(check, element("span", `${ticket.label} · ${ticket.points} points`)); list.append(label);
     }
-    const actions = element("div", undefined, "actions"); actions.append(kept, button("Reverse return order", () => { reversed = !reversed; update(); }, "secondary"));
+    const actions = element("div", undefined, "actions"); reverseButton = button("Reverse return order", () => { reversed = !reversed; update(); }, "secondary"); actions.append(kept, reverseButton);
     target.append(list, returned, boardWarning, actions);
     ticketOfferControls = { update }; renderedBoardInteraction = JSON.stringify(snapshot.boardInteraction || null); update();
   }
@@ -517,8 +660,10 @@
   function syncBoardActions() {
     const boardKey = JSON.stringify(snapshot.boardInteraction || null);
     if (!privateData || pendingCommand || boardKey === renderedBoardInteraction) return;
-    if (ticketOfferControls) { ticketOfferControls.update(); renderedBoardInteraction = boardKey; }
-    else if (privateActionsTarget) renderActions(privateActionsTarget);
+    updatePrivateInPlace(() => {
+      if (ticketOfferControls) { ticketOfferControls.update(); renderedBoardInteraction = boardKey; }
+      else if (privateActionsTarget) renderActions(privateActionsTarget);
+    });
   }
   function paymentKey(choice) { return choice ? `${choice.color || ""}:${choice.colorCards}:${choice.locomotives}` : ""; }
   function paymentLabel(choice) {
@@ -591,13 +736,13 @@
     const trainHelp = element("p", privateData.view.public.turnPhase === "AwaitingSecondTrainCard"
       ? "Choose your second card. A visible locomotive cannot be the second draw."
       : "Take two cards, one at a time. A visible locomotive uses the whole turn.");
-    trainHelp.id = "train-draw-help"; help.append(trainHelp);
+    trainHelp.id = "train-draw-help"; trainHelp.setAttribute("role", "status"); help.append(trainHelp);
     if (actions.canRequestTicketOffer) {
       const destinationHelp = element("p", "Draw destination tickets. You must keep at least one.");
       destinationHelp.id = "destination-draw-help"; help.append(destinationHelp);
     }
     function update() {
-      const current = privateData.actions, blocked = Boolean(snapshot.boardInteraction?.cardActionsBlocked);
+      const current = privateData.actions, blocked = pendingCommand !== null || Boolean(snapshot.boardInteraction?.cardActionsBlocked);
       pileOptions[0].disabled = blocked || !current.canDrawBlindTrainCard;
       pileOptions[1].disabled = blocked || !current.canRequestTicketOffer;
       const faceUp = privateData.view.public.faceUp;
@@ -612,17 +757,23 @@
         option.setAttribute("aria-label", `${kind} · slot ${slot + 1}`); option.children[0].textContent = kind;
       }
       for (const option of marketOptions.slice(faceUp.length)) { option.hidden = true; option.disabled = true; }
-      trainHelp.textContent = privateData.view.public.turnPhase === "AwaitingSecondTrainCard"
-        ? "Choose your second card. A visible locomotive cannot be the second draw."
-        : "Take two cards, one at a time. A visible locomotive uses the whole turn.";
+      const drawing = pendingCommand?.kind === "drawTrain";
+      trainHelp.textContent = drawing
+        ? snapshot.boardInteraction?.useCameraClaims ? `Checking the board before drawing your ${pendingCommand.drawLabel}…` : `Drawing your ${pendingCommand.drawLabel}…`
+        : privateActionFeedback ? actionFeedback()
+        : snapshot.boardInteraction?.cardActionsBlocked ? snapshot.boardInteraction.message || "Finish the train placement before drawing cards."
+        : privateData.view.public.turnPhase === "AwaitingSecondTrainCard"
+          ? "Choose your second card. A visible locomotive cannot be the second draw."
+          : "Take two cards, one at a time. A visible locomotive uses the whole turn.";
+      if (!drawing) trainHelp.style.removeProperty("min-height");
     }
-    drawControls = { update }; update();
+    drawControls = { update, showPending() { trainHelp.style.minHeight = `${trainHelp.getBoundingClientRect().height}px`; update(); } }; update();
     if (!market.children.length) market.append(element("p", "No face-up cards available.", "empty"));
     area.append(picker, help); target.append(area);
   }
   function updatePairForm() {
     byId("pair-form").hidden = pending || paired;
-    byId("hide").hidden = !paired;
+    syncPrivacyControls();
     byId("pair-button").disabled = busy;
   }
   byId("pair-form").addEventListener("submit", async event => {

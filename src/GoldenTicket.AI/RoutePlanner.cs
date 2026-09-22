@@ -12,13 +12,15 @@ public sealed record TicketPlan(
     bool AlreadyComplete,
     bool Reachable,
     int MissingTrains,
-    ImmutableArray<RouteId> MissingRoutes);
+    ImmutableArray<RouteId> MissingRoutes,
+    double EstimatedTurns = 0);
 
-/// <summary>The seat's whole network plan: every ticket's cheapest remaining path.</summary>
+/// <summary>A bounded working plan for the seat's tickets, with shared route and card costs.</summary>
 public sealed record NetworkPlan(
     ImmutableArray<TicketPlan> Tickets,
     IReadOnlyDictionary<RouteId, double> RouteValue,
-    int TotalMissingTrains)
+    int TotalMissingTrains,
+    double EstimatedTurns = 0)
 {
     public IEnumerable<TicketPlan> Unfinished => Tickets.Where(t => !t.AlreadyComplete);
 
@@ -33,42 +35,143 @@ public sealed record NetworkPlan(
 public static class RoutePlanner
 {
     /// <summary>Builds the plan for this seat's current tickets.</summary>
-    public static NetworkPlan Plan(SeatView view, BoardManifest manifest)
+    public static NetworkPlan Plan(SeatView view, BoardManifest manifest) =>
+        Plan(view, manifest, view.Tickets);
+
+    public static NetworkPlan Plan(SeatView view, BoardManifest manifest, CancellationToken cancellationToken) =>
+        Plan(view, manifest, view.Tickets, cancellationToken);
+
+    /// <summary>
+    /// Plans a small portfolio using only this seat's cards and the visible board. Independent
+    /// paths and a bounded set of shared-network construction orders compete on completion time.
+    /// Shared routes, cards and locomotives are charged once for the whole portfolio.
+    /// </summary>
+    public static NetworkPlan Plan(SeatView view, BoardManifest manifest,
+        IEnumerable<TicketId> tickets, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var usable = UsableRoutes(view, manifest);
-        var plans = ImmutableArray.CreateBuilder<TicketPlan>();
-        var routeValue = new Dictionary<RouteId, double>();
-
-        foreach (var ticketId in view.Tickets)
+        var ids = tickets.Distinct().ToArray();
+        if (ids.Length == 0) return new NetworkPlan([], new Dictionary<RouteId, double>(), 0, 0);
+        var independent = Build(ids, shareRoutes: false);
+        if (ids.Length == 1) return independent;
+        var best = independent;
+        var bestTurns = ComparableTurns(best);
+        // At most four further passes over the tiny board, regardless of ticket count. These
+        // orders cover valuable backbones and cheap connectors without factorial search.
+        var orders = new[]
         {
-            var ticket = manifest.Ticket(ticketId);
-            var path = CheapestPath(view, manifest, usable, ticket.CityA, ticket.CityB);
-
-            if (path is null)
+            ids,
+            ids.Reverse().ToArray(),
+            ids.OrderByDescending(id => manifest.Ticket(id).Points).ThenBy(id => id.Value, StringComparer.Ordinal).ToArray(),
+            independent.Tickets.OrderBy(ticket => ticket.EstimatedTurns)
+                .ThenBy(ticket => ticket.TicketId.Value, StringComparer.Ordinal).Select(ticket => ticket.TicketId).ToArray(),
+        };
+        var seenOrders = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var order in orders)
+        {
+            if (!seenOrders.Add(string.Join("\0", order.Select(id => id.Value)))) continue;
+            cancellationToken.ThrowIfCancellationRequested();
+            var candidate = Build(order, shareRoutes: true);
+            var candidateTurns = ComparableTurns(candidate);
+            var candidateFeasible = candidate.TotalMissingTrains <= view.TrainsRemaining;
+            var bestFeasible = best.TotalMissingTrains <= view.TrainsRemaining;
+            if (candidateFeasible && !bestFeasible || candidateFeasible == bestFeasible &&
+                (candidateTurns < bestTurns ||
+                 candidateTurns == bestTurns && candidate.TotalMissingTrains < best.TotalMissingTrains))
             {
-                plans.Add(new TicketPlan(ticketId, ticket.Points, false, false, int.MaxValue, []));
-                continue;
+                best = candidate;
+                bestTurns = candidateTurns;
+            }
+        }
+        return best;
+
+        // A blocked commitment makes the whole portfolio impossible, but must not erase the
+        // timing differences between ways of completing its remaining reachable tickets.
+        double ComparableTurns(NetworkPlan plan) => double.IsFinite(plan.EstimatedTurns) ? plan.EstimatedTurns :
+            EstimateTurns(view, manifest, plan.Tickets.Where(ticket => ticket.Reachable).SelectMany(ticket => ticket.MissingRoutes));
+
+        NetworkPlan Build(IEnumerable<TicketId> order, bool shareRoutes)
+        {
+            var byId = new Dictionary<TicketId, TicketPlan>();
+            var planned = new HashSet<RouteId>();
+            foreach (var ticketId in order)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var ticket = manifest.Ticket(ticketId);
+                var path = CheapestPath(view, manifest, usable, ticket.CityA, ticket.CityB,
+                    preferTurns: true, shareRoutes ? planned : null, cancellationToken);
+                var missing = MissingRoutes(path);
+                var missingTrains = missing.Sum(routeId => manifest.Route(routeId).Length);
+                if (path is not null && missingTrains > view.TrainsRemaining)
+                {
+                    // A hand-friendly detour must not hide a shorter path this seat can still
+                    // finish with its actual plastic trains.
+                    var shortest = CheapestPath(view, manifest, usable, ticket.CityA, ticket.CityB,
+                        preferTurns: false, null, cancellationToken);
+                    var shorterMissing = MissingRoutes(shortest);
+                    if (shorterMissing.Sum(routeId => manifest.Route(routeId).Length) <= view.TrainsRemaining)
+                    {
+                        path = shortest;
+                        missing = shorterMissing;
+                        missingTrains = missing.Sum(routeId => manifest.Route(routeId).Length);
+                    }
+                }
+
+                if (path is null)
+                {
+                    byId[ticketId] = new TicketPlan(ticketId, ticket.Points, false, false, int.MaxValue, [], double.PositiveInfinity);
+                    continue;
+                }
+                byId[ticketId] = new TicketPlan(ticketId, ticket.Points, missing.IsEmpty, true,
+                    missingTrains, missing, EstimateTurns(view, manifest, missing));
+                planned.UnionWith(missing);
             }
 
-            var missing = path.Value.Routes
-                .Where(routeId => !view.Public.RouteOwners.TryGetValue(routeId, out var owner) || owner != view.SeatId)
-                .ToImmutableArray();
-
-            var missingTrains = missing.Sum(routeId => manifest.Route(routeId).Length);
-            var complete = missing.IsEmpty;
-
-            plans.Add(new TicketPlan(ticketId, ticket.Points, complete, true, missingTrains, missing));
-
-            if (complete) continue;
-
-            // A route matters in proportion to what the ticket pays and how little is left to do.
-            var share = ticket.Points / (double)Math.Max(1, missingTrains);
-            foreach (var routeId in missing)
-                routeValue[routeId] = routeValue.GetValueOrDefault(routeId) + share * manifest.Route(routeId).Length;
+            var plans = ids.Select(id => byId[id]).ToImmutableArray();
+            var routeValue = new Dictionary<RouteId, double>();
+            foreach (var ticket in plans.Where(ticket => ticket.Reachable && !ticket.AlreadyComplete))
+            {
+                var share = ticket.Points / (double)Math.Max(1, ticket.MissingTrains);
+                foreach (var routeId in ticket.MissingRoutes)
+                    routeValue[routeId] = routeValue.GetValueOrDefault(routeId) + share * manifest.Route(routeId).Length;
+            }
+            return new NetworkPlan(plans, routeValue, planned.Sum(id => manifest.Route(id).Length),
+                plans.Any(ticket => !ticket.Reachable) ? double.PositiveInfinity : EstimateTurns(view, manifest, planned));
         }
 
-        var total = plans.Where(p => !p.AlreadyComplete && p.Reachable).Sum(p => p.MissingTrains);
-        return new NetworkPlan(plans.ToImmutable(), routeValue, total);
+        ImmutableArray<RouteId> MissingRoutes((int Cost, ImmutableArray<RouteId> Routes)? path) => path is null ? [] :
+            [.. path.Value.Routes.Where(id => !view.Public.RouteOwners.TryGetValue(id, out var owner) || owner != view.SeatId)];
+    }
+
+    /// <summary>
+    /// One action per claim plus half a turn per missing card. A card may contribute to only one
+    /// route, including grey routes; locomotives cover only the residual deficit once. This is a
+    /// transparent optimistic draw estimate, not knowledge of the deck's future cards.
+    /// </summary>
+    public static double EstimateTurns(SeatView view, BoardManifest manifest, IEnumerable<RouteId> routeIds)
+    {
+        var routes = routeIds.Distinct().Select(manifest.Route).ToArray();
+        var held = Enum.GetValues<TrainCardKind>().Where(kind => kind != TrainCardKind.Locomotive)
+            .ToDictionary(kind => kind, view.CountOf);
+        var missing = 0;
+        foreach (var route in routes.Where(route => route.RequiredCardKind is not null))
+        {
+            var color = route.RequiredCardKind!.Value;
+            var available = Math.Min(route.Length, held[color]);
+            held[color] -= available;
+            missing += route.Length - available;
+        }
+        foreach (var route in routes.Where(route => route.RequiredCardKind is null).OrderByDescending(route => route.Length))
+        {
+            var color = held.OrderByDescending(entry => Math.Min(entry.Value, route.Length))
+                .ThenByDescending(entry => entry.Value).ThenBy(entry => entry.Key).First().Key;
+            var available = Math.Min(route.Length, held[color]);
+            held[color] -= available;
+            missing += route.Length - available;
+        }
+        missing = Math.Max(0, missing - view.CountOf(TrainCardKind.Locomotive));
+        return routes.Length + missing / 2.0;
     }
 
     /// <summary>
@@ -78,7 +181,7 @@ public static class RoutePlanner
     public static int EstimateCost(SeatView view, BoardManifest manifest, TicketDefinition ticket)
     {
         var usable = UsableRoutes(view, manifest);
-        var path = CheapestPath(view, manifest, usable, ticket.CityA, ticket.CityB);
+        var path = CheapestPath(view, manifest, usable, ticket.CityA, ticket.CityB, preferTurns: false);
         if (path is null) return int.MaxValue;
 
         return path.Value.Routes
@@ -120,12 +223,16 @@ public static class RoutePlanner
     }
 
     /// <summary>
-    /// Dijkstra over cities where an already-owned route is free and anything else costs its trains.
+    /// Dijkstra over cities. Owned/shared planned edges are free; new routes cost either trains
+    /// (the human-facing minimum-train estimate) or claim/draw time (the computer's working plan).
     /// Returns the routes along the cheapest path, or null when the cities cannot be connected.
     /// </summary>
     private static (int Cost, ImmutableArray<RouteId> Routes)? CheapestPath(
-        SeatView view, BoardManifest manifest, List<RouteDefinition> usable, CityId from, CityId to)
+        SeatView view, BoardManifest manifest, List<RouteDefinition> usable, CityId from, CityId to,
+        bool preferTurns, ISet<RouteId>? planned = null, CancellationToken cancellationToken = default)
     {
+        var hand = Enum.GetValues<TrainCardKind>().ToDictionary(kind => kind, view.CountOf);
+        var mostColorCards = hand.Where(entry => entry.Key != TrainCardKind.Locomotive).Max(entry => entry.Value);
         var adjacency = new Dictionary<CityId, List<RouteDefinition>>();
         foreach (var route in usable)
         {
@@ -144,6 +251,7 @@ public static class RoutePlanner
 
         while (queue.TryDequeue(out var city, out var cost))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!settled.Add(city)) continue;
             if (city.Equals(to)) break;
             if (!adjacency.TryGetValue(city, out var edges)) continue;
@@ -154,7 +262,10 @@ public static class RoutePlanner
                 if (settled.Contains(next)) continue;
 
                 var owned = view.Public.RouteOwners.TryGetValue(route.RouteId, out var owner) && owner == view.SeatId;
-                var step = cost + (owned ? 0 : route.Length);
+                var held = route.RequiredCardKind is { } required ? hand[required] : mostColorCards;
+                var deficit = Math.Max(0, route.Length - held - hand[TrainCardKind.Locomotive]);
+                var step = cost + (owned || planned?.Contains(route.RouteId) == true ? 0 :
+                    preferTurns ? 100 + deficit * 50 + route.Length * 2 : route.Length);
 
                 if (distance.TryGetValue(next, out var known) && known <= step) continue;
 

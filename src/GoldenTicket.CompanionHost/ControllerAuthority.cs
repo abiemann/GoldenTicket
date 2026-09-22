@@ -109,14 +109,14 @@ internal sealed class ControllerAuthority(TimeProvider? timeProvider = null)
                 g.Version == version && g.Generation == _generation;
         }
     }
-    /// <summary>Carry an existing reveal to a newer revision only if nothing hid or revoked it
+    /// <summary>Carry an existing reveal to the same or a newer revision only if nothing hid or revoked it
     /// while the command and its refreshed view were being prepared.</summary>
     internal PrivateGrant? ContinueGrant(ControllerCredentials credentials, string grant, int seat,
         string sessionId, long previousVersion, long nextVersion)
     {
         lock (_sync)
         {
-            if (nextVersion <= previousVersion ||
+            if (nextVersion < previousVersion ||
                 !ValidateGrant(credentials, grant, seat, sessionId, previousVersion)) return null;
             InvalidateCore();
             _grant = new(Token(), seat, sessionId, nextVersion, _generation);

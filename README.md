@@ -111,7 +111,7 @@ This build implements the core game plus initial phone, camera and photo workflo
   segments are cleared on the next app launch.
 - Exact final scoring, including the longest continuous route as a true maximum edge-simple trail
   with the witness trail shown. Final standings appear over the board as horizontally scrolling
-  portrait panels, with the full points breakdown, destination totals and a scrollable route trail.
+  portrait panels of equal height, with the full points breakdown, destination totals and a scrollable route trail.
 - In games with two or more humans, **Share to phone** on the final standings prepares a PNG with
   the board and all players' full results. The approved shared phone previews it and offers
   **Save image** in Quick play. Share the downloaded PNG through the device's Files or Photos app. The image stays on the
@@ -131,9 +131,12 @@ This build implements the core game plus initial phone, camera and photo workflo
 - Computer opponents use Standard play by default. On **Choose players**, click the smiling badge
   at the bottom-right of a computer portrait to spin it into a purple devil for **Aggressive** play;
   click again to return to Standard. Each computer has its own choice, retained in saved games.
-  Aggressive players favour short routes near human networks and opportunities to interrupt a
-  growing continuous railway, using only public claims. Standard play is unchanged; opponents never
-  see another player's private cards or tickets. Relaxed and Challenging remain in technical setup.
+  Computer players choose compatible destinations, plan shared connections and collect cards for
+  a feasible next link. Aggressive players also seek blocks near human networks, while reserving
+  the cards, trains and time needed for their own destinations. Opponents never see another player's
+  private cards or tickets. Relaxed and Challenging remain in technical setup. Reproducible old/new
+  comparisons are available through the [AI benchmark](tools/GoldenTicket.Simulator/README.md);
+  see the [strategy validation](docs/ai-strategy-evidence.md) for measured results and limits.
 - Durable local saves: an append-only event journal in SQLite with a tamper-evident hash chain,
   plaintext local payloads, command deduplication, and restore by replay verified against a stored
   state fingerprint. Game saves are not encrypted; saves written in the former encrypted format
@@ -531,6 +534,9 @@ not a completed Save Game and does not grant permission to clear the physical bo
    game waits for a clear view of it. Nothing is spent or scored until placement is verified.
    A human's already-verified board-first claim proceeds from payment to the same confirmation
    and scoring-marker step.
+   In the tablet's revealed hand, tapping any held destination ticket opens the live board with
+   dashed connections for all that player's destinations. The ticket row and controls below
+   animate into place; **Back** returns to the tickets.
 7. After someone finishes a turn with two trains or fewer, every seat takes one more turn, and then
    portrait panels appear over the board with each player's final points, route points, destination
    gains and losses, completed/missed tickets, longest-route bonus and full route trail. Scroll

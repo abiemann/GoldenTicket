@@ -82,3 +82,17 @@ summary{cursor:pointer;min-height:44px;padding:10px 0;font-size:.9rem;font-weigh
 .destination-ticket .destination-arrow{font-size:1.2rem;font-weight:400;color:#efc36a}
 .destination-ticket .destination-points{padding-top:8px;font-size:.8rem;color:#cbbf9f}
 .destination-ticket .destination-label{grid-row:1/4;font-size:1rem;color:#fff0cd}
+
+/* A private destination map takes the place of the ticket row, in the same hand. */
+#private{overflow-anchor:none}.destination-heading{display:flex;align-items:center;gap:8px;margin:26px 0 12px}.destination-heading h3{flex:1;margin:0}
+.destination-map-back{position:relative;flex:none;min-height:0;height:22px;padding:0 9px;line-height:1;font-size:1rem;box-shadow:none}.destination-map-back::before{content:"";position:absolute;inset:-11px -6px}
+button.destination-ticket{min-width:0;min-height:0;color:#fff0cd;background:#162834;box-shadow:none;font-weight:650}
+.destination-viewport{position:relative;min-width:0;overflow-anchor:none}.destination-viewport[data-animating=true]{overflow:hidden;transition:height .3s ease}
+.destination-viewport[data-animating=true]>.held-tickets,.destination-viewport[data-animating=true]>.destination-map{position:absolute;top:0;left:0;width:100%}
+.destination-viewport>.held-tickets,.destination-viewport>.destination-map{transition:opacity .3s ease,transform .3s ease}
+.destination-viewport[data-open=true]>.held-tickets{opacity:0;transform:translateY(-8px);pointer-events:none}
+.destination-map{padding:2px;opacity:0;transform:translateY(8px)}.destination-viewport[data-open=true]>.destination-map{opacity:1;transform:translateY(0)}
+.destination-map-status{position:absolute;inset:0;display:grid;place-items:center;margin:0;padding:16px;text-align:center}.destination-map-status:empty{display:none}
+.destination-line-shadow,.destination-line-gold{fill:none;stroke-linecap:round}.destination-line-shadow{stroke:#18232d;stroke-width:5}.destination-line-gold{stroke:#ffd67a;stroke-width:2.5;stroke-dasharray:7.5 7.5}
+.destination-ring-shadow,.destination-ring-gold{fill:none}.destination-ring-shadow{stroke:#18232d;stroke-width:8}.destination-ring-gold{stroke:#ffd67a;stroke-width:5}
+@media(prefers-reduced-motion:reduce){.destination-viewport[data-animating=true],.destination-viewport>.held-tickets,.destination-viewport>.destination-map{transition:none}}

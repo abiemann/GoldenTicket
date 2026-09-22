@@ -27,9 +27,12 @@ public sealed record CompanionPublicSnapshot(PublicView? Game, int? RevealSeatId
 /// <summary>The current public board instruction, shared with the laptop without revealing a hand.</summary>
 public sealed record CompanionGuidance(string Title, string Instruction);
 /// <summary>The public upright board crop and laptop's placement cues, in 960 by 600 board coordinates.
-/// A missing image means the current computer step is waiting for a usable camera preview.</summary>
-public sealed record CompanionBoardMap(string? ImageId, IReadOnlyList<CompanionMapPoint> Targets);
+/// A missing image means the current turn is waiting for a usable camera preview.</summary>
+public sealed record CompanionBoardMap(string? ImageId, IReadOnlyList<CompanionMapPoint> Targets,
+    IReadOnlyList<CompanionMapCity>? Cities = null);
 public sealed record CompanionMapPoint(double X, double Y, int Number);
+/// <summary>Public board geometry. Every mapped city is included independently of anyone's tickets.</summary>
+public sealed record CompanionMapCity(string Id, string Name, double X, double Y);
 /// <summary>A bounded, transient preview of the public board. Never a screen capture or game evidence.</summary>
 public sealed record CompanionBoardImage(string Id, byte[] Jpeg)
 {
@@ -57,7 +60,8 @@ public sealed record CompanionResultImage(string SessionId, long StateVersion, C
         bytes.AsSpan(8, 8).SequenceEqual(new byte[] { 0, 0, 0, 13, 73, 72, 68, 82 });
 }
 public sealed record CompanionRoute(string Id, string Label, int Length, string Color);
-public sealed record CompanionTicket(string Id, string Label, int Points, string? From = null, string? To = null);
+public sealed record CompanionTicket(string Id, string Label, int Points, string? From = null, string? To = null,
+    string? FromCityId = null, string? ToCityId = null);
 public sealed record CompanionPrivateSnapshot(SeatView View, LegalActions Actions,
     IReadOnlyList<CompanionTicket> HeldTickets, IReadOnlyList<CompanionTicket> OfferedTickets,
     int MinimumKeep);

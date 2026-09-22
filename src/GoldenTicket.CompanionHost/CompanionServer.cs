@@ -252,7 +252,12 @@ public sealed partial class CompanionServer(ICompanionGameBridge bridge, TimePro
                 cancel.CancelAfter(authorization.Value.ValidFor);
                 var before = await bridge.ReadPublicAsync(cancel.Token);
                 var receipt = await bridge.ExecuteAsync(new SeatId(request.Seat), command, cancel.Token);
-                var continuation = receipt.Accepted
+                // A camera refusal has not spent the player's choice or advanced the
+                // game. Keep that same revealed turn available so they can retry.
+                var retryOnSameTurn = !receipt.Accepted && receipt.Code == "BoardCheckRequired" &&
+                    (command.Kind is "drawTrain" or "drawTickets" or "keepTickets") &&
+                    receipt.StateVersion == command.ExpectedStateVersion;
+                var continuation = receipt.Accepted || retryOnSameTurn
                     ? await ContinuePrivateViewAsync(credentials, request, before, receipt.StateVersion, context.RequestAborted)
                     : null;
                 if (continuation is null) _authority.InvalidatePrivateGrants();

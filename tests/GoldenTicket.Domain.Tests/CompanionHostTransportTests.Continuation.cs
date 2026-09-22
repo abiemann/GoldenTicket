@@ -141,10 +141,11 @@ public partial class CompanionHostTransportTests
         Assert.Equal(3, game.Public.TurnNumber);
     }
 
-    private static async Task<GameCoordinator> CreateActiveContinuationGame(CancellationToken token, ulong seed = 91)
+    private static async Task<GameCoordinator> CreateActiveContinuationGame(CancellationToken token, ulong seed = 91,
+        InMemorySessionStore? store = null)
     {
         var game = await GameCoordinator.CreateAsync(new GameRules(TestManifest.Manifest, TestManifest.Catalog),
-            new InMemorySessionStore(), new SessionSetup(SessionId.New(),
+            store ?? new InMemorySessionStore(), new SessionSetup(SessionId.New(),
                 [new Seat(new(1), "Alex", PlayerColor.Blue, SeatKind.Human, AiDifficulty.Standard),
                  new Seat(new(2), "Jordan", PlayerColor.Red, SeatKind.Human, AiDifficulty.Standard)],
                 new(1), VerificationMode.Manual), DeterministicRandom.SeedFrom(seed), token);
@@ -164,12 +165,15 @@ public partial class CompanionHostTransportTests
         public int PublicReads => Volatile.Read(ref _publicReads);
         public CompanionGuidance? Guidance { get; set; }
         public CompanionBoardMap? BoardMap { get; set; }
+        public CompanionBoardInteraction? BoardInteraction { get; set; }
+        public bool RejectNextDrawForBoardCheck { get; set; }
         public Func<string, CancellationToken, Task<CompanionBoardImage?>>? BoardImageReader { get; set; }
         public Func<CancellationToken, Task>? AfterPrivateRead { get; set; }
         public async Task<CompanionPublicSnapshot> ReadPublicAsync(CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _publicReads);
-            return (await _inner.ReadPublicAsync(cancellationToken)) with { Guidance = Guidance, BoardMap = BoardMap };
+            return (await _inner.ReadPublicAsync(cancellationToken)) with
+            { Guidance = Guidance, BoardMap = BoardMap, BoardInteraction = BoardInteraction };
         }
         public Task<CompanionBoardImage?> ReadBoardImageAsync(string id, CancellationToken cancellationToken = default) =>
             BoardImageReader?.Invoke(id, cancellationToken) ?? Task.FromResult<CompanionBoardImage?>(null);
@@ -181,7 +185,16 @@ public partial class CompanionHostTransportTests
             return result;
         }
         public Task<CompanionCommandReceipt> ExecuteAsync(SeatId seat, CompanionCommand command,
-            CancellationToken cancellationToken = default) => _inner.ExecuteAsync(seat, command, cancellationToken);
+            CancellationToken cancellationToken = default)
+        {
+            if (command.Kind == "drawTrain" && RejectNextDrawForBoardCheck)
+            {
+                RejectNextDrawForBoardCheck = false;
+                return Task.FromResult(new CompanionCommandReceipt(false, false, game.Public.StateVersion,
+                    "BoardCheckRequired", "Keep the board clear, then try again."));
+            }
+            return _inner.ExecuteAsync(seat, command, cancellationToken);
+        }
     }
 
     private sealed class ContinuationHost(GameCoordinator game, CompanionServer server, ContinuationBridge bridge,
