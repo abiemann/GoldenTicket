@@ -61,6 +61,7 @@ public sealed partial class MainViewModel
         _cardActionBoardWarning = message;
         if (message is null)
         {
+            Game.UpdateInventoryProblemMarkers("card", null);
             _lastCardBoardProblemLogKey = null;
             if (_cardBoardGuidance is not null && Game.GuidanceInstruction == _cardBoardGuidance)
                 Game.ClearGuidance();
@@ -110,7 +111,9 @@ public sealed partial class MainViewModel
                     "The claim is still recorded. Check the board view before drawing cards."
             };
         }
-        return "Check for unclaimed or misplaced trains. The board must match the game before drawing cards.";
+        return observation.UnexpectedDetections.Count > 0
+            ? "The camera flagged trains outside the claimed routes. Check the yellow spheres on the board."
+            : "The camera could not verify the board. Keep it clear while it checks again.";
     }
 
     private void LogCardBoardProblem(GameTableAnalysis analysis, BoardInventoryObservation observation,
@@ -133,6 +136,7 @@ public sealed partial class MainViewModel
             ageMs = analysis.Board.Age.TotalMilliseconds,
             analysis.CropRevision, analysis.ModelRevision,
             state = observation.State.ToString(), route = routeId, observation.UnexpectedTrains,
+            observation.UnexpectedDetections,
             cardCheckPending = _cardBoardCheck is not null,
             nearbyCandidates = routeId is null ? Array.Empty<object>() : DescribeNearbyPlacementCandidates(analysis, routeId)
         });
@@ -176,12 +180,25 @@ public sealed partial class MainViewModel
         }
         var observation = _cardBoardMonitor!.Observe(analysis.Board, analysis.Candidates,
             analysis.CropRevision, analysis.ModelRevision);
+        Game.UpdateInventoryProblemMarkers("card", BoardFirstProposal is null ? observation : null);
         if (CardBoardHasProblem(observation))
         {
             LogCardBoardProblem(analysis, observation, coordinator);
             SetCardBoardWarning(CardBoardProblem(observation, coordinator));
         }
-        else if (observation.Confirmed) SetCardBoardWarning(null);
+        else if (observation.State is BoardInventoryState.Stabilizing or BoardInventoryState.Confirmed)
+        {
+            // A fresh matching board corrects the warning immediately. Awarding a card still
+            // requires the separate post-click verifier below to reach Confirmed.
+            if (_cardActionBoardWarning is { } previous)
+                BoardInteractionLog.Write("card-action.board-problem-cleared", new
+                {
+                    session = coordinator.SessionId.Value, version = coordinator.Public.StateVersion,
+                    analysis.Board.Sequence, analysis.Board.Epoch, previous
+                });
+            if (_cardActionBoardWarning is not null || _cardBoardCheck is null)
+                SetCardBoardWarning(null);
+        }
 
         if (_cardBoardCheck is not { } check) return;
         if (!CardBoardContextCurrent(check.Coordinator, check.Version))

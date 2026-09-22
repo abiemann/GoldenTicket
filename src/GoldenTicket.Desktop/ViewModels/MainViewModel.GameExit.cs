@@ -18,6 +18,7 @@ public sealed partial class MainViewModel
     private long _gameExitInventoryCameraEpoch;
     private long _gameExitInventoryCropRevision;
     private long _gameExitMinimumFrameSequence;
+    private bool _gameExitObserveAfterTimeout;
 
     [ObservableProperty] private bool _isGameExitMenuOpen;
     [ObservableProperty] private bool _isGameExitSaving;
@@ -33,6 +34,7 @@ public sealed partial class MainViewModel
         // The solo opening destination choice is deliberately persistent on the public table.
         // Cover it with this modal, then reveal the same choice when the player returns.
         if (!ShowSoloOpeningTicketsOnBoard) HidePrivateSeat();
+        ClearGameExitInventoryCheck();
         GameExitInventorySummary = DescribeExpectedTrainInventory();
         GameExitStatus = null;
         IsGameExitMenuOpen = true;
@@ -43,6 +45,7 @@ public sealed partial class MainViewModel
     {
         if (!IsGameExitMenuOpen || IsGameExitSaving) return;
         IsGameExitMenuOpen = false;
+        ClearGameExitInventoryCheck();
         GameExitStatus = null;
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
     }
@@ -68,8 +71,9 @@ public sealed partial class MainViewModel
 
     private void ObserveGameExitInventory()
     {
-        if (_gameExitInventoryVerifier is not { } verifier ||
-            _gameExitInventoryCompletion is not { } completion || completion.Task.IsCompleted ||
+        if (!IsGameExitMenuOpen || _gameExitInventoryVerifier is not { } verifier ||
+            (!_gameExitObserveAfterTimeout &&
+                (_gameExitInventoryCompletion is not { } waiting || waiting.Task.IsCompleted)) ||
             Camera.GameTableAnalysis is not { } analysis ||
             !Camera.IsGameTablePreviewUpright ||
             analysis.Board.Sequence <= _gameExitMinimumFrameSequence) return;
@@ -77,20 +81,32 @@ public sealed partial class MainViewModel
         var observation = verifier.Observe(analysis.Board, analysis.Candidates,
             analysis.CropRevision, analysis.ModelRevision);
         _lastGameExitInventoryObservation = observation;
+        UpdateGameExitEvidence(analysis, observation);
         BoardInteractionLog.Write("save.board-check.frame", new
         {
-            analysis.Board.Sequence, analysis.Board.Epoch,
+            analysis.Board.Sequence, analysis.Board.Epoch, analysis.Board.CapturedAt,
             analysis.CropRevision, analysis.ModelRevision,
             state = observation.State.ToString(),
-            observation.RouteId, observation.UnexpectedTrains,
+            observation.RouteId, observation.UnexpectedTrains, observation.UnexpectedDetections,
             afterPhoto = _gameExitMinimumFrameSequence > 0
         });
+        if (_gameExitObserveAfterTimeout)
+        {
+            if (observation.State is BoardInventoryState.Stabilizing or BoardInventoryState.Confirmed)
+            {
+                ClearGameExitInventoryCheck();
+                GameExitStatus = "The board matches again. Select Save Game to save it.";
+            }
+            else if (observation.State != BoardInventoryState.WaitingForFreshFrame)
+                GameExitStatus = DescribeGameExitInventoryIssue(observation) + " Then try Save Game again.";
+            return;
+        }
         if (observation.Confirmed)
         {
             _gameExitInventoryFrameSequence = analysis.Board.Sequence;
             _gameExitInventoryCameraEpoch = analysis.Board.Epoch;
             _gameExitInventoryCropRevision = analysis.CropRevision;
-            completion.TrySetResult(observation);
+            _gameExitInventoryCompletion!.TrySetResult(observation);
         }
         else
         {
@@ -123,9 +139,13 @@ public sealed partial class MainViewModel
                 $"The camera cannot clearly identify the trains or their colors on {route}. Check their positions and lighting.",
             BoardInventoryState.UnexpectedTrain when route is not null =>
                 $"The camera sees extra trains on {route}. Keep this route's placement unchanged while saving.",
+            BoardInventoryState.UnexpectedTrain when observation.UnexpectedDetections.Count > 0 =>
+                $"The camera flagged {observation.UnexpectedDetections.Count} possible extra or misplaced " +
+                $"train{(observation.UnexpectedDetections.Count == 1 ? "" : "s")}. " +
+                "Check the numbered boxes in the board image; a highlighted detection may be mistaken.",
             BoardInventoryState.UnexpectedTrain =>
-                "The camera sees an extra or misplaced train but cannot identify its route confidently. " +
-                "Check for pieces outside the claimed routes and any unfinished placement.",
+                "The camera returned a train detection with no usable position. " +
+                "Check the camera crop, then retry the board check.",
             BoardInventoryState.MissingTrains =>
                 "The camera cannot verify all the expected trains. Check that every claimed route is still occupied.",
             BoardInventoryState.WrongColor =>
@@ -158,6 +178,12 @@ public sealed partial class MainViewModel
             GameExitStatus = "Finish the opening destinations before saving this game.";
             return;
         }
+        if (BoardFirstProposal is { } proposal)
+        {
+            GameExitStatus = $"Your detected route, {proposal.RouteText}, has not been paid for. " +
+                "Return to Game to finish payment, or remove those trains and cancel the route before saving.";
+            return;
+        }
         if (!Camera.CanCaptureGameTablePhoto || !Camera.IsGameTablePreviewUpright ||
             Camera.GameTableAnalysis is not { Board.Age: var age } || age > TimeSpan.FromSeconds(2))
         {
@@ -167,6 +193,7 @@ public sealed partial class MainViewModel
         }
 
         IsGameExitSaving = true;
+        ClearGameExitInventoryCheck();
         SetOperationInProgress(true);
         GameExitStatus = "Checking every train on the board by route and color…";
         var capturedVersion = coordinator.Public.StateVersion;
@@ -192,6 +219,7 @@ public sealed partial class MainViewModel
             }
             catch (TimeoutException)
             {
+                _gameExitObserveAfterTimeout = true;
                 GameExitStatus = DescribeGameExitInventoryIssue(_lastGameExitInventoryObservation) +
                     " Then try Save Game again.";
                 return;
@@ -288,6 +316,7 @@ public sealed partial class MainViewModel
                 }
                 catch (TimeoutException)
                 {
+                    _gameExitObserveAfterTimeout = true;
                     throw new InvalidOperationException(
                         "The camera could not confirm that the board still matches the photo. " +
                         DescribeGameExitInventoryIssue(_lastGameExitInventoryObservation));
@@ -320,13 +349,13 @@ public sealed partial class MainViewModel
         }
         finally
         {
-            _gameExitInventoryVerifier = null;
+            if (!_gameExitObserveAfterTimeout) _gameExitInventoryVerifier = null;
             _gameExitInventoryCompletion = null;
-            _lastGameExitInventoryObservation = null;
+            if (!_gameExitObserveAfterTimeout) _lastGameExitInventoryObservation = null;
             _gameExitInventoryFrameSequence = 0;
             _gameExitInventoryCameraEpoch = 0;
             _gameExitInventoryCropRevision = 0;
-            _gameExitMinimumFrameSequence = 0;
+            if (!_gameExitObserveAfterTimeout) _gameExitMinimumFrameSequence = 0;
             IsGameExitSaving = false;
             SetOperationInProgress(false);
         }
@@ -403,6 +432,7 @@ public sealed partial class MainViewModel
         ShowGameplayScreen(Screen.Setup);
         Game.ShowWelcome();
         IsGameExitMenuOpen = false;
+        ClearGameExitInventoryCheck();
         GameExitStatus = null;
         NotifyHumanPresentation();
         await LoadSavedSessionsAsync();

@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using GoldenTicket.Application;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain.Engine;
@@ -11,6 +13,58 @@ namespace GoldenTicket.Domain.Tests;
 
 public sealed class DesktopCardActionBoardTests
 {
+    [Fact]
+    public async Task Temporary_unlocated_detection_clears_on_the_next_fresh_matching_board_without_spending_a_turn()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var model = fixture.Model;
+        fixture.PublishCleanBaseline();
+        var before = await fixture.SnapshotAsync();
+        var handCount = fixture.Coordinator.Public.SeatOf(before.Seat).TrainCardCount;
+        var at = DateTimeOffset.UtcNow;
+        fixture.Publish(3, at, offRouteTrain: true);
+        var warning = model.Game.GuidanceInstruction;
+        Assert.Contains("yellow spheres", warning);
+        var target = Assert.Single(model.Game.PlacementTargets);
+        Assert.True(model.Game.ShowPlacementTarget);
+        Assert.Equal(.476 * 960, target.X, precision: 5);
+        Assert.Equal(.9135 * 600, target.Y, precision: 5);
+        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+
+        // Neither reusing a capture nor losing fresh camera evidence proves correction.
+        fixture.Publish(3, at.AddMilliseconds(100));
+        Assert.Equal(warning, model.Game.GuidanceInstruction);
+        Assert.Equal(target, Assert.Single(model.Game.PlacementTargets));
+        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+        fixture.Publish(4, at.AddMilliseconds(200), stale: true);
+        Assert.Equal(warning, model.Game.GuidanceInstruction);
+        Assert.Equal(target, Assert.Single(model.Game.PlacementTargets));
+        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+
+        fixture.Publish(5, at.AddMilliseconds(300));
+        Assert.Equal(model.Table.Instruction, model.Game.GuidanceInstruction);
+        Assert.Empty(model.Game.PlacementTargets);
+        Assert.False(model.Game.ShowPlacementTarget);
+        Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
+        Assert.True(model.DrawSoloTicketsCommand.CanExecute(null));
+        await fixture.AssertUnchangedAsync(before);
+
+        // Clearing a warning does not itself authorize or retry a card draw.
+        var draw = model.DrawSoloBlindCommand.ExecuteAsync(null);
+        Assert.False(draw.IsCompleted);
+        var freshAt = DateTimeOffset.UtcNow;
+        fixture.Publish(6, freshAt);
+        Assert.False(draw.IsCompleted);
+        await fixture.AssertUnchangedAsync(before);
+        fixture.Publish(7, freshAt.AddSeconds(1.1));
+        await draw.WaitAsync(TimeSpan.FromSeconds(7), TestContext.Current.CancellationToken);
+        Assert.Equal(before.Version + 1, fixture.Coordinator.Public.StateVersion);
+        Assert.Equal(before.Turn, fixture.Coordinator.Public.TurnNumber);
+        Assert.Equal(before.Seat, fixture.Coordinator.Public.ActiveSeatId);
+        Assert.Equal(handCount + 1, fixture.Coordinator.Public.SeatOf(before.Seat).TrainCardCount);
+        Assert.Equal(TurnPhase.AwaitingSecondTrainCard, fixture.Coordinator.Public.TurnPhase);
+    }
+
     [Fact]
     public async Task Claimed_Calgary_trains_with_unclear_colors_clear_the_warning_and_allow_a_fresh_draw()
     {
@@ -26,7 +80,7 @@ public sealed class DesktopCardActionBoardTests
         Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
 
         fixture.Publish(2, at.AddSeconds(1.1), claimedCalgaryCount: 4, claimedCalgaryColor: null);
-        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+        Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
         fixture.Publish(3, at.AddSeconds(2.2), claimedCalgaryCount: 4, claimedCalgaryColor: null);
         Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
         Assert.Null(model.BoardFirstProposal);
@@ -76,7 +130,7 @@ public sealed class DesktopCardActionBoardTests
         await fixture.AssertUnchangedAsync(before);
 
         fixture.Publish(2, at.AddSeconds(1.1), claimedCalgaryCount: 4, claimedCalgaryColor: null);
-        Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+        Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
         fixture.Publish(3, at.AddSeconds(2.2), claimedCalgaryCount: 4, claimedCalgaryColor: null);
         Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
         Assert.True(model.DrawSoloFaceUpCommand.CanExecute(faceUp));
@@ -108,7 +162,7 @@ public sealed class DesktopCardActionBoardTests
         Assert.True(model.IsSoloHumanTurn);
 
         fixture.Publish(3, at.AddSeconds(2.2));
-        Assert.False(model.DrawSoloFaceUpCommand.CanExecute(faceUp));
+        Assert.True(model.DrawSoloFaceUpCommand.CanExecute(faceUp));
         fixture.Publish(4, at.AddSeconds(3.3));
         Assert.True(model.DrawSoloFaceUpCommand.CanExecute(faceUp));
         Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
@@ -390,14 +444,25 @@ public sealed class DesktopCardActionBoardTests
         }
 
         public void Publish(long sequence, DateTimeOffset capturedAt, bool blackTrains = false,
-            bool stale = false, int? claimedCalgaryCount = null, MarkerColor? claimedCalgaryColor = MarkerColor.Black)
+            bool stale = false, int? claimedCalgaryCount = null, MarkerColor? claimedCalgaryColor = MarkerColor.Black,
+            bool offRouteTrain = false)
         {
             const int width = 960, height = 600;
             var pixels = new byte[width * height * 4];
             Array.Fill(pixels, (byte)180);
+            if (Model.Camera.GameTablePreview is null)
+            {
+                var preview = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32,
+                    null, pixels, width * 4);
+                preview.Freeze();
+                Model.Camera.GameTablePreview = preview;
+            }
             var candidates = new List<PieceCandidate>();
             if (blackTrains) Paint("little-rock--saint-louis", 2, MarkerColor.Black);
             if (claimedCalgaryCount is { } count) Paint("calgary--helena", count, claimedCalgaryColor);
+            if (offRouteTrain)
+                candidates.Add(new(PieceCandidateKind.Train,
+                    [new(.465, .905), new(.487, .905), new(.487, .922), new(.465, .922)], .95));
 
             void Paint(string routeId, int trainCount, MarkerColor? color)
             {

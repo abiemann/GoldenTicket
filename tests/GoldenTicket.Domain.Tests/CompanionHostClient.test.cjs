@@ -25,7 +25,7 @@ function page(options = {}) {
   }
   const get = id => { const live=[...nodes.values()].flatMap(descendants).find(node=>node.id===id);if(live)return live;if (!nodes.has(id)) nodes.set(id, new Node()); return nodes.get(id); };
   const state = {
-    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '15', controllerGeneration: 1, handoffGeneration: 1,
+    paired: options.paired !== false, pending: false, csrf: 'csrf-token', apiVersion: '1', assetsVersion: '16', controllerGeneration: 1, handoffGeneration: 1,
     snapshot: { canControl: true, revealSeatId: 1, message: 'Pass this device to Alex.', profileId: 'classic-us', manifestHash: 'hash', routes: [],
       game: { sessionId: 'match', stateVersion: 1, activeSeatId: 1, turnNumber: 1, turnPhase: 'TurnStart', seats: [{ seatId: 1, displayName: 'Alex', symbol: 'A', color: 'Blue', routeScore: 0, trainsRemaining: 45 }], pendingClaim: null } }
   };
@@ -166,7 +166,7 @@ test('SSE parses fragmented CRLF, multiline JSON and split UTF-8 without partial
 test('malformed or oversized SSE events cover cards and reconnect without accepting partial data', async () => {
   for(const invalid of [
     'event: session\ndata: {bad json}\n\n',
-    'event: session\ndata: {"paired":true,"pending":false,"apiVersion":"1","assetsVersion":"15"}\n\n',
+    'event: session\ndata: {"paired":true,"pending":false,"apiVersion":"1","assetsVersion":"16"}\n\n',
     'data: '+ 'x'.repeat(1024*1024+1),
     Uint8Array.of(0xff)
   ]) {
@@ -511,6 +511,57 @@ test('removed or replaced camera proposals clear payment choices and reject stal
   assert.equal(privateNode(p,'Pay for detected route'),undefined); assert.equal(privateNode(p,'Draw a blind card').disabled,false);
   detect(p,{proposalId:'placement-2'}); await p.push();
   assert.equal(privateNode(p,'Pay for detected route').disabled,true); assert.equal(privateNode(p,'Pay with 2 Red')['aria-pressed'],'false');
+});
+test('cancelling a detected route needs no payment and keeps the same hand open', async () => {
+  const reply=deferred(),p=page({fetch:url=>url==='/api/command'?reply.promise:undefined});
+  await flush();cameraTurn(p);detect(p);await p.push();await p.client.reveal();
+  const hand=descendants(p.get('private')).find(node=>node.className==='cards');
+  const destinations=p.client.state().destinationView;
+  assert.equal(privateNode(p,'Pay for detected route').disabled,true);
+  const cancel=privateNode(p,'Cancel detected route');assert.equal(cancel.disabled,false);
+  assert.ok(descendants(p.get('private')).some(node=>node.textContent==='Wrong route? Remove those trains, then cancel.'));
+  const sending=cancel.events.click();await flush();
+  await cancel.events.click();await flush();
+  const commands=p.requests.filter(r=>r.url==='/api/command');assert.equal(commands.length,1);
+  const payload=JSON.parse(commands[0].request.body);
+  assert.equal(payload.command.kind,'cancelDetectedRoute');assert.equal(payload.command.routeId,'first-route');
+  assert.equal(payload.command.detectedClaimId,'placement-1');assert.equal(payload.command.payment,undefined);
+  p.state.snapshot.boardInteraction.detectedRoute=null;p.state.snapshot.boardInteraction.cardActionsBlocked=false;
+  await p.push();
+  p.state.handoffGeneration++;
+  reply.resolve(p.response({accepted:true,message:'Cancelled.',continuation:{grant:'cancel-grant',handoffGeneration:p.state.handoffGeneration,snapshot:structuredClone(p.state.snapshot),data:structuredClone(p.data)}}));
+  await sending;await flush();
+  assert.equal(p.get('private').hidden,false);assert.equal(p.client.state().grant,'cancel-grant');
+  assert.equal(descendants(p.get('private')).find(node=>node.className==='cards'),hand);
+  assert.equal(p.client.state().destinationView,destinations);assert.equal(privateNode(p,'Cancel detected route'),undefined);
+  assert.equal(privateNode(p,'Draw a blind card').disabled,false);
+  detect(p,{proposalId:'placement-2'});await p.push();
+  assert.equal(privateNode(p,'Pay for detected route').disabled,true);
+});
+test('cancel cannot dismiss a replacement proposal through an old button or mismatched route', async () => {
+  const p=page();await flush();cameraTurn(p);detect(p);await p.push();await p.client.reveal();
+  const cancel=privateNode(p,'Cancel detected route');
+  detect(p,{proposalId:'placement-2'});await p.push();
+  await cancel.events.click();await flush();
+  await p.client.submit('cancelDetectedRoute',{routeId:'other-route',detectedClaimId:'placement-2'});
+  await p.client.submit('cancelDetectedRoute',{routeId:'first-route',detectedClaimId:'placement-1'});
+  assert.equal(p.requests.some(r=>r.url==='/api/command'),false);
+  assert.ok(privateNode(p,'Cancel detected route'));
+});
+test('verified payment selection remains ready through same-turn camera guidance updates', async () => {
+  const p=page();await flush();cameraTurn(p);detect(p);await p.push();await p.client.reveal();
+  await privateNode(p,'Pay with 1 Red + 1 Locomotive').events.click();
+  const hand=descendants(p.get('private')).find(node=>node.className==='cards');
+  for(let frame=0;frame<5;frame++) {
+    p.state.snapshot.guidance={title:'Alex',instruction:`Camera update ${frame}`};await p.push();
+    assert.equal(privateNode(p,'Pay for detected route').disabled,false);
+    assert.equal(privateNode(p,'Pay with 1 Red + 1 Locomotive')['aria-pressed'],'true');
+    assert.equal(descendants(p.get('private')).find(node=>node.className==='cards'),hand);
+  }
+  await privateNode(p,'Pay for detected route').events.click();await flush();
+  const payload=JSON.parse(p.requests.find(r=>r.url==='/api/command').request.body);
+  assert.deepEqual(payload.command.payment,{color:'Red',colorCards:1,locomotives:1});
+  assert.equal(payload.command.detectedClaimId,'placement-1');
 });
 test('camera-only pushes preserve in-progress destination ticket checkboxes', async () => {
   const p=page(), choices=await ticketOffer(p); await checkTicket(choices[0],true);

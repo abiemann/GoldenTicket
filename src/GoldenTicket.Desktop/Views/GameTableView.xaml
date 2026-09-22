@@ -517,11 +517,15 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="90" />
+                                <ColumnDefinition Width="90" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="If this is the wrong route, remove the pieces to clear the suggestion."
+                            <TextBlock Grid.Column="0" Text="Wrong route? Remove those trains, then cancel."
                                        Foreground="#FFDCC18A" FontSize="10" TextWrapping="Wrap"
                                        VerticalAlignment="Center" />
-                            <Button Grid.Column="1" Content="OK" Width="76" Height="32" Margin="0"
+                            <Button Grid.Column="1" Content="Cancel" Width="76" Height="32" Margin="0"
+                                    HorizontalAlignment="Right" Style="{StaticResource GameTableActionButtonStyle}"
+                                    Command="{Binding CancelBoardFirstClaimCommand}" />
+                            <Button Grid.Column="2" Content="OK" Width="76" Height="32" Margin="0"
                                     HorizontalAlignment="Right" Style="{StaticResource GameTableActionButtonStyle}"
                                     IsEnabled="{Binding BoardFirstProposal.CanConfirmPayment}"
                                     Command="{Binding ConfirmBoardFirstClaimCommand}" />

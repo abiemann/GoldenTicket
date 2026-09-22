@@ -2,13 +2,90 @@ using System.Reflection;
 using GoldenTicket.CompanionHost;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain.Engine;
+using GoldenTicket.Vision;
 
 namespace GoldenTicket.Domain.Tests;
 
 public sealed partial class AutomaticPhysicalFlowTests
 {
     [Fact]
-    public async Task Companion_updates_publish_same_version_camera_changes_without_repeating_unchanged_frames()
+    public async Task Companion_pushes_transient_board_warning_recovery_without_changing_the_turn_or_hand()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var model = await StartCompanionMatchAsync();
+        try
+        {
+            var bridge = GetCompanionBridge(model);
+            var game = GetCoordinator(model);
+            var version = game.Public.StateVersion;
+            var active = game.Public.ActiveSeatId;
+            var turn = game.Public.TurnNumber;
+            var handCount = game.Public.SeatOf(active).TrainCardCount;
+            var stateHash = await game.ComputeStateHashAsync(token);
+            model.Camera.IsGameTablePreviewUpright = true;
+            var at = DateTimeOffset.UtcNow;
+            PublishTrains(model.Camera, "duluth--omaha--a", 1, at, MarkerColor.Blue, count: 0);
+            await WaitUntilAsync(() => typeof(MainViewModel)
+                .GetField("_boardFirstLegalActions", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(model) is not null);
+            var clean = model.Camera.GameTableAnalysis!;
+            Assert.False((await bridge.ReadPublicAsync(token)).BoardInteraction!.CardActionsBlocked);
+            using var updates = ObserveCompanionUpdates(model);
+
+            // A false detection outside every route has no route-specific proposal to dismiss.
+            Publish(2, extraTrain: true);
+            Assert.True(updates.Changes.Reader.TryRead(out _));
+            var blocked = (await bridge.ReadPublicAsync(token)).BoardInteraction!;
+            Assert.True(blocked.CardActionsBlocked);
+            Assert.NotNull(blocked.Message);
+            Assert.Null(blocked.DetectedRoute);
+            Assert.Equal(blocked.Message, model.Game.GuidanceInstruction);
+
+            // Reusing the bad frame's sequence with different candidates is not recovery.
+            Publish(2);
+            Assert.Equal(blocked, (await bridge.ReadPublicAsync(token)).BoardInteraction);
+            Assert.False(updates.Changes.Reader.TryRead(out _));
+            Publish(3, stale: true);
+            Assert.Equal(blocked, (await bridge.ReadPublicAsync(token)).BoardInteraction);
+            Assert.False(updates.Changes.Reader.TryRead(out _));
+
+            // The first fresh whole-board match clears the warning and pushes that change.
+            // Nobody clicks a card, reloads, or acknowledges an error to make this happen.
+            Publish(4);
+            Assert.True(updates.Changes.Reader.TryRead(out _));
+            var recovered = await bridge.ReadPublicAsync(token);
+            Assert.False(recovered.BoardInteraction!.CardActionsBlocked);
+            Assert.Null(recovered.BoardInteraction.Message);
+            Assert.Null(recovered.BoardInteraction.DetectedRoute);
+            Assert.NotEqual(blocked.Message, model.Game.GuidanceInstruction);
+            Assert.Equal(version, recovered.Game!.StateVersion);
+            Assert.Equal(version, game.Public.StateVersion);
+            Assert.Equal(active, game.Public.ActiveSeatId);
+            Assert.Equal(turn, game.Public.TurnNumber);
+            Assert.Equal(handCount, game.Public.SeatOf(active).TrainCardCount);
+            Assert.Equal(stateHash, await game.ComputeStateHashAsync(token));
+
+            void Publish(long sequence, bool extraTrain = false, bool stale = false)
+            {
+                var clock = new ManualFrameTimeProvider();
+                var frame = CameraFrame.CopyFromBgra32(clean.Board.Width, clean.Board.Height,
+                    clean.Board.Bgra32.Span, sequence, clean.Board.Epoch,
+                    at.AddMilliseconds(sequence * 100), clock);
+                if (stale) clock.Advance(TimeSpan.FromSeconds(3));
+                PieceCandidate[] candidates = extraTrain
+                    ? [new(PieceCandidateKind.Train,
+                        [new(.01, .01), new(.03, .01), new(.03, .03), new(.01, .03)], .95)]
+                    : [];
+                var analysis = clean with { Board = frame, Candidates = candidates };
+                typeof(CameraViewModel).GetProperty(nameof(CameraViewModel.GameTableAnalysis))!
+                    .GetSetMethod(nonPublic: true)!.Invoke(model.Camera, [analysis]);
+            }
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Fact]
+    public async Task Companion_updates_keep_detected_payment_ready_through_camera_changes_without_repeating_unchanged_frames()
     {
         var token = TestContext.Current.CancellationToken;
         var model = await StartCompanionMatchAsync();
@@ -28,20 +105,21 @@ public sealed partial class AutomaticPhysicalFlowTests
             Assert.False(updates.Changes.Reader.TryRead(out _));
 
             model.Camera.IsGameTablePreviewUpright = false;
-            Assert.True(updates.Changes.Reader.TryRead(out _));
-            var unready = await bridge.ReadPublicAsync(token);
-            Assert.Equal(version, unready.Game!.StateVersion);
-            Assert.False(unready.BoardInteraction!.DetectedRoute!.Ready);
+            Assert.False(updates.Changes.Reader.TryRead(out _));
+            var waitingForPayment = await bridge.ReadPublicAsync(token);
+            Assert.Equal(version, waitingForPayment.Game!.StateVersion);
+            Assert.True(waitingForPayment.BoardInteraction!.DetectedRoute!.Ready);
+            Assert.Equal(proposal.ProposalId, waitingForPayment.BoardInteraction.DetectedRoute.ProposalId);
 
             model.Camera.IsGameTablePreviewUpright = true;
-            // Losing orientation discards the analysis. Restoring orientation alone must
-            // not advertise the old proof as ready; new camera evidence is required.
+            // Payment uses the route already verified before the offer. Camera recovery
+            // and revisions no longer toggle readiness or disturb selected payment.
             Assert.False(updates.Changes.Reader.TryRead(out _));
-            Assert.False((await bridge.ReadPublicAsync(token)).BoardInteraction!.DetectedRoute!.Ready);
+            Assert.True((await bridge.ReadPublicAsync(token)).BoardInteraction!.DetectedRoute!.Ready);
             var resumed = DateTimeOffset.UtcNow.AddSeconds(6);
-            PublishBlueTrains(model.Camera, proposal.RouteId.Value, 6, resumed);
-            PublishBlueTrains(model.Camera, proposal.RouteId.Value, 7, resumed.AddSeconds(1.1));
-            Assert.True(updates.Changes.Reader.TryRead(out _));
+            PublishBlueTrains(model.Camera, proposal.RouteId.Value, 6, resumed, cropRevision: 2);
+            PublishBlueTrains(model.Camera, proposal.RouteId.Value, 7, resumed.AddSeconds(1.1), cropRevision: 2);
+            Assert.False(updates.Changes.Reader.TryRead(out _));
             Assert.True((await bridge.ReadPublicAsync(token)).BoardInteraction!.DetectedRoute!.Ready);
         }
         finally { await model.DisposeToolsAsync(); }

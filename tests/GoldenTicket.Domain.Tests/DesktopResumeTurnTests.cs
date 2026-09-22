@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using GoldenTicket.Application;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain;
@@ -187,6 +189,135 @@ public sealed class DesktopResumeTurnTests
         finally { await model.DisposeToolsAsync(); }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Camera_reload_marks_the_actual_extra_train_and_clears_it_only_on_a_fresh_matching_board(
+        bool offRoute)
+    {
+        var store = new InMemorySessionStore();
+        using var photos = new TestCheckpointPhotos();
+        var saved = await CreateAsync(store, computer: false);
+        var savedSeat = saved.Public.ActiveSeatId;
+        var savedTurn = saved.Public.TurnNumber;
+        Assert.True((await saved.SaveAndPackAwayAsync("Board with no claimed routes",
+            cancellationToken: TestContext.Current.CancellationToken)).SafeToPack);
+        await photos.AttachAsync((await saved.GetCheckpointAsync(
+            cancellationToken: TestContext.Current.CancellationToken))!);
+        var model = await ReloadAsync(store, photos);
+        try
+        {
+            var resumed = Coordinator(model);
+            var version = resumed.Public.StateVersion;
+            Assert.True(ClassicUsRouteGeometry.TryGetSlots("little-rock--saint-louis", out var routeSlots));
+            var location = offRoute ? new BoardSlotPoint(.476, .9135, 1, 0) : routeSlots[0];
+            var preview = BitmapSource.Create(960, 600, 96, 96, PixelFormats.Bgra32,
+                null, new byte[960 * 600 * 4], 960 * 4);
+            preview.Freeze();
+            model.Camera.GameTablePreview = preview;
+            model.Camera.IsGameTablePreviewUpright = true;
+            var readings = resumed.Public.Seats.Select((seat, index) =>
+                new ScoreMarkerReading(index, Enum.Parse<MarkerColor>(seat.Color.ToString()), 1,
+                    ScoreMarkerReadingStatus.Read, "saved score")).ToArray();
+            var at = DateTimeOffset.UtcNow;
+            long sequence = 0;
+            for (var index = 0; index < 12 && model.Game.PlacementTargets.Count == 0; index++)
+                Publish(++sequence, includeExtra: true);
+
+            var target = Assert.Single(model.Game.PlacementTargets);
+            Assert.True(model.Game.ShowPlacementTarget);
+            Assert.Equal(Math.Round(location.X * 960), target.X, precision: 5);
+            Assert.Equal(Math.Round(location.Y * 600), target.Y, precision: 5);
+            Assert.Contains("yellow spheres", model.Game.GuidanceInstruction);
+            if (!offRoute)
+                Assert.Contains("Little Rock - Saint Louis", model.Game.GuidanceInstruction);
+            Assert.Equal(SessionLifecycle.PackedAway, resumed.Public.Lifecycle);
+            Assert.False(model.IsResumeTurnAnnouncementOpen);
+            Assert.Equal(version, resumed.Public.StateVersion);
+
+            // A repeated capture and a stale clean capture are not proof of correction.
+            Publish(sequence, includeExtra: false);
+            Assert.Equal(target, Assert.Single(model.Game.PlacementTargets));
+            Publish(++sequence, includeExtra: false, stale: true);
+            Assert.Equal(target, Assert.Single(model.Game.PlacementTargets));
+            Assert.False(model.IsResumeTurnAnnouncementOpen);
+
+            // Remove the cue on the first fresh clean frame, but retain the two-frame
+            // verification gate before resuming the saved turn.
+            Publish(++sequence, includeExtra: false);
+            Assert.Empty(model.Game.PlacementTargets);
+            Assert.False(model.Game.ShowPlacementTarget);
+            Assert.Equal(SessionLifecycle.PackedAway, resumed.Public.Lifecycle);
+            Assert.False(model.IsResumeTurnAnnouncementOpen);
+            Assert.Equal(version, resumed.Public.StateVersion);
+
+            Publish(++sequence, includeExtra: false);
+            for (var attempt = 0; attempt < 100 && !model.IsResumeTurnAnnouncementOpen; attempt++)
+                await Task.Delay(20, TestContext.Current.CancellationToken);
+            Assert.True(model.IsResumeTurnAnnouncementOpen, model.Game.GuidanceInstruction);
+            Assert.Equal(SessionLifecycle.Active, resumed.Public.Lifecycle);
+            Assert.Equal(savedSeat, resumed.Public.ActiveSeatId);
+            Assert.Equal(savedTurn, resumed.Public.TurnNumber);
+            Assert.Empty(resumed.Public.RouteOwners);
+            Assert.Empty(model.Game.PlacementTargets);
+
+            void Publish(long captureSequence, bool includeExtra, bool stale = false)
+            {
+                var clock = stale ? new ManualFrameTimeProvider() : null;
+                var scene = BlueTrainAt(location, captureSequence,
+                    at.AddSeconds(captureSequence * 1.1), clock);
+                clock?.Advance(TimeSpan.FromSeconds(3));
+                typeof(CameraViewModel).GetProperty(nameof(CameraViewModel.GameTableAnalysis))!
+                    .SetValue(model.Camera, new GameTableAnalysis(scene.Frame,
+                        includeExtra ? [scene.Train] : [], readings, 1, 1, "synthetic-reload-test"));
+            }
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Fact]
+    public async Task Clearing_an_inactive_check_keeps_the_reload_blockers_visible()
+    {
+        var model = new MainViewModel(TestManifest.Manifest, new InMemorySessionStore());
+        try
+        {
+            var preview = BitmapSource.Create(960, 600, 96, 96, PixelFormats.Bgra32,
+                null, new byte[960 * 600 * 4], 960 * 4);
+            preview.Freeze();
+            model.Camera.GameTablePreview = preview;
+            model.Camera.IsGameTablePreviewUpright = true;
+            var problem = new BoardInventoryObservation(BoardInventoryState.UnexpectedTrain,
+                new Dictionary<MarkerColor, int>())
+            {
+                UnexpectedDetections = [new(.465, .905, .022, .017, .95, null, null)]
+            };
+            Update("restore", problem);
+            var marker = Assert.Single(model.Game.PlacementTargets);
+
+            // Gameplay observers run while the reload gate is active. Their resets
+            // must not clear the separate board-check warning that is blocking reload.
+            Update("card", null);
+            Update("placement", null);
+            Update("save", null);
+            Assert.Equal(marker, Assert.Single(model.Game.PlacementTargets));
+            Assert.True(model.Game.ShowPlacementTarget);
+
+            Update("restore",
+                new(BoardInventoryState.WaitingForFreshFrame, new Dictionary<MarkerColor, int>()));
+            Assert.Equal(marker, Assert.Single(model.Game.PlacementTargets));
+            Update("restore",
+                new(BoardInventoryState.Stabilizing, new Dictionary<MarkerColor, int>()));
+            Assert.Empty(model.Game.PlacementTargets);
+            Assert.False(model.Game.ShowPlacementTarget);
+
+            void Update(string source, BoardInventoryObservation? observation) =>
+                typeof(GameScreenViewModel).GetMethod("UpdateInventoryProblemMarkers",
+                    BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(model.Game,
+                    [source, observation, null]);
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
     private static async Task<GameCoordinator> CreateAsync(ISessionStore store, bool computer,
         bool completeSetup = true)
     {
@@ -234,7 +365,7 @@ public sealed class DesktopResumeTurnTests
             BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(model)!;
 
     private static (CameraFrame Frame, PieceCandidate Train) BlueTrainAt(BoardSlotPoint slot,
-        long sequence, DateTimeOffset at)
+        long sequence, DateTimeOffset at, TimeProvider? clock = null)
     {
         const int width = 960, height = 600;
         var pixels = Enumerable.Repeat((byte)180, width * height * 4).ToArray();
@@ -253,6 +384,6 @@ public sealed class DesktopResumeTurnTests
              new((double)(x + 11) / width, (double)(y - 7) / height),
              new((double)(x + 11) / width, (double)(y + 7) / height),
              new((double)(x - 11) / width, (double)(y + 7) / height)], .95);
-        return (CameraFrame.CopyFromBgra32(width, height, pixels, sequence, 1, at), train);
+        return (CameraFrame.CopyFromBgra32(width, height, pixels, sequence, 1, at, clock), train);
     }
 }

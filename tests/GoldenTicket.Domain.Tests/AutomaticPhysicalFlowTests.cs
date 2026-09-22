@@ -86,11 +86,13 @@ public sealed partial class AutomaticPhysicalFlowTests
             Assert.Equal(Screen.Table, model.Screen);
 
             PublishTrains(model.Camera, routeId, 4, at.AddSeconds(3.3), color, 0);
-            Assert.Equal("Invalid Move", model.Game.GuidanceTurn);
-            PublishTrains(model.Camera, routeId, 5, at.AddSeconds(4.4), color, 0);
             await WaitUntilAsync(() => model.Game.GuidanceTurn != "Invalid Move");
             Assert.Equal(model.Table.TurnText, model.Game.GuidanceTurn);
             Assert.False(model.Game.ShowPlacementTarget);
+            Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
+            Assert.Null(coordinator.Public.PendingClaim);
+            Assert.Equal(active, coordinator.Public.ActiveSeatId);
+            Assert.Equal(TurnPhase.TurnStart, coordinator.Public.TurnPhase);
         }
         finally { await model.DisposeToolsAsync(); }
     }
@@ -141,34 +143,35 @@ public sealed partial class AutomaticPhysicalFlowTests
                          .Take(payment.Locomotives)) card.IsSelected = true;
             Assert.True(proposal.CanConfirmPayment);
 
-            // A fresh board alignment changes the crop revision without changing the
-            // physical route. Keep the chosen cards visible, but pause payment until
-            // the route has been confirmed in the new crop.
+            // Camera changes cannot interrupt payment or discard the chosen cards.
             PublishBlueTrains(model.Camera, route.RouteId.Value, 5, at.AddSeconds(4.4),
                 cropRevision: 2);
             Assert.Same(proposal, model.BoardFirstProposal);
-            Assert.False(proposal.CameraEvidenceCurrent);
-            Assert.False(proposal.CanConfirmPayment);
-            await model.ConfirmBoardFirstClaimCommand.ExecuteAsync(null);
-            Assert.Null(coordinator.Public.PendingClaim);
+            Assert.True(proposal.CanConfirmPayment);
 
             PublishTrains(model.Camera, route.RouteId.Value, 6, at.AddSeconds(5.5),
                 MarkerColor.Blue, count: 0, cropRevision: 2);
             Assert.Same(proposal, model.BoardFirstProposal);
-            Assert.False(proposal.CanConfirmPayment);
-
-            PublishBlueTrains(model.Camera, route.RouteId.Value, 7, at.AddSeconds(6.6),
-                cropRevision: 2);
-            PublishBlueTrains(model.Camera, route.RouteId.Value, 8, at.AddSeconds(7.7),
-                cropRevision: 2);
-            PublishBlueTrains(model.Camera, route.RouteId.Value, 9, at.AddSeconds(8.8),
-                cropRevision: 2);
-            Assert.Same(proposal, model.BoardFirstProposal);
-            Assert.True(proposal.CameraEvidenceCurrent);
             Assert.True(proposal.CanConfirmPayment);
             Assert.Equal(payment.Total, proposal.SelectedCount);
             await model.ConfirmBoardFirstClaimCommand.ExecuteAsync(null);
             Assert.Null(model.BoardFirstProposal);
+            Assert.NotNull(coordinator.Public.PendingClaim);
+            Assert.Equal(active, coordinator.Public.ActiveSeatId);
+            Assert.Equal(TurnPhase.AwaitingPhysicalPlacement, coordinator.Public.TurnPhase);
+            Assert.Contains("Payment accepted", model.Game.GuidanceInstruction);
+            Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+            var reservedVersion = coordinator.Public.StateVersion;
+            await model.ConfirmBoardFirstClaimCommand.ExecuteAsync(null);
+            Assert.Equal(reservedVersion, coordinator.Public.StateVersion);
+
+            // The first clean post-payment capture cannot complete the claim alone.
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 7, at.AddSeconds(6.6),
+                cropRevision: 2);
+            Assert.NotNull(coordinator.Public.PendingClaim);
+            PublishBlueTrains(model.Camera, route.RouteId.Value, 8, at.AddSeconds(7.7),
+                cropRevision: 2);
+            await WaitUntilAsync(() => model.ShowScoreMarkerDetectionPrompt);
             Assert.Null(coordinator.Public.PendingClaim);
             Assert.Equal(active, coordinator.Public.RouteOwners[route.RouteId]);
             Assert.Equal("Scoring", model.Game.GuidanceTurn);
@@ -198,7 +201,7 @@ public sealed partial class AutomaticPhysicalFlowTests
     [InlineData("state")]
     [InlineData("missing-during-write")]
     [InlineData("extra-during-write")]
-    public async Task Board_first_payment_does_not_spend_when_its_confirmed_board_or_turn_changes(string change)
+    public async Task Board_first_payment_accepts_camera_changes_but_holds_the_turn_for_fresh_verification(string change)
     {
         var store = new DelayedPaymentStore();
         var model = new MainViewModel(ManifestLoader.LoadClassicUs(), store);
@@ -265,8 +268,18 @@ public sealed partial class AutomaticPhysicalFlowTests
             var beforeHand = await coordinator.GetSeatViewAsync(active, cancellationToken: TestContext.Current.CancellationToken);
             await model.ConfirmBoardFirstClaimCommand.ExecuteAsync(null);
 
-            Assert.Equal(before, await coordinator.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken));
-            Assert.Null(coordinator.Public.PendingClaim);
+            if (change == "state")
+            {
+                Assert.Equal(before, await coordinator.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken));
+                Assert.Null(coordinator.Public.PendingClaim);
+            }
+            else
+            {
+                Assert.NotNull(coordinator.Public.PendingClaim);
+                Assert.Null(model.BoardFirstProposal);
+                Assert.Equal(active, coordinator.Public.ActiveSeatId);
+                Assert.Equal(TurnPhase.AwaitingPhysicalPlacement, coordinator.Public.TurnPhase);
+            }
             Assert.False(coordinator.Public.RouteOwners.ContainsKey(route.RouteId));
             var afterHand = await coordinator.GetSeatViewAsync(active, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal(beforeHand.Hand, afterHand.Hand);
@@ -463,7 +476,20 @@ public sealed partial class AutomaticPhysicalFlowTests
             Assert.Null(model.PrivateSeat);
             Assert.Equal(Screen.Table, model.Screen);
 
+            // The shuffled opening hand may make both computers draw cards first.
+            // Play ordinary human draws until a computer actually requests placement;
+            // this test exercises the scoring handoff, not an opening AI decision.
+            for (var draw = 0; draw < 40 && model.Table.Placement is null; draw++)
+            {
+                var game = GetCoordinator(model);
+                Assert.Equal(SeatKind.Human, game.Public.SeatOf(game.Public.ActiveSeatId).Kind);
+                Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
+                await model.DrawSoloBlindCommand.ExecuteAsync(null);
+            }
+
             var placement = Assert.IsType<PlacementInstruction>(model.Table.Placement);
+            Assert.Equal(SeatKind.Computer,
+                GetCoordinator(model).Public.SeatOf(placement.SeatId).Kind);
             var accept = typeof(MainViewModel).GetMethod("AcceptPhysicalPlacementAsync",
                 BindingFlags.Instance | BindingFlags.NonPublic)!;
             var claim = Assert.IsAssignableFrom<Task>(accept.Invoke(model,

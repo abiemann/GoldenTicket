@@ -219,6 +219,177 @@ public sealed class DesktopGameExitPhotoFlowTests
         }
     }
 
+    [Fact]
+    public async Task Save_shows_the_exact_camera_evidence_for_an_unlocated_train_and_clears_it_when_removed()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "GoldenTicket.Tests", Guid.NewGuid().ToString("N"));
+        var store = new SqliteSessionStore(root);
+        var manifest = ManifestLoader.LoadClassicUs();
+        var model = new MainViewModel(manifest, store, camera: new CameraViewModel(capture: new FakeCameraCapture()));
+        model.Setup.ManualVerificationAccepted = true;
+        model.SetGameLayerVisible(true);
+        try
+        {
+            await model.StartMatchAsync();
+            await model.CommitTicketsAsync();
+            var coordinator = (GameCoordinator)typeof(MainViewModel).GetField("_coordinator",
+                BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(model)!;
+            var beforeHash = await coordinator.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken);
+            var beforeTurn = coordinator.Public.TurnNumber;
+            var beforeSeat = coordinator.Public.ActiveSeatId;
+            model.OpenGameExitMenu();
+            using var camera = new SyntheticCamera(model.Camera);
+            camera.Publish(extraOffRoute: true);
+            var observedFrame = Assert.IsType<GameTableAnalysis>(model.Camera.GameTableAnalysis).Board;
+
+            var save = model.SaveGameToMenuCommand.ExecuteAsync(null);
+            Assert.True(model.IsGameExitSaving);
+            Assert.False(save.IsCompleted);
+            var evidence = Assert.IsType<BoardCheckEvidence>(model.GameExitEvidence);
+            var detection = Assert.Single(evidence.Detections);
+            Assert.Equal(1, detection.Number);
+            Assert.False(string.IsNullOrWhiteSpace(detection.Description));
+            Assert.False(string.IsNullOrWhiteSpace(evidence.Caption));
+            // The detected object is off the printed routes, but still has an exact location.
+            Assert.InRange(950d / 1996 * 960, detection.Left, detection.Left + detection.Width);
+            Assert.InRange(1140d / 1248 * 600, detection.Top, detection.Top + detection.Height);
+            Assert.Equal(observedFrame.Width, evidence.Image.PixelWidth);
+            Assert.Equal(observedFrame.Height, evidence.Image.PixelHeight);
+            var shownPixels = new byte[observedFrame.Stride * observedFrame.Height];
+            evidence.Image.CopyPixels(shownPixels, observedFrame.Stride, 0);
+            Assert.Equal(observedFrame.Bgra32.ToArray(), shownPixels);
+            Assert.Empty(coordinator.Public.RouteOwners);
+            Assert.Equal(beforeHash, await coordinator.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken));
+
+            camera.Publish();
+            Assert.Null(model.GameExitEvidence);
+            Assert.False(save.IsCompleted); // A clean frame clears the warning, not the stability check.
+            Assert.DoesNotContain("extra", model.GameExitStatus ?? "", StringComparison.OrdinalIgnoreCase);
+            // Updating the live preview does not mutate the image which explained the failed check.
+            evidence.Image.CopyPixels(shownPixels, observedFrame.Stride, 0);
+            Assert.Equal(observedFrame.Bgra32.ToArray(), shownPixels);
+            for (var attempt = 0; !save.IsCompleted && attempt < 55; attempt++)
+            {
+                await Task.Delay(250, TestContext.Current.CancellationToken);
+                camera.Publish();
+            }
+            await save.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+            Assert.False(model.IsGameExitMenuOpen, model.GameExitStatus);
+            var restored = await store.RestoreAsync(coordinator.SessionId, manifest,
+                CardCatalog.FromManifest(manifest), TestContext.Current.CancellationToken);
+            Assert.Equal(beforeTurn, restored.State.TurnNumber);
+            Assert.Equal(beforeSeat, restored.State.ActiveSeatId);
+            Assert.Empty(restored.State.RouteOwners);
+            Assert.True(Assert.IsType<PackAwayCheckpoint>(restored.State.Checkpoint).IsSafeToPackAway);
+        }
+        finally
+        {
+            await model.DisposeToolsAsync();
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Save_timeout_retains_its_evidence_then_clears_the_error_on_a_fresh_clean_frame_without_saving()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "GoldenTicket.Tests", Guid.NewGuid().ToString("N"));
+        var store = new SqliteSessionStore(root);
+        var manifest = ManifestLoader.LoadClassicUs();
+        var model = new MainViewModel(manifest, store, camera: new CameraViewModel(capture: new FakeCameraCapture()));
+        model.Setup.ManualVerificationAccepted = true;
+        model.SetGameLayerVisible(true);
+        try
+        {
+            await model.StartMatchAsync();
+            await model.CommitTicketsAsync();
+            var coordinator = (GameCoordinator)typeof(MainViewModel).GetField("_coordinator",
+                BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(model)!;
+            var beforeHash = await coordinator.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken);
+            model.OpenGameExitMenu();
+            using var camera = new SyntheticCamera(model.Camera);
+            camera.Publish(extraOffRoute: true);
+            var save = model.SaveGameToMenuCommand.ExecuteAsync(null);
+            var evidence = Assert.IsType<BoardCheckEvidence>(model.GameExitEvidence);
+
+            // Exercise the timeout path without sleeping through its fifteen-second deadline.
+            var completion = (TaskCompletionSource<BoardInventoryObservation>)typeof(MainViewModel)
+                .GetField("_gameExitInventoryCompletion", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .GetValue(model)!;
+            completion.SetException(new TimeoutException());
+            await save.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+            Assert.False(model.IsGameExitSaving);
+            Assert.True(model.IsGameExitMenuOpen);
+            Assert.Same(evidence, model.GameExitEvidence);
+
+            // Re-observing the same failed frame cannot dismiss the evidence.
+            typeof(MainViewModel).GetMethod("ObserveGameExitInventory",
+                BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(model, null);
+            Assert.Same(evidence, model.GameExitEvidence);
+            camera.Publish();
+            Assert.Null(model.GameExitEvidence);
+            Assert.Contains("Save Game", model.GameExitStatus);
+            Assert.DoesNotContain("extra", model.GameExitStatus, StringComparison.OrdinalIgnoreCase);
+            Assert.True(model.IsGameExitMenuOpen);
+            Assert.False(model.IsGameExitSaving);
+            Assert.True(model.Game.IsPlaying);
+            Assert.Equal(beforeHash, await coordinator.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken));
+            var restored = await store.RestoreAsync(coordinator.SessionId, manifest,
+                CardCatalog.FromManifest(manifest), TestContext.Current.CancellationToken);
+            Assert.Null(restored.State.Checkpoint);
+            Assert.Equal(beforeHash, StateHash.Compute(restored.State));
+        }
+        finally
+        {
+            await model.DisposeToolsAsync();
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Save_explains_the_unpaid_detected_route_instead_of_reporting_an_unknown_train()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "GoldenTicket.Tests", Guid.NewGuid().ToString("N"));
+        var store = new SqliteSessionStore(root);
+        var manifest = ManifestLoader.LoadClassicUs();
+        var model = new MainViewModel(manifest, store, camera: new CameraViewModel(capture: new FakeCameraCapture()));
+        model.Setup.ManualVerificationAccepted = true;
+        model.SetGameLayerVisible(true);
+        try
+        {
+            await model.StartMatchAsync();
+            await model.CommitTicketsAsync();
+            var coordinator = (GameCoordinator)typeof(MainViewModel).GetField("_coordinator",
+                BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(model)!;
+            var beforeHash = await coordinator.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken);
+            var route = new RouteId("kansas-city--oklahoma-city--a");
+            var proposal = new BoardFirstClaimProposal(coordinator.SessionId, coordinator.Public.ActiveSeatId,
+                coordinator.Public.SeatOf(coordinator.Public.ActiveSeatId).DisplayName, route, manifest.Describe(route),
+                coordinator.Public.StateVersion, 7, 0, 1, []);
+            typeof(MainViewModel).GetProperty(nameof(MainViewModel.BoardFirstProposal))!.SetValue(model, proposal);
+            model.OpenGameExitMenu();
+
+            await model.SaveGameToMenuCommand.ExecuteAsync(null);
+
+            Assert.True(model.IsGameExitMenuOpen);
+            Assert.False(model.IsGameExitSaving);
+            Assert.Contains("Kansas City", model.GameExitStatus);
+            Assert.Contains("Oklahoma City", model.GameExitStatus);
+            Assert.Contains("payment", model.GameExitStatus, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("cannot identify", model.GameExitStatus, StringComparison.OrdinalIgnoreCase);
+            Assert.Null(model.GameExitEvidence);
+            Assert.Same(proposal, model.BoardFirstProposal);
+            Assert.Equal(beforeHash, await coordinator.ComputeStateHashAsync(cancellationToken: TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            await model.DisposeToolsAsync();
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
     private sealed class SyntheticCamera : IDisposable
     {
         private readonly CameraViewModel _camera;
@@ -235,7 +406,8 @@ public sealed class DesktopGameExitPhotoFlowTests
             _camera.IsRunning = true;
         }
 
-        public void Publish(string? routeId = null, MarkerColor color = MarkerColor.Blue, int mask = 0)
+        public void Publish(string? routeId = null, MarkerColor color = MarkerColor.Blue, int mask = 0,
+            bool extraOffRoute = false)
         {
             const int width = 960, height = 600;
             var pixels = new byte[width * height * 4];
@@ -268,6 +440,25 @@ public sealed class DesktopGameExitPhotoFlowTests
                          new((x + 7d) / width, (y + 5d) / height),
                          new((x - 7d) / width, (y + 5d) / height)], .95));
                 }
+            }
+            if (extraOffRoute)
+            {
+                // A known off-route location from BoardInventoryVerifierTests, near the bottom edge.
+                var x = (int)Math.Round(950d / 1996 * width);
+                var y = (int)Math.Round(1140d / 1248 * height);
+                for (var py = y - 5; py <= y + 5; py++)
+                for (var px = x - 7; px <= x + 7; px++)
+                {
+                    var offset = (py * width + px) * 4;
+                    pixels[offset] = 195;
+                    pixels[offset + 1] = 75;
+                    pixels[offset + 2] = 20;
+                }
+                candidates.Add(new(PieceCandidateKind.Train,
+                    [new((x - 7d) / width, (y - 5d) / height),
+                     new((x + 7d) / width, (y - 5d) / height),
+                     new((x + 7d) / width, (y + 5d) / height),
+                     new((x - 7d) / width, (y + 5d) / height)], .95));
             }
             var frame = CameraFrame.CopyFromBgra32(width, height, pixels, ++_sequence, 1);
             Capture.LatestFrame = frame;

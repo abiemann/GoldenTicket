@@ -43,9 +43,7 @@ public sealed partial class MainViewModel
         if (proposal is not null && (proposal.SessionId != coordinator.SessionId ||
             proposal.SeatId != coordinator.Public.ActiveSeatId ||
             proposal.StateVersion != coordinator.Public.StateVersion)) proposal = null;
-        var ready = proposal is { CameraEvidenceCurrent: true } &&
-            _boardFirstConfirmedAnalysis is { } confirmed &&
-            HasCurrentBoardFirstPaymentEvidence(coordinator, proposal, confirmed, out _) &&
+        var ready = proposal is not null &&
             !IsGameInputPaused && _windowActive && _systemAvailable &&
             !_mustReload && !NeedsBoardReconciliation && _scoreMarkerStep is null;
         CompanionDetectedRoute? detected = proposal is null ? null : new(proposal.ProposalId,
@@ -58,7 +56,7 @@ public sealed partial class MainViewModel
             cameraUnavailable || _scoreMarkerStep is not null);
         var message = proposal is not null
             ? ready ? $"Your trains on {proposal.RouteText} are confirmed. Choose cards to pay."
-                : $"The camera is rechecking your trains on {proposal.RouteText}."
+                : "Resume the game to choose cards for your detected route."
             : _boardFirstInvalidMoveMessage ?? _cardActionBoardWarning ??
                 (_cardBoardCheck is not null ? "The camera is checking the board before drawing cards."
                     : cameraUnavailable ? "Keep the board visible while the camera checks it."
@@ -78,6 +76,18 @@ public sealed partial class MainViewModel
         if (command.Kind == "planClaim" && UsesCompanionCameraClaims)
             return Refused("DetectedRouteRequired", "Place your trains on the board, then pay for the route the camera confirms.");
 
+        if (command.Kind == "cancelDetectedRoute")
+        {
+            if (!UsesCompanionCameraClaims || !Guid.TryParseExact(command.CommandId, "N", out _) ||
+                !Guid.TryParseExact(command.DetectedClaimId, "N", out _) ||
+                BoardFirstProposal is not { } proposal || proposal.ProposalId != command.DetectedClaimId ||
+                proposal.RouteId.Value != command.RouteId || proposal.SeatId != seat ||
+                proposal.SessionId.Value != command.SessionId || proposal.StateVersion != command.ExpectedStateVersion ||
+                !CancelBoardFirstProposal(proposal))
+                return Refused("DetectedRouteChanged", "This route selection is no longer current.");
+            return new(true, false, _coordinator!.Public.StateVersion, null, "Route selection cancelled.");
+        }
+
         if (command.Kind == "payDetectedRoute")
         {
             if (!UsesCompanionCameraClaims || !Guid.TryParseExact(command.CommandId, "N", out _) ||
@@ -95,10 +105,10 @@ public sealed partial class MainViewModel
             if (outcome is null)
                 return Refused(_mustReload ? "StorageFaulted" : "DetectedRouteChanged", _mustReload
                     ? "Check the laptop before continuing."
-                    : "The camera needs to confirm your trains again before payment.");
+                    : "This route selection is no longer current. Refresh the game before paying.");
             return new(outcome.IsAccepted, outcome.WasDuplicate, _coordinator!.Public.StateVersion,
                 outcome.Result.Rejection?.Code, outcome.IsAccepted
-                    ? "Payment saved. Follow the instructions on the laptop."
+                    ? "Payment saved. The camera is checking the board before the next turn."
                     : outcome.Result.Rejection!.Message);
         }
 

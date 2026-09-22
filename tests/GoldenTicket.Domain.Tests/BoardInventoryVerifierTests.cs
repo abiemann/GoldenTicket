@@ -194,11 +194,16 @@ public sealed class BoardInventoryVerifierTests
 
         Assert.Equal(BoardInventoryState.Stabilizing,
             verifier.Observe(first.Frame, first.Candidates, 1, 1).State);
-        Assert.Equal(BoardInventoryState.UnexpectedTrain,
-            verifier.Observe(extra.Frame, extra.Candidates, 1, 1).State);
-        Assert.Equal(BoardInventoryState.Stabilizing,
-            verifier.Observe(restored.Frame, restored.Candidates, 1, 1).State);
-        Assert.True(verifier.Observe(final.Frame, final.Candidates, 1, 1).Confirmed);
+        var rejected = verifier.Observe(extra.Frame, extra.Candidates, 1, 1);
+        Assert.Equal(BoardInventoryState.UnexpectedTrain, rejected.State);
+        var extraDetection = Assert.Single(rejected.UnexpectedDetections);
+        Assert.Equal(MarkerColor.Yellow, extraDetection.Color);
+        var recovering = verifier.Observe(restored.Frame, restored.Candidates, 1, 1);
+        Assert.Equal(BoardInventoryState.Stabilizing, recovering.State);
+        Assert.Empty(recovering.UnexpectedDetections);
+        var confirmed = verifier.Observe(final.Frame, final.Candidates, 1, 1);
+        Assert.True(confirmed.Confirmed);
+        Assert.Empty(confirmed.UnexpectedDetections);
     }
 
     [Fact]
@@ -313,6 +318,12 @@ public sealed class BoardInventoryVerifierTests
             Assert.Equal(BoardInventoryState.UnexpectedTrain, result.State);
             Assert.Equal(new UnexpectedTrainLocation(unexpected, MarkerColor.Yellow, 6), result.UnexpectedTrains);
             Assert.Empty(result.ConfirmedByColor);
+            Assert.Equal(6, result.UnexpectedDetections.Count);
+            Assert.All(result.UnexpectedDetections, detection =>
+            {
+                Assert.Equal(unexpected, detection.RouteId);
+                Assert.Equal(MarkerColor.Yellow, detection.Color);
+            });
         }
         var removed = Scene(3, 1, at.AddSeconds(3.1), blue);
         Assert.Equal(BoardInventoryState.Stabilizing, verifier.Observe(removed.Frame, removed.Candidates, 1, 1).State);
@@ -323,15 +334,93 @@ public sealed class BoardInventoryVerifierTests
     }
 
     [Theory]
-    [InlineData(950, 1140)] // Off the printed routes: do not invent a location.
+    [InlineData(950, 1140)] // Off the printed routes: retain the box without inventing a route.
     [InlineData(1596, 762)] // Between Atlanta-Raleigh lanes: do not guess a lane.
-    public void Unexpected_trains_with_no_unique_route_keep_the_generic_warning(double x, double y)
+    public void Unexpected_trains_with_no_unique_route_still_report_the_exact_detected_location(double x, double y)
     {
         var scene = SceneAtResolution(1996, 1248, 1, 1, DateTimeOffset.UtcNow,
             [new(x, y, MarkerColor.Blue)]);
         var result = new BoardInventoryVerifier([]).Observe(scene.Frame, scene.Candidates, 1, 1);
         Assert.Equal(BoardInventoryState.UnexpectedTrain, result.State);
         Assert.Null(result.UnexpectedTrains);
+        var detection = Assert.Single(result.UnexpectedDetections);
+        Assert.Null(detection.RouteId);
+        Assert.Equal(MarkerColor.Blue, detection.Color);
+        Assert.Equal(.9, detection.Confidence);
+        Assert.Equal((x - 11) / 1996, detection.X, 9);
+        Assert.Equal((y - 7) / 1248, detection.Y, 9);
+        Assert.Equal(22d / 1996, detection.Width, 9);
+        Assert.Equal(14d / 1248, detection.Height, 9);
+    }
+
+    [Fact]
+    public void Multiple_unmatched_detections_are_all_reported_including_unnamed_locations()
+    {
+        var scene = SceneAtResolution(1996, 1248, 1, 1, DateTimeOffset.UtcNow,
+            [new(950, 1140, MarkerColor.Blue), new(1596, 762, MarkerColor.Green),
+                new(1154, 640, MarkerColor.Yellow)]);
+        var result = new BoardInventoryVerifier([]).Observe(scene.Frame, scene.Candidates, 1, 1);
+
+        Assert.Equal(BoardInventoryState.UnexpectedTrain, result.State);
+        Assert.Equal(3, result.UnexpectedDetections.Count);
+        Assert.Collection(result.UnexpectedDetections,
+            detection =>
+            {
+                Assert.Null(detection.RouteId);
+                Assert.Equal(MarkerColor.Blue, detection.Color);
+            },
+            detection =>
+            {
+                Assert.Null(detection.RouteId);
+                Assert.Equal(MarkerColor.Green, detection.Color);
+            },
+            detection =>
+            {
+                Assert.Equal(GreenRoute, detection.RouteId);
+                Assert.Equal(MarkerColor.Yellow, detection.Color);
+            });
+    }
+
+    [Fact]
+    public void Duplicate_detections_over_an_expected_train_space_are_not_omitted_from_details()
+    {
+        var scene = SceneAtResolution(1996, 1248, 1, 1, DateTimeOffset.UtcNow, Complete);
+        var result = Inventory().Observe(scene.Frame, [.. scene.Candidates, scene.Candidates[0]], 1, 1);
+
+        Assert.Equal(BoardInventoryState.Ambiguous, result.State);
+        Assert.Equal(2, result.UnexpectedDetections.Count);
+        Assert.All(result.UnexpectedDetections, detection =>
+        {
+            Assert.Equal(BlueRoute, detection.RouteId);
+            Assert.Equal((1586d - 11) / 1996, detection.X, 9);
+            Assert.Equal((755d - 7) / 1248, detection.Y, 9);
+        });
+    }
+
+    [Fact]
+    public void An_unreadable_color_does_not_discard_the_detected_location()
+    {
+        var scene = NeutralScene(1, DateTimeOffset.UtcNow, [new(950, 1140, MarkerColor.Blue)]);
+        var result = new BoardInventoryVerifier([]).Observe(scene.Frame, scene.Candidates, 1, 1);
+
+        Assert.Equal(BoardInventoryState.UnexpectedTrain, result.State);
+        var detection = Assert.Single(result.UnexpectedDetections);
+        Assert.Null(detection.Color);
+        Assert.Null(detection.RouteId);
+        Assert.True(detection.Width > 0 && detection.Height > 0);
+    }
+
+    [Fact]
+    public void Wrong_color_details_highlight_the_observed_piece_without_relabeling_its_color()
+    {
+        var scene = SceneAtResolution(1996, 1248, 1, 1, DateTimeOffset.UtcNow,
+            [.. Complete[..^1], new(1220, 638, MarkerColor.Red)]);
+        var result = Inventory().Observe(scene.Frame, scene.Candidates, 1, 1);
+
+        Assert.Equal(BoardInventoryState.WrongColor, result.State);
+        var detection = Assert.Single(result.UnexpectedDetections);
+        Assert.Equal(GreenRoute, detection.RouteId);
+        Assert.Equal(MarkerColor.Red, detection.Color);
     }
 
     [Theory]

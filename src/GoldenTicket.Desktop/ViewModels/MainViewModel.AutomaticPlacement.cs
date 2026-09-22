@@ -14,6 +14,9 @@ public sealed partial class MainViewModel
     }
 
     private readonly RoutePlacementVerifier _routePlacementVerifier = new();
+    private sealed record BoardFirstPaymentCheck(OperationId OperationId, DateTimeOffset AcceptedAt,
+        long? CameraEpoch, long? Sequence);
+    private BoardFirstPaymentCheck? _boardFirstPaymentCheck;
     private BoardInventoryVerifier? _placementInventoryVerifier;
     private string? _placementInventoryKey;
     private bool _showingPlacementInventoryCorrection;
@@ -43,6 +46,7 @@ public sealed partial class MainViewModel
         _scoreCompletionInProgress = false;
         _placementVerificationBlock = null;
         _routePlacementVerifier.Reset();
+        _boardFirstPaymentCheck = null;
         ResetPlacementInventory();
         _scoreMarkerMoveVerifier.Reset();
         ResetBoardFirstClaimFlow();
@@ -147,6 +151,20 @@ public sealed partial class MainViewModel
             return;
         }
 
+        if (_boardFirstPaymentCheck is { } paymentCheck)
+        {
+            if (paymentCheck.OperationId != placement.OperationId) _boardFirstPaymentCheck = null;
+            else if (analysis.Board.CapturedAt <= paymentCheck.AcceptedAt ||
+                     analysis.Board.Epoch == paymentCheck.CameraEpoch &&
+                     analysis.Board.Sequence <= paymentCheck.Sequence)
+            {
+                NotePlacementVerificationBlock("waiting-for-post-payment-frame");
+                _routePlacementVerifier.Reset();
+                ResetPlacementInventory();
+                return;
+            }
+        }
+
         NotePlacementVerificationBlock(null);
         var inventoryKey = $"{coordinator.SessionId.Value}/{placement.StateVersion}/{placement.OperationId.Value}";
         if (_placementInventoryKey != inventoryKey)
@@ -182,6 +200,7 @@ public sealed partial class MainViewModel
             inventoryState = inventory.State.ToString(),
             inventoryRoute = inventory.RouteId,
             inventory.UnexpectedTrains,
+            inventory.UnexpectedDetections,
             nearbyCandidates = DescribeNearbyPlacementCandidates(analysis, placement.RouteId.Value)
         });
         // A requested route alone is insufficient: pieces from any earlier claim may have
@@ -193,6 +212,7 @@ public sealed partial class MainViewModel
 
     private void ResetPlacementInventory()
     {
+        Game.UpdateInventoryProblemMarkers("placement", null);
         if (_showingPlacementInventoryCorrection) Game.ClearGuidance();
         _placementInventoryVerifier = null;
         _placementInventoryKey = null;
@@ -202,8 +222,27 @@ public sealed partial class MainViewModel
     private void UpdatePlacementInventoryGuidance(PlacementInstruction placement,
         BoardInventoryObservation inventory)
     {
+        Game.UpdateInventoryProblemMarkers("placement", inventory);
+        if (inventory.State == BoardInventoryState.WaitingForFreshFrame) return;
         string? correction = null;
-        if (inventory.RouteId is { } routeId && routeId != placement.RouteId.Value)
+        if (inventory.RouteId == placement.RouteId.Value)
+        {
+            var route = _manifest.Describe(placement.RouteId);
+            correction = inventory.State switch
+            {
+                BoardInventoryState.MissingTrains =>
+                    $"Check your {placement.TrainCount} {placement.Color} trains on {route}. " +
+                    "The camera needs to see a train in every space before continuing.",
+                BoardInventoryState.WrongColor =>
+                    $"The camera sees the wrong train color on {route}. " +
+                    $"Use your {placement.Color} trains for this route.",
+                BoardInventoryState.Ambiguous =>
+                    $"Center your {placement.Color} trains in the printed spaces on {route} " +
+                    "so the camera can verify them.",
+                _ => null
+            };
+        }
+        else if (inventory.RouteId is { } routeId)
         {
             var route = _manifest.Describe(new RouteId(routeId));
             correction = inventory.State switch
@@ -226,7 +265,7 @@ public sealed partial class MainViewModel
                 $"train{(extra.Count == 1 ? "" : "s")} on {_manifest.Describe(new RouteId(extra.RouteId))}, " +
                 $"an unclaimed route. Remove {(extra.Count == 1 ? "it" : "them")} to continue.",
             BoardInventoryState.UnexpectedTrain =>
-                "Check for train pieces outside the claimed routes and the new route. " +
+                "Check the yellow spheres for train pieces outside the claimed routes and the new route. " +
                 "The whole board must match before this claim can continue.",
             BoardInventoryState.Unsupported =>
                 "The camera cannot verify every claimed route. Check the board before continuing.",

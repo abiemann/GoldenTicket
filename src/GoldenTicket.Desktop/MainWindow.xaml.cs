@@ -43,6 +43,7 @@ public partial class MainWindow : Window
             _model = createModel();
             DataContext = _model;
             _model.PropertyChanged += OnDisplayModeChanged;
+            _model.Game.ExitRequested += OnExitRequested;
             _model.SetGameLayerVisible(true);
             InitializeWindowPresentation();
             Loaded += async (_, _) =>
@@ -131,11 +132,17 @@ public partial class MainWindow : Window
         {
             _privacyTimer.Stop();
             _windowPresentationTimer.Stop();
-            if (_model is not null) _model.PropertyChanged -= OnDisplayModeChanged;
+            if (_model is not null)
+            {
+                _model.PropertyChanged -= OnDisplayModeChanged;
+                _model.Game.ExitRequested -= OnExitRequested;
+            }
             SystemEvents.SessionSwitch -= OnSessionSwitch;
             SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         };
     }
+
+    private void OnExitRequested(object? sender, EventArgs args) => Close();
 
     private void OnDisplayModeChanged(object? sender, PropertyChangedEventArgs args)
     {

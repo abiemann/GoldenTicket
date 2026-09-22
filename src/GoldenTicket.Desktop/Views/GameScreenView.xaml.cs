@@ -183,6 +183,15 @@ public partial class GameScreenView : UserControl
 
     private void Start_MouseEnter(object sender, MouseEventArgs e) => Game?.SelectWelcome(0);
     private void Reload_MouseEnter(object sender, MouseEventArgs e) => Game?.SelectWelcome(1);
+    private void Exit_MouseEnter(object sender, MouseEventArgs e) => Game?.SelectWelcome(2);
+    private void Settings_MouseEnter(object sender, MouseEventArgs e) => Game?.SelectWelcome(-1);
+
+    private int WelcomeChoice(object sender) => ReferenceEquals(sender, SettingsButton) ? -1 :
+        ReferenceEquals(sender, ExitButton) ? 2 :
+        ReferenceEquals(sender, ReloadButton) ? 1 : 0;
+
+    private void Welcome_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) =>
+        Game?.SelectWelcome(WelcomeChoice(sender));
 
     private async void Settings_Click(object sender, RoutedEventArgs e)
     {
@@ -213,7 +222,7 @@ public partial class GameScreenView : UserControl
     {
         var game = Game;
         if (game is null) return;
-        game.SelectWelcome(ReferenceEquals(sender, ReloadButton) ? 1 : 0);
+        game.SelectWelcome(WelcomeChoice(sender));
         await game.ActivateSelectedAsync();
         if (game.IsReloadCameraSetup) await PrepareCameraSetupAsync(game);
         FocusCurrentChoice();

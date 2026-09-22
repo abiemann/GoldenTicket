@@ -105,6 +105,9 @@ On your turn, draw train cards, draw destination tickets, or claim a route:
 - **Routes:** place your trains on the physical route first. Once the camera confirms the route
   and checks the rest of the board, your payment choices appear. On the tablet, choose the cards
   and press **Pay**. In solo laptop play, select the exact cards and press **OK**.
+  Camera updates won't interrupt this choice. After accepting payment, the app checks the board
+  again before completing the claim and allowing the next turn. For a wrong route, remove those
+  trains and select **Cancel**.
 
 In solo play, the **T** and **D** stacks in your player tile show your hand and destinations
 without leaving the table. In Quick play and PRACTICAL, make private choices on the selected device.
@@ -160,10 +163,17 @@ You can save while waiting for a computer's train placement, including a partial
 The save remembers the exact placed subset, the active turn and the reserved payment. Finish any
 scoring-marker move or cancelled-placement restoration first. If a save check fails, the game
 stays open so you can correct the board or camera.
+The save dialog shows the failed camera frame with numbered areas and detection details,
+even when a route cannot be identified. A fresh matching view clears a temporary warning;
+after a timeout, select **Save Game** again. Finish payment for a detected route, or remove
+its trains and cancel, before saving.
 
 Choose **Reload the previous game** to open camera setup and resume the most recent match. The
 saved photo and route list help reconstruct the board. The app checks each scoring marker and
-then the saved train positions and colors. When the board matches, acknowledge **OK** to resume
+then the saved train positions and colors. Yellow spheres on the live board mark detected extra
+or misplaced trains, even when their route is uncertain; missing trains mark the expected spaces.
+The spheres clear when a fresh camera reading shows the problem is corrected.
+When the board matches, acknowledge **OK** to resume
 from the saved turn. Missing or invalid save attachments produce recovery guidance; an earlier
 save is restored only when you explicitly choose it.
 

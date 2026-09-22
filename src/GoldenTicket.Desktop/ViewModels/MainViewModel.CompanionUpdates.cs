@@ -12,7 +12,6 @@ public sealed partial class MainViewModel
         CompanionGuidance? Guidance, string? ResultImageId, CompanionBoardMap? BoardMap);
 
     private CompanionPresentation? _lastCompanionPresentation;
-    private BoardFirstClaimProposal? _observedCompanionProposal;
 
     private void InitializeCompanionUpdates()
     {
@@ -32,21 +31,10 @@ public sealed partial class MainViewModel
         Table.PropertyChanged -= CompanionTablePropertyChanged;
         Camera.PropertyChanged -= CompanionCameraPropertyChanged;
         Connection.PropertyChanged -= CompanionConnectionPropertyChanged;
-        if (_observedCompanionProposal is { } proposal)
-            proposal.PropertyChanged -= CompanionProposalPropertyChanged;
-        _observedCompanionProposal = null;
     }
 
     private void CompanionMainPropertyChanged(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName == nameof(BoardFirstProposal))
-        {
-            if (_observedCompanionProposal is { } previous)
-                previous.PropertyChanged -= CompanionProposalPropertyChanged;
-            _observedCompanionProposal = BoardFirstProposal;
-            if (_observedCompanionProposal is { } current)
-                current.PropertyChanged += CompanionProposalPropertyChanged;
-        }
         if (args.PropertyName is nameof(BoardFirstProposal) or nameof(CanRevealPrivateSeat) or
             nameof(CanConnectPhone) or nameof(CanKeepSoloTickets) or nameof(Screen) or
             nameof(GameplayScreen) or nameof(IsGameExitMenuOpen) or nameof(IsResumeTurnAnnouncementOpen) or
@@ -77,12 +65,6 @@ public sealed partial class MainViewModel
     private void CompanionConnectionPropertyChanged(object? sender, PropertyChangedEventArgs args)
     {
         if (args.PropertyName == nameof(ConnectionViewModel.UsePractical)) NotifyCompanionPresentationChanged();
-    }
-
-    private void CompanionProposalPropertyChanged(object? sender, PropertyChangedEventArgs args)
-    {
-        if (args.PropertyName == nameof(BoardFirstClaimProposal.CameraEvidenceCurrent))
-            NotifyCompanionPresentationChanged();
     }
 
     private void NotifyCompanionPresentationChanged()

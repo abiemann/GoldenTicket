@@ -7,7 +7,7 @@ namespace GoldenTicket.CompanionHost;
 
 public sealed partial class CompanionServer
 {
-    public const string AssetsVersion = "15";
+    public const string AssetsVersion = "16";
     private readonly CompanionEventSubscriptions _events = new();
     private Func<HttpContext, bool>? _streamAllowed;
     private static readonly JsonSerializerOptions EventJson = new(JsonSerializerDefaults.Web)

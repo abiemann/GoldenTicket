@@ -36,6 +36,7 @@ public sealed partial class MainViewModel
         _savedBoardRestoreCheckpoint = checkpoint.CheckpointId.Value;
         _savedBoardRestoreCompleting = false;
         _savedBoardRestoreGuidance = null;
+        Game.UpdateInventoryProblemMarkers("restore", null);
         SetSavedBoardRestoreTarget(null);
         ShowSavedBoardRestoreGuidance("Saved board.");
         BoardInteractionLog.Write("reload.board-check.started", new
@@ -52,6 +53,7 @@ public sealed partial class MainViewModel
         _savedBoardRestoreCheckpoint = null;
         _savedBoardRestoreGuidance = null;
         _savedBoardRestoreCompleting = false;
+        Game.UpdateInventoryProblemMarkers("restore", null);
         SetSavedBoardRestoreTarget(null);
     }
 
@@ -76,6 +78,7 @@ public sealed partial class MainViewModel
             markerState = result.MarkerState?.ToString(),
             inventoryState = result.Inventory?.State.ToString(),
             inventoryRoute = result.Inventory?.RouteId,
+            unexpectedDetections = result.Inventory?.UnexpectedDetections,
             nearbyCandidates = result.Inventory?.RouteId is { } failedRoute
                 ? DescribeNearbyPlacementCandidates(analysis, failedRoute) : []
         });
@@ -84,11 +87,16 @@ public sealed partial class MainViewModel
             case SavedBoardRestoreStage.WaitingForCamera:
                 return;
             case SavedBoardRestoreStage.CheckingMarker when result.Marker is { } marker:
+                Game.UpdateInventoryProblemMarkers("restore", null);
                 SetSavedBoardRestoreTarget(null);
                 ShowSavedBoardRestoreGuidance(
                     $"{marker.Color.ToString().ToUpperInvariant()} scoring marker on {marker.PrintedScore}.");
                 return;
             case SavedBoardRestoreStage.CheckingTrains:
+                if (result.Inventory is { } inventory)
+                    Game.UpdateInventoryProblemMarkers("restore", inventory,
+                        CheckpointPhoto.PendingPlacement is { } partial &&
+                        inventory.RouteId == partial.RouteId.Value ? partial.OccupiedSlotMask : null);
                 var route = result.Inventory?.RouteId is { } routeId &&
                     result.Inventory.State is BoardInventoryState.MissingTrains or
                         BoardInventoryState.WrongColor or BoardInventoryState.Ambiguous
@@ -100,12 +108,12 @@ public sealed partial class MainViewModel
                 else if (CheckpointPhoto.PendingPlacement is { } pending &&
                     result.Inventory?.RouteId == pending.RouteId.Value)
                     SetSavedBoardRestoreTarget((pending.RouteId, pending.RouteLength, pending.OccupiedSlotMask));
-                else if (result.Inventory?.State is not (BoardInventoryState.Stabilizing or
-                    BoardInventoryState.WaitingForFreshFrame))
+                else if (result.Inventory?.State != BoardInventoryState.WaitingForFreshFrame)
                     SetSavedBoardRestoreTarget(null);
                 ShowSavedBoardRestoreGuidance(DescribeSavedTrainCheck(result.Inventory));
                 return;
             case SavedBoardRestoreStage.Confirmed:
+                Game.UpdateInventoryProblemMarkers("restore", null);
                 SetSavedBoardRestoreTarget(null);
                 _savedBoardRestoreCompleting = true;
                 ShowSavedBoardRestoreGuidance("Saved scoring markers and trains verified.");
@@ -126,7 +134,15 @@ public sealed partial class MainViewModel
             return $"Unfinished {pending.Color} placement on {_manifest.Describe(pending.RouteId)} " +
                 $"({pending.TrainCount} trains in the saved photo).";
         if (observation.State == BoardInventoryState.UnexpectedTrain)
-            return "Trains outside the saved routes.";
+        {
+            if (observation.UnexpectedTrains is { } extra)
+                return $"The camera sees {extra.Count}{(extra.Color is { } color ? " " + color : "")} " +
+                    $"train{(extra.Count == 1 ? "" : "s")} on {_manifest.Describe(new RouteId(extra.RouteId))} " +
+                    "outside the saved routes. Check the yellow spheres on the board.";
+            return observation.UnexpectedDetections.Count > 0
+                ? "The camera sees trains outside the saved routes. Check the yellow spheres on the board."
+                : "The camera returned a train detection without a usable position. Clear hands or glare while it checks again.";
+        }
         if (observation.RouteId is { } routeId)
         {
             var route = _coordinator?.Public.Checkpoint?.PhysicalTarget

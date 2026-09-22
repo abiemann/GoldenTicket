@@ -197,6 +197,15 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+        <Style x:Key="WelcomeExitButton" TargetType="Button" BasedOn="{StaticResource GameChoiceButton}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Game.IsExitSelected}" Value="True">
+                    <Setter Property="BorderBrush" Value="#FFFFD576" />
+                    <Setter Property="BorderThickness" Value="4" />
+                    <Setter Property="Background" Value="#EC522D26" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
         <Style x:Key="GamePlayButton" TargetType="Button" BasedOn="{StaticResource GameChoiceButton}">
             <Style.Triggers>
                 <DataTrigger Binding="{Binding Game.IsPlaySelected}" Value="True">
@@ -385,13 +394,17 @@
                            FontWeight="SemiBold" Margin="0,0,0,14" />
                 <Button x:Name="StartButton" Style="{StaticResource WelcomeStartButton}"
                         Content="Start a new game" FontSize="20" MinHeight="58" Margin="0,0,0,10"
-                        MouseEnter="Start_MouseEnter" Click="Welcome_Click"
+                        MouseEnter="Start_MouseEnter" Click="Welcome_Click" GotKeyboardFocus="Welcome_GotKeyboardFocus"
                         AutomationProperties.Name="Start a new game" />
                 <Button x:Name="ReloadButton" Style="{StaticResource WelcomeReloadButton}"
                         Content="Reload the previous game" FontSize="20" MinHeight="58"
-                        MouseEnter="Reload_MouseEnter" Click="Welcome_Click"
+                        MouseEnter="Reload_MouseEnter" Click="Welcome_Click" GotKeyboardFocus="Welcome_GotKeyboardFocus"
                         Visibility="{Binding Game.HasPreviousGame, Converter={StaticResource BoolToVisibility}}"
                         AutomationProperties.Name="Reload the previous game" />
+                <Button x:Name="ExitButton" Style="{StaticResource WelcomeExitButton}"
+                        Content="Exit the game" FontSize="20" MinHeight="58" Margin="0,10,0,0"
+                        MouseEnter="Exit_MouseEnter" Click="Welcome_Click" GotKeyboardFocus="Welcome_GotKeyboardFocus"
+                        AutomationProperties.Name="Exit the game" />
                 <Grid Margin="0,12,0,0">
                     <TextBlock Text="Use ↑ ↓ and Enter, or point and click"
                                Foreground="#FFE6D9C3" FontSize="13"
@@ -399,6 +412,7 @@
                     <Button x:Name="SettingsButton" Style="{StaticResource WelcomeSettingsButton}"
                             Content="Settings"
                             HorizontalAlignment="Right" Click="Settings_Click" ToolTip="Settings"
+                            MouseEnter="Settings_MouseEnter" GotKeyboardFocus="Welcome_GotKeyboardFocus"
                             AutomationProperties.Name="Settings" />
                 </Grid>
                 <TextBlock Text="{Binding Game.Message}" Foreground="#FFFFD576" Margin="2,10,0,0"

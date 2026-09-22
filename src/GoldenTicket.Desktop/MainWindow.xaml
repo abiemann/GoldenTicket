@@ -16,6 +16,7 @@
 
     <Window.Resources>
         <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+        <local:NullToVisibilityConverter x:Key="NullToVisibility" />
         <local:EmptyStringToVisibilityConverter x:Key="EmptyStringToVisibility" />
         <local:ScreenVisibilityConverter x:Key="ScreenVisibility" />
         <Style x:Key="ExitMenuButton" TargetType="Button">
@@ -157,7 +158,9 @@
         <Grid x:Name="GameExitMenuOverlay" Background="#C9000912"
               Visibility="{Binding IsGameExitMenuOpen, Converter={StaticResource BoolToVisibility}}">
             <Viewbox Stretch="Uniform" StretchDirection="DownOnly" Margin="24">
+              <StackPanel Orientation="Horizontal">
                 <Border Width="540" Padding="28" CornerRadius="12"
+                        VerticalAlignment="Center"
                         Background="#F51A2531" BorderBrush="#FFD4AC6B" BorderThickness="2">
                     <StackPanel>
                         <TextBlock Text="Leave the game?" Foreground="#FFFFE7B0"
@@ -189,6 +192,60 @@
                                 AutomationProperties.Name="Return to Game" />
                     </StackPanel>
                 </Border>
+                <Border x:Name="GameExitEvidencePanel" Width="680" Padding="18" Margin="16,0,0,0"
+                        VerticalAlignment="Center" CornerRadius="12"
+                        Background="#F51A2531" BorderBrush="#FFD4AC6B" BorderThickness="2"
+                        Visibility="{Binding GameExitEvidence, Converter={StaticResource NullToVisibility}}">
+                    <StackPanel DataContext="{Binding GameExitEvidence}">
+                        <TextBlock Text="Check the highlighted areas" Foreground="#FFFFE7B0"
+                                   FontSize="24" FontWeight="Bold" Margin="0,0,0,10" />
+                        <Viewbox Stretch="Uniform">
+                            <Grid Width="960" Height="600" ClipToBounds="True">
+                                <Image Source="{Binding Image}" Stretch="Fill"
+                                       AutomationProperties.Name="Camera frame used for the failed board check" />
+                                <ItemsControl ItemsSource="{Binding Detections}" IsHitTestVisible="False">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemContainerStyle>
+                                        <Style TargetType="ContentPresenter">
+                                            <Setter Property="Canvas.Left" Value="{Binding Left}" />
+                                            <Setter Property="Canvas.Top" Value="{Binding Top}" />
+                                        </Style>
+                                    </ItemsControl.ItemContainerStyle>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Rectangle Width="{Binding Width}" Height="{Binding Height}"
+                                                           Stroke="#FFFFD576" StrokeThickness="3" Fill="#30432118" />
+                                                <Border Background="#FF17232D" BorderBrush="#FFFFD576"
+                                                        BorderThickness="1" CornerRadius="3" Padding="3,0"
+                                                        HorizontalAlignment="Left" VerticalAlignment="Top">
+                                                    <TextBlock Text="{Binding Number}" Foreground="#FFFFD576"
+                                                               FontSize="16" FontWeight="Bold" />
+                                                </Border>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
+                        </Viewbox>
+                        <TextBlock Text="{Binding Caption}" Foreground="#FFE6D9C3" FontSize="13"
+                                   TextWrapping="Wrap" Margin="0,10,0,8" />
+                        <ScrollViewer MaxHeight="150" VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding Detections}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Description}" Foreground="#FFFFE7B0"
+                                                   FontSize="14" TextWrapping="Wrap" Margin="0,0,0,5" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+              </StackPanel>
             </Viewbox>
         </Grid>
       </Grid>

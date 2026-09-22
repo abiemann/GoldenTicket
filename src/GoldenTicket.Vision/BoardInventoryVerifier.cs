@@ -2,6 +2,10 @@ namespace GoldenTicket.Vision;
 
 public sealed record BoardInventoryRoute(string RouteId, MarkerColor Color, int TrainCount);
 public sealed record UnexpectedTrainLocation(string RouteId, MarkerColor? Color, int Count);
+// Bounds refer to the upright board frame that produced the observation, in the range 0..1.
+// A detection can have a precise image location even when its route or color is uncertain.
+public sealed record BoardInventoryDetection(double X, double Y, double Width, double Height,
+    double Confidence, MarkerColor? Color, string? RouteId);
 
 public enum BoardInventoryState
 {
@@ -20,6 +24,7 @@ public sealed record BoardInventoryObservation(BoardInventoryState State,
     int? PendingSlotMask = null, UnexpectedTrainLocation? UnexpectedTrains = null)
 {
     public bool Confirmed => State == BoardInventoryState.Confirmed;
+    public IReadOnlyList<BoardInventoryDetection> UnexpectedDetections { get; init; } = [];
 }
 
 /// <summary>
@@ -80,6 +85,16 @@ public sealed class BoardInventoryVerifier
     }
 
     public BoardInventoryObservation Observe(CameraFrame board, IReadOnlyList<PieceCandidate> candidates,
+        long cropRevision, long modelRevision)
+    {
+        var observation = ObserveCore(board, candidates, cropRevision, modelRevision);
+        return observation.State is BoardInventoryState.UnexpectedTrain or BoardInventoryState.Ambiguous
+            or BoardInventoryState.WrongColor or BoardInventoryState.MissingTrains
+            ? observation with { UnexpectedDetections = LocateSuspectDetections(board, candidates) }
+            : observation;
+    }
+
+    private BoardInventoryObservation ObserveCore(CameraFrame board, IReadOnlyList<PieceCandidate> candidates,
         long cropRevision, long modelRevision)
     {
         ArgumentNullException.ThrowIfNull(board);
@@ -255,6 +270,74 @@ public sealed class BoardInventoryVerifier
         _firstMatchingAt = null;
         return new(BoardInventoryState.UnexpectedTrain, new Dictionary<MarkerColor, int>(),
             UnexpectedTrains: issue);
+    }
+
+    private IReadOnlyList<BoardInventoryDetection> LocateSuspectDetections(CameraFrame board,
+        IReadOnlyList<PieceCandidate> candidates)
+    {
+        // Diagnostics never change acceptance. Retain every suspect box, including extras that
+        // cannot be named and overlapping detections over an otherwise expected train space.
+        var expected = _routes.SelectMany(route => ExpectedSlots(route.RouteId)
+            .Select(slot => (route.RouteId, route.Color, VerifyColor: _verifyClaimedRouteColors, Slot: slot)))
+            .ToList();
+        if (_pendingRoute is { } pending)
+            expected.AddRange(ExpectedSlots(pending.RouteId)
+                .Where((_, index) => _requiredPendingMask is not { } mask || (mask & (1 << index)) != 0)
+                .Select(slot => (pending.RouteId, pending.Color, VerifyColor: true, Slot: slot)));
+        var plausible = candidates.Where(candidate => candidate.Kind == PieceCandidateKind.Train &&
+                candidate.Confidence >= MinimumConfidence && candidate.Outline.Count >= 4 &&
+                candidate.Outline.All(point => double.IsFinite(point.X) && double.IsFinite(point.Y) &&
+                    point.X is >= 0 and <= 1 && point.Y is >= 0 and <= 1))
+            .ToArray();
+        var suspects = new bool[plausible.Length];
+        var assignments = new List<int>[expected.Count];
+        var colors = new MarkerColor?[plausible.Length];
+        var routeIds = new string?[plausible.Length];
+        for (var index = 0; index < plausible.Length; index++)
+        {
+            var candidate = plausible[index];
+            var x = candidate.Outline.Average(point => point.X) * ClassicUsRouteGeometry.ReferenceWidth;
+            var y = candidate.Outline.Average(point => point.Y) * ClassicUsRouteGeometry.ReferenceHeight;
+            colors[index] = RoutePlacementVerifier.ReadCandidateColor(board, candidate);
+            var measured = AllMeasuredSlots.Where(item => Fits(x, y, item.Slot))
+                .Select(item => (item.RouteId, Distance: SlotDistance(x, y, item.Slot)))
+                .OrderBy(item => item.Distance).Take(2).ToArray();
+            if (measured.Length > 0 && (measured.Length == 1 ||
+                    measured[1].Distance > measured[0].Distance + 2))
+                routeIds[index] = measured[0].RouteId;
+            var nearest = expected.Select((item, slotIndex) => (Expected: item, SlotIndex: slotIndex))
+                .Where(item => Fits(x, y, item.Expected.Slot))
+                .Select(item => (item.Expected, item.SlotIndex, Distance: SlotDistance(x, y, item.Expected.Slot)))
+                .OrderBy(item => item.Distance).Take(2).ToArray();
+            if (nearest.Length == 0)
+            {
+                suspects[index] = true;
+                continue;
+            }
+            var closest = nearest[0];
+            (assignments[closest.SlotIndex] ??= []).Add(index);
+            suspects[index] = nearest.Length > 1 && nearest[1].Distance <= closest.Distance + 2 ||
+                routeIds[index] != closest.Expected.RouteId ||
+                closest.Expected.VerifyColor && colors[index] != closest.Expected.Color;
+        }
+        foreach (var duplicate in assignments.Where(indices => indices is { Count: > 1 }))
+            foreach (var index in duplicate)
+                suspects[index] = true;
+
+        return plausible.Select((candidate, index) => (candidate, index))
+            .Where(item => suspects[item.index])
+            .Select(item =>
+            {
+                var left = item.candidate.Outline.Min(point => point.X);
+                var top = item.candidate.Outline.Min(point => point.Y);
+                return new BoardInventoryDetection(left, top,
+                    item.candidate.Outline.Max(point => point.X) - left,
+                    item.candidate.Outline.Max(point => point.Y) - top, item.candidate.Confidence,
+                    colors[item.index], routeIds[item.index]);
+            }).ToArray();
+
+        static double SlotDistance(double x, double y, ExpectedSlot slot) =>
+            Math.Sqrt(Math.Pow(x - slot.X, 2) + Math.Pow(y - slot.Y, 2));
     }
 
     private static bool Fits(double x, double y, ExpectedSlot slot)

@@ -45,6 +45,20 @@ public sealed partial class AutomaticPhysicalFlowTests
             var pay = CompanionPayment(proposal);
             var receipt = await bridge.ExecuteAsync(active, pay, TestContext.Current.CancellationToken);
             Assert.True(receipt.Accepted, receipt.Message);
+            Assert.Equal(active, game.Public.ActiveSeatId);
+            Assert.Equal(proposal.RouteId, game.Public.PendingClaim!.RouteId);
+            Assert.False(game.Public.RouteOwners.ContainsKey(proposal.RouteId));
+            Assert.False(model.ShowScoreMarkerDetectionPrompt);
+            var reserved = await game.GetSeatViewAsync(active, TestContext.Current.CancellationToken);
+            Assert.Equal(before.Hand, reserved.Hand);
+            Assert.Equal(before.TrainsRemaining, reserved.TrainsRemaining);
+            Assert.Null(model.BoardFirstProposal);
+
+            var at = DateTimeOffset.UtcNow.AddSeconds(6);
+            PublishBlueTrains(model.Camera, proposal.RouteId.Value, 5, at);
+            Assert.NotNull(game.Public.PendingClaim);
+            PublishBlueTrains(model.Camera, proposal.RouteId.Value, 6, at.AddSeconds(1.1));
+            await WaitUntilAsync(() => model.ShowScoreMarkerDetectionPrompt);
             Assert.Equal(active, game.Public.RouteOwners[proposal.RouteId]);
             Assert.Null(game.Public.PendingClaim);
             var after = await game.GetSeatViewAsync(active, TestContext.Current.CancellationToken);
@@ -75,14 +89,7 @@ public sealed partial class AutomaticPhysicalFlowTests
     [InlineData("version")]
     [InlineData("command-id")]
     [InlineData("payment")]
-    [InlineData("missing")]
-    [InlineData("wrong-color")]
-    [InlineData("stale")]
-    [InlineData("orientation")]
-    [InlineData("crop")]
-    [InlineData("model")]
-    [InlineData("epoch")]
-    public async Task Phone_payment_rejects_a_changed_proposal_turn_or_camera_proof_without_spending(string change)
+    public async Task Phone_payment_rejects_a_changed_proposal_turn_or_payment_without_spending(string change)
     {
         var model = await StartCompanionMatchAsync();
         try
@@ -103,27 +110,143 @@ public sealed partial class AutomaticPhysicalFlowTests
                 _ => pay
             };
             if (change == "seat") seat = game.Seats.Last().SeatId;
-            if (change == "orientation") model.Camera.IsGameTablePreviewUpright = false;
-            if (change is "missing" or "wrong-color" or "stale" or "crop" or "model" or "epoch")
-                PublishTrains(model.Camera, proposal.RouteId.Value, 5,
-                    change == "stale" ? DateTimeOffset.UtcNow.AddSeconds(-3) : DateTimeOffset.UtcNow.AddSeconds(5),
-                    change == "wrong-color" ? MarkerColor.Red : MarkerColor.Blue,
-                    count: change == "missing" ? 0 : int.MaxValue,
-                    cropRevision: change == "crop" ? 2 : 1,
-                    modelRevision: change == "model" ? 2 : 1,
-                    epoch: change == "epoch" ? 2 : 1);
-            if (change is "stale" or "orientation")
-            {
-                var snapshot = await bridge.ReadPublicAsync(TestContext.Current.CancellationToken);
-                Assert.True(snapshot.BoardInteraction!.UseCameraClaims);
-                Assert.False(snapshot.BoardInteraction.DetectedRoute!.Ready);
-            }
             var before = await game.ComputeStateHashAsync(TestContext.Current.CancellationToken);
             var receipt = await bridge.ExecuteAsync(seat, pay, TestContext.Current.CancellationToken);
             Assert.False(receipt.Accepted);
             Assert.Equal(before, await game.ComputeStateHashAsync(TestContext.Current.CancellationToken));
             Assert.Null(game.Public.PendingClaim);
             Assert.False(game.Public.RouteOwners.ContainsKey(proposal.RouteId));
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("wrong-color")]
+    [InlineData("stale")]
+    [InlineData("orientation")]
+    [InlineData("crop")]
+    [InlineData("model")]
+    [InlineData("epoch")]
+    public async Task Phone_payment_stays_available_and_rechecks_the_board_only_after_payment(string change)
+    {
+        var token = TestContext.Current.CancellationToken;
+        var model = await StartCompanionMatchAsync();
+        try
+        {
+            var bridge = GetCompanionBridge(model);
+            var game = GetCoordinator(model);
+            var proposal = await DetectCompanionRouteAsync(model);
+            var pay = CompanionPayment(proposal);
+            var active = game.Public.ActiveSeatId;
+            var turn = game.Public.TurnNumber;
+            var before = await game.GetSeatViewAsync(active, token);
+            var crop = change == "crop" ? 2 : 1;
+            var modelRevision = change == "model" ? 2 : 1;
+            var epoch = change == "epoch" ? 2 : 1;
+            if (change == "orientation") model.Camera.IsGameTablePreviewUpright = false;
+            else PublishTrains(model.Camera, proposal.RouteId.Value, 5,
+                change == "stale" ? DateTimeOffset.UtcNow.AddSeconds(-3) : DateTimeOffset.UtcNow.AddSeconds(5),
+                change == "wrong-color" ? MarkerColor.Red : MarkerColor.Blue,
+                count: change == "missing" ? 0 : int.MaxValue,
+                cropRevision: crop, modelRevision: modelRevision, epoch: epoch);
+
+            var snapshot = await bridge.ReadPublicAsync(token);
+            Assert.True(snapshot.BoardInteraction!.DetectedRoute!.Ready);
+            Assert.Equal(proposal.ProposalId, snapshot.BoardInteraction.DetectedRoute.ProposalId);
+            var receipt = await bridge.ExecuteAsync(active, pay, token);
+            Assert.True(receipt.Accepted, receipt.Message);
+            Assert.Null(model.BoardFirstProposal);
+            await AssertPendingPaymentAsync();
+            var reservedState = await game.ComputeStateHashAsync(token);
+
+            // A repeated payment cannot spend cards twice or advance the game.
+            Assert.False((await bridge.ExecuteAsync(active, pay, token)).Accepted);
+            Assert.Equal(reservedState, await game.ComputeStateHashAsync(token));
+            var pendingDraw = new CompanionCommand(Guid.NewGuid().ToString("N"), game.SessionId.Value,
+                game.Public.StateVersion, "drawTrain");
+            Assert.False((await bridge.ExecuteAsync(active, pendingDraw, token)).Accepted);
+            Assert.False((await bridge.ExecuteAsync(game.Seats.Last().SeatId, pendingDraw, token)).Accepted);
+
+            // The old capture and an out-of-date capture with a new sequence cannot
+            // satisfy verification just because payment has now been accepted.
+            model.Camera.IsGameTablePreviewUpright = true;
+            var at = DateTimeOffset.UtcNow.AddSeconds(6);
+            Publish(5, at);
+            Publish(6, DateTimeOffset.UtcNow.AddSeconds(-3));
+            await AssertPendingPaymentAsync();
+
+            // Even fresh observations of the wrong board hold the same player's turn.
+            PublishTrains(model.Camera, proposal.RouteId.Value, 7, at.AddSeconds(1.1), MarkerColor.Red,
+                cropRevision: crop, modelRevision: modelRevision, epoch: epoch);
+            PublishTrains(model.Camera, proposal.RouteId.Value, 8, at.AddSeconds(2.2), MarkerColor.Red,
+                cropRevision: crop, modelRevision: modelRevision, epoch: epoch);
+            await AssertPendingPaymentAsync();
+            Assert.Contains("wrong train color", model.Game.GuidanceInstruction);
+            Assert.Contains(proposal.RouteText, model.Game.GuidanceInstruction);
+            Assert.Equal(model.Game.GuidanceInstruction, (await bridge.ReadPublicAsync(token)).Guidance!.Instruction);
+            Publish(9, at.AddSeconds(3.3));
+            await AssertPendingPaymentAsync();
+            Assert.DoesNotContain("wrong train color", model.Game.GuidanceInstruction);
+            Publish(10, at.AddSeconds(4.4));
+            await WaitUntilAsync(() => model.ShowScoreMarkerDetectionPrompt);
+
+            Assert.Null(game.Public.PendingClaim);
+            Assert.Equal(active, game.Public.RouteOwners[proposal.RouteId]);
+            var after = await game.GetSeatViewAsync(active, token);
+            Assert.Equal(before.Hand.Length - pay.Payment!.Total, after.Hand.Length);
+            Assert.Equal(before.TrainsRemaining - pay.Payment!.Total, after.TrainsRemaining);
+            var scoring = await bridge.ReadPublicAsync(token);
+            Assert.False(scoring.CanControl);
+            Assert.Null(scoring.RevealSeatId);
+
+            void Publish(long sequence, DateTimeOffset capturedAt) =>
+                PublishTrains(model.Camera, proposal.RouteId.Value, sequence, capturedAt, MarkerColor.Blue,
+                    cropRevision: crop, modelRevision: modelRevision, epoch: epoch);
+
+            async Task AssertPendingPaymentAsync()
+            {
+                Assert.NotNull(game.Public.PendingClaim);
+                Assert.False(game.Public.RouteOwners.ContainsKey(proposal.RouteId));
+                Assert.Equal(active, game.Public.ActiveSeatId);
+                Assert.Equal(turn, game.Public.TurnNumber);
+                Assert.False(model.ShowScoreMarkerDetectionPrompt);
+                var current = await game.GetSeatViewAsync(active, token);
+                Assert.Equal(before.Hand, current.Hand);
+                Assert.Equal(before.TrainsRemaining, current.TrainsRemaining);
+            }
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Phone_can_cancel_only_the_current_detected_route_without_spending(bool stale)
+    {
+        var token = TestContext.Current.CancellationToken;
+        var model = await StartCompanionMatchAsync();
+        try
+        {
+            var bridge = GetCompanionBridge(model);
+            var game = GetCoordinator(model);
+            var proposal = await DetectCompanionRouteAsync(model);
+            var cancel = CompanionPayment(proposal) with
+            {
+                Kind = "cancelDetectedRoute", Payment = null,
+                DetectedClaimId = stale ? Guid.NewGuid().ToString("N") : proposal.ProposalId
+            };
+            var before = await game.ComputeStateHashAsync(token);
+            var receipt = await bridge.ExecuteAsync(proposal.SeatId, cancel, token);
+            Assert.Equal(!stale, receipt.Accepted);
+            Assert.Equal(before, await game.ComputeStateHashAsync(token));
+            Assert.Null(game.Public.PendingClaim);
+            Assert.Equal(stale ? proposal : null, model.BoardFirstProposal);
+            if (!stale)
+            {
+                Assert.Null((await bridge.ReadPublicAsync(token)).BoardInteraction!.DetectedRoute);
+                Assert.False((await bridge.ExecuteAsync(proposal.SeatId, CompanionPayment(proposal), token)).Accepted);
+            }
         }
         finally { await model.DisposeToolsAsync(); }
     }
@@ -179,7 +302,7 @@ public sealed partial class AutomaticPhysicalFlowTests
             var after = await game.GetSeatViewAsync(proposal.SeatId, TestContext.Current.CancellationToken);
             Assert.Equal(before.Hand, after.Hand);
             Assert.Equal(before.TrainsRemaining, after.TrainsRemaining);
-            Assert.Contains("board changed", model.Game.GuidanceInstruction, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("board", model.Game.GuidanceInstruction, StringComparison.OrdinalIgnoreCase);
         }
         finally { store.ReleaseCommit.TrySetResult(); await model.DisposeToolsAsync(); }
     }

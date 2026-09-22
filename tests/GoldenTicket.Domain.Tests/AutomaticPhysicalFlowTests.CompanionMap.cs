@@ -177,6 +177,14 @@ public sealed partial class AutomaticPhysicalFlowTests
             await WaitUntilAsync(() => model.Game.GuidanceTurn != "Scoring");
             await WaitUntilAsync(() => (bool)typeof(MainViewModel).GetProperty("CanCompanionControl",
                 BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(model)!);
+            // Score-only fixture frames omit the newly claimed trains. The human's
+            // inventory check must expose those missing spaces on both board maps.
+            var missing = await bridge.ReadPublicAsync(token);
+            Assert.NotNull(missing.BoardMap);
+            Assert.Equal(placement.TrainCount, missing.BoardMap.Targets.Count);
+            Assert.Equal(model.Game.PlacementTargets.Select(point =>
+                new CompanionMapPoint(point.X, point.Y, point.Number)), missing.BoardMap.Targets);
+            PublishTrains(model.Camera, placement.RouteId.Value, 3, at.AddSeconds(2.2), color);
             var human = await bridge.ReadPublicAsync(token);
             Assert.NotNull(human.BoardMap);
             Assert.Empty(human.BoardMap.Targets);

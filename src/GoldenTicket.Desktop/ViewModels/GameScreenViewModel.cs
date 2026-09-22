@@ -191,7 +191,8 @@ public sealed record PlacementTargetRow(double X, double Y, int Number)
     private const double Diameter = 32;
     public double Left => X - Diameter / 2;
     public double Top => Y - Diameter / 2;
-    public string Description => $"Train space {Number}";
+    public string? ProblemDescription { get; init; }
+    public string Description => ProblemDescription ?? $"Train space {Number}";
 }
 
 /// <summary>Five character choices become the shared setup seats only when a new match starts.</summary>
@@ -242,6 +243,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
 
     public IReadOnlyList<GameSeatChoice> SeatChoices { get; }
     public IReadOnlyList<GameTableSeat> TableSeats { get; private set; } = [];
+    public event EventHandler? ExitRequested;
 
     private (string Turn, string Seat, string Instruction)? _guidanceOverride;
     public string GuidanceTurn => _guidanceOverride?.Turn ?? _main.Table.TurnText;
@@ -300,6 +302,12 @@ public sealed partial class GameScreenViewModel : ObservableObject
 
     private void RefreshPlacementTarget()
     {
+        if (CurrentInventoryProblemMarkers() is { } problems &&
+            _main.Camera.GameTablePreview is not null && _main.Camera.IsGameTablePreviewUpright)
+        {
+            SetPlacementTargets(problems);
+            return;
+        }
         if (_unverifiedTrainSpaces is { } uncertain &&
             _main.Camera.GameTablePreview is not null &&
             _main.Camera.IsGameTablePreviewUpright &&
@@ -400,6 +408,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
     public bool IsPlaying => Stage == GameScreenStage.Playing;
     public bool IsStartSelected => WelcomeSelection == 0;
     public bool IsReloadSelected => WelcomeSelection == 1;
+    public bool IsExitSelected => WelcomeSelection == 2;
     public bool IsPlaySelected => SeatSelection == SeatChoices.Count;
 
     partial void OnStageChanged(GameScreenStage value)
@@ -424,6 +433,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsStartSelected));
         OnPropertyChanged(nameof(IsReloadSelected));
+        OnPropertyChanged(nameof(IsExitSelected));
     }
 
     partial void OnSeatSelectionChanged(int value) => UpdateSelection();
@@ -464,7 +474,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
 
     public void SelectWelcome(int index)
     {
-        if (index is 0 or 1 && (index == 0 || HasPreviousGame)) WelcomeSelection = index;
+        if (index is >= -1 and <= 2 && (index != 1 || HasPreviousGame)) WelcomeSelection = index;
     }
 
     public void SelectSeat(int index)
@@ -502,7 +512,9 @@ public sealed partial class GameScreenViewModel : ObservableObject
         switch (Stage)
         {
             case GameScreenStage.Welcome:
-                SelectWelcome(Math.Clamp(WelcomeSelection + delta, 0, HasPreviousGame ? 1 : 0));
+                var next = Math.Clamp(WelcomeSelection + delta, 0, 2);
+                if (next == 1 && !HasPreviousGame) next = delta > 0 ? 2 : 0;
+                SelectWelcome(next);
                 break;
             case GameScreenStage.CharacterSelection:
                 SelectSeat(Math.Clamp(SeatSelection + delta, 0, SeatChoices.Count));
@@ -530,7 +542,8 @@ public sealed partial class GameScreenViewModel : ObservableObject
                     OnPropertyChanged(nameof(CanPlay));
                     Stage = GameScreenStage.CharacterSelection;
                 }
-                else await ReloadPreviousAsync();
+                else if (IsReloadSelected) await ReloadPreviousAsync();
+                else if (IsExitSelected) ExitRequested?.Invoke(this, EventArgs.Empty);
                 break;
             case GameScreenStage.CharacterSelection:
                 if (SeatSelection == SeatChoices.Count) OpenCameraSetup();

@@ -74,16 +74,22 @@ See the
   and 1920×1200, including player navigation and full route-text scrolling.
 - [x] Name identifiable unexpected trains by route, color and count. Block solo card draws while
   a placement warning is unresolved; require fresh whole-board verification after removal.
+- [x] Mark blocking train detections directly on the live map with yellow spheres during reload,
+  card, placement and save checks, including detections without a named route. Keep check ownership
+  separate and clear correction cues on the first fresh matching inventory. Verify with synthetic
+  camera and scaled WPF checks; a live-camera walkthrough of these correction cues remains to run.
 - [x] Show those train details in the Save Game dialog during checking and after a timeout,
-  including the post-photo check. Record save observations in the local board-decision log;
-  explicitly say when an extra train's route cannot be identified.
+  including the post-photo check. Show the exact failed camera frame with numbered detection
+  boxes, colors, confidence and route/board location, including unmatched or duplicate boxes.
+  Record positions in the local board-decision log. Clear temporary warnings on a fresh match,
+  including after a timeout; name unpaid proposals and direct the player back to payment.
 - [x] Require post-click whole-board verification for local human card actions, including the
   second train card and destination selection. Preserve the human's turn and offer payment for
   a payable board-first route instead of consuming a draw; reject stale/in-flight camera results.
 - [x] Confirm a human's board-first route and whole-board inventory before showing payment.
-  Use the still-current confirmed evidence after payment authorization to commit through the
-  normal pending-claim path without a second placement wait. Preserve scoring-marker verification
-  and leave the claim pending if evidence becomes stale or changes during persistence.
+  Keep the proposal and chosen cards stable through camera changes. Accept legal payment into
+  the pending claim, then require fresh post-payment whole-board verification before committing
+  it and completing the scoring-marker step. Allow explicit cancellation without spending cards.
 - [x] Retain committed route colors during ordinary gameplay while checking fresh occupancy,
   distinct train detections, positions and extras. Keep new-route, save and reload color checks
   strict. Log card-action board failures with the route and nearby public candidate details.
@@ -192,7 +198,7 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   destination selections while connected; keep the hand visible through ordinary focus changes
   and touches outside its controls. Hide, backgrounding, disconnect and turn changes still cover it.
 - [x] Send camera-detected routes to the revealed Quick play browser for private payment, with
-  live rechecks/removal updates and proposal-bound authorization. Apply the laptop's board check
+  stable choices, cancellation and proposal-bound authorization. Apply the laptop's board check
   to phone card draws; keep camera-free manual route selection as a technical fallback.
 - [x] Mirror current public placement, correction and score-marker instructions on the tablet
   while preserving the laptop's guidance and existing private-card controls.
@@ -496,8 +502,8 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   the real board. Evaluate the experimental empty-board detector. Add printable markers, board
   landmarks, automatic calibration, detailed quality gates and recording/replay.
 - [ ] **M4: verification.** The board-first solo-human and Quick play paths confirm the new route and whole-board
-  inventory before payment, then commits with guarded current evidence without a second placement
-  wait. Complete the durable authorization substate, broader whole-board
+  inventory before payment, preserve the payment choices, then verify fresh post-payment captures
+  before completing the claim and handing off the turn. Complete the durable preauthorization substate, broader whole-board
   recognition, occlusion/unknown foreground rejection, jog/reconnect recovery, stale-epoch
   rejection, wake gesture, and explicit mode-change reconciliation. Persist the score-marker
   move obligation with the claim so an app restart cannot skip the physical marker check.

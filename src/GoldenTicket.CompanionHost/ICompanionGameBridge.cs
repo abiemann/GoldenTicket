@@ -65,8 +65,8 @@ public sealed record CompanionTicket(string Id, string Label, int Points, string
 public sealed record CompanionPrivateSnapshot(SeatView View, LegalActions Actions,
     IReadOnlyList<CompanionTicket> HeldTickets, IReadOnlyList<CompanionTicket> OfferedTickets,
     int MinimumKeep);
-/// <summary>Explicit allowlist: drawTrain, drawTickets, keepTickets, planClaim and payDetectedRoute.
-/// Detected-route payment also requires the desktop's current camera proposal and fresh evidence.</summary>
+/// <summary>Explicit allowlist: drawTrain, drawTickets, keepTickets, planClaim, payDetectedRoute and cancelDetectedRoute.
+/// Detected-route commands require the desktop's current verified proposal; the board is checked again after payment.</summary>
 public sealed record CompanionCommand(string CommandId, string SessionId, long ExpectedStateVersion,
     string Kind, int? Slot = null, string? RouteId = null, PaymentOption? Payment = null,
     string[]? KeptTickets = null, string[]? ReturnedTickets = null, string? DetectedClaimId = null);

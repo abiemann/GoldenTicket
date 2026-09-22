@@ -267,28 +267,31 @@ actually detected rather than asking the player to select an unrelated route fro
 
 A human may begin placing trains without preselecting a route. When the board stabilizes, the app proposes a matching route for the active seat. It then asks that human to authorize the digital payment privately. A visual observation cannot silently choose between legal payment combinations.
 
-The candidate remains provisional until both payment authorization and current physical evidence are available. Enter `AwaitClaimAuthorization`, bind the proposal to its seat, state version, board revision, camera epoch, and proposal ID, and block unrelated card actions. Allow only authorization, rejection with physical restoration, pause, or recovery. A route suggestion alone cannot commit the claim.
+The candidate remains provisional until both payment authorization and current physical evidence are available. Enter `AwaitClaimAuthorization`, bind the proposal to its seat, state version and proposal ID, retain the initial board/camera revisions for diagnostics, and block unrelated card actions. Allow only authorization, rejection with physical restoration, pause, or recovery. A route suggestion alone cannot commit the claim.
 
 The single-human desktop and multi-human Quick play flows confirm the new route and whole board before opening payment:
 two distinct fresh observations must identify every new train in the correct lane and color,
-retain the occupied spaces of committed routes, and find no extra trains. Continue checking while
-the player chooses cards. Payment is enabled only while the confirmation remains current. At
-authorization, check the latest board snapshot and the proposal's seat, state, camera, crop and
-model identities. Persist `PlanClaim`, check the latest single-frame occupancy of the committed
-routes and the newly confirmed route, then submit the held stable color evidence to the normal
-claim commit path without another color check or multi-frame placement wait. If trains move,
-extras appear, evidence becomes stale or its camera identity changes during persistence, retain
-the authorized pending placement and recheck it. The scoring-marker movement and verification step is unchanged. A durable
-authorization substate remains broader verification work.
+retain the occupied spaces of committed routes, and find no extra trains. Once payment is offered,
+keep the route and selected cards stable while the player chooses. Camera changes, missing frames,
+and alignment updates do not disable payment. Authorization still validates the proposal's
+session, seat, state version and legal cards, then persists `PlanClaim` to reserve that payment.
+Close the payment chooser and verify the board using two distinct fresh captures after payment
+was accepted, at least one second apart. Queued prepayment captures cannot satisfy this check.
+The same player's turn remains pending until all previously claimed spaces and the new route
+match, with no extra trains. Then commit cards, trains and points once and complete the existing
+scoring-marker step before the next player can act. A **Cancel** action dismisses an unpaid
+proposal; its trains must be removed before another proposal or card action becomes available.
+A durable preauthorization substate remains broader verification work.
 
 Quick play publishes only the camera route's proposal ID, route identity and readiness in its
 public snapshot. Existing private legal actions supply the payment choices for the revealed
 human. Same-turn camera updates refresh the browser's action area without hiding the hand or
 resetting destination choices; they never reveal a covered hand. In camera play, replace manual
 route selection with the detected route and an explicit **Pay** action. Bind that command to
-the proposal ID as well as seat/session/state, and recheck live camera evidence at the desktop
-write boundary. The public laptop shows route guidance, never the phone's payment cards.
-Removed, replaced or unverified proposals cannot authorize a payment. Camera-free technical
+the proposal ID as well as seat/session/state. The browser keeps payment choices available until
+authorization or cancellation, then mirrors the post-payment board check. The public laptop
+shows route guidance, never the phone's payment cards. Cancelled, replaced or unverified proposals
+cannot authorize a payment. Camera-free technical
 play retains manual selection.
 
 During physical placement and score-marker steps, the desktop also publishes the public game
@@ -334,6 +337,12 @@ after five seconds without a command submission and is canceled on focus loss. E
 camera-free technical play retains its manual workflow; a game using the camera cannot silently
 fall back to that path after the camera stops. Quick play uses the same gate before remote
 card actions.
+
+Temporary board warnings clear automatically on the first fresh analysis that matches all
+committed train positions with no extras. Any obsolete invalid-placement markers clear too,
+and Quick play receives the correction through SSE. Missing, stale or repeated captures do
+not count as correction. Clearing a warning neither retries a rejected action nor advances
+the turn; a subsequent card choice still requires the two fresh post-click captures above.
 
 ### 4.5 AI turn
 
@@ -549,10 +558,16 @@ Save Game requires a fresh accepted board crop, checks train positions and playe
 the committed routes plus any subset of an authorized pending placement, reads back the digital
 checkpoint and an unprocessed board photo with observed color totals and the pending slot mask,
 then returns to the main menu. The exact mask must remain stable and match after photo capture.
-A failed check leaves the game open. The save dialog shows an unexpected train's detected route,
-color and count when available, during checking and after either verification timeout. Uncertain
-locations remain explicit rather than guessed. Save observations join the local board-decision
-log without camera images or private-card data.
+A failed check leaves the game open. The save dialog shows the exact failed camera frame with
+numbered detection boxes and their colors, confidence and route or board region, during checking
+and after either verification timeout. Missing trains use their expected route spaces. Unmatched,
+overlapping and ambiguous detections retain their image coordinates even when no route can be
+named confidently. The image and boxes update together; they never overlay an older detection
+on a newer preview. A fresh matching observation clears the warning and image. After a timeout,
+this recovery does not save automatically: the player selects Save Game again. An unpaid
+board-first proposal is named explicitly and requires payment or cancellation/removal before saving.
+Save observations include detection coordinates in the local board-decision log, without camera
+images or private-card data.
 Completion requires the matching durable photo attachment as well as logical checkpoint validation;
 an in-memory failure marker alone is insufficient across restart. Quit to Menu discards later
 auto-journaled play while retaining the latest earlier completed save with a validated photo,
@@ -561,6 +576,12 @@ destination choice. Held-key repeats do not reopen the dialog or repeat the reve
 On reload, verify saved scoring markers, confirmed routes, and the saved pending slots before
 showing a game-themed dialog naming the player whose saved turn resumes. Its styled **OK** button
 releases AI work and human input; restoring the board alone does not advance play.
+Blocking train detections appear as the existing pulsing yellow spheres directly on the live
+board, including extras outside known routes. The centers come from the detector's image
+coordinates, not a guessed route. Missing trains use expected route slots. Reload, card-action,
+placement and save checks own their cues independently, so another check cannot erase them.
+A fresh matching inventory removes the correction spheres immediately; repeated or stale
+frames do not establish correction. Stable verification remains required before resuming play.
 The game-table seat heading reads **Checking...** during reload verification and while this dialog
 is open. Acknowledging **OK** restores the active player's name.
 
@@ -925,9 +946,9 @@ stateDiagram-v2
 ```
 
 Board-first observations enter an authorization substate of `HumanPrivate`, then reuse the same
-pending-claim and commit protocol. In the single-human desktop flow, full-board stability is
-established before payment, so still-current evidence can complete `AwaitPhysical` immediately
-after reservation. Stale or changed evidence leaves the claim pending for fresh verification.
+pending-claim and commit protocol. In desktop and Quick play flows, full-board stability is
+established before payment choices appear. Choices remain stable through camera changes;
+after reservation, `AwaitPhysical` requires fresh post-payment whole-board verification.
 
 ### 9.2 Orthogonal readiness gates
 
@@ -2175,8 +2196,8 @@ physical play is untested.
 | One wrong-color train on a new route | Correct segment highlighted; no commit |
 | Color reading changes on an occupied committed route | Retain the recorded claim color during ordinary play; still verify its train positions and reject extras |
 | Committed train has the wrong or uncertain color during save/reload | Strict color audit blocks completion until corrected |
-| Board-first payment after current whole-board confirmation | Commit through the pending-claim protocol without a second placement wait |
-| Board or camera evidence changes during board-first payment | Disable payment or retain the authorized pending claim for fresh verification; no stale-evidence commit |
+| Board-first payment after whole-board confirmation | Accept the selected legal payment, then verify fresh captures before claim completion and turn handoff |
+| Board or camera evidence changes during board-first payment | Preserve the proposal and card choices; check the whole board after authorization while the same turn remains pending |
 | Neighboring parallel lane filled | Reject wrong physical lane |
 | Correct new claim plus moved old train | Reject until unrelated mismatch is corrected |
 | Motionless hand covers an old route | Wait; low motion cannot imply visibility |
@@ -2186,7 +2207,7 @@ physical play is untested.
 | Jog during inference | Old-epoch result cannot commit |
 | Camera returns to a nearby valid pose | Automatic registration and continuation of the same operation |
 | Pending claim completed while camera unavailable | Fresh evidence may finish only that exact authorized operation |
-| Jog before board-first payment authorization | Rebuild a current proposal or guide restoration; no deadlock or automatic payment |
+| Jog before board-first payment authorization | Keep payment choices stable; verify the new camera alignment after payment, or cancel and restore the board |
 | Board slides while markers remain fixed | Board-to-marker disagreement detected |
 | Marker sheet moves separately from the board | Reject stale geometry and reacquire |
 | Mirrored/rotated capture or ambiguous orientation | Unique validated mapping or continued pause |

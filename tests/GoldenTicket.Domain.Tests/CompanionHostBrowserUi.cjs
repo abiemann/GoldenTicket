@@ -37,7 +37,7 @@ let resultImageBytes = null, boardImageBytes = null, delayedBoardImage = null, a
 let sessionRevision=0, controllerGeneration=1, suppressHeartbeats=false;
 const eventStreams=new Set();
 function sessionEnvelope() {
-  return paired ? {paired,pending:false,csrf:'test-csrf',handoffGeneration:generation,controllerGeneration,apiVersion:'1',assetsVersion:'15',snapshot:fixture.snapshot} : {paired,pending,apiVersion:'1',assetsVersion:'15'};
+  return paired ? {paired,pending:false,csrf:'test-csrf',handoffGeneration:generation,controllerGeneration,apiVersion:'1',assetsVersion:'16',snapshot:fixture.snapshot} : {paired,pending,apiVersion:'1',assetsVersion:'16'};
 }
 function publishSession(target) {
   const revision=++sessionRevision, frame=`id: ${revision}\nevent: session\ndata: ${JSON.stringify(sessionEnvelope())}\n\n`;

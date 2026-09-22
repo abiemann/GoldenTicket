@@ -78,7 +78,7 @@
   function turnIdentity(value) { return value?.game && value.canControl ? `${value.game.sessionId}:${value.game.turnNumber}:${value.game.activeSeatId}:${value.revealSeatId}` : "none"; }
   function receiveSession(result) {
     if (!result || typeof result.paired !== "boolean" || typeof result.pending !== "boolean") throw new Error("The laptop sent an invalid update.");
-    if (result.apiVersion !== "1" || result.assetsVersion !== "15") {
+    if (result.apiVersion !== "1" || result.assetsVersion !== "16") {
       needsReload = true; throw new Error("The companion needs an update. Reload from the laptop before playing.");
     }
     lastHeartbeat = Date.now(); reconnectDelay = 1000;
@@ -394,10 +394,11 @@
       notice(board.message || "Finish the train placement before drawing cards."); return;
     }
     if (kind === "planClaim" && board?.useCameraClaims) { notice("Place your trains on the board to choose their payment."); return; }
-    if (kind === "payDetectedRoute") {
+    if (kind === "payDetectedRoute" || kind === "cancelDetectedRoute") {
       const route = board?.detectedRoute;
       const payments = privateData.actions.claims?.find(claim => claim.routeId === route?.routeId)?.payments || [];
-      if (!board?.useCameraClaims || !route?.ready || details.detectedClaimId !== route.proposalId || details.routeId !== route.routeId || !payments.some(payment => paymentKey(payment) === paymentKey(details.payment))) {
+      if (!board?.useCameraClaims || !route || details.detectedClaimId !== route.proposalId || details.routeId !== route.routeId ||
+          (kind === "payDetectedRoute" && (!route.ready || !payments.some(payment => paymentKey(payment) === paymentKey(details.payment))))) {
         notice("The detected route changed. Check its current payment choices."); return;
       }
     }
@@ -436,6 +437,9 @@
           updatePrivateInPlace(() => { drawControls?.update(); ticketOfferControls?.update(); });
         } else if (kind === "drawTrain" && drawControls && !privateData.actions.mustCommitTicketSelection && !privateData.actions.mustResolvePendingClaim) {
           renderHand(privateHandTarget); drawControls.update();
+        } else if (kind === "cancelDetectedRoute" && privateActionsTarget && !privateData.actions.mustCommitTicketSelection && !privateData.actions.mustResolvePendingClaim) {
+          detectedPayment = null;
+          updatePrivateInPlace(() => renderActions(privateActionsTarget));
         } else renderPrivate();
         renderPublic();
       } else {
@@ -580,7 +584,7 @@
     const cards = element("div", undefined, "cards");
     privateHandTarget = cards; renderHand(cards);
     target.append(cards);
-    if (privateData.view.reservedCards.length) target.append(element("p", `${privateData.view.reservedCards.length} cards are reserved for the pending route. Complete placement on the laptop.`, "badge"));
+    if (privateData.view.reservedCards.length) target.append(element("p", `${privateData.view.reservedCards.length} cards are reserved for the pending route. Follow the board-check instructions below.`, "badge"));
     renderDestinationTickets(target);
     if (privateData.actions.mustCommitTicketSelection) renderOffer(target);
     else if (privateData.actions.mustResolvePendingClaim) {
@@ -689,6 +693,8 @@
       if (payment) submit("payDetectedRoute", { routeId: route.routeId, payment, detectedClaimId: route.proposalId });
     }, "detected-pay");
     pay.setAttribute("aria-label", "Pay for detected route");
+    const cancel = button("Cancel", () => submit("cancelDetectedRoute", { routeId: route.routeId, detectedClaimId: route.proposalId }), "secondary");
+    cancel.setAttribute("aria-label", "Cancel detected route");
     const options = [];
     function updateSelection() {
       for (const {option, key} of options) option.setAttribute("aria-pressed", String(key === detectedPayment?.key));
@@ -704,7 +710,8 @@
       option.setAttribute("aria-label", `Pay with ${paymentLabel(choice)}`); option.disabled = !route.ready;
       options.push({option, key}); payments.append(option);
     }
-    updateSelection(); panel.append(payments, pay); target.append(panel);
+    const actions = element("div", undefined, "actions"); actions.append(pay, cancel);
+    updateSelection(); panel.append(payments, actions, element("p", "Wrong route? Remove those trains, then cancel.", "detected-route-status")); target.append(panel);
   }
   function renderDrawPicker(target, actions, blocked = false) {
     const area = element("div", undefined, "draw-area");

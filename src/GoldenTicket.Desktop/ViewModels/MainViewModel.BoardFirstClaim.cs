@@ -41,19 +41,16 @@ public sealed class BoardFirstClaimProposal(
     public string RouteText { get; } = routeText;
     internal SeatView? SeatView { get; init; }
     public long StateVersion { get; } = stateVersion;
-    public long CropRevision { get; private set; } = cropRevision;
-    public long ModelRevision { get; private set; } = modelRevision;
-    public long CameraEpoch { get; private set; } = cameraEpoch;
-    public bool CameraEvidenceCurrent { get; private set; } = true;
+    public long CropRevision { get; } = cropRevision;
+    public long ModelRevision { get; } = modelRevision;
+    public long CameraEpoch { get; } = cameraEpoch;
     public IReadOnlyList<BoardFirstPaymentRow> Payments { get; } = payments;
     public IReadOnlyList<BoardFirstPaymentCardRow> Cards { get; } = BuildCards(availableCards, payments);
     public int RequiredCards => Payments.Count == 0 ? 0 : Payments[0].Option.Total;
     public int SelectedCount => Cards.Count(card => card.IsSelected);
-    public bool CanConfirmPayment => CameraEvidenceCurrent && SelectedPayment is not null;
+    public bool CanConfirmPayment => SelectedPayment is not null;
 
-    public string SelectionFeedback => !CameraEvidenceCurrent
-        ? "Rechecking your trains on the board…"
-        : SelectedCount switch
+    public string SelectionFeedback => SelectedCount switch
     {
         0 => $"Select {RequiredCards} card{(RequiredCards == 1 ? "" : "s")}.",
         var count when count < RequiredCards =>
@@ -82,26 +79,6 @@ public sealed class BoardFirstClaimProposal(
 
     public ImmutableArray<CardId> SelectedCardIds => Cards.Where(card => card.IsSelected)
         .Select(card => card.Id).ToImmutableArray();
-
-    internal void RequireFreshCameraEvidence()
-    {
-        if (!CameraEvidenceCurrent) return;
-        CameraEvidenceCurrent = false;
-        OnPropertyChanged(nameof(CameraEvidenceCurrent));
-        OnPropertyChanged(nameof(CanConfirmPayment));
-        OnPropertyChanged(nameof(SelectionFeedback));
-    }
-
-    internal void RefreshCameraEvidence(long cropRevision, long modelRevision, long cameraEpoch)
-    {
-        CropRevision = cropRevision;
-        ModelRevision = modelRevision;
-        CameraEpoch = cameraEpoch;
-        CameraEvidenceCurrent = true;
-        OnPropertyChanged(nameof(CameraEvidenceCurrent));
-        OnPropertyChanged(nameof(CanConfirmPayment));
-        OnPropertyChanged(nameof(SelectionFeedback));
-    }
 
     private static IReadOnlyList<BoardFirstPaymentCardRow> BuildCards(
         IReadOnlyList<HeldCard>? availableCards, IReadOnlyList<BoardFirstPaymentRow> payments)
@@ -139,14 +116,13 @@ public sealed partial class MainViewModel
     private LegalActions? _boardFirstLegalActions;
     private bool _boardFirstLoading;
     private bool _boardFirstSubmitting;
+    private bool _boardFirstAwaitingRemoval;
     private BoardFirstClaimProposal? _boardFirstProposal;
-    private DateTimeOffset? _boardFirstRecheckSince;
     private string? _boardFirstInvalidMoveMessage;
     private int _boardFirstInvalidMoveMask;
     private BoardInventoryVerifier? _boardFirstCorrectionVerifier;
     private BoardInventoryVerifier? _boardFirstPaymentVerifier;
     private string? _boardFirstPaymentVerificationKey;
-    private GameTableAnalysis? _boardFirstConfirmedAnalysis;
 
     public BoardFirstClaimProposal? BoardFirstProposal
     {
@@ -155,6 +131,7 @@ public sealed partial class MainViewModel
         {
             if (!SetProperty(ref _boardFirstProposal, value)) return;
             value?.ObserveCardSelection();
+            if (value is not null) Game.UpdateInventoryProblemMarkers("proposal", null);
             OnPropertyChanged(nameof(ShowBoardFirstClaimProposal));
             OnPropertyChanged(nameof(CanRevealPrivateSeat));
             NotifySoloDrawCommands();
@@ -165,18 +142,18 @@ public sealed partial class MainViewModel
 
     private void ResetBoardFirstClaimFlow()
     {
+        Game.UpdateInventoryProblemMarkers("proposal", null);
         _boardFirstRouteDetector.Reset();
         _boardFirstMoveFeedbackDetector.Reset();
         _boardFirstSeatView = null;
         _boardFirstLegalActions = null;
         BoardFirstProposal = null;
-        _boardFirstRecheckSince = null;
+        _boardFirstAwaitingRemoval = false;
         _boardFirstInvalidMoveMessage = null;
         _boardFirstInvalidMoveMask = 0;
         _boardFirstCorrectionVerifier = null;
         _boardFirstPaymentVerifier = null;
         _boardFirstPaymentVerificationKey = null;
-        _boardFirstConfirmedAnalysis = null;
         Game.ClearUnverifiedTrainSpaces();
         NotifySoloDrawCommands();
     }
@@ -201,6 +178,7 @@ public sealed partial class MainViewModel
             coordinator.Public.SeatOf(coordinator.Public.ActiveSeatId).Kind != SeatKind.Human)
         {
             if (BoardFirstProposal is not null) ClearBoardFirstProposal("flow-inactive");
+            Game.UpdateInventoryProblemMarkers("proposal", null);
             ClearBoardFirstInvalidMove();
             return;
         }
@@ -211,27 +189,29 @@ public sealed partial class MainViewModel
             return;
 
         var active = coordinator.Public.SeatOf(coordinator.Public.ActiveSeatId);
+        if (_boardFirstAwaitingRemoval)
+        {
+            _boardFirstCorrectionVerifier ??= NewCardBoardVerifier(coordinator);
+            if (_boardFirstCorrectionVerifier.Observe(analysis.Board, analysis.Candidates,
+                analysis.CropRevision, analysis.ModelRevision).State is
+                BoardInventoryState.Stabilizing or BoardInventoryState.Confirmed)
+            {
+                _boardFirstAwaitingRemoval = false;
+                ClearBoardFirstInvalidMove();
+            }
+            return;
+        }
         if (BoardFirstProposal is { } proposal)
         {
             if (proposal.SessionId != coordinator.SessionId ||
                 proposal.SeatId != active.SeatId ||
                 proposal.StateVersion != coordinator.Public.StateVersion)
                 ClearBoardFirstProposal("turn-changed");
-            else if (proposal.CropRevision != analysis.CropRevision ||
-                     proposal.ModelRevision != analysis.ModelRevision ||
-                     proposal.CameraEpoch != analysis.Board.Epoch)
+            else
             {
-                if (proposal.CameraEvidenceCurrent)
-                {
-                    proposal.RequireFreshCameraEvidence();
-                    _boardFirstRecheckSince = analysis.Board.CapturedAt;
-                    BoardInteractionLog.Write("board-first.proposal-rechecking", new
-                    {
-                        route = proposal.RouteId.Value,
-                        analysis.Board.Sequence, analysis.Board.Epoch,
-                        analysis.CropRevision, analysis.ModelRevision
-                    });
-                }
+                // The whole board was verified before offering payment. Keep that
+                // choice stable; fresh physical verification follows authorization.
+                return;
             }
         }
 
@@ -252,46 +232,10 @@ public sealed partial class MainViewModel
             $"{coordinator.SessionId.Value}/{coordinator.Public.StateVersion}",
             analysis.CropRevision, analysis.ModelRevision);
 
-        if (BoardFirstProposal is { } existing)
-        {
-            ClearBoardFirstInvalidMove();
-            if (_boardFirstRouteDetector.ProposedRouteId == existing.RouteId.Value)
-            {
-                var inventory = ObserveBoardFirstPaymentInventory(analysis, coordinator,
-                    existing.RouteId, active.Color);
-                if (inventory.Confirmed)
-                {
-                    var revalidated = !existing.CameraEvidenceCurrent;
-                    existing.RefreshCameraEvidence(analysis.CropRevision,
-                        analysis.ModelRevision, analysis.Board.Epoch);
-                    _boardFirstRecheckSince = null;
-                    if (revalidated) BoardInteractionLog.Write("board-first.proposal-revalidated", new
-                    {
-                        route = existing.RouteId.Value,
-                        analysis.Board.Sequence, analysis.Board.Epoch,
-                        analysis.CropRevision, analysis.ModelRevision
-                    });
-                }
-                else
-                {
-                    existing.RequireFreshCameraEvidence();
-                    _boardFirstRecheckSince ??= analysis.Board.CapturedAt;
-                }
-                return;
-            }
-            if (!existing.CameraEvidenceCurrent && observed is null &&
-                _boardFirstRecheckSince is { } since &&
-                analysis.Board.CapturedAt - since < TimeSpan.FromSeconds(5))
-                return;
-
-            // The board was rechecked or the pieces were persistently removed. No cards
-            // have been reserved or spent, so a different route may be proposed below.
-            ClearBoardFirstProposal(observed is not null ? "different-route" :
-                existing.CameraEvidenceCurrent ? "route-removed" : "recheck-timeout");
-        }
         var detectedRoute = observed ?? _boardFirstRouteDetector.ProposedRouteId;
         if (detectedRoute is null)
         {
+            Game.UpdateInventoryProblemMarkers("proposal", null);
             ObserveBoardFirstInvalidMove(analysis, coordinator, active);
             return;
         }
@@ -305,7 +249,7 @@ public sealed partial class MainViewModel
         {
             Game.ShowGuidance("Checking your route", active.DisplayName,
                 confirmation.State == BoardInventoryState.UnexpectedTrain
-                    ? "Remove extra train pieces outside the claimed routes and " +
+                    ? "Check the yellow spheres for extra train pieces outside the claimed routes and " +
                       $"{_manifest.Describe(claim.RouteId)} before choosing payment."
                     : $"Verifying your trains on {_manifest.Describe(claim.RouteId)} before choosing payment.");
             return;
@@ -360,10 +304,12 @@ public sealed partial class MainViewModel
                 .Select(route => new BoardInventoryRoute(route.Key.Value,
                     ToMarkerColor(coordinator.Public.SeatOf(route.Value).Color),
                     _manifest.Route(route.Key).Length)).ToArray(), verifyClaimedRouteColors: false);
-            // Losing an invalid-route suggestion (blur, ambiguous pieces, or a pause) does
-            // not prove the pieces were removed. Require the committed board to match again.
+            // Losing a suggestion alone does not prove correction. Once a fresh observation
+            // matches the committed board, remove the obsolete message and its markers.
+            // Any subsequent draw or payment still requires its own stable camera proof.
             if (_boardFirstCorrectionVerifier.Observe(analysis.Board, analysis.Candidates,
-                analysis.CropRevision, analysis.ModelRevision).Confirmed)
+                analysis.CropRevision, analysis.ModelRevision).State is
+                BoardInventoryState.Stabilizing or BoardInventoryState.Confirmed)
                 ClearBoardFirstInvalidMove();
             return;
         }
@@ -460,10 +406,8 @@ public sealed partial class MainViewModel
             reason
         });
         BoardFirstProposal = null;
-        _boardFirstRecheckSince = null;
         _boardFirstPaymentVerifier = null;
         _boardFirstPaymentVerificationKey = null;
-        _boardFirstConfirmedAnalysis = null;
         Game.ClearGuidance();
     }
 
@@ -486,47 +430,43 @@ public sealed partial class MainViewModel
         }
         var observation = _boardFirstPaymentVerifier!.Observe(analysis.Board, analysis.Candidates,
             analysis.CropRevision, analysis.ModelRevision);
-        _boardFirstConfirmedAnalysis = observation.Confirmed ? analysis : null;
+        Game.UpdateInventoryProblemMarkers("proposal", observation);
         return observation;
     }
 
-    private bool HasCurrentBoardFirstPaymentEvidence(GameCoordinator coordinator,
-        BoardFirstClaimProposal proposal, GameTableAnalysis confirmed, out GameTableAnalysis current,
-        bool checkLatestSnapshot = true)
+    [RelayCommand]
+    private void CancelBoardFirstClaim()
     {
-        current = Camera.GameTableAnalysis!;
-        if (!Camera.IsGameTablePreviewUpright || current is null ||
-            current.Board.Age > TimeSpan.FromSeconds(2) || confirmed.Board.Age > TimeSpan.FromSeconds(2) ||
-            current.Board.Sequence < confirmed.Board.Sequence ||
-            current.Board.Epoch != proposal.CameraEpoch ||
-            current.CropRevision != proposal.CropRevision || current.ModelRevision != proposal.ModelRevision)
-            return false;
-        if (!checkLatestSnapshot)
-        {
-            // The color proof has already been accepted for payment. A newer frame can
-            // still reveal moved or extra pieces while the reservation was written.
-            // Check occupancy once, without reopening color or another stability window.
-            var expected = coordinator.Public.RouteOwners.Select(route =>
-                new BoardInventoryRoute(route.Key.Value,
-                    ToMarkerColor(coordinator.Public.SeatOf(route.Value).Color),
-                    _manifest.Route(route.Key).Length))
-                .Append(new BoardInventoryRoute(proposal.RouteId.Value,
-                    ToMarkerColor(coordinator.Public.SeatOf(proposal.SeatId).Color),
-                    _manifest.Route(proposal.RouteId).Length)).ToArray();
-            if (new BoardInventoryVerifier(expected, verifyClaimedRouteColors: false)
-                .Observe(current.Board, current.Candidates, current.CropRevision,
-                    current.ModelRevision).State != BoardInventoryState.Stabilizing)
-                return false;
-            current = confirmed;
-            return true;
-        }
-        // Stability was established before payment. Check the latest snapshot again at the
-        // write boundary, without asking the player to wait through another stability window.
-        var inventory = CreateBoardFirstPaymentVerifier(coordinator, proposal.RouteId,
-            coordinator.Public.SeatOf(proposal.SeatId).Color).Observe(current.Board,
-            current.Candidates, current.CropRevision, current.ModelRevision);
-        return inventory.State == BoardInventoryState.Stabilizing;
+        if (BoardFirstProposal is { } proposal) CancelBoardFirstProposal(proposal);
     }
+
+    private bool CancelBoardFirstProposal(BoardFirstClaimProposal proposal)
+    {
+        if (_boardFirstSubmitting || (_operationInProgress && !_handlingRemoteCommand) ||
+            !BoardFirstProposalContextCurrent(proposal)) return false;
+        ClearBoardFirstProposal("cancelled");
+        _boardFirstRouteDetector.Reset();
+        _boardFirstAwaitingRemoval = true;
+        _boardFirstCorrectionVerifier = NewCardBoardVerifier(_coordinator!);
+        _boardFirstInvalidMoveMessage = $"Remove your trains from {proposal.RouteText} to choose another action.";
+        var length = _manifest.Route(proposal.RouteId).Length;
+        Game.ShowUnverifiedTrainSpaces(proposal.RouteId, length, (1 << length) - 1);
+        Game.ShowGuidance("Remove trains", proposal.SeatName, _boardFirstInvalidMoveMessage);
+        NotifySoloDrawCommands();
+        return true;
+    }
+
+    private bool BoardFirstProposalContextCurrent(BoardFirstClaimProposal proposal) =>
+        ReferenceEquals(BoardFirstProposal, proposal) &&
+        _coordinator is { StorageFaulted: false } coordinator &&
+        coordinator.SessionId == proposal.SessionId &&
+        coordinator.Public.Lifecycle == SessionLifecycle.Active &&
+        coordinator.Public.StateVersion == proposal.StateVersion &&
+        coordinator.Public.TurnPhase == TurnPhase.TurnStart &&
+        coordinator.Public.ActiveSeatId == proposal.SeatId &&
+        !IsGameInputPaused && _windowActive && _systemAvailable &&
+        IsGameplayScreenActive(Screen.Table) && !_exitRequested && !_toolsDisposed &&
+        !_mustReload && !NeedsBoardReconciliation && _scoreMarkerStep is null;
 
     [RelayCommand]
     private Task ConfirmBoardFirstClaimAsync() =>
@@ -545,22 +485,8 @@ public sealed partial class MainViewModel
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (_boardFirstSubmitting || (_operationInProgress && !(remote && _handlingRemoteCommand)) ||
-            !ReferenceEquals(BoardFirstProposal, proposal) || !proposal.Payments.Contains(payment) ||
-            !proposal.CameraEvidenceCurrent ||
-            _coordinator is not { } coordinator ||
-            coordinator.SessionId != proposal.SessionId ||
-            coordinator.Public.StateVersion != proposal.StateVersion ||
-            coordinator.Public.TurnPhase != TurnPhase.TurnStart ||
-            coordinator.Public.ActiveSeatId != proposal.SeatId ||
-            Camera.GameTableAnalysis is not { } current || current.Board.Age > TimeSpan.FromSeconds(2) ||
-            current.Board.Epoch != proposal.CameraEpoch ||
-            current.CropRevision != proposal.CropRevision ||
-            current.ModelRevision != proposal.ModelRevision ||
-            proposal.SeatView is not { } seatView ||
-            _boardFirstConfirmedAnalysis is not { } confirmed ||
-            !HasCurrentBoardFirstPaymentEvidence(coordinator, proposal, confirmed, out _) ||
-            IsGameInputPaused || !_windowActive || !IsGameplayScreenActive(Screen.Table) ||
-            _mustReload || NeedsBoardReconciliation || _scoreMarkerStep is not null)
+            !BoardFirstProposalContextCurrent(proposal) || !proposal.Payments.Contains(payment) ||
+            _coordinator is not { } coordinator || proposal.SeatView is not { } seatView)
             return null;
 
         _boardFirstSubmitting = true;
@@ -582,6 +508,16 @@ public sealed partial class MainViewModel
                 return outcome;
             }
 
+            // Payment is now durably reserved. Start a separate physical check, using
+            // only captures after this boundary, before spending cards or handing off.
+            if (coordinator.Public.PendingClaim is { } authorized)
+            {
+                var latest = Camera.GameTableAnalysis;
+                _boardFirstPaymentCheck = new(authorized.OperationId, DateTimeOffset.UtcNow,
+                    latest?.Board.Epoch, latest?.Board.Sequence);
+                _routePlacementVerifier.Reset();
+                ResetPlacementInventory();
+            }
             await RefreshAsync();
             if (ReferenceEquals(coordinator, _coordinator) &&
                 coordinator.SessionId == proposal.SessionId &&
@@ -592,26 +528,10 @@ public sealed partial class MainViewModel
                 pending.RouteId == proposal.RouteId && pending.SeatId == proposal.SeatId &&
                 Table.Placement is { AwaitingRestore: false } placement &&
                 placement.OperationId == pending.OperationId &&
-                !_mustReload && !NeedsBoardReconciliation && _windowActive &&
-                HasCurrentBoardFirstPaymentEvidence(coordinator, proposal, confirmed,
-                    out var evidence, checkLatestSnapshot: false))
+                !_mustReload && !NeedsBoardReconciliation && _windowActive)
             {
-                SetOperationInProgress(false);
-                await AcceptPhysicalPlacementAsync(placement, EvidenceKind.CameraAutomatic, evidence.ModelId,
-                    $"{placement.TrainCount} {placement.Color} train pieces matched every measured slot of " +
-                    $"{placement.RouteId.Value} in distinct upright frames before payment; " +
-                    "the latest frame confirmed occupancy of all claimed routes plus the new route " +
-                    "without reopening previously confirmed colors; " +
-                    $"camera epoch {evidence.Board.Epoch}, color-confirmed frame {evidence.Board.Sequence}, " +
-                    $"occupancy frame {Camera.GameTableAnalysis!.Board.Sequence}, " +
-                    $"crop {evidence.CropRevision}, model revision {evidence.ModelRevision}.");
-            }
-            else if (ReferenceEquals(coordinator, _coordinator))
-            {
-                // A camera/board change during persistence invalidates the prepayment proof.
-                // The durable reservation remains pending and the normal camera flow can recover.
                 Game.ShowGuidance(Table.TurnText, proposal.SeatName,
-                    "The board changed while payment was being confirmed. Keep your trains in place while the camera rechecks them.");
+                    "Payment accepted. Keep the board clear while the camera checks it before the next turn.");
             }
             return outcome;
         }

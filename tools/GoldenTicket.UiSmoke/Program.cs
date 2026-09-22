@@ -37,10 +37,12 @@ internal static partial class Program
     private static void Main(string[] args)
     {
         var markerScoresOnly = args.Length > 0 && args[0] == "--marker-scores";
-        if (args.Length > (markerScoresOnly ? 2 : 1))
-            throw new ArgumentException("Usage: GoldenTicket.UiSmoke [output-directory] | --marker-scores [output-directory]");
-        Output = Path.GetFullPath(markerScoresOnly
-            ? args.Length == 2 ? args[1] : "artifacts/ui-smoke-marker-scores"
+        var saveEvidenceOnly = args.Length > 0 && args[0] == "--save-evidence-only";
+        var inventoryMarkersOnly = args.Length > 0 && args[0] == "--inventory-markers-only";
+        if (args.Length > (markerScoresOnly || saveEvidenceOnly || inventoryMarkersOnly ? 2 : 1))
+            throw new ArgumentException("Usage: GoldenTicket.UiSmoke [output-directory] | --marker-scores [output-directory] | --save-evidence-only [output-directory] | --inventory-markers-only [output-directory]");
+        Output = Path.GetFullPath(markerScoresOnly || saveEvidenceOnly || inventoryMarkersOnly
+            ? args.Length == 2 ? args[1] : markerScoresOnly ? "artifacts/ui-smoke-marker-scores" : inventoryMarkersOnly ? "artifacts/ui-smoke-inventory-markers" : "artifacts/ui-smoke-save-evidence"
             : args.Length == 1 ? args[0] : "artifacts/ui-smoke");
         Directory.CreateDirectory(Output);
         var app = new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -58,6 +60,20 @@ internal static partial class Program
                     await RunMarkerScoresSmoke();
                     return;
                 }
+                if (saveEvidenceOnly || inventoryMarkersOnly)
+                {
+                    if (saveEvidenceOnly) await VerifyGameExitEvidence();
+                    else
+                    {
+                        await VerifyInventoryProblemMarkers();
+                        await VerifyPlacementTarget();
+                    }
+                    await File.WriteAllTextAsync(Path.Combine(Output, "layout-report.json"), JsonSerializer.Serialize(Results, new JsonSerializerOptions { WriteIndented = true }));
+                    await File.WriteAllTextAsync(Path.Combine(Output, "binding-errors.log"), BindingLog.Text.ToString());
+                    Console.WriteLine($"Rendered {Results.Count} {(saveEvidenceOnly ? "save-evidence" : "inventory-marker")} cases. Binding errors/warnings: {BindingLog.ErrorCount}.");
+                    if (BindingLog.ErrorCount > 0) Environment.ExitCode = 2;
+                    return;
+                }
                 model = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
                 model.Setup.ManualVerificationAccepted = true;
                 model.Setup.Seats[0].DisplayName = "Alex";
@@ -72,7 +88,9 @@ internal static partial class Program
                 await VerifyAiStyleSelection();
                 await VerifyGameTableLayout();
                 await VerifyPlacementTarget();
+                await VerifyInventoryProblemMarkers();
                 await VerifyGameLayerTransition();
+                await VerifyGameExitEvidence();
                 await VerifyResumeTurnAnnouncement();
                 await VerifySavedMatchSelection();
                 await VerifySavedMatchName();
@@ -148,7 +166,23 @@ internal static partial class Program
                 window = new GoldenTicket.Desktop.MainWindow(model);
                 window.Loaded += (_, _) => loadedCount++;
                 window.Closed += (_, _) => { closedCount++; closed.TrySetResult(); };
-                window.Close();
+                var menu = (GameScreenView)window.FindName("GameLayer");
+                if (delayCleanup)
+                {
+                    var source = new FixturePresentationSource { RootVisual = menu };
+                    void KeyPress(Key key) => menu.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,
+                        source, Environment.TickCount, key) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+                    KeyPress(Key.Down);
+                    if (!model.Game.IsExitSelected)
+                        throw new InvalidOperationException("Down must reach EXIT when there is no saved game.");
+                    KeyPress(Key.Up);
+                    if (!model.Game.IsStartSelected)
+                        throw new InvalidOperationException("Up from EXIT must skip the unavailable reload choice.");
+                    KeyPress(Key.Down);
+                    KeyPress(Key.Enter);
+                }
+                else
+                    ((Button)menu.FindName("ExitButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 window.Close();
                 if (closedCount != 0 || window.IsEnabled)
                     throw new InvalidOperationException("Closing must disable input and defer final close until the original Closing event returns.");
