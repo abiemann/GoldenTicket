@@ -322,8 +322,12 @@
         </Style>
 
         <Style x:Key="PhoneShortcutButton" TargetType="Button" BasedOn="{StaticResource GameChoiceButton}">
+            <Setter Property="Content" Value="LAN Game" />
             <Setter Property="Visibility" Value="Collapsed" />
             <Style.Triggers>
+                <DataTrigger Binding="{Binding Connection.UsePractical}" Value="True">
+                    <Setter Property="Content" Value="Practical Game" />
+                </DataTrigger>
                 <MultiDataTrigger>
                     <MultiDataTrigger.Conditions>
                         <Condition Binding="{Binding CanConnectPhone}" Value="True" />
@@ -473,12 +477,14 @@
                               SelectedItem="{Binding Camera.SelectedProcessor}"
                               DisplayMemberPath="Label"
                               AutomationProperties.Name="Image processor preference" />
+                    <TextBlock Text="These settings use the same camera as the game and utility screens."
+                               Foreground="#FFE6D9C3" FontSize="13" Margin="0,10,0,0" />
+                    <TextBlock Text="Game" Foreground="#FFFFE7B0" FontSize="18"
+                               FontWeight="SemiBold" Margin="0,18,0,6" />
                     <CheckBox Content="Show Destinations when viewing Train cards"
                               IsChecked="{Binding ShowDestinationsWhenViewingTrainCards, Mode=TwoWay}"
-                              Foreground="#FFF8EEDC" Margin="0,10,0,0"
+                              Foreground="#FFF8EEDC"
                               AutomationProperties.Name="Show Destinations when viewing Train cards" />
-                    <TextBlock Text="These settings use the same camera as the game and utility screens."
-                               Foreground="#FFE6D9C3" FontSize="13" Margin="0,20,0,0" />
                     <Button x:Name="SettingsOkButton" Content="OK" Width="110" Height="48"
                             HorizontalAlignment="Right" Margin="0,20,0,0"
                             Style="{StaticResource GameSetupActionButton}"
@@ -665,7 +671,7 @@
             <views:FinalStandingsView BoardImage="{Binding Camera.GameTablePreview}"
                 Visibility="{Binding GameplayScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=FinalScore}" />
 
-            <Button Content="LAN Game" Command="{Binding OpenMultiHumanPhoneSetupCommand}"
+            <Button Command="{Binding OpenMultiHumanPhoneSetupCommand}"
                     Style="{StaticResource PhoneShortcutButton}" Padding="14,8" FontSize="13"
                     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,12,12,0"
                     AutomationProperties.Name="Choose phone or Practical play" />
@@ -676,9 +682,9 @@
                 <StackPanel>
                     <TextBlock Text="{Binding RevealPrompt}" Foreground="#FFFFE7B0" FontSize="16"
                                TextAlignment="Center" TextWrapping="Wrap" MaxWidth="600" Margin="0,0,0,8" />
-                    <Button Content="SHOW MY CARDS" Command="{Binding RevealPrivateSeatCommand}"
+                    <Button Content="Take my turn" Command="{Binding TakePracticalTurnCommand}"
                             IsEnabled="{Binding CanRevealPrivateSeat}" Style="{StaticResource GameChoiceButton}"
-                            Padding="22,9" HorizontalAlignment="Center" AutomationProperties.Name="Show my cards on this laptop" />
+                            Padding="22,9" HorizontalAlignment="Center" AutomationProperties.Name="Take my turn on this laptop" />
                 </StackPanel>
             </Border>
 

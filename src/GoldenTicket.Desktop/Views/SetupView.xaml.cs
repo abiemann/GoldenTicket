@@ -13,4 +13,15 @@ public partial class SetupView : UserControl
     private void OnAddSeat(object sender, RoutedEventArgs e) => Model?.Setup.AddSeat();
 
     private void OnRemoveSeat(object sender, RoutedEventArgs e) => Model?.Setup.RemoveSeat();
+
+    private void OnDeleteConfirmationVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.NewValue is not true) return;
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!DeleteSavedMatchConfirmation.IsVisible) return;
+            DeleteSavedMatchConfirmation.BringIntoView();
+            CancelSavedMatchDeletionButton.Focus();
+        }));
+    }
 }

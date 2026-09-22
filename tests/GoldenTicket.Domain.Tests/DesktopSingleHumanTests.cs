@@ -678,7 +678,7 @@ public sealed class DesktopSingleHumanTests
     }
 
     [Fact]
-    public async Task Invalid_physical_route_blocks_draws_until_fresh_frames_verify_its_removal()
+    public async Task Invalid_physical_route_blocks_draws_until_a_fresh_frame_shows_its_removal()
     {
         var model = NewSingleHumanMatch();
         try
@@ -751,8 +751,14 @@ public sealed class DesktopSingleHumanTests
             Observe(4, -20, false);
             Observe(5, -18, false);
             Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+
+            // A fresh matching board clears the obsolete warning immediately; it does not
+            // spend cards or advance the turn. Post-click camera proof is covered separately.
             Observe(6, 4, false);
-            Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+            Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
+            Assert.True(model.DrawSoloTicketsCommand.CanExecute(null));
+            Assert.Equal(model.Table.Instruction, model.Game.GuidanceInstruction);
+            Assert.Equal(before, await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken));
             Observe(7, 5.1, false);
             Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
             await model.DrawSoloBlindCommand.ExecuteAsync(null);
@@ -779,7 +785,7 @@ public sealed class DesktopSingleHumanTests
             Assert.Equal("The camera sees 6 yellow trains on Calgary - Winnipeg, an unclaimed route. Remove them to continue.",
                 model.Game.GuidanceInstruction);
             update.Invoke(model, [placement, observation with { UnexpectedTrains = null }]);
-            Assert.StartsWith("Check for train pieces outside", model.Game.GuidanceInstruction);
+            Assert.StartsWith("Check the yellow spheres for train pieces outside", model.Game.GuidanceInstruction);
         }
         finally { await model.DisposeToolsAsync(); }
     }

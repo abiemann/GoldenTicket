@@ -3,6 +3,8 @@
 The current product has recommended HTTP **Quick play** on one shared phone/tablet and
 **PRACTICAL** on the laptop. The user has played Quick play on a real Android tablet in Chrome
 with the physical board, including a completed two-human and one-computer match on September 21.
+On September 22 the user also confirmed successful browser backgrounding and rejoining after
+removal of the PWA, with the reusable pairing PIN making return to the game easier.
 This document records that experience alongside automated checks and the specific physical-device
 scenarios still to confirm from DESIGN §22.7.
 
@@ -10,7 +12,7 @@ scenarios still to confirm from DESIGN §22.7.
 
 | Platform | Availability | Recorded experience and remaining coverage |
 |---|---|---|
-| Android tablet / Chrome | Used in the user's September 21 play sessions | Real shared-browser gameplay and a completed physical-board match are confirmed. Exact tablet model, OS/browser versions and WAN state were not recorded; remaining cases are listed below. |
+| Android tablet / Chrome | September 21 gameplay and September 22 browser-lifecycle confirmation | Real shared-browser gameplay, a completed physical-board match, backgrounding and rejoining are confirmed. Exact tablet model, OS/browser versions and WAN state were not recorded; remaining cases are listed below. |
 | Windows laptop and UVC camera | Used with the physical board | Camera-assisted physical gameplay is confirmed. A complete PRACTICAL multi-human session with networking unavailable has not been recorded. |
 | iPhone/iPad | Not owned; a borrowed session may be possible | Untested. Record hardware and Safari versions when a device becomes available. |
 
@@ -28,6 +30,7 @@ Run this on Android Chrome and repeat on iPhone/iPad Safari when hardware is ava
 | Select Quick play and start hosting | A direct HTTP game address and QR appear; no certificate or install screen. |
 | Scan with the device's real camera | QR opens the displayed game address. Scripted navigation and repository QR decoders are not scanner evidence. |
 | Pair and approve | Separate code is accepted, matching identity is approved on the laptop, and unapproved devices cannot reveal cards. |
+| Reusable pairing PIN | The code has no time expiry during hosting and remains usable when rejoining. Host restart or explicit New pairing code replaces it. |
 | Opening tickets | Each human sees only their own offer and can keep the required selection. |
 | Normal card/ticket/route choices | Correct active-seat options work; laptop retains train-placement verification and authoritative game state. |
 | First train-card draw | Hand stays visible, count and face-up market update, scroll position remains, and a second legal card can be drawn without another reveal. The second draw or a first face-up locomotive covers the hand for the next turn. |
@@ -75,6 +78,11 @@ browser game with private hands and destinations while the laptop handles the ph
 The completed two-human and one-computer match is also corroborated by the saved-game analysis in
 [computer strategy evidence](ai-strategy-evidence.md). These are real gameplay results, beyond the
 earlier certificate-download experiment.
+
+On September 22 the user confirmed that backgrounding the tablet browser and rejoining worked
+after the PWA was removed. This is physical-browser lifecycle evidence. The user specifically
+requested a non-expiring pairing PIN to make rejoining easier: the same code remains reusable
+throughout hosting, until a host restart or an explicit **New pairing code** replaces it.
 
 That playtesting also exposed problems, including interrupted private views and confusing feedback
 when a camera check refused a card draw. Subsequent fixes have the automated coverage below. The
@@ -124,8 +132,8 @@ the user has never tried it.
 - A fresh real-camera QR scan, pairing and a full Quick play session with the router's WAN
   physically disconnected.
 - A complete PRACTICAL multi-human game with networking unavailable.
-- Device lock, sleep, app switching and history restoration; deliberate laptop/LAN loss,
-  reconnect, DHCP changes, and controller replacement during play.
+- Device lock/sleep and history restoration; deliberate laptop/LAN failure, DHCP changes, and
+  controller replacement during play. Browser backgrounding and rejoining are already confirmed.
 - Saving the final PNG and sharing the saved file through Android Files/Photos.
 - The full portrait/landscape, enlarged-text, accessibility and reduced-motion checklist on
   physical devices.

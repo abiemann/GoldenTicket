@@ -37,7 +37,8 @@ public static class GameSetupBoardValidator
         if (missing.Length > 0)
         {
             var message = "Missing scoring marker" + (missing.Length == 1 ? ": " : "s: ") +
-                string.Join(", ", missing.Select(color => color.ToString().ToLowerInvariant())) + ".";
+                string.Join(", ", missing.Select(color => color.ToString().ToLowerInvariant())) +
+                ". Keep scoring markers side by side, never stacked, so each is visible from directly above.";
             if (orientations.Any(view => view.Candidates.Any(candidate => candidate.Kind == PieceCandidateKind.Train)))
                 message = "Remove all trains from the board before starting. " + message;
             return new(false, message);

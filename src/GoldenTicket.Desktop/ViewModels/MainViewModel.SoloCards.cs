@@ -76,7 +76,7 @@ public sealed partial class MainViewModel
     private async Task ToggleSoloCardsAsync(GameTableSeat? tile, SoloCardPanelSelection kind)
     {
         if (_coordinator is not { StorageFaulted: false } coordinator || tile is null ||
-            !IsSoloHumanTurn || !IsGameplayScreenActive(Screen.Table) ||
+            !IsGameTableHumanTurn || !IsGameplayScreenActive(Screen.Table) ||
             ShowSoloOpeningTicketsOnBoard || _operationInProgress || IsGameInputPaused || _exitRequested ||
             _mustReload || NeedsBoardReconciliation || !_windowActive || !_systemAvailable ||
             coordinator.Public.ActiveSeatId != tile.Seat.SeatId ||
@@ -95,7 +95,7 @@ public sealed partial class MainViewModel
         {
             var view = await coordinator.GetSeatViewAsync(tile.Seat.SeatId);
             if (generation != _soloCardsGeneration || !ReferenceEquals(coordinator, _coordinator) ||
-                coordinator.Public.StateVersion != version || !IsSoloHumanTurn ||
+                coordinator.Public.StateVersion != version || !IsGameTableHumanTurn ||
                 coordinator.Public.ActiveSeatId != tile.Seat.SeatId ||
                 !IsGameplayScreenActive(Screen.Table)) return;
 

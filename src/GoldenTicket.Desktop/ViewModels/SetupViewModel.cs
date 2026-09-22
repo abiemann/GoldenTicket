@@ -20,7 +20,8 @@ public sealed partial class SeatSetupRow : ObservableObject
 
     public IReadOnlyList<PlayerColor> AvailableColors { get; } = Enum.GetValues<PlayerColor>();
 
-    public IReadOnlyList<AiDifficulty> AvailableDifficulties { get; } = Enum.GetValues<AiDifficulty>();
+    public IReadOnlyList<AiDifficulty> AvailableDifficulties { get; } =
+        ImmutableArray.Create(AiDifficulty.Standard, AiDifficulty.Aggressive);
 }
 
 /// <summary>A saved match offered for resumption (DESIGN 19.4 step 1: no private state shown).</summary>
@@ -61,8 +62,8 @@ public sealed partial class SetupViewModel : ObservableObject
     public string SavedMatchSelectionHint => SavedSessions.Count == 0
         ? "No saved matches found."
         : SelectedSavedSession is null
-            ? "Check one match below, then choose Resume selected match."
-            : "The checked match is selected. Choose Resume selected match to open it.";
+            ? "Check one match below, then choose Resume selected match or Delete selected match."
+            : "The checked match is selected. Resume it or choose Delete selected match.";
 
     partial void OnSelectedSavedSessionChanged(SavedSessionRow? value)
     {
@@ -202,6 +203,15 @@ public sealed partial class SetupViewModel : ObservableObject
         SelectedSavedSession = SavedSessions.FirstOrDefault(row => row.SessionId == selectedId)
             ?? (SavedSessions.Count == 1 ? SavedSessions[0] : null);
         SavedMatchMessage = null;
+        OnPropertyChanged(nameof(SavedMatchSelectionHint));
+    }
+
+    public void RemoveSavedSession(SessionId sessionId)
+    {
+        var row = SavedSessions.FirstOrDefault(saved => saved.SessionId == sessionId);
+        if (row is not null) SavedSessions.Remove(row);
+        if (SelectedSavedSession?.SessionId == sessionId) SelectedSavedSession = null;
+        if (SelectedSavedSession is null && SavedSessions.Count == 1) SelectedSavedSession = SavedSessions[0];
         OnPropertyChanged(nameof(SavedMatchSelectionHint));
     }
 

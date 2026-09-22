@@ -97,7 +97,8 @@ public partial class GameTableView : UserControl
 
     private void PositionSoloCardPanel()
     {
-        var station = _model?.Game.TableSeats.FirstOrDefault(tile => tile.Seat.Operator == "human");
+        var station = _model?.Game.TableSeats.FirstOrDefault(tile =>
+            tile.Seat.Operator == "human" && tile.Seat.IsActive);
         if (station is null) return;
 
         Canvas.SetLeft(SoloCardPanel, Math.Clamp(station.Left, 8, TableScene.Width - SoloCardPanel.Width - 8));

@@ -5,7 +5,8 @@ namespace GoldenTicket.Desktop.ViewModels;
 public sealed partial class MainViewModel
 {
     public bool ShowPracticalHandoff => Connection.UsePractical && CanConnectPhone &&
-        IsGameplayScreenActive(Screen.Table) && !ShowMultiHumanPhoneSetup && !IsPrivateVisible && CanRevealPrivateSeat;
+        IsGameplayScreenActive(Screen.Table) && !ShowMultiHumanPhoneSetup && !IsPrivateVisible &&
+        !HasAcceptedPracticalTurn && CanRevealPrivateSeat;
 
     private void ConnectionPresentationChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
     {
@@ -32,6 +33,7 @@ public sealed partial class MainViewModel
     {
         if (_coordinator is null || !CanConnectPhone ||
             !(IsGameplayScreenActive(Screen.Table) || IsGameplayScreenActive(Screen.FinalScore))) return;
+        HidePrivateSeat();
         Connection.RefreshInterfaces();
         ShowMultiHumanPhoneSetup = true;
     }

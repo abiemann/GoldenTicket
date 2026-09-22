@@ -95,7 +95,7 @@ public sealed partial class PrivateSeatViewModel : ObservableObject
                 GoldenTicket.AI.RoutePlanner.EstimateCost(view, manifest, ticket)));
         }
 
-        if (IsSetupOffer && view.Public.Seats.Count(seat => seat.Kind == SeatKind.Human) == 1)
+        if (IsSetupOffer)
         {
             foreach (var marker in DestinationBoardOverlay.Build(manifest, Offer))
                 DestinationMarkers.Add(marker);

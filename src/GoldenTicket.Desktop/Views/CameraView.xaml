@@ -177,7 +177,7 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <TextBlock Text="{Binding MarkerScoreStatus}" TextWrapping="Wrap" />
-                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,6,0,0" Text="Reads marker colors and printed track positions on the upright USA board. Keep the crop close to its outer edge. Full laps are not inferred; these readings do not change game scores." />
+                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,6,0,0" Text="Reads marker colors and printed track positions on the upright USA board. Keep the crop close to its outer edge. Keep scoring markers side by side, never stacked, so each is visible from directly above. Full laps are not inferred; these readings do not change game scores." />
                     <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,0" Text="This is an experimental model. Check for missing, extra or merged outlines, especially on touching pieces and glare. Train colors and route ownership are not read. Outlines do not change the game." />
                     <TextBlock Text="Review note (optional)" Margin="0,12,0,4" />
                     <TextBox x:Name="DetectionReviewNoteBox" Text="{Binding DetectionReviewNote, UpdateSourceTrigger=PropertyChanged}"

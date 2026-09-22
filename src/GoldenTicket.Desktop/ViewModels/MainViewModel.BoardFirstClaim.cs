@@ -138,7 +138,7 @@ public sealed partial class MainViewModel
         }
     }
 
-    public bool ShowBoardFirstClaimProposal => IsSingleHumanGame && BoardFirstProposal is not null;
+    public bool ShowBoardFirstClaimProposal => CanUseGameTableControls && BoardFirstProposal is not null;
 
     private void ResetBoardFirstClaimFlow()
     {
@@ -172,7 +172,7 @@ public sealed partial class MainViewModel
 
     private void ObserveBoardFirstClaim(GameTableAnalysis analysis)
     {
-        if (_coordinator is not { } coordinator || !(IsSingleHumanGame || UsesCompanionCameraClaims) ||
+        if (_coordinator is not { } coordinator || !(CanUseGameTableControls || UsesCompanionCameraClaims) ||
             coordinator.Public.Lifecycle != SessionLifecycle.Active ||
             coordinator.Public.TurnPhase != TurnPhase.TurnStart ||
             coordinator.Public.SeatOf(coordinator.Public.ActiveSeatId).Kind != SeatKind.Human)
@@ -378,10 +378,13 @@ public sealed partial class MainViewModel
     private async Task LoadBoardFirstClaimsAsync(GameCoordinator coordinator, SeatId seatId)
     {
         _boardFirstLoading = true;
+        var practicalTurn = _practicalTurn;
         try
         {
             var view = await coordinator.GetSeatViewAsync(seatId);
             if (!ReferenceEquals(coordinator, _coordinator) ||
+                !ReferenceEquals(practicalTurn, _practicalTurn) ||
+                !(CanUseGameTableControls || UsesCompanionCameraClaims) ||
                 coordinator.Public.StateVersion != view.Public.StateVersion ||
                 coordinator.Public.TurnPhase != TurnPhase.TurnStart ||
                 coordinator.Public.ActiveSeatId != seatId) return;
@@ -437,7 +440,8 @@ public sealed partial class MainViewModel
     [RelayCommand]
     private void CancelBoardFirstClaim()
     {
-        if (BoardFirstProposal is { } proposal) CancelBoardFirstProposal(proposal);
+        if ((!Connection.UsePractical || CanUseGameTableControls) && BoardFirstProposal is { } proposal)
+            CancelBoardFirstProposal(proposal);
     }
 
     private bool CancelBoardFirstProposal(BoardFirstClaimProposal proposal)
@@ -474,7 +478,7 @@ public sealed partial class MainViewModel
 
     private async Task AuthorizeBoardFirstClaimAsync(BoardFirstPaymentRow? payment)
     {
-        if (payment is null || BoardFirstProposal is not { } proposal ||
+        if (!CanUseGameTableControls || payment is null || BoardFirstProposal is not { } proposal ||
             !proposal.CanConfirmPayment || proposal.SelectedPayment != payment) return;
         await CommitBoardFirstClaimAsync(proposal, payment, proposal.SelectedCardIds, CommandId.New());
     }

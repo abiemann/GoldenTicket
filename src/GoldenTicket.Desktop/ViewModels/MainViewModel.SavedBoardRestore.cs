@@ -148,7 +148,8 @@ public sealed partial class MainViewModel
         var instruction = observation.MarkerState switch
         {
             ScoreMarkerMoveState.Missing =>
-                $"The camera cannot find the {name} scoring marker. It should be on {marker.PrintedScore}.",
+                $"The camera cannot find the {name} scoring marker. It should be on {marker.PrintedScore}. " +
+                "Keep scoring markers side by side, never stacked, so each is visible from directly above.",
             ScoreMarkerMoveState.WrongPosition when matching.Length == 1 && matching[0].Score is { } score =>
                 $"The camera reads the {name} scoring marker on {score}. The saved game expects {marker.PrintedScore}.",
             ScoreMarkerMoveState.WrongPosition => $"Place the {target}.",

@@ -72,8 +72,8 @@
                 <MultiDataTrigger>
                     <MultiDataTrigger.Conditions>
                         <Condition Binding="{Binding Seat.Operator}" Value="human" />
-                        <Condition Binding="{Binding DataContext.IsSingleHumanGame, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" Value="True" />
-                        <Condition Binding="{Binding DataContext.IsSoloHumanTurn, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" Value="True" />
+                        <Condition Binding="{Binding Seat.IsActive}" Value="True" />
+                        <Condition Binding="{Binding DataContext.IsGameTableHumanTurn, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" Value="True" />
                         <Condition Binding="{Binding DataContext.ShowSoloOpeningTicketsOnBoard, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" Value="False" />
                     </MultiDataTrigger.Conditions>
                     <Setter Property="IsHitTestVisible" Value="True" />
@@ -557,7 +557,7 @@
                     <StackPanel>
                         <TextBlock Text="Move the scoring marker" Foreground="#FFFFE7B0"
                                    FontSize="17" FontWeight="Bold" TextAlignment="Center" />
-                        <TextBlock Text="The game will continue when the camera sees the marker at the required score."
+                        <TextBlock Text="The game will continue when the camera sees the marker at the required score. Keep scoring markers side by side, never stacked, so each is visible from directly above."
                                    Foreground="#FFF8EEDC" FontSize="11" TextAlignment="Center"
                                    TextWrapping="Wrap" Margin="0,5,0,0" />
                     </StackPanel>

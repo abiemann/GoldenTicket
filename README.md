@@ -16,7 +16,7 @@ the instructions on the laptop or shared tablet. Play against computers, with ot
 - **Keep cards on the laptop or a shared phone/tablet.** Quick play opens in a normal browser;
   PRACTICAL lets people take turns on the laptop while everyone else looks away.
 - **See your destinations on the live board.** On the tablet, tap any held destination ticket to
-  show dashed connections for all your destinations. Solo laptop play also highlights destinations.
+  show dashed connections for all your destinations. Laptop play also highlights destinations.
 - **Save and pack away.** Save Game checks the board and stores the digital game with a matching
   board photo. Reload helps you rebuild the board and checks it before play resumes.
 - **Finish with a full score breakdown.** Results show route points, completed and missed
@@ -57,6 +57,10 @@ ASP.NET Core runtimes. Both recognition models are bundled with the project and 
 5. Follow the current instruction above the board. During computer turns, a person places the
    computer's physical trains and moves its scoring marker.
 
+**Never stack scoring markers on top of one another.** Every train and scoring marker must be
+visible from directly above. When players share a score, place their markers side by side near
+that score so the camera can see each color.
+
 **Settings** controls display mode, camera quality and processor preference. The app remembers
 its window size, maximized state or full-screen choice. If no camera is connected, board setup
 keeps looking; use its camera selector when more than one is available.
@@ -90,9 +94,11 @@ See [phone and tablet setup](docs/phone-setup.md) for pairing, firewall help and
 ### PRACTICAL: share the laptop
 
 Choose **PRACTICAL**, the second option, when you do not have another device. Network setup is
-hidden and any active phone host stops. The active human selects **SHOW MY CARDS** on the laptop
-while everyone else looks away, then covers the cards before handing over. The game rules,
-computer opponents and camera checks work the same way.
+hidden and any active phone host stops. When your turn warning appears, ask everyone else to
+look away, then select **Take my turn**. Opening destinations, cards and route payments stay on the game
+board, using the same controls as solo play. Cards are covered when the turn ends, and the next
+player gets their own turn warning. The game rules, computer opponents and camera checks work
+the same way.
 
 ### Draw cards and claim routes
 
@@ -104,13 +110,14 @@ On your turn, draw train cards, draw destination tickets, or claim a route:
 - **Destination tickets:** select the **D** pile and keep at least one of the new tickets.
 - **Routes:** place your trains on the physical route first. Once the camera confirms the route
   and checks the rest of the board, your payment choices appear. On the tablet, choose the cards
-  and press **Pay**. In solo laptop play, select the exact cards and press **OK**.
+  and press **Pay**. On the laptop, select the exact cards and press **OK**.
   Camera updates won't interrupt this choice. After accepting payment, the app checks the board
   again before completing the claim and allowing the next turn. For a wrong route, remove those
   trains and select **Cancel**.
 
-In solo play, the **T** and **D** stacks in your player tile show your hand and destinations
-without leaving the table. In Quick play and PRACTICAL, make private choices on the selected device.
+In solo play and after selecting **Take my turn** in PRACTICAL, the **T** and **D** stacks in your
+player tile show your hand and destinations without leaving the table. In Quick play, make private
+choices on the shared phone or tablet.
 
 The camera checks separate train positions, the player's color and the correct parallel lane
 before a claim completes. Card payment, route ownership, points and turn progression are committed
@@ -198,6 +205,9 @@ Camera quality shows supported native formats and distinguishes capture resoluti
 processed image size.
 
 Press **Shift+Escape** for technical screens, including camera setup, saved matches and recovery.
+In **Saved matches**, select a match and choose **Delete selected match** to remove it and its
+saved board photos after confirmation. The currently loaded match cannot be deleted.
+
 In the camera preview you can:
 
 - Retry **Detect board corners**, select four corners manually, or drag the numbered handles.

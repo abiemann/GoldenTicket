@@ -95,6 +95,7 @@ internal static partial class Program
                 await VerifyGameExitEvidence();
                 await VerifyResumeTurnAnnouncement();
                 await VerifySavedMatchSelection();
+                await VerifySavedMatchDeletion();
                 await VerifySavedMatchName();
                 await RenderSizes("setup", () => new SetupView { DataContext = model });
                 await VerifyHumanPresentation();
@@ -1291,7 +1292,8 @@ internal static partial class Program
         var checks = new List<string>();
         var solo = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
         var keepAll = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
-        var shared = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore());
+        var shared = new MainViewModel(ManifestLoader.LoadClassicUs(), new InMemorySessionStore(),
+            camera: new CameraViewModel(capture: new FakeCameraCapture()));
         try
         {
             solo.Setup.ManualVerificationAccepted = true;
@@ -1623,6 +1625,7 @@ internal static partial class Program
             });
             checks.Add("The solo table remains public while card stacks expand in place.");
 
+            HoldComputerTurnForPresentation(solo);
             await solo.RevealPrivateSeatAsync();
             await solo.DrawBlindCardAsync();
             await solo.RevealPrivateSeatAsync();
@@ -1638,7 +1641,11 @@ internal static partial class Program
                 computerTurnDestinationStack.IsHitTestVisible || computerTurnDestinationStack.Focusable ||
                 IsElementShown(miniPanel) ||
                 IsElementShown(heldCityMarkers))
-                throw new InvalidOperationException("The human's card stacks and preview must be unavailable during the computer's turn.");
+                throw new InvalidOperationException("The human's card stacks and preview must be unavailable during the computer's turn. " +
+                    $"HumanTurn={solo.IsSoloHumanTurn}, active={solo.Table.ActiveSeatName}, placement={solo.Table.Placement is not null}, " +
+                    $"trainHit={computerTurnTrainStack.IsHitTestVisible}, trainFocus={computerTurnTrainStack.Focusable}, " +
+                    $"ticketHit={computerTurnDestinationStack.IsHitTestVisible}, ticketFocus={computerTurnDestinationStack.Focusable}, " +
+                    $"tray={IsElementShown(miniPanel)}, markers={IsElementShown(heldCityMarkers)}.");
             await solo.ToggleSoloDestinationsCommand.ExecuteAsync((GameTableSeat)computerTurnDestinationStack.DataContext);
             if (solo.ShowSoloCardPanel || solo.ShowDestinationMarkersOnBoard)
                 throw new InvalidOperationException("Direct card commands must not reveal the human's hand during the computer's turn.");
@@ -1715,12 +1722,6 @@ internal static partial class Program
                 throw new InvalidOperationException("The phone setup must be reopenable from the table.");
             shared.DismissMultiHumanPhoneSetupCommand.Execute(null);
             checks.Add("Multiple-human table presents a shared-phone QR setup, without starting a listener during UI smoke.");
-            await RenderSizes("practical-handoff-synthetic", () => new GameScreenView { DataContext = shared }, view =>
-            {
-                var reveal = Descendants<Button>(view).Single(button => AutomationProperties.GetName(button) == "Show my cards on this laptop");
-                if (!IsElementShown(reveal) || !reveal.IsEnabled || !ReferenceEquals(reveal.Command, shared.RevealPrivateSeatCommand))
-                    throw new InvalidOperationException("Practical must expose a working reveal action on the themed game table.");
-            });
             await RenderSizes("shared-table-covered-synthetic", () => new TableView { DataContext = shared }, view =>
             {
                 var labels = VisibleButtons(view);
@@ -1728,29 +1729,8 @@ internal static partial class Program
                     !VisibleText(view).Contains("First human test player, it's your turn. Everyone else, look away.", StringComparison.Ordinal))
                     throw new InvalidOperationException("The multiple-human table must retain explicit private reveal and the current handoff prompt.");
             });
-            checks.Add("Multiple-human match startup stays covered and retains the explicit reveal handoff.");
-
-            await shared.RevealPrivateSeatCommand.ExecuteAsync(null);
-            RequireHumanPrivateView(shared, "First human test player", mustChooseTickets: true);
-            if (shared.ShowDestinationMarkersOnBoard || shared.BoardDestinationMarkers.Count != 0)
-                throw new InvalidOperationException("Multiple-human private destinations must not mark the public board.");
-            await RenderSizes("shared-first-private-synthetic", () => new PrivateSeatView { DataContext = shared },
-                view => VerifyPrivateLabels(view, shared, "First human test player", singleHuman: false));
-            await shared.CommitTicketsCommand.ExecuteAsync(null);
-            if (shared.IsPrivateVisible || shared.PrivateSeat is not null || !shared.ShowPracticalHandoff ||
-                !shared.RevealPrompt.StartsWith("Second human test player", StringComparison.Ordinal))
-                throw new InvalidOperationException("Moving to another human's opening tickets must discard the prior private view.");
-            await shared.RevealPrivateSeatCommand.ExecuteAsync(null);
-            RequireHumanPrivateView(shared, "Second human test player", mustChooseTickets: true);
-            await RenderSizes("shared-second-private-synthetic", () => new PrivateSeatView { DataContext = shared },
-                view => VerifyPrivateLabels(view, shared, "Second human test player", singleHuman: false));
-            checks.Add("Each shared private view uses the explicitly revealed human's hand and ticket sources, with the prior view discarded at handoff.");
-            shared.Connection.UseQuickPlay = true;
-            if (shared.PrivateSeat is not null || shared.ShowPracticalHandoff)
-                throw new InvalidOperationException("Switching to phone play must cover the laptop's hand.");
-            shared.Connection.UsePractical = true;
-            if (!shared.ShowPracticalHandoff)
-                throw new InvalidOperationException("Returning to Practical must allow the current human to reveal again.");
+            checks.Add("Multiple-human match startup stays covered and retains the explicit player handoff.");
+            await VerifyPracticalTurnPresentation(shared, solo.Camera.GameTablePreview!, checks);
 
             await File.WriteAllTextAsync(Path.Combine(Output, "human-presentation-interactions.json"), JsonSerializer.Serialize(new
             {
@@ -1785,14 +1765,17 @@ internal static partial class Program
             model.Table.RebuildStock.Add(new RebuildStockRow("Synthetic player", PlayerColor.Blue, "◆", 0, 45));
             await RenderSizes("rebuild-empty-no-photo-synthetic", () => new RebuildView { DataContext = model }, view =>
             {
+                var emptyPosition = (TextBlock)view.FindName("EmptySavedPosition");
                 if (!IsShown((FrameworkElement)view.FindName("MissingPhotoPanel"), view) ||
                     IsShown((FrameworkElement)view.FindName("SavedPhotoPanel"), view) ||
-                    !IsShown((FrameworkElement)view.FindName("EmptySavedPosition"), view) ||
+                    !IsShown(emptyPosition, view) ||
                     !VisibleText(view).Contains(photo.PhotoStateSummary, StringComparison.Ordinal) ||
-                    !VisibleText(view).Contains("All route lanes should be empty.", StringComparison.Ordinal))
-                    throw new InvalidOperationException("An empty checkpoint without a photo must explain both the absent image and the zero-route rebuild target.");
+                    !emptyPosition.Text.Contains("no completed routes", StringComparison.Ordinal) ||
+                    !emptyPosition.Text.Contains("Restore any unfinished placement shown in the saved photo", StringComparison.Ordinal) ||
+                    !emptyPosition.Text.Contains("leave other route lanes empty", StringComparison.Ordinal))
+                    throw new InvalidOperationException("A checkpoint without completed routes or a photo must explain the absent image, preserve any unfinished placement, and require other route lanes to be empty.");
             });
-            checks.Add("Zero-route rebuild clearly identifies the absent reference photo and says every route lane should be empty.");
+            checks.Add("Zero-route rebuild identifies the absent reference photo, preserves any unfinished placement, and says other route lanes should be empty.");
 
             await RenderSizes("checkpoint-photo-missing-synthetic", () => new CheckpointPhotoView { DataContext = photo }, view =>
             {

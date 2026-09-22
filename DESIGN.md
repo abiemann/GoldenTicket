@@ -389,7 +389,8 @@ QR only after the local host has a reachable address on the selected Private LAN
 neutral curtain names the active human. Reveal that seat's cards after an explicit action and a
 fresh laptop-issued grant; Hide covers them before passing the device. There is no browser idle
 timeout. The laptop stays on the public board, with technical recovery through Shift+Escape.
-PRACTICAL instead uses the laptop's private view while other players look away. Shared Android
+PRACTICAL keeps the themed board visible: **Take my turn** opens that player's controls in place
+while other players look away. The next turn requires a fresh handoff. Shared Android
 tablet play has been exercised in physical matches; the remaining device-specific checks are in
 section 24. Hold-to-peek is a future option, not a current control.
 
@@ -1306,13 +1307,13 @@ cards. These are bounded heuristics, not exact future-turn or draw-probability p
 
 | Level | Initial behavior | Target decision budget |
 |---|---|---|
-| Relaxed | Legal heuristic with bounded variation and forgiving planning | About 0.25–0.75 seconds |
 | Standard | Better route alternatives, resource planning, and public opponent signals | About 1–2 seconds |
-| Challenging | Same heuristic planner with adjusted claim threshold and route-length reward | About 3–5 seconds |
 | Aggressive | Destination planning with opportunistic public human-network blocking | About 1–2 seconds |
 
 These are initial latency targets, not strength claims. Difficulty changes computation and decision policy, never private-information access or deck order. Personality changes wording and optional strategic preferences, but cannot grant illegal actions.
 
+Both setup screens offer only Standard and Aggressive. Relaxed and Challenging are retired from
+selection; their stored values remain readable for compatibility with existing matches.
 The character-selection screen offers Standard (smiling face) and Aggressive (purple devil) through
 a separate badge at the bottom-right of each computer portrait. Clicking the badge spins it and
 changes only that computer's style; keyboard activation works too, and reduced-motion preferences
@@ -1333,9 +1334,10 @@ destinations or a guarantee of stronger play or denying the longest-route bonus.
 
 ### 15.4 Search without hidden-state leakage
 
-**Planned search extension.** The shipped policy is heuristic; it does not run sampled hidden-world rollouts.
+**Optional search research.** Standard and Aggressive retain their current heuristic policies;
+neither runs sampled hidden-world rollouts. A separate Challenging mode is no longer planned.
 
-For harder play, sample plausible unknown hands/decks consistent with public information and the AI's own cards. Use those synthetic worlds only inside search. Do not take samples from the actual hidden referee state or reveal its future order through a shared RNG.
+Any future search experiment must sample plausible unknown hands/decks consistent with public information and the AI's own cards. Use those synthetic worlds only inside search. Do not take samples from the actual hidden referee state or reveal its future order through a shared RNG.
 
 Avoid building an opponent policy inside rollouts that acts on secrets it would not have. Use information-set-aware action selection or bounded public-information opponent models. Document the limitations of determinization before claiming strong play.
 
@@ -1804,8 +1806,12 @@ the controller; the same authoritative match remains on the laptop. A changed IP
 address and pairing, not save migration. No device-installation or cache-readiness gate precedes
 play.
 
-In PRACTICAL, only the active human reveals the laptop's private controls. Other players look
-away; covering the view precedes the next reveal. This is an explicit social convention, not
+In PRACTICAL, the active human selects **Take my turn** after the existing turn warning while
+other players look away. Opening destinations and later card, ticket and route-payment controls
+remain on the themed game board, using the same presentation as single-human play. Local access
+lasts for that player's turn, including both train-card draws, and is cleared on handoff, focus
+loss, leaving the game view or changing modes. The next player must select **Take my turn** again.
+This is an explicit social convention, not
 authentication of the person at the keyboard. AI hands remain hidden. The public board and
 physical-placement/recovery rules are shared with Quick play.
 
@@ -1959,6 +1965,13 @@ when refreshing the list. Keep **Resume selected match** disabled while no match
 another game action is in progress. Explain selection beside the list, and show restore failures
 beside the Resume button so an unsuccessful attempt never appears to do nothing. Loading a
 match never bypasses physical reconciliation or reveals private cards on its own.
+
+Offer **Delete selected match** beside Resume. Show the selected match's description in an
+inline confirmation with Cancel and **Delete match**, explaining that its saved board photos
+are also removed. Cancel receives focus when the confirmation opens. Delete only the confirmed
+session, refresh the list afterwards, and show storage failures beside the actions. Disable
+deletion for the loaded session and during another operation; changing selection, refreshing,
+starting/resuming a match, navigating away or exiting clears the pending confirmation.
 
 Display the most recently committed checkpoint name first, followed by the updated date, turn,
 readable lifecycle status (for example, **Packed away**) and player names. Read the name from existing
@@ -2377,6 +2390,8 @@ computer placement dots and current instructions.
 | Area | Evidence already available | What that evidence establishes |
 |---|---|---|
 | Physical board and Android tablet | The user's September 21 reports/screenshots and completed two-human/one-computer match; its saved journal was inspected in the [AI investigation](docs/ai-strategy-evidence.md) | Actual shared-browser and physical-board gameplay through final scoring. This is real-device testing, not merely an HTTP reachability experiment. Exact tablet model, OS/browser build and WAN state were not recorded. |
+| Android browser backgrounding and rejoining | The user's September 22 confirmation of successful browser use after removal of the PWA | Backgrounding and rejoining work on the physical tablet. The reusable pairing PIN has no time expiry during hosting, supporting return to the game without generating a new code. |
+| Physical save and rebuild | The user confirmed on September 22, 2026 that save and rebuild was successfully completed that day | The normal physical save/rebuild walkthrough has been tested. Individual interrupted-operation and failure variants in section 22.8 were not separately reported. |
 | Rules, storage, application and Windows integration | Latest local Release verification: 343 core and 939 Windows integration tests passed, with a warnings-as-errors solution build | Automated rules, transaction/replay, save/photo, coordinator, camera and companion regressions. The four repaired timing-sensitive tests also passed 10 repetitions each. |
 | Browser and WPF UI | 70 Node tests, 92 Chromium scenarios and 126 WPF render cases with zero binding warnings/errors in the latest local verification | Automated state transitions, first-draw continuity, blocked-draw handling, SSE/reconnect behavior, private maps, final standings and responsive layouts |
 | Simulation and AI | 20 invariant/replay simulations in the integration pass; 640 paired strategy games, including 320 untouched held-out games | Legal completion and measured improvement against frozen synthetic opponents. [AI evidence](docs/ai-strategy-evidence.md) also replays decisions from the failed real match. |
@@ -2402,8 +2417,8 @@ performed, record its build, hardware and result instead of repeating a blanket 
 | iPhone/iPad Safari | A real-device session covering QR joining, pairing, private choices, maps, download, backgrounding and reconnect. No Apple-device run is recorded. |
 | Android follow-up on the latest build | Physically retest the blocked first/second draw fix, smooth destination-map expansion and the improved AI in a complete human match. Automated regressions already pass; the earlier completed match predates these fixes. |
 | Network-independent setup | Start Quick play with the router WAN disconnected but LAN active, including a fresh camera QR scan. Separately play a complete PRACTICAL multi-human match with networking unavailable. |
-| Real browser lifecycle and usability | Deliberate lock/app switching, history navigation, reconnect, host/LAN loss, DHCP change, duplicate/replacement controllers and actual PNG saving/sharing. Record portrait/landscape, enlarged text, reduced motion and assistive-input outcomes. |
-| Physical pack-away and rebuild | Save, remove all pieces, restart and reconstruct in another order; resume the exact saved card choice or partial computer placement. Save/photo/reload integration tests already cover these states; a complete physical walkthrough is not recorded. |
+| Additional browser recovery and usability | Android browser backgrounding and rejoining are confirmed. Remaining specific checks are device lock/sleep, history navigation, deliberate host/LAN failure, DHCP change, duplicate/replacement controllers and actual PNG saving/sharing. Record portrait/landscape, enlarged text, reduced motion and assistive-input outcomes. |
+| Additional save/rebuild edge cases | The normal physical save/rebuild walkthrough passed on September 22. Remaining unrecorded variants include saving after the first card draw, during a destination choice or partial computer placement, then verifying exact continuation without duplicate payment or scoring. Save/photo/reload integration tests already cover these states. |
 | Hardware failure and long sessions | Deliberate camera unplug/jog, sleep/resume, real GPU loss/fallback and controlled process/power/storage failure during relevant operations. Measure end-to-end claim/recovery/save latency and four-hour resource stability. Automated fault and stale-evidence tests are separate existing evidence. |
 | Recognition coverage and additional equipment | Independent sessions across lighting, poses, colors, map regions, touching pieces, hands and negative cases. The section 22 target corpus/rates have not been measured. Native 4K capture, a full 720p game, additional camera/GPU families and another physical board copy remain unrecorded. |
 | Clean-machine distribution | Build the current distribution and run offline on a clean Windows machine with its bundled dependencies. Installer install/update/uninstall tests follow implementation of the installer. |

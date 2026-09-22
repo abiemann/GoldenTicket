@@ -86,7 +86,7 @@ public partial class MainWindow : Window
         {
             // The phone owns its own reveal timeout. An idle, already-covered laptop must not
             // revoke an active phone hand every time this timer ticks.
-            if (_model.PrivateSeat is not null && !_model.ShowSoloOpeningTicketsOnBoard &&
+            if (_model.PrivateSeat is not null && !(_model.IsSingleHumanGame && _model.ShowSoloOpeningTicketsOnBoard) &&
                 Environment.TickCount64 - _lastInteraction >= 60_000)
                 _model.HidePrivateSeat();
         };
@@ -190,7 +190,7 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(async () =>
         {
             if (_cleanupStarted) return;
-            if (_model?.ShowSoloOpeningTicketsOnBoard != true) _model?.HidePrivateSeat();
+            if (_model is not { IsSingleHumanGame: true, ShowSoloOpeningTicketsOnBoard: true }) _model?.HidePrivateSeat();
             _model?.SetWindowActive(canInteract && IsActive);
             if (_model is not null) await _model.SetSystemAvailableAsync(canInteract);
         }));
@@ -240,7 +240,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_model.ShowSoloOpeningTicketsOnBoard)
+        if (_model.IsSingleHumanGame && _model.ShowSoloOpeningTicketsOnBoard)
         {
             e.Handled = true;
             return;

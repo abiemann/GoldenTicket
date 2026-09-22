@@ -26,7 +26,7 @@ public sealed partial class MainViewModel
     public IReadOnlyList<DestinationLineRow> SoloTicketOfferLines => _soloTicketOfferLines;
     public bool ShowSoloTicketOffer => _soloTicketOffer.Count > 0;
     public int SoloTicketMinimumKeep => _soloTicketMinimumKeep;
-    public bool CanKeepSoloTickets => ShowSoloTicketOffer && !_operationInProgress &&
+    public bool CanKeepSoloTickets => CanUseGameTableControls && ShowSoloTicketOffer && !_operationInProgress &&
         _cardActionBoardWarning is null &&
         _windowActive && !IsGameInputPaused && !NeedsBoardReconciliation &&
         _soloTicketOffer.Count(choice => choice.Keep) >= _soloTicketMinimumKeep;
@@ -37,7 +37,7 @@ public sealed partial class MainViewModel
     }
 
     private bool CanUseSoloDrawPiles => _coordinator is { StorageFaulted: false } coordinator &&
-        IsSingleHumanGame && IsSoloHumanTurn && IsGameplayScreenActive(Screen.Table) &&
+        IsGameTableHumanTurn && IsGameplayScreenActive(Screen.Table) &&
         coordinator.Public.TurnPhase is TurnPhase.TurnStart or TurnPhase.AwaitingSecondTrainCard &&
         !_operationInProgress && !_exitRequested && !_mustReload && !_toolsDisposed &&
         _windowActive && _systemAvailable && !NeedsBoardReconciliation &&
@@ -69,7 +69,7 @@ public sealed partial class MainViewModel
         _soloDrawableSlots.Clear();
         _soloDrawActionsVersion = -1;
 
-        if (!IsSingleHumanGame || publicView.Lifecycle != SessionLifecycle.Active ||
+        if (!CanUseGameTableControls || publicView.Lifecycle != SessionLifecycle.Active ||
             publicView.SeatOf(publicView.ActiveSeatId).Kind != SeatKind.Human)
         {
             ClearSoloTicketOffer();
@@ -91,9 +91,11 @@ public sealed partial class MainViewModel
         }
 
         var coordinator = _coordinator!;
+        var practicalTurn = _practicalTurn;
         var seat = await coordinator.GetSeatViewAsync(publicView.ActiveSeatId);
         if (!ReferenceEquals(coordinator, _coordinator) ||
-            coordinator.Public.StateVersion != publicView.StateVersion) return;
+            !ReferenceEquals(practicalTurn, _practicalTurn) ||
+            coordinator.Public.StateVersion != publicView.StateVersion || !CanUseGameTableControls) return;
         var legal = _rules.GetLegalActions(seat);
         _soloCanDrawBlind = legal.CanDrawBlindTrainCard;
         _soloCanDrawTickets = legal.CanRequestTicketOffer;
@@ -106,9 +108,11 @@ public sealed partial class MainViewModel
     {
         if (_soloTicketOfferVersion == publicView.StateVersion && ShowSoloTicketOffer) return;
         var coordinator = _coordinator!;
+        var practicalTurn = _practicalTurn;
         var seat = await coordinator.GetSeatViewAsync(publicView.ActiveSeatId);
         if (!ReferenceEquals(coordinator, _coordinator) ||
-            coordinator.Public.StateVersion != publicView.StateVersion || seat.Offer is null) return;
+            !ReferenceEquals(practicalTurn, _practicalTurn) ||
+            coordinator.Public.StateVersion != publicView.StateVersion || !CanUseGameTableControls || seat.Offer is null) return;
 
         ClearSoloTicketOffer();
         _soloTicketMinimumKeep = seat.Offer.MinimumKeep;
@@ -197,9 +201,9 @@ public sealed partial class MainViewModel
         {
             var seat = await coordinator.GetSeatViewAsync(coordinator.Public.ActiveSeatId);
             if (!ReferenceEquals(coordinator, _coordinator) ||
-                coordinator.Public.StateVersion != version || seat.Offer is null ||
+                coordinator.Public.StateVersion != version || !CanUseGameTableControls || seat.Offer is null ||
                 !_rules.GetLegalActions(seat).MustCommitTicketSelection) return;
-            if (!await CheckBoardBeforeCardActionAsync(coordinator, version)) return;
+            if (!await CheckBoardBeforeCardActionAsync(coordinator, version) || !CanUseGameTableControls) return;
             var outcome = await coordinator.SubmitAsync(new CommitTicketSelection(
                 coordinator.NewEnvelope(seat.SeatId), kept, returned));
             if (!outcome.IsAccepted)
@@ -235,10 +239,10 @@ public sealed partial class MainViewModel
             var seat = await coordinator.GetSeatViewAsync(active);
             if (!ReferenceEquals(coordinator, _coordinator) ||
                 coordinator.Public.StateVersion != version ||
-                !IsGameplayScreenActive(Screen.Table) || !_windowActive) return;
+                !CanUseGameTableControls || !IsGameplayScreenActive(Screen.Table) || !_windowActive) return;
             var command = build(coordinator, seat);
             if (command is null) return;
-            if (!await CheckBoardBeforeCardActionAsync(coordinator, version)) return;
+            if (!await CheckBoardBeforeCardActionAsync(coordinator, version) || !CanUseGameTableControls) return;
             var outcome = await coordinator.SubmitAsync(command);
             if (!outcome.IsAccepted)
             {
@@ -253,7 +257,7 @@ public sealed partial class MainViewModel
         catch (Exception) { RequireReload(); }
         finally { SetOperationInProgress(false); }
 
-        if (accepted && reopenTrainCards && IsSoloHumanTurn &&
+        if (accepted && reopenTrainCards && IsGameTableHumanTurn &&
             _coordinator?.Public.TurnPhase == TurnPhase.AwaitingSecondTrainCard)
         {
             var human = Game.TableSeats.FirstOrDefault(tile =>

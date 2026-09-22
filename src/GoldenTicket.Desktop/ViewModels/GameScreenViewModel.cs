@@ -232,7 +232,8 @@ public sealed partial class GameScreenViewModel : ObservableObject
         };
         _main.PropertyChanged += (_, args) =>
         {
-            if (args.PropertyName == nameof(MainViewModel.IsCheckingResumedGame))
+            if (args.PropertyName is nameof(MainViewModel.IsCheckingResumedGame) or
+                nameof(MainViewModel.ShowSoloOpeningTicketsOnBoard))
                 NotifyGuidanceChanged();
             if (args.PropertyName == nameof(MainViewModel.SavedBoardRestoreTarget))
                 RefreshPlacementTarget();
@@ -248,7 +249,8 @@ public sealed partial class GameScreenViewModel : ObservableObject
     private (string Turn, string Seat, string Instruction)? _guidanceOverride;
     public string GuidanceTurn => _guidanceOverride?.Turn ?? _main.Table.TurnText;
     public string GuidanceSeat => _main.IsCheckingResumedGame ? "Checking..." :
-        _guidanceOverride?.Seat ?? _main.Table.ActiveSeatName;
+        _guidanceOverride?.Seat ?? (_main.ShowSoloOpeningTicketsOnBoard
+            ? _main.PrivateSeat!.SeatName : _main.Table.ActiveSeatName);
     public string GuidanceInstruction => _guidanceOverride?.Instruction ??
         (_main.IsCheckingResumedGame ? "Saved board." : _main.Table.Instruction);
     public bool ShowManualPlacementControls => _main.Table.Placement is { AwaitingRestore: false } placement &&

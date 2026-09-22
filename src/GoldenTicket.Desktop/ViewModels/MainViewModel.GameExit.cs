@@ -33,7 +33,7 @@ public sealed partial class MainViewModel
         // the menu can pause play. Otherwise PumpAsync would skip that continuation permanently.
         // The solo opening destination choice is deliberately persistent on the public table.
         // Cover it with this modal, then reveal the same choice when the player returns.
-        if (!ShowSoloOpeningTicketsOnBoard) HidePrivateSeat();
+        if (!(IsSingleHumanGame && ShowSoloOpeningTicketsOnBoard)) HidePrivateSeat();
         ClearGameExitInventoryCheck();
         GameExitInventorySummary = DescribeExpectedTrainInventory();
         GameExitStatus = null;

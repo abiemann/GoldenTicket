@@ -139,9 +139,30 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
 
-                    <Button Style="{StaticResource SecondaryButton}" Content="Resume selected match"
-                            HorizontalAlignment="Left" Margin="0,8,0,0"
-                            Command="{Binding ResumeMatchCommand}" />
+                    <WrapPanel Margin="0,8,0,0">
+                        <Button Style="{StaticResource SecondaryButton}" Content="Resume selected match"
+                                Command="{Binding ResumeMatchCommand}" />
+                        <Button x:Name="DeleteSavedMatchButton" Style="{StaticResource SecondaryButton}"
+                                Content="Delete selected match" Command="{Binding RequestDeleteSavedMatchCommand}" />
+                    </WrapPanel>
+                    <Border x:Name="DeleteSavedMatchConfirmation" Style="{StaticResource Card}" Margin="0,12,0,0"
+                            BorderBrush="{StaticResource Action.Primary}"
+                            Visibility="{Binding IsSavedMatchDeleteConfirmationOpen, Converter={StaticResource BoolToVisibility}}"
+                            IsVisibleChanged="OnDeleteConfirmationVisibilityChanged">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource Heading}" Text="Delete this saved match?" />
+                            <TextBlock Text="{Binding SavedMatchDeleteDescription}" TextWrapping="Wrap"
+                                       FontWeight="SemiBold" Margin="0,0,0,8" />
+                            <TextBlock Text="This permanently removes the match and all its saved board photos."
+                                       TextWrapping="Wrap" Margin="0,0,0,12" />
+                            <WrapPanel>
+                                <Button x:Name="CancelSavedMatchDeletionButton" Style="{StaticResource SecondaryButton}"
+                                        Content="Cancel" Command="{Binding CancelDeleteSavedMatchCommand}" />
+                                <Button x:Name="ConfirmSavedMatchDeletionButton" Style="{StaticResource PrimaryButton}"
+                                        Content="Delete match" Command="{Binding ConfirmDeleteSavedMatchCommand}" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
                     <TextBlock Foreground="{StaticResource Action.Primary}" FontWeight="SemiBold" Margin="0,8,0,0"
                                Text="{Binding Setup.SavedMatchMessage}" TextWrapping="Wrap"
                                Visibility="{Binding Setup.SavedMatchMessage, Converter={StaticResource EmptyStringToVisibility}}"

@@ -192,9 +192,13 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
 - [x] Replace the second connection option with **PRACTICAL**: private laptop turns while other
   players look away, without phone-host or network setup. Remove the former PWA, certificate,
   service-worker and connectivity-experiment implementation.
-- [ ] Validate Quick play on real Android/iOS devices: QR scanning, joining, handoff, reload,
-  focus loss, WAN-disconnected play and image saving. Verify PRACTICAL through a complete
-  multi-human laptop game with networking absent. Automated tests are not physical acceptance.
+- [x] **Android browser gameplay and return after backgrounding.** Physical tablet gameplay,
+  backgrounding and rejoining work after removal of the PWA, as confirmed by the user on
+  September 22, 2026. Keep the pairing PIN reusable without a time limit during hosting so
+  returning to the game does not require a newly generated code.
+- [ ] Complete the remaining device-specific checks: iPhone/iPad Safari, real-camera QR joining
+  with the WAN disconnected, image saving/sharing, and PRACTICAL through a complete multi-human
+  laptop game with networking absent. See [recorded device evidence](docs/companion-device-evidence.md).
 
 - [x] Compare complete checkpoint readback data, include supply policies in new logical hashes,
   require a fresh rebuild attestation after restart, and permit safe readback retry.
@@ -251,8 +255,10 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
 - [x] **Multi-human controls on the table.** Present Quick play first and PRACTICAL second.
   Quick play shows an actual connection QR/code after explicit host startup; PRACTICAL stays on
   the laptop and has no network setup requirement.
-- [ ] **Multi-human acceptance.** Verify Quick play QR joining, pairing, private cards and handoff
-  on a real shared phone, and PRACTICAL laptop handoffs without networking.
+- [x] **Android multi-human gameplay.** Shared-browser private cards and handoff were exercised
+  in the completed physical-board match; browser backgrounding and rejoining are also confirmed.
+- [ ] **Remaining multi-human acceptance.** Verify real-camera QR joining with WAN disconnected,
+  iPhone/iPad Safari, and PRACTICAL laptop handoffs without networking.
 - [x] **Final standings to the shared phone.** Multi-human games can send the board and standings
   image to an approved Quick play browser for preview and saving. Exports contain only public
   final results; session/version and controller checks apply.
@@ -467,6 +473,9 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   guidance and restore errors in the saved-matches panel; retain the board reconciliation gate.
 - [x] **Saved-match names.** Show the entered name first, keep the latest committed name after
   resuming, and use readable status text.
+- [x] **Delete selected saved match.** Offer deletion beside Resume with an explicit confirmation
+  naming the match. Remove its stored game and board photos, refresh the list, report failures,
+  and prevent deletion of the loaded match or reuse of a confirmation after selection changes.
 - [x] **Offline package build workflow.** A clean-source, locked-dependency PowerShell builder creates
   a self-contained Windows x64 ZIP with runtime/assets checks, notices, provenance and checksums.
   Actual package output is recorded separately in [packaging evidence](docs/offline-package.md);
@@ -528,6 +537,9 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   and exactly-once resume. Verified by `PackAwayTests` and `PackAwayDurabilityTests`. Completed
   user saves additionally require a validated matching board photo; logical verification alone
   does not authorize clearing the board.
+- [x] **Physical save and rebuild walkthrough.** The user confirmed successful completion on
+  September 22, 2026. The normal physical workflow is tested; additional interrupted-operation
+  and failure scenarios remain separate checks in [DESIGN §24.2](DESIGN.md#242-specific-checks-not-yet-confirmed-in-the-available-records).
 - [x] **Desktop exit confirmation.** An unfinished match prompts before exit with No selected;
   wording distinguishes automatic digital recovery from a completed pack-away save with its
   validated board photo. A missing or invalid photo must not authorize clearing the board.
@@ -552,8 +564,9 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   companion. Add correction branches and optional encrypted portable export/import.
 - [ ] Complete non-audio theme/high-contrast/screen-reader/keyboard work and adjustable privacy timing
   before the final narrative feature pass.
-- [ ] Implement and evaluate the specified Challenging AI sampled lookahead; current difficulty
-  choices tune a heuristic. Keep opponent hands/deck state inaccessible and report strength honestly.
+- [x] Limit setup choices to Standard and Aggressive, retiring Relaxed and Challenging from
+  selection and removing the planned Challenging mode. Preserve the existing Standard/Aggressive
+  policies and compatibility with older saved difficulty values.
 - [x] Add per-computer Standard/Aggressive badges to character selection, with a spinning toggle
   and saved style choices. Aggressive uses public human networks for opportunistic blocks and
   continuous-route interference.

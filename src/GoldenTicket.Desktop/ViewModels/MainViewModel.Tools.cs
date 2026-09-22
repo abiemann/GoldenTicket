@@ -39,6 +39,8 @@ public sealed partial class MainViewModel
             if (args.PropertyName is nameof(CanRevealPrivateSeat) or nameof(IsPrivateVisible) or
                 nameof(ShowMultiHumanPhoneSetup) or nameof(GameplayScreen) or nameof(CanConnectPhone))
                 OnPropertyChanged(nameof(ShowPracticalHandoff));
+            if (args.PropertyName == nameof(ShowPracticalHandoff))
+                TakePracticalTurnCommand.NotifyCanExecuteChanged();
         };
         CheckpointPhoto = new CheckpointPhotoViewModel(_checkpointPhotoStore, async token =>
         {
@@ -85,6 +87,8 @@ public sealed partial class MainViewModel
     {
         _revealGeneration++;
         PrivateSeat = null;
+        CloseSoloCardPanel();
+        ClearPracticalTurn();
     }
 
     [RelayCommand]

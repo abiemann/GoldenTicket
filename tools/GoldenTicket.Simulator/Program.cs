@@ -28,7 +28,7 @@ static int Help()
               Loads data/classic-us/classic-us-v1.json, reports its contents, and checks the
               recorded dataHash. --write-hash records the computed hash into the file.
 
-          simulate [--games N] [--seed S] [--seats N] [--difficulty Relaxed|Standard|Challenging|Aggressive]
+          simulate [--games N] [--seed S] [--seats N] [--difficulty Standard|Aggressive]
                    [--verbose]
               Plays reproducible all-computer matches and checks invariants and replay equality.
 

@@ -97,6 +97,8 @@ public sealed partial class MainViewModel : ObservableObject
             if (args.PropertyName == nameof(SetupViewModel.SelectedSavedSession))
             {
                 ClearEarlierSaveRecovery();
+                ClearSavedMatchDeletion();
+                NotifySavedMatchCommands();
                 ResumeMatchCommand.NotifyCanExecuteChanged();
             }
         };
@@ -134,9 +136,9 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _boardReconciliationAcknowledged;
 
     public bool IsPrivateVisible => PrivateSeat is not null;
-    public bool ShowSoloOpeningTicketsOnBoard => IsSingleHumanGame &&
+    public bool ShowSoloOpeningTicketsOnBoard => CanUseGameTableControls &&
         PrivateSeat is { IsSetupOffer: true, MustChooseTickets: true };
-    private bool ShowSoloKeptDestinationsOnBoard => IsSingleHumanGame &&
+    private bool ShowSoloKeptDestinationsOnBoard => CanUseGameTableControls &&
         (ShowSoloDestinations || (ShowSoloTrainCards && ShowDestinationsWhenViewingTrainCards));
     public bool ShowDestinationMarkersOnBoard => ShowSoloOpeningTicketsOnBoard || ShowSoloTicketOffer ||
         ShowSoloKeptDestinationsOnBoard && SoloDestinationMarkers.Count > 0;
@@ -166,6 +168,8 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (_gameLayerVisible == visible) return;
         _gameLayerVisible = visible;
+        ClearSavedMatchDeletion();
+        NotifySavedMatchCommands();
         UpdateTurnClock();
         HidePrivateSeat();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
@@ -186,6 +190,7 @@ public sealed partial class MainViewModel : ObservableObject
         ResetFinalStandingsSharing();
         OnPropertyChanged(nameof(IsSingleHumanGame));
         OnPropertyChanged(nameof(IsSoloHumanTurn));
+        NotifyPracticalTurnChanged();
         OnPropertyChanged(nameof(ShowSoloOpeningTicketsOnBoard));
         OnPropertyChanged(nameof(ShowDestinationMarkersOnBoard));
         OnPropertyChanged(nameof(BoardDestinationMarkers));
@@ -243,6 +248,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     partial void OnScreenChanged(Screen value)
     {
+        ClearSavedMatchDeletion();
         if (value is Screen.Setup or Screen.Table or Screen.Rebuild or Screen.FinalScore)
         {
             _gameScreen = value;
@@ -251,29 +257,36 @@ public sealed partial class MainViewModel : ObservableObject
         HidePrivateSeat();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
         ResumeMatchCommand.NotifyCanExecuteChanged();
+        NotifySavedMatchCommands();
         NotifyFinalStandingsSharing();
     }
 
     // ---- Setup -----------------------------------------------------------------------------
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanRefreshSavedMatches))]
     public async Task LoadSavedSessionsAsync()
     {
+        if (_deletingSavedMatch) return;
+        ClearSavedMatchDeletion();
+        var generation = ++_savedMatchListGeneration;
         try
         {
-            Setup.LoadSavedSessions(await _store.ListSessionsAsync(CancellationToken.None));
+            var saved = await _store.ListSessionsAsync(CancellationToken.None);
+            if (generation == _savedMatchListGeneration) Setup.LoadSavedSessions(saved);
         }
         catch (Exception)
         {
-            Setup.SavedMatchMessage = "Saved matches could not be read. Check storage access and choose Refresh saved matches to retry.";
+            if (generation == _savedMatchListGeneration)
+                Setup.SavedMatchMessage = "Saved matches could not be read. Check storage access and choose Refresh saved matches to retry.";
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanStartMatch))]
     public async Task StartMatchAsync()
     {
         if (_operationInProgress || _exitRequested || !IsGameplayScreenActive(Screen.Setup) || Setup.TryBuildSetup() is not { } setup) return;
 
+        ClearSavedMatchDeletion();
         ClearEarlierSaveRecovery();
         ResetAutomaticPhysicalFlow();
         SetOperationInProgress(true);
@@ -314,6 +327,7 @@ public sealed partial class MainViewModel : ObservableObject
     public async Task ResumeMatchAsync()
     {
         if (_operationInProgress || _exitRequested || !IsGameplayScreenActive(Screen.Setup)) return;
+        ClearSavedMatchDeletion();
         if (Setup.SelectedSavedSession is not { } saved)
         {
             Setup.SavedMatchMessage = "Check a saved match in the list before choosing Resume selected match.";
@@ -433,6 +447,11 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     public async Task RevealPrivateSeatAsync()
     {
+        if (_gameLayerVisible && Connection.UsePractical && CanConnectPhone)
+        {
+            await TakePracticalTurnAsync();
+            return;
+        }
         if (_coordinator is not { } coordinator || !CanRevealPrivateSeat || _revealable is not { } seat) return;
 
         Connection.InvalidatePrivateGrants();
@@ -471,6 +490,7 @@ public sealed partial class MainViewModel : ObservableObject
         _revealGeneration++;
         PrivateSeat = null;
         CloseSoloCardPanel();
+        ClearPracticalTurn();
         Connection.InvalidatePrivateGrants();
     }
 
@@ -479,7 +499,7 @@ public sealed partial class MainViewModel : ObservableObject
         _windowActive = active;
         if (!active) _cardBoardCheck?.Completion.TrySetResult(false);
         UpdateTurnClock();
-        if (!active && !ShowSoloOpeningTicketsOnBoard) HidePrivateSeat();
+        if (!active && !(IsSingleHumanGame && ShowSoloOpeningTicketsOnBoard)) HidePrivateSeat();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
         NotifySoloDrawCommands();
     }
@@ -531,6 +551,7 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        var practicalTurn = _practicalTurn;
         SetOperationInProgress(true);
         HidePrivateSeat();
         var generation = _revealGeneration;
@@ -566,6 +587,11 @@ public sealed partial class MainViewModel : ObservableObject
             coordinator.Public.StateVersion == seat.StateVersion && _revealable?.SeatId == seat.SeatId)
         {
             seat.Message = privateRejection;
+            if (practicalTurn is not null)
+            {
+                _practicalTurn = practicalTurn;
+                NotifyPracticalTurnChanged();
+            }
             PrivateSeat = seat;
             return;
         }
@@ -871,6 +897,7 @@ public sealed partial class MainViewModel : ObservableObject
     private void SetOperationInProgress(bool value)
     {
         _operationInProgress = value;
+        NotifySavedMatchCommands();
         OnPropertyChanged(nameof(CanRevealPrivateSeat));
         NotifySoloDrawCommands();
         ResumeMatchCommand.NotifyCanExecuteChanged();
@@ -920,6 +947,8 @@ public sealed partial class MainViewModel : ObservableObject
 
         var view = _coordinator.Public;
         OnPropertyChanged(nameof(IsSoloHumanTurn));
+        if (_practicalTurn is not null && !HasAcceptedPracticalTurn) ClearPracticalTurn();
+        NotifyPracticalTurnChanged();
         ReconcileBoardFirstClaimFlow(view);
         Table.Update(view, _coordinator.PublicHistory);
         EngineeringHistory.Clear();
