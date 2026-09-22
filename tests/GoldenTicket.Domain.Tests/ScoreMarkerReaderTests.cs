@@ -53,6 +53,54 @@ public sealed class ScoreMarkerReaderTests
     }
 
     [Theory]
+    [InlineData(false, false, 17, 21)]
+    [InlineData(true, false, 53, 49)]
+    [InlineData(false, true, 3, 99)]
+    [InlineData(true, true, 67, 71)]
+    public void Shared_score_row_is_not_confused_with_a_distant_marker_on_the_perpendicular_edge(
+        bool mirrorX, bool mirrorY, int sharedScore, int otherScore)
+    {
+        // Actual detector centers from the Red 17 / Green 17 / Blue 21 stall,
+        // mirrored to exercise both ends of both vertical score tracks.
+        (double X, double Y, MarkerColor Color) Position(double x, double y, MarkerColor color) =>
+            (mirrorX ? 1 - x / 1996 : x / 1996, mirrorY ? 1 - y / 1248 : y / 1248, color);
+        var (image, candidates) = Scene(Position(63.3, 205.1, MarkerColor.Red),
+            Position(21, 204.9, MarkerColor.Green), Position(86.4, 28, MarkerColor.Blue));
+        var readings = ScoreMarkerReader.Read(image, candidates);
+
+        Assert.Equal(new int?[] { sharedScore, sharedScore, otherScore }, readings.Select(r => r.Score));
+        Assert.All(readings, reading => Assert.Equal(ScoreMarkerReadingStatus.Read, reading.Status));
+        var at = DateTimeOffset.UtcNow;
+        var verifier = new ScoreMarkerMoveVerifier();
+        var first = CameraFrame.CopyFromBgra32(Width, Height, image.Bgra32.Span, 1, 1, at);
+        var second = CameraFrame.CopyFromBgra32(Width, Height, image.Bgra32.Span, 2, 1, at.AddSeconds(1.1));
+        Assert.Equal(ScoreMarkerMoveState.Stabilizing, verifier.Observe(first, readings,
+            MarkerColor.Red, sharedScore, "shared-score", 1, 1, candidates).State);
+        Assert.True(verifier.Observe(second, ScoreMarkerReader.Read(second, candidates),
+            MarkerColor.Red, sharedScore, "shared-score", 1, 1, candidates).Confirmed);
+        Assert.Equal(ScoreMarkerMoveState.WrongPosition, new ScoreMarkerMoveVerifier().Observe(first,
+            readings, MarkerColor.Red, otherScore, "wrong-score", 1, 1, candidates).State);
+    }
+
+    [Theory]
+    [InlineData(false, false, 22, 19)]
+    [InlineData(true, false, 48, 51)]
+    [InlineData(false, true, 98, 1)]
+    [InlineData(true, true, 72, 69)]
+    public void Shared_score_column_is_not_confused_with_a_distant_marker_on_the_perpendicular_edge(
+        bool mirrorX, bool mirrorY, int sharedScore, int otherScore)
+    {
+        (double X, double Y, MarkerColor Color) Position(double x, double y, MarkerColor color) =>
+            (mirrorX ? 1 - x : x, mirrorY ? 1 - y : y, color);
+        var (frame, candidates) = Scene(Position(.0814, .06, MarkerColor.Red),
+            Position(.0814, .026, MarkerColor.Green), Position(.017, .0734, MarkerColor.Blue));
+        var readings = ScoreMarkerReader.Read(frame, candidates);
+
+        Assert.Equal(new int?[] { sharedScore, sharedScore, otherScore }, readings.Select(r => r.Score));
+        Assert.All(readings, reading => Assert.Equal(ScoreMarkerReadingStatus.Read, reading.Status));
+    }
+
+    [Theory]
     [InlineData(.017, .026, 20, .0492, .026, 21)]
     [InlineData(.017, .026, 20, .017, .0734, 19)]
     [InlineData(.983, .026, 50, .9508, .026, 49)]

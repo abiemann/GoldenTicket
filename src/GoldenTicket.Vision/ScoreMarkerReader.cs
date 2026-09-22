@@ -77,7 +77,16 @@ public static class ScoreMarkerReader
                 // deep in the map cannot establish a track reading by itself.
                 if (perpendicular <= anchorDistance || perpendicular > (vertical ? .14 : .19)) continue;
                 if (!InwardOf(box, anchor.Box, anchor.Offer.Side)) continue;
-                offers.Add(anchor.Offer with { Distance = anchor.Offer.Distance + .1 + along / step * .5 });
+                // A nearby marker on the same score is stronger support than one far away
+                // on a perpendicular edge. Without this separation cost, Blue 21 on the
+                // top edge can make Red 17 beside Green 17 on the left look ambiguous.
+                var inwardGap = vertical ? Math.Abs(box.CenterX - anchor.Box.CenterX)
+                    : Math.Abs(box.CenterY - anchor.Box.CenterY);
+                var inwardStep = vertical ? HorizontalStep : VerticalStep;
+                offers.Add(anchor.Offer with
+                {
+                    Distance = anchor.Offer.Distance + .1 + along / step * .5 + inwardGap / inwardStep * .5
+                });
             }
             var ordered = offers.OrderBy(offer => offer.Distance).ToArray();
             if (ordered.Length == 0)

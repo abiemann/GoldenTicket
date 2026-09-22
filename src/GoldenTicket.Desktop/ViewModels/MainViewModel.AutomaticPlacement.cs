@@ -228,10 +228,13 @@ public sealed partial class MainViewModel
         if (inventory.RouteId == placement.RouteId.Value)
         {
             var route = _manifest.Describe(placement.RouteId);
+            var missingTrainAction = _coordinator?.Public.SeatOf(placement.SeatId).Kind == SeatKind.Computer
+                ? "Please place" : "Check your";
             correction = inventory.State switch
             {
                 BoardInventoryState.MissingTrains =>
-                    $"Check your {placement.TrainCount} {placement.Color} trains on {route}. " +
+                    $"{missingTrainAction} {placement.TrainCount} {placement.Color} " +
+                    $"train{(placement.TrainCount == 1 ? "" : "s")} on {route}. " +
                     "The camera needs to see a train in every space before continuing.",
                 BoardInventoryState.WrongColor =>
                     $"The camera sees the wrong train color on {route}. " +

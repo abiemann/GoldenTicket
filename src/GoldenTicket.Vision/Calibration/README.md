@@ -8,7 +8,7 @@ need the original photograph or a separately installed image file.
 | Property | Value |
 | --- | --- |
 | Board profile | `ttr-us-classic-en-v1` |
-| Geometry version | `classic-us-slots-2026-09-19-v4` |
+| Geometry version | `classic-us-slots-2026-09-22-v6` |
 | Reference size | 320 × 200 |
 | Resource SHA-256 | `0b8ab46ff79d5ea6ddc9aef338c340e394a4bca498bf6a797a4740c909baccec` |
 | Original photo | `GoldenTicket-board-20260914-181653.png` |
@@ -49,3 +49,12 @@ black trains at high confidence, but the first sat only 0.01 pixels inside the o
 16-pixel sideways limit. The correction leaves room for small detection shifts,
 retains the original centered placements, and increases separation from the nearby
 Duluth–Toronto spaces. The artwork reference, model and global tolerances are unchanged.
+
+## Nashville–Saint Louis indicator correction, September 22
+
+The v6 geometry moves the Nashville-side train-space center from `(1385, 701)` to
+`(1390, 716)` in the 1996 × 1248 reference axes, measured against the original board
+photograph. The Saint Louis-side center stays at `(1321, 689)`. This centers the
+right-hand placement sphere on its printed space in both the laptop and companion
+views and keeps camera verification aligned with that cue. The artwork reference,
+model and global tolerances are unchanged.

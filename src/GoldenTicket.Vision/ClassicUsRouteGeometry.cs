@@ -19,7 +19,7 @@ public readonly record struct BoardSlotPoint(double X, double Y, double TangentX
 public static class ClassicUsRouteGeometry
 {
     public const string ProfileId = "ttr-us-classic-en-v1";
-    public const string GeometryVersion = "classic-us-slots-2026-09-19-v5";
+    public const string GeometryVersion = "classic-us-slots-2026-09-22-v6";
     // The original 3456 × 2160 empty-board photo, before scaling to the 1996 × 1248
     // reference used below. The original user photo is not shipped; its compact grayscale
     // calibration is embedded by ClassicUsBoardAlignment to keep live crops in these axes.
@@ -117,7 +117,7 @@ public static class ClassicUsRouteGeometry
             ["montreal--toronto"] = Lane((1690, 176), (1629, 214), (1584, 264)),
             ["nashville--pittsburgh"] = Lane((1439, 682), (1477, 626), (1532, 584), (1589, 540)),
             ["nashville--raleigh"] = Lane((1491, 691), (1562, 666), (1630, 660)),
-            ["nashville--saint-louis"] = Lane((1321, 689), (1385, 701)),
+            ["nashville--saint-louis"] = Lane((1321, 689), (1390, 716)),
             ["new-york--pittsburgh--a"] = Lane((1655, 425), (1724, 399)),
             ["new-york--pittsburgh--b"] = Lane((1669, 454), (1731, 419)),
             ["new-york--washington--a"] = Lane((1778, 448), (1779, 512)),
