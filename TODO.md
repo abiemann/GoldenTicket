@@ -78,6 +78,14 @@ See the
   card, placement and save checks, including detections without a named route. Keep check ownership
   separate and clear correction cues on the first fresh matching inventory. Verify with synthetic
   camera and scaled WPF checks; a live-camera walkthrough of these correction cues remains to run.
+- [x] Resolve duplicate train labels on clearly read scoring markers during whole-board inventory
+  checks, using compact size, strong overlap, matching centers and matching sampled color. Retain
+  raw model detections and keep genuine nearby trains and missing route pieces blocking.
+- [x] Keep unrelated unknown marker detections from blocking a clearly read player marker during
+  reload or scoring. Retain local conflicts, show specific marker failures and yellow spheres,
+  and expose the existing manual whole-board check through **Check board myself** during reload.
+- [ ] Recheck reload with a real coin or board mark after the marker-conflict changes; synthetic
+  regression coverage does not establish general tolerance of arbitrary objects or damaged boards.
 - [x] Show those train details in the Save Game dialog during checking and after a timeout,
   including the post-photo check. Show the exact failed camera frame with numbered detection
   boxes, colors, confidence and route/board location, including unmatched or duplicate boxes.

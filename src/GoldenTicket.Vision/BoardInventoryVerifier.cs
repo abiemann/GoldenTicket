@@ -87,6 +87,7 @@ public sealed class BoardInventoryVerifier
     public BoardInventoryObservation Observe(CameraFrame board, IReadOnlyList<PieceCandidate> candidates,
         long cropRevision, long modelRevision)
     {
+        candidates = ScoringMarkerTrainResolver.Resolve(board, candidates);
         var observation = ObserveCore(board, candidates, cropRevision, modelRevision);
         return observation.State is BoardInventoryState.UnexpectedTrain or BoardInventoryState.Ambiguous
             or BoardInventoryState.WrongColor or BoardInventoryState.MissingTrains

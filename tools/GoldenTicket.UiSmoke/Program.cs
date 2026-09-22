@@ -67,6 +67,7 @@ internal static partial class Program
                     {
                         await VerifyInventoryProblemMarkers();
                         await VerifyPlacementTarget();
+                        await VerifyManualSavedBoardCheck();
                     }
                     await File.WriteAllTextAsync(Path.Combine(Output, "layout-report.json"), JsonSerializer.Serialize(Results, new JsonSerializerOptions { WriteIndented = true }));
                     await File.WriteAllTextAsync(Path.Combine(Output, "binding-errors.log"), BindingLog.Text.ToString());
@@ -89,6 +90,7 @@ internal static partial class Program
                 await VerifyGameTableLayout();
                 await VerifyPlacementTarget();
                 await VerifyInventoryProblemMarkers();
+                await VerifyManualSavedBoardCheck();
                 await VerifyGameLayerTransition();
                 await VerifyGameExitEvidence();
                 await VerifyResumeTurnAnnouncement();

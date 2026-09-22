@@ -96,6 +96,48 @@ public sealed class SavedBoardRestoreVerifierTests
         Assert.NotEqual(SavedBoardRestoreStage.Confirmed, secondMiss.Stage);
     }
 
+    [Fact]
+    public void Unrelated_unknown_body_does_not_block_marker_confirmation_or_invalidate_verified_markers()
+    {
+        var verifier = new SavedBoardRestoreVerifier(SavedMarkers, []);
+        var at = DateTimeOffset.UtcNow;
+        ScoreMarkerReading[] scores = [.. Scores(3, 5),
+            new(2, null, null, ScoreMarkerReadingStatus.OffTrack, "unrelated coin")];
+        PieceCandidate[] candidates = [Marker(.017, .8318), Marker(.017, .737), Marker(.16, .82)];
+        SavedBoardRestoreObservation? result = null;
+        for (var sequence = 1; sequence <= 6; sequence++)
+        {
+            result = verifier.Observe(Frame(sequence, 1, at.AddSeconds(sequence * 1.1)), scores,
+                candidates, 1, 1);
+            Assert.Empty(result.ProblemCandidateIndices);
+            if (sequence is 2 or 3) Assert.Equal(MarkerColor.Yellow, result.Marker?.Color);
+        }
+        Assert.Equal(SavedBoardRestoreStage.Confirmed, result!.Stage);
+    }
+
+    [Fact]
+    public void Unknown_body_over_verified_marker_requires_that_marker_to_be_rechecked()
+    {
+        var verifier = new SavedBoardRestoreVerifier(SavedMarkers, []);
+        var at = DateTimeOffset.UtcNow;
+        PieceCandidate[] candidates = [Marker(.017, .8318), Marker(.017, .737), Marker(.02, .8318)];
+        verifier.Observe(Frame(1, 1, at), Scores(3, 5), candidates, 1, 1);
+        Assert.Equal(MarkerColor.Yellow,
+            verifier.Observe(Frame(2, 1, at.AddSeconds(1.1)), Scores(3, 5), candidates, 1, 1).Marker?.Color);
+        ScoreMarkerReading[] ambiguous = [.. Scores(3, 5),
+            new(2, null, null, ScoreMarkerReadingStatus.UnknownColor, "overlapping body")];
+        Assert.Equal(MarkerColor.Yellow,
+            verifier.Observe(Frame(3, 1, at.AddSeconds(2.2)), ambiguous, candidates, 1, 1).Marker?.Color);
+        var recheck = verifier.Observe(Frame(4, 1, at.AddSeconds(3.3)), ambiguous, candidates, 1, 1);
+        Assert.Equal(MarkerColor.Blue, recheck.Marker?.Color);
+        Assert.Equal(ScoreMarkerMoveState.Ambiguous, recheck.MarkerState);
+        Assert.Equal([0, 2], recheck.ProblemCandidateIndices);
+        var blocked = verifier.Observe(Frame(5, 1, at.AddSeconds(4.4)), ambiguous, candidates, 1, 1);
+        Assert.Equal(MarkerColor.Blue, blocked.Marker?.Color);
+        Assert.Equal(ScoreMarkerMoveState.Ambiguous, blocked.MarkerState);
+        Assert.Equal([0, 2], blocked.ProblemCandidateIndices);
+    }
+
     private static SavedBoardRestoreObservation Observe(SavedBoardRestoreVerifier verifier,
         long sequence, DateTimeOffset at, IReadOnlyList<ScoreMarkerReading> scores) =>
         verifier.Observe(Frame(sequence, 1, at), scores, [], 1, 1);
@@ -108,4 +150,8 @@ public sealed class SavedBoardRestoreVerifierTests
 
     private static CameraFrame Frame(long sequence, long epoch, DateTimeOffset at) =>
         CameraFrame.CopyFromBgra32(320, 200, new byte[320 * 200 * 4], sequence, epoch, at);
+
+    private static PieceCandidate Marker(double x, double y) => new(PieceCandidateKind.PlayerMarker,
+        [new(x - .0075, y - .016), new(x + .0075, y - .016),
+            new(x + .0075, y + .016), new(x - .0075, y + .016)], .9);
 }

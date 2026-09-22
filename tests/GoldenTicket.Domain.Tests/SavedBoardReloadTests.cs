@@ -57,7 +57,8 @@ public sealed class SavedBoardReloadTests
             Publish(1, at, incorrect);
             Publish(2, at.AddSeconds(1.1), incorrect);
             Assert.Equal(SessionLifecycle.PackedAway, coordinator.Public.Lifecycle);
-            Assert.Contains("BLUE scoring marker on 1", reloaded.Game.GuidanceInstruction);
+            Assert.Contains("BLUE scoring marker on 2", reloaded.Game.GuidanceInstruction);
+            Assert.Contains("saved game expects 1", reloaded.Game.GuidanceInstruction);
 
             Publish(3, at.AddSeconds(3.3), scores);
             Publish(4, at.AddSeconds(4.4), scores);

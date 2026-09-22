@@ -12,7 +12,10 @@ public enum SavedBoardRestoreStage
 
 public sealed record SavedBoardRestoreObservation(SavedBoardRestoreStage Stage,
     SavedScoreMarker? Marker = null, ScoreMarkerMoveState? MarkerState = null,
-    BoardInventoryObservation? Inventory = null);
+    BoardInventoryObservation? Inventory = null)
+{
+    public IReadOnlyList<int> ProblemCandidateIndices { get; init; } = [];
+}
 
 /// <summary>
 /// Checks the saved scoring markers in a predictable order, then every saved train route.
@@ -70,7 +73,9 @@ public sealed class SavedBoardRestoreVerifier
         // detection pauses progress; two consecutive misses return to that marker's prompt.
         for (var index = 0; index < _markerIndex; index++)
         {
-            if (Matches(scores, _markers[index]))
+            var failure = ScoreMarkerMoveVerifier.ReadingFailure(scores, _markers[index].Color,
+                _markers[index].PrintedScore, candidates);
+            if (failure is null)
             {
                 _mismatchCounts[index] = 0;
                 continue;
@@ -84,16 +89,23 @@ public sealed class SavedBoardRestoreVerifier
             _markerVerifier.Reset();
             Array.Clear(_mismatchCounts);
             return new(SavedBoardRestoreStage.CheckingMarker, _markers[index],
-                ScoreMarkerMoveState.WrongPosition);
+                failure)
+            {
+                ProblemCandidateIndices = ScoreMarkerMoveVerifier.FindProblemCandidateIndices(
+                    scores, _markers[index].Color, candidates)
+            };
         }
 
         if (_markerIndex < _markers.Length)
         {
             var marker = _markers[_markerIndex];
             var result = _markerVerifier.Observe(board, scores, marker.Color,
-                marker.PrintedScore, _operationKey, cropRevision, modelRevision);
+                marker.PrintedScore, _operationKey, cropRevision, modelRevision, candidates);
             if (!result.Confirmed)
-                return new(SavedBoardRestoreStage.CheckingMarker, marker, result.State);
+                return new(SavedBoardRestoreStage.CheckingMarker, marker, result.State)
+                {
+                    ProblemCandidateIndices = result.ProblemCandidateIndices
+                };
             _markerIndex++;
             _markerVerifier.Reset();
             return _markerIndex < _markers.Length
@@ -116,9 +128,4 @@ public sealed class SavedBoardRestoreVerifier
         _epoch = _cropRevision = _modelRevision = -1;
     }
 
-    private static bool Matches(IReadOnlyList<ScoreMarkerReading> scores, SavedScoreMarker marker) =>
-        scores.Count(score => score.Color == marker.Color) == 1 &&
-        scores.All(score => score.Color is not null) &&
-        scores.Any(score => score.Color == marker.Color &&
-            score.Status == ScoreMarkerReadingStatus.Read && score.Score == marker.PrintedScore);
 }

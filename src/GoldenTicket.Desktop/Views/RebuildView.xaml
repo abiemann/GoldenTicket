@@ -75,8 +75,8 @@
                         </Border>
 
                         <TextBlock FontWeight="SemiBold" Margin="0,0,0,4" Text="Saved routes" />
-                        <TextBlock x:Name="EmptySavedPosition" Margin="0,4,0,8"
-                                   Text="This saved position has no routes. All route lanes should be empty.">
+                        <TextBlock x:Name="EmptySavedPosition" Margin="0,4,0,8" TextWrapping="Wrap"
+                                   Text="This saved position has no completed routes. Restore any unfinished placement shown in the saved photo; leave other route lanes empty.">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Visibility" Value="Collapsed" />
@@ -146,14 +146,20 @@
 
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
+                        <TextBlock Style="{StaticResource Heading}" Text="Check the scoring markers" />
+                        <TextBlock Text="{Binding ManualReloadMarkerInstructions}" Margin="0,0,0,12"
+                                   TextWrapping="Wrap" />
                         <TextBlock Style="{StaticResource Heading}" Text="Confirm and resume" />
                         <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,8"
-                                   Text="Check every route in the list, including lanes of parallel routes. The matching saved board image is required before you can resume." />
+                                   Text="Compare the board with the saved photo, including any unfinished placement. Check the saved routes, empty lanes, parallel lanes, and scoring markers. Your confirmation will be recorded as a manual board check. The matching saved board image is required before you can resume." />
                         <Button Content="Add or view board photo" Command="{Binding ShowCheckpointPhotoCommand}"
                                 Style="{StaticResource SecondaryButton}" Margin="0,0,0,12" />
 
                         <CheckBox Margin="0,0,0,10" IsChecked="{Binding Table.RebuildAcknowledged}"
-                                  Content="Every saved route is back on the board, and nothing else is." />
+                                  HorizontalContentAlignment="Stretch">
+                            <TextBlock Text="I checked the saved photo, routes, unfinished placement, empty lanes, and scoring markers. The board matches."
+                                       TextWrapping="Wrap" />
+                        </CheckBox>
 
                         <Button Style="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"
                                 Margin="0,0,0,8" Content="The board matches the saved position"

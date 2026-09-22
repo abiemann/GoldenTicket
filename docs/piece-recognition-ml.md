@@ -81,6 +81,23 @@ than choosing one. Turning outlines off, changing camera/crop/model, stopping ca
 letting results expire clears both outlines and scores.
 
 The score reader does not retrain or alter the detector, its boxes, confidence or thresholds.
+
+Board inventory checks resolve one specific classification conflict: a compact train box
+strongly overlapping a confidently detected scoring marker with a clear score and matching
+pixel color is treated as a second label for that marker. Raw model detections remain intact
+for diagnostics and training review. This does not ignore the score-track area: separate,
+elongated, ambiguously positioned or differently colored train detections still count, and
+missing route trains still block verification. Reload diagnostics also record the score-marker
+readings and outlines alongside unexpected-train details to make future conflicts identifiable.
+
+Scoring moves and reload checks verify the requested marker's color and position. An unrelated
+unknown-color detection elsewhere on the board does not block a clearly read target. Unknown
+outlines overlapping or immediately beside it still require clarification, as do duplicate target
+colors or unclear target positions. Reload logs all marker readings while checking markers and
+shows the relevant detection centers as yellow spheres. **Check board myself** opens the explicit
+manual reconstruction and confirmation workflow if the camera cannot resolve the scene. This is
+operator attestation, not a successful camera reading; the required saved photo remains mandatory.
+
 `GoldenTicket.MlPieceSmoke` includes `ScoreMarkers` alongside its original detections for
 offline photo checks. These are experimental readings; new lighting and crowded-marker
 examples still need review.

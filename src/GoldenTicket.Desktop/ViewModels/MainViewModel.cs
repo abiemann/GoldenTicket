@@ -77,6 +77,7 @@ public sealed partial class MainViewModel : ObservableObject
         Table = new TableViewModel(manifest);
         InitializeTools(camera);
         Game = new GameScreenViewModel(this);
+        InitializeManualReload();
         InitializeTurnClock();
         Camera.PropertyChanged += (_, args) =>
         {
@@ -735,7 +736,7 @@ public sealed partial class MainViewModel : ObservableObject
         if (_coordinator is null || Public?.Checkpoint is not { } checkpoint) return;
         if (!Table.RebuildAcknowledged)
         {
-            Status = "Tick the confirmation once every saved route is back on the board.";
+            Status = "Tick the confirmation after checking the saved routes, empty lanes, and scoring markers.";
             return;
         }
 

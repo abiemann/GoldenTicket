@@ -173,6 +173,10 @@ saved photo and route list help reconstruct the board. The app checks each scori
 then the saved train positions and colors. Yellow spheres on the live board mark detected extra
 or misplaced trains, even when their route is uncertain; missing trains mark the expected spaces.
 The spheres clear when a fresh camera reading shows the problem is corrected.
+An unrelated unreadable marker detection no longer blocks a clearly identified player marker.
+If the camera still cannot resolve the board, choose **Check board myself** to inspect the saved
+photo, routes, unfinished placement and scoring-marker positions, then explicitly confirm them
+and resume. This records your confirmation rather than claiming camera verification.
 When the board matches, acknowledge **OK** to resume
 from the saved turn. Missing or invalid save attachments produce recovery guidance; an earlier
 save is restored only when you explicitly choose it.

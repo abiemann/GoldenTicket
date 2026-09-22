@@ -45,6 +45,7 @@ public sealed partial class MainViewModel
             markers = markers.Select(marker => new { color = marker.Color.ToString(), marker.PrintedScore }),
             routes = routes.Select(route => new { route.RouteId, color = route.Color.ToString(), route.TrainCount })
         });
+        NotifyManualReloadCommands();
     }
 
     private void CancelSavedBoardRestore()
@@ -55,6 +56,7 @@ public sealed partial class MainViewModel
         _savedBoardRestoreCompleting = false;
         Game.UpdateInventoryProblemMarkers("restore", null);
         SetSavedBoardRestoreTarget(null);
+        NotifyManualReloadCommands();
     }
 
     private void ObserveSavedBoardRestore()
@@ -76,9 +78,22 @@ public sealed partial class MainViewModel
             marker = result.Marker?.Color.ToString(),
             markerScore = result.Marker?.PrintedScore,
             markerState = result.MarkerState?.ToString(),
+            markerProblemIndices = result.ProblemCandidateIndices,
             inventoryState = result.Inventory?.State.ToString(),
             inventoryRoute = result.Inventory?.RouteId,
             unexpectedDetections = result.Inventory?.UnexpectedDetections,
+            // Include the actual marker readings during marker checks as well as train
+            // conflicts, so an unclear object cannot hide behind a generic target prompt.
+            scoreMarkers = result.Stage == SavedBoardRestoreStage.CheckingMarker ||
+                result.Inventory?.State == BoardInventoryState.UnexpectedTrain
+                ? analysis.Scores.Where(reading => reading.CandidateIndex >= 0 &&
+                        reading.CandidateIndex < analysis.Candidates.Count)
+                    .Select(reading => new
+                    {
+                        color = reading.Color?.ToString(), reading.Score,
+                        status = reading.Status.ToString(), reading.Reason,
+                        candidate = analysis.Candidates[reading.CandidateIndex]
+                    }).ToArray() : null,
             nearbyCandidates = result.Inventory?.RouteId is { } failedRoute
                 ? DescribeNearbyPlacementCandidates(analysis, failedRoute) : []
         });
@@ -87,10 +102,10 @@ public sealed partial class MainViewModel
             case SavedBoardRestoreStage.WaitingForCamera:
                 return;
             case SavedBoardRestoreStage.CheckingMarker when result.Marker is { } marker:
-                Game.UpdateInventoryProblemMarkers("restore", null);
+                var hasMarkerTargets = Game.UpdateScoreMarkerProblemMarkers("restore", marker.Color,
+                    analysis.Candidates, result.ProblemCandidateIndices);
                 SetSavedBoardRestoreTarget(null);
-                ShowSavedBoardRestoreGuidance(
-                    $"{marker.Color.ToString().ToUpperInvariant()} scoring marker on {marker.PrintedScore}.");
+                ShowSavedBoardRestoreGuidance(DescribeSavedMarkerCheck(result, analysis.Scores, hasMarkerTargets));
                 return;
             case SavedBoardRestoreStage.CheckingTrains:
                 if (result.Inventory is { } inventory)
@@ -116,10 +131,39 @@ public sealed partial class MainViewModel
                 Game.UpdateInventoryProblemMarkers("restore", null);
                 SetSavedBoardRestoreTarget(null);
                 _savedBoardRestoreCompleting = true;
+                NotifyManualReloadCommands();
                 ShowSavedBoardRestoreGuidance("Saved scoring markers and trains verified.");
                 _ = CompleteSavedBoardRestoreAsync(coordinator, _savedBoardRestoreCheckpoint!);
                 return;
         }
+    }
+
+    private static string DescribeSavedMarkerCheck(SavedBoardRestoreObservation observation,
+        IReadOnlyList<ScoreMarkerReading> readings, bool hasTargets)
+    {
+        var marker = observation.Marker!;
+        var name = marker.Color.ToString().ToUpperInvariant();
+        var target = $"{name} scoring marker on {marker.PrintedScore}";
+        var matching = readings.Where(reading => reading.Color == marker.Color).ToArray();
+        var instruction = observation.MarkerState switch
+        {
+            ScoreMarkerMoveState.Missing =>
+                $"The camera cannot find the {name} scoring marker. It should be on {marker.PrintedScore}.",
+            ScoreMarkerMoveState.WrongPosition when matching.Length == 1 && matching[0].Score is { } score =>
+                $"The camera reads the {name} scoring marker on {score}. The saved game expects {marker.PrintedScore}.",
+            ScoreMarkerMoveState.WrongPosition => $"Place the {target}.",
+            ScoreMarkerMoveState.Ambiguous when matching.Length > 1 =>
+                $"The camera sees {matching.Length} possible {name} scoring markers. Check which object is the marker; it should be on {marker.PrintedScore}.",
+            ScoreMarkerMoveState.Ambiguous when matching.Length == 1 && matching[0].Status == ScoreMarkerReadingStatus.OffTrack =>
+                $"The {name} scoring marker appears off the score track. Place it on {marker.PrintedScore}.",
+            ScoreMarkerMoveState.Ambiguous when matching.Length == 1 && matching[0].Status == ScoreMarkerReadingStatus.Read =>
+                $"The camera cannot distinguish the {name} scoring marker from a nearby detection. It should be on {marker.PrintedScore}.",
+            ScoreMarkerMoveState.Ambiguous =>
+                $"The camera cannot clearly read the {name} scoring marker's position. Center it on {marker.PrintedScore}.",
+            ScoreMarkerMoveState.Stabilizing => $"{target}. Waiting for a stable camera reading.",
+            _ => $"Checking the {target}."
+        };
+        return hasTargets ? instruction + " Check the yellow spheres on the board." : instruction;
     }
 
     private string DescribeSavedTrainCheck(BoardInventoryObservation? observation)
@@ -136,11 +180,11 @@ public sealed partial class MainViewModel
         if (observation.State == BoardInventoryState.UnexpectedTrain)
         {
             if (observation.UnexpectedTrains is { } extra)
-                return $"The camera sees {extra.Count}{(extra.Color is { } color ? " " + color : "")} " +
+                return $"The camera sees {extra.Count} unexpected{(extra.Color is { } color ? " " + color : "")} " +
                     $"train{(extra.Count == 1 ? "" : "s")} on {_manifest.Describe(new RouteId(extra.RouteId))} " +
                     "outside the saved routes. Check the yellow spheres on the board.";
             return observation.UnexpectedDetections.Count > 0
-                ? "The camera sees trains outside the saved routes. Check the yellow spheres on the board."
+                ? "The camera sees unexpected trains outside the saved routes. Check the yellow spheres on the board."
                 : "The camera returned a train detection without a usable position. Clear hands or glare while it checks again.";
         }
         if (observation.RouteId is { } routeId)
@@ -230,6 +274,7 @@ public sealed partial class MainViewModel
             {
                 verifier.Reset();
                 _savedBoardRestoreCompleting = false;
+                NotifyManualReloadCommands();
                 _savedBoardRestoreGuidance = null;
                 ShowSavedBoardRestoreGuidance("Saved board.");
             }

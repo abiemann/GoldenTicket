@@ -582,6 +582,24 @@ coordinates, not a guessed route. Missing trains use expected route slots. Reloa
 placement and save checks own their cues independently, so another check cannot erase them.
 A fresh matching inventory removes the correction spheres immediately; repeated or stale
 frames do not establish correction. Stable verification remains required before resuming play.
+The whole-board inventory resolves a train/score-marker duplicate only when both compact
+boxes strongly overlap with nearly identical centers, the marker has a confident detection
+and a clear same-frame score/color reading, and the train's sampled color agrees. Raw model
+outputs remain unchanged. Nearby trains, uncertain markers and missing claimed trains remain
+blocking; marker score correctness is still checked independently during reload. Unexpected-train
+reload diagnostics include marker readings and outlines from that same camera frame.
+Marker verification scopes uncertainty to the requested player's marker: an unrelated unknown-color
+detection elsewhere does not veto a clear reading. Duplicate detections of that player's color,
+uncertain target positions and unknown objects overlapping or immediately beside that marker still
+hold the check. The same rule applies to previously verified markers and ordinary scoring moves.
+Reload describes the actual marker failure, highlights relevant detected objects with yellow spheres,
+and logs the marker readings and outlines at this stage as well as during train conflicts.
+During a saved-board check, **Check board myself** exposes the existing manual rebuild workflow for
+matches using manual verification. The player reviews the saved photo, routes, pending placement and
+expected scoring-marker values and explicitly attests to the whole board before resuming. Entering
+this workflow alone does not confirm the board, change cards or complete an unfinished claim;
+required-photo checks and the saved-turn acknowledgment remain enforced. Camera verification is not
+claimed for this operator confirmation.
 The game-table seat heading reads **Checking...** during reload verification and while this dialog
 is open. Acknowledging **OK** restores the active player's name.
 

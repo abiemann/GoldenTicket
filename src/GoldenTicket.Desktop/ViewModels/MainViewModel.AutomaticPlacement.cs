@@ -86,7 +86,7 @@ public sealed partial class MainViewModel
             var scoreObservation = _scoreMarkerMoveVerifier.Observe(
                 analysis.Board, analysis.Scores, ToMarkerColor(scoreStep.Color),
                 scoreStep.ToPrintedScore, scoreStep.OperationId.Value,
-                analysis.CropRevision, analysis.ModelRevision);
+                analysis.CropRevision, analysis.ModelRevision, analysis.Candidates);
             BoardInteractionLog.Write("score-marker.frame", new
             {
                 analysis.Board.Sequence, analysis.Board.Epoch,

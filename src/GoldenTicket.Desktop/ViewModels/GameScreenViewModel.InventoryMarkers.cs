@@ -43,6 +43,37 @@ public sealed partial class GameScreenViewModel
             }
         }
 
+        SetInventoryProblemMarkers(source, targets);
+
+        void Add(double x, double y, string description)
+        {
+            if (targets.Any(target => Math.Abs(target.X - x) < 1 && Math.Abs(target.Y - y) < 1)) return;
+            targets.Add(new(x, y, targets.Count + 1) { ProblemDescription = description });
+        }
+    }
+
+    internal bool UpdateScoreMarkerProblemMarkers(string source, MarkerColor color,
+        IReadOnlyList<PieceCandidate> candidates, IReadOnlyList<int> problemIndices)
+    {
+        var targets = new List<PlacementTargetRow>();
+        foreach (var index in problemIndices.Distinct())
+        {
+            if (index < 0 || index >= candidates.Count) continue;
+            var candidate = candidates[index];
+            if (candidate.Kind != PieceCandidateKind.PlayerMarker || candidate.Outline.Count < 4 ||
+                candidate.Outline.Any(point => !double.IsFinite(point.X) || !double.IsFinite(point.Y) ||
+                    point.X is < 0 or > 1 || point.Y is < 0 or > 1)) continue;
+            var x = (candidate.Outline.Min(point => point.X) + candidate.Outline.Max(point => point.X)) / 2;
+            var y = (candidate.Outline.Min(point => point.Y) + candidate.Outline.Max(point => point.Y)) / 2;
+            targets.Add(new(x * DestinationBoardOverlay.Width, y * DestinationBoardOverlay.Height,
+                targets.Count + 1) { ProblemDescription = $"Check {color} scoring marker detection" });
+        }
+        SetInventoryProblemMarkers(source, targets);
+        return targets.Count > 0;
+    }
+
+    private void SetInventoryProblemMarkers(string source, IReadOnlyList<PlacementTargetRow> targets)
+    {
         if (_inventoryProblemMarkers.TryGetValue(source, out var previous) && previous.SequenceEqual(targets)) return;
         if (targets.Count == 0)
         {
@@ -50,12 +81,6 @@ public sealed partial class GameScreenViewModel
         }
         else _inventoryProblemMarkers[source] = targets;
         RefreshPlacementTarget();
-
-        void Add(double x, double y, string description)
-        {
-            if (targets.Any(target => Math.Abs(target.X - x) < 1 && Math.Abs(target.Y - y) < 1)) return;
-            targets.Add(new(x, y, targets.Count + 1) { ProblemDescription = description });
-        }
     }
 
     private IReadOnlyList<PlacementTargetRow>? CurrentInventoryProblemMarkers()
