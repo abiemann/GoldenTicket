@@ -163,6 +163,27 @@ public sealed class CameraCornerLearningFlowTests
     }
 
     [Fact]
+    public async Task Game_setup_keeps_corners_ready_when_marker_analysis_outlasts_the_corner_timer()
+    {
+        using var pieces = new FakePieceModel();
+        await using var fixture = new Fixture(pieceFactory: (_, _) => pieces);
+        fixture.FramePainter = (pixels, width, height) =>
+        {
+            PaintScorePiece(pixels, width, height, FakeModel.Corners, .017, .9266, (138, 55, 48));
+            PaintScorePiece(pixels, width, height, FakeModel.Corners, .055, .9266, (0, 48, 100));
+        };
+        fixture.Refresh();
+        // Simulate slow analysis without a wall-clock sleep: the source frame remains fresh.
+        pieces.BeforeDetect = () => fixture.SetField("_gameBoardAcceptedAt", DateTimeOffset.UtcNow.AddSeconds(-3));
+        fixture.Camera.BeginGameBoardFraming([MarkerColor.Red, MarkerColor.Blue]);
+
+        await fixture.CheckGameBoardAsync();
+
+        Assert.True(fixture.Camera.HasFreshGameBoardCorners);
+        Assert.True(fixture.Camera.CanStartGameWithBoard, fixture.Camera.GameBoardFramingStatus);
+    }
+
+    [Fact]
     public async Task Rotating_a_live_board_half_a_turn_holds_then_restores_Miami_bottom_right()
     {
         using var pieces = new FakePieceModel();
@@ -1147,10 +1168,12 @@ public sealed class CameraCornerLearningFlowTests
         public string? FallbackReason => null;
         public int Calls { get; private set; }
         public bool ShowTrain { get; set; }
+        public Action? BeforeDetect { get; set; }
         public IReadOnlyList<PieceCandidate> Trains { get; init; } = [];
 
         public LearnedPieceDetection Detect(CameraFrame board, CancellationToken token = default)
         {
+            BeforeDetect?.Invoke();
             Calls++;
             var candidates = new List<PieceCandidate>();
             if (IsRed(board, .017, .9266)) candidates.Add(Marker(.017, .9266));

@@ -33,8 +33,10 @@ must not download them. No Node/npm/Playwright dependency is shipped in the Wind
 6. Runs companion JavaScript privacy/LAN tests and 20 complete simulated matches with replay checks.
 7. Renders production WPF views and exercises Quick play in the runner's installed Chrome/Edge, using
    synthetic game fixtures exported by the .NET tests. Non-laptop browser origins are blocked.
-8. Retains test reports and synthetic UI screenshots for seven days, including partial evidence
-   when a later check fails. It does not upload game saves, certificates, dumps or player photos.
+8. Writes test reports and synthetic UI screenshots during the run. On failure, it attempts to
+   retain available reports and screenshots for seven days. Artifact upload is best effort when
+   GitHub storage is full; upload failure does not change the build/test result. It does not
+   upload game saves, certificates, dumps or player photos.
 
 A separate `ubuntu-24.04` job restores and runs `GoldenTicket.Core.Tests` with the same pinned SDK.
 That portable suite covers Domain/Application/AI/SQLite and executable architecture boundaries;

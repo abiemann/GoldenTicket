@@ -355,10 +355,7 @@ public sealed partial class CameraViewModel
                 return GameSetupBoardValidator.Check(_gameSetupColors, observations);
             }, token);
             if (!GameMarkerOperationIsCurrent(gameBoardRevision, operationRevision, cropRevision, cameraEpoch)) return;
-            var latest = Capture.LatestFrame;
-            if (latest is null || latest.Age > TimeSpan.FromSeconds(2) ||
-                (latest.Epoch, latest.Width, latest.Height) != (frame.Epoch, frame.Width, frame.Height) ||
-                frame.Age > TimeSpan.FromSeconds(2))
+            if (!GameSetupFrameIsFresh(frame))
             {
                 ClearGameMarkerCheck();
                 GameBoardFramingStatus = "The camera image changed. Checking the board again…";
@@ -374,8 +371,19 @@ public sealed partial class CameraViewModel
                 SetAcceptedSetupReference(frame, upright);
             }
             else _acceptedSetupReference = null;
+            // Building the upright reference also takes time; do not renew readiness
+            // if its source aged out before all setup work finished.
+            if (!GameSetupFrameIsFresh(frame))
+            {
+                ClearGameMarkerCheck();
+                GameBoardFramingStatus = "The camera image changed. Checking the board again…";
+                return;
+            }
             _gameMarkersCapture = (frame.Epoch, frame.Width, frame.Height);
-            _gameMarkersAcceptedAt = DateTimeOffset.UtcNow;
+            // Both results describe this same checked frame. Start their short readiness
+            // lifetime together after marker analysis, which can take time on a slow CPU.
+            _gameBoardAcceptedAt = DateTimeOffset.UtcNow;
+            _gameMarkersAcceptedAt = _gameBoardAcceptedAt;
             GameBoardFramingStatus = check.Message;
             OnPropertyChanged(nameof(CanStartGameWithBoard));
         }
@@ -387,6 +395,10 @@ public sealed partial class CameraViewModel
             GameBoardFramingStatus = "Board piece check unavailable: " + ex.Message;
         }
     }
+
+    private bool GameSetupFrameIsFresh(CameraFrame frame) => Capture.LatestFrame is { } latest &&
+        latest.Age <= TimeSpan.FromSeconds(2) && frame.Age <= TimeSpan.FromSeconds(2) &&
+        (latest.Epoch, latest.Width, latest.Height) == (frame.Epoch, frame.Width, frame.Height);
 
     private bool GameMarkerOperationIsCurrent(long gameBoardRevision, long operationRevision,
         long cropRevision, long cameraEpoch) => _gameBoardFramingActive &&

@@ -257,14 +257,23 @@ hardware test with a failure, not an untested scenario.
 
 The recovery fix retains the selected camera's ID and name, waits for that identity, and permits
 a unique-name match if Windows changes its ID. It does not automatically substitute an arbitrary
-available camera. A physical unplug/replug recheck of this fix is still pending, including
-continuation of any pending game action and rejection of frames from the disconnected camera
-session. No recovery latency was measured in the reported test.
+available camera. A later physical retest is recorded below. Continuation of a pending game
+action and rejection of frames from the disconnected camera session remain to be checked.
+No recovery latency was measured in the September 22 test.
 
-The updated Windows build passes with zero warnings or errors, and all 1,067 integration tests
-pass. Fake-capture regressions cover unplug/replug with another camera present, changed device
-IDs, duplicate camera names, explicit switching, saved selection across restarts, failed discovery
-and delayed capability checks. These automated checks do not replace the physical recheck above.
+The September 22 post-fix Windows build passed with zero warnings or errors, and all 1,067
+integration tests passed at that revision. Fake-capture regressions cover unplug/replug with
+another camera present, changed device IDs, duplicate camera names, explicit switching, saved
+selection across restarts, failed discovery and delayed capability checks. These automated checks
+supplement the physical result below.
+
+## September 23 physical camera recovery retest
+
+After the identity fix, the user unplugged and reconnected the webcam. The game re-found the
+stream and displayed it without incident. This confirms physical stream rediscovery and display
+for the reported test. The report did not specify whether the laptop camera was available,
+whether a game action was pending, or whether stale frames were rejected. Recovery latency was
+not recorded.
 
 ## Physical acceptance still required
 
@@ -280,9 +289,10 @@ evaluate the current image independently and count misses and false positives.
   scoring markers, partial occlusion and hands entering/leaving the image.
 - Test crop changes, stop/restart, resolution changes, processor changes and model reloads; each
   must reject stale overlays. After moving the camera, adjust the crop and evaluate fresh results.
-- Repeat the Android Webcam unplug/replug test after the identity fix, with the laptop camera
-  still available. Confirm it waits for and resumes Android Webcam without manual reselection.
-  Camera jog and Windows sleep/resume recovery remain separate physical checks.
+- With the laptop camera available, unplug and reconnect the selected webcam during a pending
+  game action. Confirm it waits for and resumes that camera without manual reselection, preserves
+  the action, and rejects stale frames. Camera jog and Windows sleep/resume recovery remain
+  separate physical checks.
 - Compare the original camera preview with processed board-photo exports and CPU/GPU outputs on
   the mounted board. Check responsiveness over
   a complete game; the synthetic microbenchmark is not an end-to-end frame-rate promise.

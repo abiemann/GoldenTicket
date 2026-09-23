@@ -52,7 +52,8 @@ jobs:
         run: dotnet test tests/GoldenTicket.Core.Tests/GoldenTicket.Core.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=core-tests.trx" --results-directory artifacts/ci/core-tests --blame-hang-timeout 2m
 
       - name: Retain portable test reports
-        if: always()
+        if: failure()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: portable-core-evidence-${{ github.run_id }}-${{ github.run_attempt }}
@@ -126,7 +127,8 @@ jobs:
         run: node tests/GoldenTicket.Domain.Tests/CompanionHostBrowserUi.cjs
 
       - name: Retain test reports and synthetic UI screenshots
-        if: always()
+        if: failure()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-ci-evidence-${{ github.run_id }}-${{ github.run_attempt }}

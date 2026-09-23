@@ -312,10 +312,14 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   there; stopping capture and manually reselecting Android Webcam restored the intended camera.
   Recovery now remembers the selected device ID and name, waits for that camera, and uses a
   unique name match if Windows changes its ID. Another camera requires an explicit selection.
-- [ ] **Retest webcam recovery after the identity fix.** Unplug Android Webcam with the laptop
-  camera available, reconnect it, and confirm the app waits for and resumes the intended camera
-  without manual reselection. Check that pending game actions survive and stale frames are not
-  accepted. This recheck is separate from jog, sleep/resume and GPU-loss acceptance.
+- [x] **Physically retest webcam stream recovery after the identity fix (September 23).** The user
+  unplugged and reconnected the webcam; the game re-found the stream and displayed it without
+  incident. The report did not specify whether the laptop camera was available or whether an
+  action was pending. No recovery latency was recorded.
+- [ ] **Verify in-progress webcam recovery.** With another camera available, unplug and reconnect
+  the selected webcam during a pending game action. Confirm the app does not switch cameras,
+  preserves the action, and rejects stale frames. Jog, sleep/resume and GPU-loss acceptance are
+  separate checks.
 - [x] **CPU/GPU preprocessing implementation.** Real Direct3D 11 compute performs bounded
   enhancement and aspect-preserving resizing, with Auto/CPU/GPU choices, local preference
   persistence, validated hardware activation, effective status and CPU fallback. No recognition

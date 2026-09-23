@@ -299,7 +299,8 @@ dotnet run --project tools/GoldenTicket.Simulator -- verify-data
 
 Each project has a `packages.lock.json`; use locked restore when verifying a build. The
 [Windows CI workflow](.github/workflows/windows-ci.yml) runs on pushes to `main`, pull requests
-and manual dispatch, retaining test reports and screenshots. See the
+and manual dispatch. Failed runs attempt to retain test reports and screenshots when GitHub
+artifact storage is available. See the
 [build and CI guide](docs/build-and-ci.md) for the full browser and WPF checks and
 [portable packaging guide](docs/offline-package.md) for distribution tooling.
 
