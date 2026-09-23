@@ -21,3 +21,5 @@ eleven shipped PNGs and records the project owner's confirmation that Codex gene
 for GoldenTicket without copying third-party artwork. Local generation notes and source
 images support the creation and later portrait refinements. The audit is limited to these
 game-art files; physical-board imagery, game data and model assets have separate provenance.
+Any licensable project-owned rights in these PNGs are offered under the repository's
+[PolyForm Noncommercial License 1.0.0](../../LICENSE).

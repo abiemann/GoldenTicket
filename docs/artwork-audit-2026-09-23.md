@@ -56,8 +56,9 @@ SHA-256 identifies the exact files reviewed. All paths are under `assets/artwork
 
 ## Licensing boundary
 
-The software's eventual license should identify whether and how it applies to these PNGs.
-AI generation and absence of apparent copying do not by themselves establish exclusive
-copyright in each output. The [U.S. Copyright Office's AI authorship guidance](https://www.copyright.gov/newsnet/2025/1060.html)
+Any licensable project-owned rights in these PNGs are offered under the repository's
+[PolyForm Noncommercial License 1.0.0](../LICENSE). AI generation and absence of apparent
+copying do not by themselves establish exclusive copyright in each output. The
+[U.S. Copyright Office's AI authorship guidance](https://www.copyright.gov/newsnet/2025/1060.html)
 assesses protection for human expressive contributions case by case. This review makes no
 claim that a license can grant rights in material outside the project's ownership.

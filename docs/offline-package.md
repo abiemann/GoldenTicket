@@ -87,6 +87,7 @@ An interrupted run remains there for diagnosis. A complete run has:
   versions, publish settings, and outstanding manual acceptance.
 - `GoldenTicket/SHA256-MANIFEST.json`, covering every payload file except the manifest itself.
   The detached archive SHA256 covers the complete ZIP, including that manifest.
+- `GoldenTicket/LICENSE`, containing the project's PolyForm Noncommercial 1.0.0 license.
 - `GoldenTicket/licenses/`, retaining exact package specifications and available license/notices
   from the local restored packages, including the shipped runtime packs.
 
@@ -108,7 +109,8 @@ clean-machine/device acceptance table below.
 Some NuGet packages contain a license expression or URL without the full license text.
 `licenses/dependencies.json` preserves this distinction, and `PACKAGE-THIRD-PARTY-NOTICES.md` lists
 those packages for notice-text review before wider distribution. Collecting their metadata is
-not a completed license audit. Existing project notices, if present, are retained unchanged.
+not a completed license audit. The root project LICENSE and any other project notices are copied
+unchanged.
 
 ## Run the extracted application
 

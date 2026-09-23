@@ -7,6 +7,9 @@ the train cards, destination tickets, decks, rules, scoring and computer opponen
 A camera watches the board as you play. Place your trains, pay with your digital cards, and follow
 the instructions on the laptop or shared tablet. Play against computers, with other people, or both.
 
+GoldenTicket is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+See [License](#license) for its scope and third-party material.
+
 ## What you can do
 
 - **Play with 2–5 human and computer players.** Choose portraits with matching train colors, then select
@@ -334,3 +337,16 @@ and intermediate checkpoints stay in ignored `artifacts/`.
 - [Design](DESIGN.md): detailed product design, including future features.
 - [Roadmap](TODO.md): remaining work, including narration and installer work.
 - [Validation records](docs/evidence/): detailed results and historical implementation reports.
+
+## License
+
+GoldenTicket's original source code, documentation, and any licensable project-owned rights in
+bundled assets are offered under the [PolyForm Noncommercial License 1.0.0](LICENSE)
+(`PolyForm-Noncommercial-1.0.0`). Use, changes and distribution are permitted for the purposes
+covered by that license. Commercial use requires separate permission from the rights holder.
+
+The license does not override third-party terms. Dependencies and upstream material in the
+[recognition models](assets/models/README.md) retain their own licenses and notices. The
+[artwork audit](docs/artwork-audit-2026-09-23.md) documents the AI-generated images; this license
+grants only rights the project owner holds in them. It does not grant rights to publisher-owned
+Ticket to Ride board imagery, ticket content, names, or trademarks.

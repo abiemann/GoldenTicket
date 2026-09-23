@@ -1,6 +1,7 @@
 # Contributing
 
-GoldenTicket is preparing for an open-source release. Begin with the implemented
+GoldenTicket is licensed under [PolyForm Noncommercial 1.0.0](LICENSE) and is preparing for a
+public source-available release. Begin with the implemented
 [architecture](docs/architecture.md), [README](README.md) and [remaining work](TODO.md).
 [DESIGN.md](DESIGN.md) includes planned behaviour as well as implemented decisions.
 
