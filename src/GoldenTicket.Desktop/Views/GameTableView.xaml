@@ -453,10 +453,22 @@
                                AutomationProperties.LiveSetting="Polite" />
                 </Border>
 
-                <Border x:Name="HumanGuidancePanel" Canvas.Left="555" Canvas.Top="22" Width="330" Height="150" CornerRadius="10"
+                <Border x:Name="HumanGuidancePanel" Canvas.Left="555" Width="330" CornerRadius="10"
                         Background="#F21A2531" BorderBrush="#FFB18C52" BorderThickness="1.5"
                         Padding="16,10" AutomationProperties.LiveSetting="Polite"
                         Visibility="{Binding ShowBoardFirstClaimProposal, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Canvas.Top" Value="22" />
+                            <Setter Property="Height" Value="150" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Game.ShowFinalTurn}" Value="True">
+                                    <Setter Property="Canvas.Top" Value="4" />
+                                    <Setter Property="Height" Value="180" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                     <StackPanel>
                         <TextBlock Text="THE GAME TABLE" Foreground="#FFFFE7B0" FontSize="21"
                                    FontWeight="Bold" HorizontalAlignment="Center" />
@@ -466,6 +478,9 @@
                         </TextBlock>
                         <TextBlock x:Name="GuidanceSeatText" Text="{Binding Game.GuidanceSeat}" Foreground="White" FontSize="18"
                                    FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <TextBlock x:Name="GuidanceFinalTurnText" Text="Final turn" Foreground="#FFFFD576" FontSize="14"
+                                   FontWeight="SemiBold" HorizontalAlignment="Center"
+                                   Visibility="{Binding Game.ShowFinalTurn, Converter={StaticResource BoolToVisibility}}" />
                         <TextBlock x:Name="GuidanceInstructionText" Text="{Binding Game.GuidanceInstruction}" Foreground="#FFF8EEDC" FontSize="13"
                                    TextWrapping="Wrap" TextAlignment="Center" MaxHeight="65" />
                     </StackPanel>

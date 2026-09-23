@@ -54,6 +54,7 @@ public sealed partial class TableViewModel : ObservableObject
     [ObservableProperty] private string _supplyText = "";
     [ObservableProperty] private string _verificationText = "";
     [ObservableProperty] private string? _finalRoundText;
+    [ObservableProperty] private bool _isFinalTurn;
     [ObservableProperty] private string? _rulesDecisionText;
 
     /// <summary>The reviewed way forward for the paused position, when one exists (DESIGN 6.4).</summary>
@@ -136,6 +137,9 @@ public sealed partial class TableViewModel : ObservableObject
                 .OrderBy(pair => pair.Key.Value)
                 .Select(pair => $"{view.SeatOf(pair.Key).DisplayName} {pair.Value}"))
             : null;
+        IsFinalTurn = view.Lifecycle == SessionLifecycle.Active &&
+            view.FinalRound is { } finalRound &&
+            finalRound.RemainingTurnsBySeat.GetValueOrDefault(view.ActiveSeatId) > 0;
 
         RulesDecisionText = view.RulesDecision is { } decision
             ? $"Paused - {decision.Code}: {decision.Explanation}"

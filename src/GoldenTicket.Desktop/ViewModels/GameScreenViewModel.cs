@@ -214,7 +214,8 @@ public sealed partial class GameScreenViewModel : ObservableObject
                 OnPropertyChanged(nameof(ShowManualPlacementControls));
             }
             if (args.PropertyName is nameof(TableViewModel.TurnText) or
-                nameof(TableViewModel.ActiveSeatName) or nameof(TableViewModel.Instruction))
+                nameof(TableViewModel.ActiveSeatName) or nameof(TableViewModel.Instruction) or
+                nameof(TableViewModel.IsFinalTurn))
                 NotifyGuidanceChanged();
         };
         _main.Camera.PropertyChanged += (_, args) =>
@@ -253,6 +254,8 @@ public sealed partial class GameScreenViewModel : ObservableObject
             ? _main.PrivateSeat!.SeatName : _main.Table.ActiveSeatName);
     public string GuidanceInstruction => _guidanceOverride?.Instruction ??
         (_main.IsCheckingResumedGame ? "Saved board." : _main.Table.Instruction);
+    public bool ShowFinalTurn => _main.Table.IsFinalTurn &&
+        !_main.IsCheckingResumedGame && _guidanceOverride is null;
     public bool ShowManualPlacementControls => _main.Table.Placement is { AwaitingRestore: false } placement &&
         !RoutePlacementVerifier.Supports(placement.RouteId.Value, placement.TrainCount);
 
@@ -273,6 +276,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
         OnPropertyChanged(nameof(GuidanceTurn));
         OnPropertyChanged(nameof(GuidanceSeat));
         OnPropertyChanged(nameof(GuidanceInstruction));
+        OnPropertyChanged(nameof(ShowFinalTurn));
     }
 
     [ObservableProperty] private bool _showPlacementTarget;

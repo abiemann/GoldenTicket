@@ -1,3 +1,4 @@
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using GoldenTicket.CompanionHost;
@@ -57,8 +58,10 @@ public sealed partial class MainViewModel
                 FinalStandingsShareStatus = "Reconnect the shared phone, then select Share to phone again.";
                 return;
             }
+            var timestamp = DateTime.Now.ToString("yyyy-MM-dd-HHmmss", CultureInfo.InvariantCulture);
             _finalStandingsImage = new CompanionResultImage(game.SessionId.Value, version,
-                new CompanionResultImageInfo(Guid.NewGuid().ToString("N"), "golden-ticket-final-standings.png"), png);
+                new CompanionResultImageInfo(Guid.NewGuid().ToString("N"),
+                    $"golden-ticket-final-standings-{timestamp}.png"), png);
             FinalStandingsShareStatus = "Image ready on the shared phone. Open it to share or save.";
             NotifyCompanionPresentationChanged();
         }
