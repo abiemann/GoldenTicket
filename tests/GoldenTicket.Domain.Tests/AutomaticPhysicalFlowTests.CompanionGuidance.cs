@@ -74,7 +74,7 @@ public sealed partial class AutomaticPhysicalFlowTests
             await WaitUntilAsync(() => model.Game.GuidanceTurn != "Scoring" && model.CanRevealPrivateSeat);
             Assert.True(updates.Changes.Reader.TryRead(out _));
             var next = await bridge.ReadPublicAsync(token);
-            Assert.Equal(scoring.Game.StateVersion, next.Game!.StateVersion);
+            Assert.Equal(scoring.Game.StateVersion + 1, next.Game!.StateVersion);
             Assert.Null(next.Guidance);
             Assert.True(next.CanControl);
             Assert.Equal(game.Public.ActiveSeatId.Value, next.RevealSeatId);

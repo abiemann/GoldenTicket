@@ -71,7 +71,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             Interval = TimeSpan.FromSeconds(3)
         };
         _gameTableCameraRetryTimer.Tick += GameTableCameraRetryTick;
-        SelectedPreference = Preferences.First(option => option.Value == CameraCapturePreference.Balanced1080p);
+        SelectedPreference = Preferences.First(option => option.Value == CameraCapturePreference.AutoBest);
         SelectedProcessor = ProcessorModes.First(option => option.Value ==
             Services.FrameProcessingPreferences.Load(processingSettingsPath));
     }
@@ -83,7 +83,8 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<NormalizedPoint> SelectedCorners { get; } = [];
     public IReadOnlyList<CameraPreferenceOption> Preferences { get; private set; } =
     [
-        new(CameraCapturePreference.Balanced1080p, "1080p preferred · best available"),
+        new(CameraCapturePreference.AutoBest, "Auto · best native quality"),
+        new(CameraCapturePreference.Balanced1080p, "1080p preferred"),
         new(CameraCapturePreference.Native720p, "720p"),
         new(CameraCapturePreference.SharedCurrent, "Shared · current Windows format")
     ];

@@ -484,6 +484,56 @@ public sealed class CameraCornerLearningFlowTests
     }
 
     [Fact]
+    public async Task Failed_initial_alignment_releases_pending_gate_and_rechecks_orientation_before_analysis()
+    {
+        using var pieces = new FakePieceModel();
+        await using var fixture = new Fixture(pieceFactory: (_, _) => pieces);
+        var boardVisible = true;
+        fixture.FramePainter = (pixels, width, height) =>
+        {
+            if (boardVisible) PaintCanonicalBoard(pixels, width, height);
+        };
+        fixture.Refresh(width: 1600, height: 900);
+        var expected = BoardRegistration.Create(fixture.Frame, CanonicalSensorCorners());
+        fixture.Camera.SetGameTableReference(ToBitmap(expected.Rectify(fixture.Frame, 1280, 800)));
+        fixture.SetField("_registration", BoardRegistration.Create(fixture.Frame, CanonicalSensorCorners(.004, .002)));
+        fixture.SetField("_pieceModel", pieces);
+        fixture.Model.DetectedCorners = CanonicalSensorCorners();
+        var context = new HeldContinuationContext();
+        var previousContext = SynchronizationContext.Current;
+        try
+        {
+            SynchronizationContext.SetSynchronizationContext(context);
+            fixture.Camera.RequestGameTablePreview();
+        }
+        finally { SynchronizationContext.SetSynchronizationContext(previousContext); }
+
+        try
+        {
+            await context.Posted.Task.WaitAsync(TimeSpan.FromSeconds(10), Token);
+            boardVisible = false;
+            fixture.Refresh(width: 1600, height: 900);
+        }
+        finally { context.Release(); }
+
+        await fixture.WaitForGameTableAlignmentAsync();
+        await fixture.WaitForLiveBoardCheckAsync();
+        Assert.Null(fixture.GetField("_gameTableAlignmentPendingRevision"));
+        Assert.False(fixture.Camera.IsGameTablePreviewUpright);
+        Assert.Null(fixture.Camera.GameTableAnalysis);
+        Assert.Equal(0, pieces.Calls);
+
+        boardVisible = true;
+        fixture.Refresh(width: 1600, height: 900);
+        await fixture.DetectLiveBoardAsync();
+        await fixture.WaitForGameTableAnalysisAsync();
+
+        Assert.True(fixture.Camera.IsGameTablePreviewUpright, fixture.Camera.GameTablePreviewStatus);
+        Assert.NotNull(fixture.Camera.GameTableAnalysis);
+        Assert.Null(fixture.GetField("_gameTableAlignmentPendingRevision"));
+    }
+
+    [Fact]
     public async Task Delayed_periodic_alignment_cannot_replace_a_newer_manual_game_crop()
     {
         await using var fixture = new Fixture();

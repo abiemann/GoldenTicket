@@ -11,7 +11,9 @@ using GoldenTicket.Persistence;
 
 namespace GoldenTicket.Desktop.ViewModels;
 
-public sealed record CheckpointPhotoCaptureInput(byte[] PngBytes, CheckpointPhotoCapture Capture);
+public sealed record CheckpointPhotoCaptureInput(byte[] PngBytes, CheckpointPhotoCapture Capture,
+    CheckpointTrainInventory? ObservedTrainInventory = null,
+    CheckpointPendingPlacement? PendingPlacement = null);
 
 /// <summary>The required saved board image, separate from authoritative logical checkpoint truth.</summary>
 public sealed partial class CheckpointPhotoViewModel : ObservableObject
@@ -35,6 +37,13 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
     public CameraViewModel? Camera { get; }
     public ICommand? CameraSetupCommand { get; }
     public CheckpointPendingPlacement? PendingPlacement { get; private set; }
+    public int? PhotoFormatVersion { get; private set; }
+    public bool HasPendingPlacementToCapture { get; private set; }
+    public string BoardConfirmationText => HasPendingPlacementToCapture
+        ? "I checked the whole board against the saved route list. The camera shows the complete board, including any trains already placed for the unfinished route, with no private cards or hands."
+        : "I checked the whole board against the saved route list. The camera shows the complete board with no private cards, hands, or uncommitted trains.";
+    private bool CameraReadyForPhoto => Camera is null ||
+        (HasPendingPlacementToCapture ? Camera.CanCaptureGameTablePhoto : Camera.CanCapturePhoto);
     public bool HasLivePreview => !HasPhoto && Camera is { IsRunning: true, BoardPreview: not null };
 
     public bool HasPhotoFor(SessionId sessionId, CheckpointId checkpointId) =>
@@ -54,21 +63,23 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
         : NeedsReferenceReload ? "Use Reload reference to check the existing attachment before another capture."
         : !CaptureAllowed ? "This game has resumed. Save and pack away again before attaching a new photo."
         : Camera is { IsRunning: false } ? "Open Camera setup and start the overhead camera preview."
-        : Camera is { HasBoardCrop: false } ? "Open Camera setup and select all four board corners."
-        : Camera is { SafetyHeld: true } ? "Open Camera setup, check the whole board and set a scene reference. Wait for stable framing."
-        : Camera is { CanCapturePhoto: false } ? "Wait for a fresh, stable camera preview before capturing."
+        : HasPendingPlacementToCapture && !CameraReadyForPhoto ? "Wait for a fresh, upright GAME TABLE board analysis before capturing the unfinished placement."
+        : !HasPendingPlacementToCapture && Camera is { HasBoardCrop: false } ? "Open Camera setup and select all four board corners."
+        : !HasPendingPlacementToCapture && Camera is { SafetyHeld: true } ? "Open Camera setup, check the whole board and set a scene reference. Wait for stable framing."
+        : !CameraReadyForPhoto ? "Wait for a fresh, stable camera preview before capturing."
         : !OperatorAcknowledged ? "Check the board and live crop, tick the confirmation below, then select Capture reference photo."
         : "Ready to capture. Keep the board in place until the photo is saved and displayed here.";
 
     private void CameraChanged(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName == nameof(CameraViewModel.CanCapturePhoto))
+        if (args.PropertyName is nameof(CameraViewModel.CanCapturePhoto) or nameof(CameraViewModel.CanCaptureGameTablePhoto))
         {
-            if (Camera?.CanCapturePhoto != true) OperatorAcknowledged = false;
+            if (!CameraReadyForPhoto) OperatorAcknowledged = false;
             CaptureReferenceCommand.NotifyCanExecuteChanged();
         }
         if (args.PropertyName is nameof(CameraViewModel.IsRunning) or nameof(CameraViewModel.HasBoardCrop)
-            or nameof(CameraViewModel.SafetyHeld) or nameof(CameraViewModel.CanCapturePhoto))
+            or nameof(CameraViewModel.SafetyHeld) or nameof(CameraViewModel.CanCapturePhoto)
+            or nameof(CameraViewModel.CanCaptureGameTablePhoto))
             OnPropertyChanged(nameof(CaptureGuidance));
         if (args.PropertyName is nameof(CameraViewModel.BoardPreview) or nameof(CameraViewModel.IsRunning)) OnPropertyChanged(nameof(HasLivePreview));
     }
@@ -118,6 +129,11 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
         NeedsReferenceReload = false;
         PhotoImage = null;
         PendingPlacement = null;
+        PhotoFormatVersion = null;
+        HasPendingPlacementToCapture = checkpoint?.SuspendedTurnPhase == TurnPhase.AwaitingPhysicalPlacement;
+        OnPropertyChanged(nameof(BoardConfirmationText));
+        OnPropertyChanged(nameof(CaptureGuidance));
+        CaptureReferenceCommand.NotifyCanExecuteChanged();
         OperatorAcknowledged = false;
         CaptureDetails = "";
         CheckpointName = checkpoint?.Name ?? "No packed checkpoint selected";
@@ -158,7 +174,7 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
     }
 
     private bool CanCaptureReference() => HasCheckpoint && CaptureAllowed && !HasPhoto && !ReferenceUnavailable &&
-        !NeedsReferenceReload && !IsBusy && OperatorAcknowledged && (Camera?.CanCapturePhoto ?? true);
+        !NeedsReferenceReload && !IsBusy && OperatorAcknowledged && CameraReadyForPhoto;
     private bool CanReloadReference() => HasCheckpoint && !IsBusy && _checkpoint is not null;
 
     [RelayCommand(CanExecute = nameof(CanReloadReference))]
@@ -186,7 +202,8 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
                 throw new InvalidOperationException("The selected checkpoint or board confirmation changed. Check the board and try again.");
             attemptedStorage = true;
             await _store.SaveReferenceAsync(checkpoint, input.PngBytes,
-                input.Capture with { OperatorConfirmedBoardOnlyAndTarget = true }, cancellationToken);
+                input.Capture with { OperatorConfirmedBoardOnlyAndTarget = true }, cancellationToken,
+                input.ObservedTrainInventory, input.PendingPlacement);
             attachment = await _store.ReadReferenceAsync(checkpoint, cancellationToken)
                 ?? throw new IOException("The reference photo is missing after storage verification.");
             if (generation == _generation) Display(attachment);
@@ -226,6 +243,7 @@ public sealed partial class CheckpointPhotoViewModel : ObservableObject
         var decoder = new PngBitmapDecoder(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
         var image = decoder.Frames[0];
         PendingPlacement = attachment.Reference.PendingPlacement;
+        PhotoFormatVersion = attachment.Reference.FormatVersion;
         image.Freeze();
         PhotoImage = image;
         HasPhoto = true;

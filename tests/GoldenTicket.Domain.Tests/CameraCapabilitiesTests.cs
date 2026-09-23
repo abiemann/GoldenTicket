@@ -49,8 +49,39 @@ public sealed class CameraCapabilitiesTests
 
         Assert.True(camera.HasNative4K);
         var option = Assert.Single(camera.Preferences, option => option.Value == CameraCapturePreference.HighDetail2160p);
-        Assert.Equal("4K · best available", option.Label);
+        Assert.Equal("4K preferred", option.Label);
+        Assert.Equal(CameraCapturePreference.AutoBest, camera.SelectedPreference.Value);
+        Assert.Equal("Auto · 3840 × 2160", camera.SelectedPreference.Label);
         Assert.False(camera.HasCameraCompatibilityMessage);
+    }
+
+    [Theory]
+    [InlineData(3840, 2160)]
+    [InlineData(2560, 1440)]
+    public async Task Auto_default_starts_a_camera_with_only_a_high_resolution_native_format(int width, int height)
+    {
+        var format = new CameraFormat(width, height, 30, "MJPG");
+        var device = new CameraDevice("single-format", "Single format camera");
+        var capture = new FakeCameraCapture { AvailableFormats = [format] };
+        capture.StartHandler = (started, preference, _) =>
+        {
+            Assert.Equal(device, started);
+            Assert.Equal(CameraCapturePreference.AutoBest, preference);
+            capture.NegotiatedFormat = format;
+            capture.DeliveredFrameDimensions = new(width, height);
+            return Task.CompletedTask;
+        };
+        await using var camera = new CameraViewModel(capture: capture,
+            getCameraFormats: (_, _) => Task.FromResult<IReadOnlyList<CameraFormat>>([format]));
+        SetField(camera, "_processorReady", true);
+        camera.SelectedDevice = device;
+
+        await camera.StartCommand.ExecuteAsync(null);
+
+        Assert.True(camera.IsRunning, camera.Problem);
+        Assert.Equal(1, capture.StartCalls);
+        Assert.Equal(CameraCapturePreference.AutoBest, camera.SelectedPreference.Value);
+        Assert.Equal($"Auto · {width} × {height}", camera.SelectedPreference.Label);
     }
 
     [Fact]
@@ -101,7 +132,7 @@ public sealed class CameraCapabilitiesTests
         Assert.Equal(CameraCapturePreference.Native720p, camera.SelectedPreference.Value);
 
         await using var restarted = CreateCamera([FullHd, Hd]);
-        Assert.Equal(CameraCapturePreference.Balanced1080p, restarted.SelectedPreference.Value);
+        Assert.Equal(CameraCapturePreference.AutoBest, restarted.SelectedPreference.Value);
     }
 
     [Fact]
@@ -134,7 +165,7 @@ public sealed class CameraCapabilitiesTests
             StartHandler = (device, preference, _) =>
             {
                 Assert.Equal(HdDevice, device);
-                Assert.Equal(CameraCapturePreference.Balanced1080p, preference);
+                Assert.Equal(CameraCapturePreference.AutoBest, preference);
                 return Task.CompletedTask;
             }
         };
@@ -148,7 +179,7 @@ public sealed class CameraCapabilitiesTests
         Assert.True(camera.IsRunning, camera.Problem);
         Assert.Null(camera.Problem);
         Assert.False(camera.HasNative4K);
-        Assert.Equal("720p · best available", camera.SelectedPreference.Label);
+        Assert.Equal("Auto · 1280 × 720", camera.SelectedPreference.Label);
         Assert.True(camera.HasCameraCompatibilityMessage);
         Assert.Contains("1080p", camera.CameraCompatibilityMessage);
         Assert.Contains("poor lighting", camera.CameraCompatibilityMessage);
@@ -184,7 +215,7 @@ public sealed class CameraCapabilitiesTests
         await camera.RefreshSelectedCameraCapabilitiesAsync();
 
         Assert.False(camera.HasNative4K);
-        Assert.Equal(CameraCapturePreference.Balanced1080p, camera.SelectedPreference.Value);
+        Assert.Equal(CameraCapturePreference.AutoBest, camera.SelectedPreference.Value);
         Assert.DoesNotContain(camera.Preferences, option => option.Value == CameraCapturePreference.HighDetail2160p);
         Assert.Contains("poor lighting", camera.CameraCompatibilityMessage);
     }
@@ -273,7 +304,7 @@ public sealed class CameraCapabilitiesTests
         Assert.Equal(HdDevice, camera.SelectedDevice);
         Assert.False(camera.HasNative4K);
         Assert.DoesNotContain(camera.Preferences, option => option.Value == CameraCapturePreference.HighDetail2160p);
-        Assert.Equal("720p · best available", camera.SelectedPreference.Label);
+        Assert.Equal("Auto · 1280 × 720", camera.SelectedPreference.Label);
         Assert.False(camera.IsCheckingCameraCapabilities);
     }
 

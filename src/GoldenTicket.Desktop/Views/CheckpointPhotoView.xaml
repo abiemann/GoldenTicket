@@ -40,7 +40,7 @@
                         <CheckBox IsChecked="{Binding OperatorAcknowledged}" IsEnabled="{Binding HasCheckpoint}"
                                   Margin="0,0,0,12">
                             <TextBlock TextWrapping="Wrap"
-                                       Text="I checked the whole board against the saved route list. The camera shows the complete board with no private cards, hands, or uncommitted trains." />
+                                       Text="{Binding BoardConfirmationText}" />
                         </CheckBox>
                         <Button Content="Capture reference photo" Command="{Binding CaptureReferenceCommand}"
                                 Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Padding="20,10" Margin="0,0,8,8"
@@ -55,7 +55,7 @@
                     <Expander Header="About board reference photos" Margin="0,12,0,0">
                         <StackPanel Margin="0,8,0,0">
                             <TextBlock TextWrapping="Wrap" Text="This required image is saved on this laptop with its digital checkpoint. Cards, turns, scores, and route ownership remain in the digital checkpoint." />
-                            <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Text="Before capture, check that every train matches the saved route list. Remove uncommitted trains, hands and private cards from the image. This version does not recognize or verify trains in the photo." />
+                            <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Text="Before capture, check every committed route against the saved route list. Keep any trains already placed for the unfinished route in their exact spaces. Remove hands and private cards from the image. The camera checks the train positions and colors before saving unfinished placement progress." />
                         </StackPanel>
                     </Expander>
                 </StackPanel>

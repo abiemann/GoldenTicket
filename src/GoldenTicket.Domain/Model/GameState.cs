@@ -162,6 +162,9 @@ public sealed class GameState
 
     public PendingClaim? PendingClaim { get; internal set; }
 
+    /// <summary>A committed claim whose physical score marker still needs camera verification.</summary>
+    public PendingScoreMarkerMove? PendingScoreMarkerMove { get; internal set; }
+
     public FinalRound? FinalRound { get; internal set; }
 
     public RandomState RandomState { get; internal set; }
@@ -273,6 +276,7 @@ public sealed class GameState
             ConsecutivePasses = ConsecutivePasses,
             CurrentTicketOffer = CurrentTicketOffer,
             PendingClaim = PendingClaim,
+            PendingScoreMarkerMove = PendingScoreMarkerMove,
             FinalRound = FinalRound,
             RandomState = RandomState,
             FinalResult = FinalResult,
@@ -317,3 +321,8 @@ public sealed record RulesDecision(string Code, string Explanation)
     [System.Text.Json.Serialization.JsonIgnore]
     public TurnPhase? InterruptedTurnPhase { get; init; }
 }
+
+/// <summary>The public physical action left by a committed route claim.</summary>
+public sealed record PendingScoreMarkerMove(
+    OperationId OperationId, SeatId SeatId, int FromPrintedScore,
+    int ToPrintedScore, int Points);

@@ -60,8 +60,15 @@ public sealed partial class MainViewModel
         finally { SetOperationInProgress(false); }
     }
 
-    private bool SavedPendingPlacementMatches(GameCoordinator coordinator) =>
-        CheckpointPhoto.PendingPlacement is not { } pending ||
-        coordinator.Public.PendingClaim is { } claim &&
-        pending.Matches(claim, coordinator.Public.SeatOf(claim.SeatId).Color);
+    private bool SavedPendingPlacementMatches(GameCoordinator coordinator)
+    {
+        // Only format 1 attachments may lack a pending-slot record. New attachments must
+        // carry the exact physical progress before either camera or manual rebuild proceeds.
+        if (coordinator.Public.Checkpoint?.SuspendedTurnPhase == TurnPhase.AwaitingPhysicalPlacement &&
+            CheckpointPhoto.PhotoFormatVersion >= 2 && CheckpointPhoto.PendingPlacement is null)
+            return false;
+        return CheckpointPhoto.PendingPlacement is not { } pending ||
+            coordinator.Public.PendingClaim is { } claim &&
+            pending.Matches(claim, coordinator.Public.SeatOf(claim.SeatId).Color);
+    }
 }

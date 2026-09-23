@@ -212,6 +212,9 @@ public sealed class BoardManifest
         {
             if (lanes.Length < 2)
                 throw new InvalidDataException($"Parallel group {groupId} has fewer than two lanes.");
+            if (lanes.Any(lane => string.IsNullOrWhiteSpace(lane.DisplayLaneLabel)) ||
+                lanes.Select(lane => lane.DisplayLaneLabel).Distinct(StringComparer.OrdinalIgnoreCase).Count() != lanes.Length)
+                throw new InvalidDataException($"Parallel group {groupId} needs a distinct display label for every lane.");
             var first = lanes[0];
             foreach (var lane in lanes)
             {

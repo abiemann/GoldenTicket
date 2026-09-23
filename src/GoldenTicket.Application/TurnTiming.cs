@@ -27,7 +27,7 @@ public sealed class TurnTimingTracker
     private int? _initialTurn;
 
     public TurnTimingTracker(TimeProvider? clock = null, TurnTimingSnapshot? saved = null,
-        bool restored = false)
+        bool restored = false, bool awaitingScoreMarker = false)
     {
         _clock = clock ?? TimeProvider.System;
         _stamp = _clock.GetTimestamp();
@@ -40,6 +40,7 @@ public sealed class TurnTimingTracker
         if (unfinished >= 0)
         {
             _current = unfinished;
+            _holdingMarker = awaitingScoreMarker;
             // An active autosave cannot recover the unrecorded interval before interruption.
             // A clean paused checkpoint can resume the same turn with exact recorded time.
             if (saved is { AwaitingScoreMarker: true } or { WasRunning: true })

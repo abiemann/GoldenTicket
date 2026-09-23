@@ -283,16 +283,16 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
 - [x] **Manual board-photo export.** A valid live crop can be exported to PNG without a scene
   reference, including while the scene has changed. Fresh-frame and crop/camera identity checks
   remain; checkpoint-photo capture retains its separate reference checks.
-- [x] **Native-resolution preference and truthful 4K processing.** Default to exact native
-  1920 × 1080 near 30 fps, allow 720p fallback with a poor-lighting warning, and reject modes
-  below 1280 × 720. Show native 4K capture only when the selected webcam advertises a usable
+- [x] **Native-resolution preference and truthful 4K processing.** Default to Auto, preferring
+  native 4K, then 1080p or better, then 720p, with a poor-lighting warning for 720p; reject modes
+  below 1280 × 720. Show explicit native 4K capture only when the selected webcam advertises a usable
   3840 × 2160 format. Display the actual delivered
   dimensions separately from processing output. Shared-read-only inspection confirms the current
   Pixel UVC connection advertises 1080p at most. Physical native-4K camera acceptance remains open.
 - [x] **Native 720p selection.** Add **720p** to camera quality.
   Request only native 1280 × 720 near 30 fps, reject other delivered
   sizes, and retain the selection through camera reconnects within the running app. Reopening
-  the app restores the default 1080p preference. On September 22, the user reported that Android
+  the app restores the default Auto preference. On September 22, the user reported that Android
   Webcam gameplay at 720p was working so far and the game had been saved. Reload and board
   redetection at 720p remain to be confirmed.
 - [ ] **720p webcam performance and gameplay acceptance.** Test a real webcam delivering
@@ -547,8 +547,8 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   inventory before payment, preserve the payment choices, then verify fresh post-payment captures
   before completing the claim and handing off the turn. Complete the durable preauthorization substate, broader whole-board
   recognition, occlusion/unknown foreground rejection, jog/reconnect recovery, stale-epoch
-  rejection, wake gesture, and explicit mode-change reconciliation. Persist the score-marker
-  move obligation with the claim so an app restart cannot skip the physical marker check.
+  rejection, wake gesture, and explicit mode-change reconciliation. The score-marker move
+  obligation now commits with the claim and survives restart; validate it with the overhead camera.
 - [ ] **M4/M5: model inference.** Build on the implemented preprocessing preference/status flow.
   For any required learned recognizer, default to Auto: detect adapters at launch, validate GPU execution with
   the packaged model, and fall back to CPU on absence, incompatibility, timeout, or failure. Retain

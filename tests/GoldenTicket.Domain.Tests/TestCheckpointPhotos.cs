@@ -17,6 +17,8 @@ internal sealed class TestCheckpointPhotos : IDisposable
     public Task<CheckpointPhotoReference> AttachAsync(PackAwayCheckpoint checkpoint,
         CheckpointPendingPlacement? pendingPlacement = null)
     {
+        if (checkpoint.SuspendedTurnPhase == TurnPhase.AwaitingPhysicalPlacement && pendingPlacement is null)
+            throw new InvalidOperationException("A new pending photo fixture needs its exact placement slots.");
         var pixels = Enumerable.Range(0, 80 * 50 * 3).Select(index => (byte)(index % 251)).ToArray();
         var image = BitmapSource.Create(80, 50, 96, 96, PixelFormats.Rgb24, null, pixels, 80 * 3);
         image.Freeze();
@@ -24,9 +26,17 @@ internal sealed class TestCheckpointPhotos : IDisposable
         encoder.Frames.Add(BitmapFrame.Create(image));
         using var stream = new MemoryStream();
         encoder.Save(stream);
+        var total = checkpoint.TotalTrainsOnBoard + (pendingPlacement?.TrainCount ?? 0);
+        var inventory = pendingPlacement is null ? null : new CheckpointTrainInventory(
+            pendingPlacement.Color == PlayerColor.Blue ? total : 0,
+            pendingPlacement.Color == PlayerColor.Red ? total : 0,
+            pendingPlacement.Color == PlayerColor.Green ? total : 0,
+            pendingPlacement.Color == PlayerColor.Yellow ? total : 0,
+            pendingPlacement.Color == PlayerColor.Black ? total : 0,
+            CheckpointTrainInventoryProvenance.CameraObserved);
         return Store.SaveReferenceAsync(checkpoint, stream.ToArray(),
             new CheckpointPhotoCapture(DateTimeOffset.UtcNow, "Test board camera", 1, 1, true),
-            TestContext.Current.CancellationToken, pendingPlacement: pendingPlacement);
+            TestContext.Current.CancellationToken, inventory, pendingPlacement);
     }
 
     public void Dispose()

@@ -45,6 +45,47 @@ public class ManifestTests
         Assert.Equal(ManifestLoader.ComputeDataHash(Manifest), Manifest.DataHash);
     }
 
+    [Fact]
+    public void RuntimeProfilePinsPhysicalInstructionsWithoutChangingTheLegacySaveHash()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            var document = JsonNode.Parse(File.ReadAllText(ManifestLoader.LocateClassicUs()))!;
+            var route = document["routes"]!.AsArray().First(node => node!["parallelGroupId"] is not null)!;
+            route["displayLaneLabel"] = "the other physical lane";
+            File.WriteAllText(path, document.ToJsonString());
+
+            // The old checksum deliberately has no display labels. Runtime must still reject
+            // changed physical instructions without invalidating already saved matches.
+            var candidate = ManifestLoader.Load(path);
+            Assert.Equal(Manifest.DataHash, candidate.DataHash);
+            Assert.NotEqual(ManifestLoader.ComputeInstructionHash(Manifest),
+                ManifestLoader.ComputeInstructionHash(candidate));
+            Assert.Throws<InvalidDataException>(() => ManifestLoader.LoadClassicUs(path));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void ParallelLanesNeedDistinctNonemptyDisplayLabels()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            var document = JsonNode.Parse(File.ReadAllText(ManifestLoader.LocateClassicUs()))!;
+            var lanes = document["routes"]!.AsArray()
+                .Where(node => node!["parallelGroupId"]?.GetValue<string>() == "atlanta--new-orleans")
+                .ToArray();
+            Assert.Equal(2, lanes.Length);
+            lanes[1]!["displayLaneLabel"] = lanes[0]!["displayLaneLabel"]!.GetValue<string>();
+            File.WriteAllText(path, document.ToJsonString());
+
+            Assert.Throws<InvalidDataException>(() => ManifestLoader.Load(path));
+        }
+        finally { File.Delete(path); }
+    }
+
     [Theory]
     [InlineData("profileId", "another-game")]
     [InlineData("schemaVersion", "2")]

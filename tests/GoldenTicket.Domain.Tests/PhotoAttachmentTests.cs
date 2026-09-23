@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Nodes;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using GoldenTicket.Desktop.ViewModels;
@@ -56,7 +57,7 @@ public sealed class PhotoAttachmentTests : IDisposable
         Assert.Equal(original, checkpoint);
         Assert.Null(checkpoint.PhotoHash);
         Assert.Equal(TargetProvenance.LogicalStateOnly, checkpoint.TargetProvenance);
-        Assert.Null(restored.Reference.ObservedTrainInventory); // Older references have no inventory field.
+        Assert.Null(restored.Reference.ObservedTrainInventory);
         Assert.Null(restored.Reference.PendingPlacement);
         var envelope = await File.ReadAllBytesAsync(store.AttachmentPath(checkpoint.SessionId, checkpoint.CheckpointId), Token);
         Assert.True(envelope.AsSpan(0, 8).SequenceEqual("GTPHOTO1"u8));
@@ -135,6 +136,87 @@ public sealed class PhotoAttachmentTests : IDisposable
             await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 store.SaveReferenceAsync(checkpoint, png, capture, Token, inventory,
                     pending with { OccupiedSlotMask = 2 }));
+    }
+
+    [Fact]
+    public async Task NewPendingPhotoRequiresObservedInventoryAndExactSlots()
+    {
+        var operation = OperationId.New();
+        var checkpoint = Checkpoint() with
+        {
+            SuspendedTurnPhase = TurnPhase.AwaitingPhysicalPlacement,
+            PendingOperationId = operation,
+        };
+        var pending = new CheckpointPendingPlacement(operation, new RouteId("pending-route"),
+            new SeatId(2), PlayerColor.Blue, 3, 1);
+        var inventory = new CheckpointTrainInventory(1, 0, 3, 0, 0,
+            CheckpointTrainInventoryProvenance.CameraObserved);
+        var store = new CheckpointPhotoStore(_root);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            store.SaveReferenceAsync(checkpoint, WpfPng(), Capture(), Token, inventory));
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            store.SaveReferenceAsync(checkpoint, WpfPng(), Capture(), Token,
+                pendingPlacement: pending));
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            store.SaveReferenceAsync(checkpoint, WpfPng(), Capture(), Token,
+                inventory with { Provenance = CheckpointTrainInventoryProvenance.OperatorAttested }, pending));
+        Assert.False(Directory.Exists(_root));
+    }
+
+    [Fact]
+    public async Task NewPendingPhotoRejectsMissingEvidenceOnReadButVersionOneRemainsReadable()
+    {
+        var operation = OperationId.New();
+        var checkpoint = Checkpoint() with
+        {
+            SuspendedTurnPhase = TurnPhase.AwaitingPhysicalPlacement,
+            PendingOperationId = operation,
+        };
+        var pending = new CheckpointPendingPlacement(operation, new RouteId("pending-route"),
+            new SeatId(2), PlayerColor.Blue, 3, 1);
+        var inventory = new CheckpointTrainInventory(1, 0, 3, 0, 0,
+            CheckpointTrainInventoryProvenance.CameraObserved);
+        var store = new CheckpointPhotoStore(_root);
+        var receipt = await store.SaveReferenceAsync(checkpoint, WpfPng(), Capture(), Token,
+            inventory, pending);
+        Assert.Equal(2, receipt.FormatVersion);
+        var path = store.AttachmentPath(checkpoint.SessionId, checkpoint.CheckpointId);
+        var original = await File.ReadAllBytesAsync(path, Token);
+
+        await RewriteWithoutPendingEvidenceAsync(path, original, 2);
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.ReadReferenceAsync(checkpoint, Token));
+
+        await RewriteWithoutPendingEvidenceAsync(path, original, 1);
+        var legacy = await store.ReadReferenceAsync(checkpoint, Token);
+        Assert.NotNull(legacy);
+        Assert.Equal(1, legacy.Reference.FormatVersion);
+        Assert.Null(legacy.Reference.PendingPlacement);
+        Assert.Null(legacy.Reference.ObservedTrainInventory);
+    }
+
+    private static async Task RewriteWithoutPendingEvidenceAsync(string path, byte[] original,
+        int formatVersion)
+    {
+        var originalPlaintext = original.AsSpan(52);
+        var metadataLength = BinaryPrimitives.ReadInt32LittleEndian(originalPlaintext);
+        var metadata = JsonNode.Parse(Encoding.UTF8.GetString(
+            originalPlaintext.Slice(4, metadataLength)))!.AsObject();
+        metadata["FormatVersion"] = formatVersion;
+        metadata.Remove("ObservedTrainInventory");
+        metadata.Remove("PendingPlacement");
+        var json = Encoding.UTF8.GetBytes(metadata.ToJsonString());
+        var image = originalPlaintext[(4 + metadataLength)..];
+        var plaintext = new byte[4 + json.Length + image.Length];
+        BinaryPrimitives.WriteInt32LittleEndian(plaintext, json.Length);
+        json.CopyTo(plaintext.AsSpan(4));
+        image.CopyTo(plaintext.AsSpan(4 + json.Length));
+        var envelope = new byte[52 + plaintext.Length];
+        original.AsSpan(0, 52).CopyTo(envelope);
+        BinaryPrimitives.WriteInt32LittleEndian(envelope.AsSpan(16), plaintext.Length);
+        SHA256.HashData(plaintext).CopyTo(envelope.AsSpan(20, 32));
+        plaintext.CopyTo(envelope.AsSpan(52));
+        await File.WriteAllBytesAsync(path, envelope, Token);
     }
 
     [Theory]

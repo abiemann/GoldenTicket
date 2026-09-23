@@ -30,8 +30,8 @@ public sealed partial class CompanionServer(ICompanionGameBridge bridge, TimePro
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly SemaphoreSlim _requests = new(1, 1);
     private readonly object _rateLock = new();
-    private DateTimeOffset _rateWindow = DateTimeOffset.UtcNow;
-    private int _writes;
+    private DateTimeOffset _pairRateWindow = DateTimeOffset.UtcNow;
+    private int _pairAttempts;
     private WebApplication? _app;
     private CompanionServerStatus _status = new(false, null, null, null, null, "Companion is off.");
     private readonly Dictionary<string, (string Body, CompanionCommandReceipt Receipt)> _receipts = [];
@@ -80,7 +80,7 @@ public sealed partial class CompanionServer(ICompanionGameBridge bridge, TimePro
                 context.Response.Headers.ContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
                 var policy = RequestAllowed(context, selected, origins, networkPrivate);
                 if (policy != 200) { context.Response.StatusCode = policy; return; }
-                if (HttpMethods.IsPost(context.Request.Method) && !AllowWrite()) { context.Response.StatusCode = 429; return; }
+                if (!AllowPost(context)) { context.Response.StatusCode = 429; return; }
                 try { await next(context); }
                 catch (OperationCanceledException) { if (!context.Response.HasStarted) context.Response.StatusCode = 409; }
                 catch (Exception ex) when (ex is JsonException or BadHttpRequestException or ArgumentException)
@@ -147,12 +147,23 @@ public sealed partial class CompanionServer(ICompanionGameBridge bridge, TimePro
         }
         return 200;
     }
-    private bool AllowWrite()
+    // The six-digit pairing code needs a bounded guess rate. Already approved controller
+    // actions have their own authentication and single-command gate; anonymous pairing
+    // traffic must not consume their ability to hide or act.
+    internal bool AllowPost(HttpContext context)
     {
+        if (!HttpMethods.IsPost(context.Request.Method) ||
+            !string.Equals(context.Request.Path.Value, "/api/pair", StringComparison.OrdinalIgnoreCase))
+            return true;
+
         lock (_rateLock)
         {
-            if (DateTimeOffset.UtcNow - _rateWindow >= TimeSpan.FromMinutes(1)) { _rateWindow = DateTimeOffset.UtcNow; _writes = 0; }
-            return ++_writes <= 100;
+            if (DateTimeOffset.UtcNow - _pairRateWindow >= TimeSpan.FromMinutes(1))
+            {
+                _pairRateWindow = DateTimeOffset.UtcNow;
+                _pairAttempts = 0;
+            }
+            return ++_pairAttempts <= 100;
         }
     }
     internal static void MapShell(WebApplication app)
@@ -212,6 +223,8 @@ public sealed partial class CompanionServer(ICompanionGameBridge bridge, TimePro
         });
         app.MapPost("/api/reveal", async (HttpContext context) =>
         {
+            var admitted = Credentials(context);
+            if (admitted is null || !Csrf(context, admitted)) return Results.Unauthorized();
             if (!await _requests.WaitAsync(0, context.RequestAborted)) return Results.StatusCode(429);
             try
             {
@@ -232,6 +245,8 @@ public sealed partial class CompanionServer(ICompanionGameBridge bridge, TimePro
         });
         app.MapPost("/api/command", async (HttpContext context) =>
         {
+            var admitted = Credentials(context);
+            if (admitted is null || !Csrf(context, admitted)) return Results.Unauthorized();
             if (!await _requests.WaitAsync(0, context.RequestAborted)) return Results.StatusCode(429);
             try
             {

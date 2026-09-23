@@ -368,8 +368,10 @@ public sealed partial class MainViewModel : ObservableObject
                     throw new InvalidDataException("The saved board photo does not match the unfinished placement.");
             }
             IsCheckingResumedGame = restored.Public.Lifecycle is SessionLifecycle.Setup or
-                SessionLifecycle.Active or SessionLifecycle.PackedAway or SessionLifecycle.Rebuilding;
+                SessionLifecycle.Active or SessionLifecycle.PackedAway or SessionLifecycle.Rebuilding ||
+                restored.Public.PendingScoreMarkerMove is not null;
             _coordinator = restored;
+            RestorePendingScoreMarkerStep(restored);
             NotifyHumanPresentation();
             _driver = new ComputerSeatDriver(
                 _coordinator, new HeuristicAiPolicy(), DeterministicRandom.SeedFromOperatingSystem().S0);
@@ -378,7 +380,9 @@ public sealed partial class MainViewModel : ObservableObject
 
             // Packed checkpoints remain suspended until the camera has checked their saved board.
             var lifecycle = _coordinator.Public.Lifecycle;
-            NeedsBoardReconciliation = lifecycle == SessionLifecycle.Setup || lifecycle == SessionLifecycle.Active;
+            NeedsBoardReconciliation = lifecycle == SessionLifecycle.Setup ||
+                lifecycle == SessionLifecycle.Active || _scoreMarkerStep is not null;
+            NotifyScoreMarkerDetectionPromptChanged();
             BoardReconciliationAcknowledged = false;
 
             Status = lifecycle switch
@@ -386,6 +390,8 @@ public sealed partial class MainViewModel : ObservableObject
                 SessionLifecycle.PreparingPackAway => "This match was in the middle of being saved. Finish or cancel the save.",
                 SessionLifecycle.PackedAway => "Checking the saved scoring markers and train positions.",
                 SessionLifecycle.Rebuilding => "Checking the saved scoring markers and train positions.",
+                _ when NeedsBoardReconciliation && _scoreMarkerStep is not null =>
+                    "Saved digital state verified. Check the claimed routes, then move the pending scoring marker.",
                 _ when NeedsBoardReconciliation =>
                     "Saved digital state verified. Check every claimed route before continuing; any pending claim stays uncommitted.",
                 _ => "Saved match restored and verified against its journal.",
@@ -881,10 +887,17 @@ public sealed partial class MainViewModel : ObservableObject
         HidePrivateSeat();
         NeedsBoardReconciliation = false;
         BoardReconciliationAcknowledged = false;
+        NotifyScoreMarkerDetectionPromptChanged();
         Status = "Board reconciliation confirmed by the operator. Manual verification remains active.";
         try
         {
-            await AnnounceResumedTurnAsync();
+            if (_scoreMarkerStep is { } markerStep)
+            {
+                IsCheckingResumedGame = false;
+                ShowScoreMarkerGuidance(markerStep);
+                await RefreshAsync();
+            }
+            else await AnnounceResumedTurnAsync();
         }
         catch (Exception)
         {

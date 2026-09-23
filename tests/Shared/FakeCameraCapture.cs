@@ -21,7 +21,7 @@ internal sealed class FakeCameraCapture : ICameraCapture
     public Func<Task>? StopHandler { get; set; }
 
     public async Task StartAsync(CameraDevice device,
-        CameraCapturePreference preference = CameraCapturePreference.Balanced1080p,
+        CameraCapturePreference preference = CameraCapturePreference.AutoBest,
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);

@@ -374,6 +374,11 @@ For an AI claim, reserve its chosen legal payment and show:
 
 The app should display the actual board image with a contrasting outline and numbered segment labels. A schematic inset supports users who find the camera view difficult to read. Claim verification checks the final arrangement; it does not require following the numbered order.
 
+The accepted physical claim atomically records a pending scoring-marker move with its printed
+start and target positions. The domain blocks subsequent actions, including Save Game, until a
+fresh camera check commits marker confirmation. Restart replays the obligation and resumes the
+prompt after board reconciliation; older claims without this event replay unchanged.
+
 ### 4.6 Presentation modes
 
 **Planned audio/presentation settings.** Current gameplay provides visual instructions. Voice,
@@ -782,6 +787,9 @@ The current rules manifest contains 36 cities, 100 routes, 30 tickets and 110 tr
 schema/version/checksum validation. Production geometry is stored separately in
 `ClassicUsRouteGeometry`: measured centers and directions for all 309 route spaces, plus city
 anchors and artwork calibration. The schema above describes the broader target data contract.
+The shipped classic profile also pins a separate checksum of city display names and per-route
+lane labels. Those physical instructions were omitted from the original `dataHash`, which remains
+unchanged for compatibility with saved match journals. Parallel lanes require distinct labels.
 Physical-board playtesting is established. The manifest's `dataAudit.status = unaudited` instead
 means a named, exhaustive per-route and per-ticket review has not been recorded; it must not be
 described as proof that nobody has played or checked the app with a physical board.
@@ -1511,13 +1519,13 @@ native runtime is currently required. Capture remains direct WinRT video-only ac
 
 #### Implemented capture and output policy, September 19, 2026
 
-The current direct WinRT implementation defaults to **1080p preferred · best available**. It
-prefers an exact native 1920 × 1080 mode and proximity to 30 fps, then falls back through native
-modes up to that pixel budget, with a minimum of 1280 × 720. Selected-device discovery checks
-advertised formats without starting a frame reader. **4K · best available** appears only when
-the selected webcam advertises a usable native 3840 × 2160 format;
-it ranks native modes by pixel area up to 3840 × 2160, then proximity to 15 fps within the
-supported 5–60 fps range. A rejected mode or reader startup falls through to another advertised
+The current direct WinRT implementation defaults to **Auto · best native quality**. It ranks
+advertised formats at 3840 × 2160 first, then formats at least 1920 × 1080, then formats at
+least 1280 × 720. It prefers a frame rate near 15 fps at 4K and 30 fps at lower resolutions,
+within the supported 5–60 fps range. Selected-device discovery checks advertised formats without
+starting a frame reader. Explicit **4K preferred** appears only when the selected webcam
+advertises usable native 3840 × 2160; **1080p preferred** limits the pixel budget to
+1920 × 1080. A rejected mode or reader startup falls through to another advertised
 candidate within the startup budget. Shared current mode never changes another camera owner's format. The reader
 does not request an artificial output size. Its actual delivered bitmap dimensions are reported
 separately from negotiated source metadata and subsequent enhancement dimensions.
@@ -1526,7 +1534,7 @@ The **720p** camera quality option requests only advertised native
 1280 × 720 modes, preferring 30 fps within the existing 5–60 fps range. Negotiated and delivered
 dimensions must both match; it never substitutes 1080p or rescales a stream to satisfy the choice.
 The choice applies on preview restart and survives camera reconnects within the app session.
-It is not persisted: a new app instance returns to the default 1080p preference.
+It is not persisted: a new app instance returns to Auto.
 
 1080p is recommended for gameplay. A usable 720p camera is permitted with a persistent warning
 that gameplay and train detection may be less reliable in poor lighting, visible in Settings,
@@ -1838,6 +1846,8 @@ The QR contains only the local address, never reusable credentials, card hands, 
 game save. The pairing code stays valid throughout the hosting session and remains reusable
 after a successful pairing or an incorrect entry. Only host restart or an explicit **New pairing code**
 changes it. Pairing requests remain rate-limited and every replacement needs laptop approval.
+Unpaired pairing attempts do not consume a controller action limit. SSE reserves capacity for the
+approved controller even when anonymous or pending streams fill their bound.
 Phone reload currently requires fresh pairing. Host restart or switching to PRACTICAL revokes
 the controller; the same authoritative match remains on the laptop. A changed IP needs a new
 address and pairing, not save migration. No device-installation or cache-readiness gate precedes
@@ -2083,7 +2093,8 @@ Pin a named pack-away checkpoint's source snapshot, required journal history, an
 
 **Current behavior:** laptop Save Game checks live train positions/colors before and after its
 photo capture, validates the digital checkpoint and matching attachment on readback, and retains
-the occupied-slot mask of an unfinished computer placement. Reload checks markers and saved train
+the camera-observed color inventory and exact occupied-slot mask of an unfinished computer
+placement in format 2 reference photos. Format 1 attachments remain readable. Reload checks markers and saved train
 slots before the OK acknowledgment. Saving waits for score-marker moves and cancellation restoration
 to finish.
 

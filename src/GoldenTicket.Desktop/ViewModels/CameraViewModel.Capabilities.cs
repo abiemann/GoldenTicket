@@ -105,13 +105,14 @@ public sealed partial class CameraViewModel
 
     private void UpdateCameraQualityOptions()
     {
-        var selected = SelectedPreference?.Value ?? CameraCapturePreference.Balanced1080p;
-        var balancedLabel = "1080p preferred · best available";
-        if (_selectedCameraFormats is { } formats && !CameraFormatPolicy.Supports1080p(formats) &&
-            CameraFormatPolicy.RankFormats(formats, CameraCapturePreference.Balanced1080p).FirstOrDefault() is { } hd)
-            balancedLabel = $"{hd.Height}p · best available";
-        List<CameraPreferenceOption> options = [new(CameraCapturePreference.Balanced1080p, balancedLabel)];
-        if (HasNative4K) options.Add(new(CameraCapturePreference.HighDetail2160p, "4K · best available"));
+        var selected = SelectedPreference?.Value ?? CameraCapturePreference.AutoBest;
+        var autoLabel = "Auto · best native quality";
+        if (_selectedCameraFormats is { } formats &&
+            CameraFormatPolicy.RankFormats(formats, CameraCapturePreference.AutoBest).FirstOrDefault() is { } best)
+            autoLabel = $"Auto · {best.Width} × {best.Height}";
+        List<CameraPreferenceOption> options = [new(CameraCapturePreference.AutoBest, autoLabel),
+            new(CameraCapturePreference.Balanced1080p, "1080p preferred")];
+        if (HasNative4K) options.Add(new(CameraCapturePreference.HighDetail2160p, "4K preferred"));
         options.Add(new(CameraCapturePreference.Native720p, "720p"));
         options.Add(new(CameraCapturePreference.SharedCurrent, "Shared · current Windows format"));
         Preferences = options;

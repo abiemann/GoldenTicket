@@ -18,6 +18,33 @@ public sealed class PersistenceAuditTests : IDisposable
          new(new SeatId(2), "Second", PlayerColor.Blue, SeatKind.Human, AiDifficulty.Standard)],
         new SeatId(1), VerificationMode.Manual);
 
+    [Fact]
+    public async Task SavedMatchListingPreservesSeatNamesContainingTheLegacySeparator()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var rules = new GameRules(TestManifest.Manifest, TestManifest.Catalog);
+        var store = new SqliteSessionStore(_root);
+        var names = new[] { "First\u001fextra", "[Second, \"quoted\"]" };
+        var setup = new SessionSetup(SessionId.New(),
+            [new Seat(new SeatId(1), names[0], PlayerColor.Red, SeatKind.Human, AiDifficulty.Standard),
+             new Seat(new SeatId(2), names[1], PlayerColor.Blue, SeatKind.Human, AiDifficulty.Standard)],
+            new SeatId(1), VerificationMode.Manual);
+        await GameCoordinator.CreateAsync(rules, store, setup, DeterministicRandom.SeedFrom(42), token);
+
+        Assert.Equal(names, Assert.Single(await store.ListSessionsAsync(token)).SeatNames);
+    }
+
+    [Fact]
+    public async Task SavedMatchListingStillReadsLegacyDelimitedSeatNames()
+    {
+        var (_, store, coordinator) = await CreateAsync();
+        await MutateAsync(store, coordinator.SessionId,
+            "UPDATE Session SET SeatNames = 'First' || char(31) || 'Second';");
+
+        Assert.Equal(new[] { "First", "Second" },
+            Assert.Single(await store.ListSessionsAsync(TestContext.Current.CancellationToken)).SeatNames);
+    }
+
     private async Task<(GameRules Rules, SqliteSessionStore Store, GameCoordinator Coordinator)> CreateAsync()
     {
         var rules = new GameRules(TestManifest.Manifest, TestManifest.Catalog);

@@ -4,6 +4,7 @@ using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain.Model;
 using GoldenTicket.Domain.Manifest;
 using GoldenTicket.Domain.Projections;
+using GoldenTicket.Persistence;
 using GoldenTicket.Vision;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -443,7 +444,12 @@ public class DesktopPackAwayFlowTests
         var session = Assert.Single(await store.ListSessionsAsync(CancellationToken.None));
         var saved = await store.RestoreAsync(session.SessionId, TestManifest.Manifest,
             TestManifest.Catalog, CancellationToken.None);
-        await photos.AttachAsync(saved.State.Checkpoint!);
+        var pending = saved.State.PendingClaim;
+        var placement = pending is null ? null : new CheckpointPendingPlacement(
+            pending.OperationId, pending.RouteId, pending.SeatId,
+            saved.State.Seats.Single(seat => seat.SeatId == pending.SeatId).Color,
+            pending.TrainsRequired, 0);
+        await photos.AttachAsync(saved.State.Checkpoint!, placement);
         await model.BeginRebuildCommand.ExecuteAsync(null);
 
         // Attesting without ticking the box is refused, and Resume stays blocked.

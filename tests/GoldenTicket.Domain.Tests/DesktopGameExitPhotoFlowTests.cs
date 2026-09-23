@@ -15,6 +15,67 @@ namespace GoldenTicket.Domain.Tests;
 
 public sealed class DesktopGameExitPhotoFlowTests
 {
+    [Fact]
+    public async Task Technical_photo_after_interrupted_pending_save_records_exact_slots_and_inventory()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "GoldenTicket.Tests", Guid.NewGuid().ToString("N"));
+        var store = new SqliteSessionStore(root);
+        var manifest = ManifestLoader.LoadClassicUs();
+        var model = new MainViewModel(manifest, store, camera: new CameraViewModel(capture: new FakeCameraCapture()));
+        model.Setup.ManualVerificationAccepted = true;
+        foreach (var seat in model.Setup.Seats) seat.IsComputer = true;
+        model.SetGameLayerVisible(true);
+        try
+        {
+            await model.StartMatchAsync();
+            var coordinator = (GameCoordinator)typeof(MainViewModel).GetField("_coordinator",
+                BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(model)!;
+            var pending = Assert.IsType<GoldenTicket.Domain.Projections.PublicPendingClaim>(coordinator.Public.PendingClaim);
+            var checkpointResult = await coordinator.SaveAndPackAwayAsync("Interrupted photo save",
+                cancellationToken: TestContext.Current.CancellationToken);
+            Assert.True(checkpointResult.SafeToPack);
+            var checkpoint = Assert.IsType<PackAwayCheckpoint>(await coordinator.GetCheckpointAsync(
+                TestContext.Current.CancellationToken));
+            using var camera = new SyntheticCamera(model.Camera);
+            var color = Enum.Parse<MarkerColor>(coordinator.Public.SeatOf(pending.SeatId).Color.ToString());
+            const int mask = 1;
+            camera.Publish(pending.RouteId.Value, color, mask);
+            Assert.False(model.Camera.CanCapturePhoto);
+            Assert.True(model.Camera.CanCaptureGameTablePhoto);
+            await model.ShowCheckpointPhotoCommand.ExecuteAsync(null);
+            Assert.True(model.CheckpointPhoto.CaptureAllowed);
+            model.CheckpointPhoto.OperatorAcknowledged = true;
+            Assert.True(model.CheckpointPhoto.CaptureReferenceCommand.CanExecute(null));
+            var capture = model.CheckpointPhoto.CaptureReferenceCommand.ExecuteAsync(null);
+            for (var attempt = 0; !capture.IsCompleted && attempt < 55; attempt++)
+            {
+                await Task.Delay(250, TestContext.Current.CancellationToken);
+                camera.Publish(pending.RouteId.Value, color, mask);
+            }
+            await capture.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+            Assert.True(model.CheckpointPhoto.HasPhoto, model.CheckpointPhoto.Status);
+            var attachment = await new CheckpointPhotoStore(root).ReadReferenceAsync(checkpoint,
+                TestContext.Current.CancellationToken);
+            Assert.NotNull(attachment);
+            try
+            {
+                Assert.Equal(2, attachment.Reference.FormatVersion);
+                Assert.Equal(mask, attachment.Reference.PendingPlacement?.OccupiedSlotMask);
+                Assert.Equal(1 + checkpoint.TotalTrainsOnBoard,
+                    attachment.Reference.ObservedTrainInventory?.Total);
+                Assert.Equal(CheckpointTrainInventoryProvenance.CameraObserved,
+                    attachment.Reference.ObservedTrainInventory?.Provenance);
+            }
+            finally { CryptographicOperations.ZeroMemory(attachment.PngBytes); }
+        }
+        finally
+        {
+            await model.DisposeToolsAsync();
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -475,6 +536,15 @@ public sealed class DesktopGameExitPhotoFlowTests
 
         private void SetCamera(string name, object value) => typeof(CameraViewModel)
             .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(_camera, value);
+
+        public void PrepareTechnicalCapture()
+        {
+            if (_registration is null) throw new InvalidOperationException("Publish a board first.");
+            SetCamera("_registration", _registration);
+            SetCamera("_cropRevision", 7L);
+            _camera.HasBoardCrop = true;
+            _camera.SafetyHeld = false;
+        }
 
         public void Dispose() { }
     }

@@ -107,8 +107,10 @@ public partial class CompanionHostTransportTests
     public void EventSubscribersCoalesceBurstsAreBoundedAndStopCleanly()
     {
         var events = new CompanionEventSubscriptions();
-        var subscriptions = Enumerable.Range(0, 16).Select(i => events.Open(i.ToString())!).ToArray();
+        var subscriptions = Enumerable.Range(0, 15).Select(i => events.Open(i.ToString())!).ToArray();
         Assert.Null(events.Open("overflow"));
+        using var approved = events.Open("approved", approvedController: true)!;
+        Assert.Equal(16, events.Count);
         for (var i = 0; i < 1000; i++) events.Publish();
         foreach (var subscription in subscriptions)
         {
@@ -123,6 +125,23 @@ public partial class CompanionHostTransportTests
         Assert.Equal(0, events.Count);
         Assert.True(replacement.Stopped.IsCancellationRequested);
         foreach (var subscription in subscriptions.Skip(1)) subscription.Dispose();
+    }
+
+    [Fact]
+    public void ApprovedControllerCanReconnectWhenAnonymousStreamsFillTheBound()
+    {
+        var events = new CompanionEventSubscriptions();
+        var anonymous = Enumerable.Range(0, 15).Select(i => events.Open($"anonymous-{i}")!).ToArray();
+        using var originalController = events.Open("controller-old", approvedController: true)!;
+        Assert.Equal(16, events.Count);
+
+        using var replacementController = events.Open("controller-new", approvedController: true)!;
+        Assert.Equal(16, events.Count);
+        Assert.True(anonymous[0].Stopped.IsCancellationRequested);
+        Assert.False(replacementController.Stopped.IsCancellationRequested);
+
+        foreach (var subscription in anonymous) subscription.Dispose();
+        events.StopAll();
     }
 
     private static async Task<(string Name, JsonElement Data)> ReadEvent(StreamReader reader, CancellationToken token)

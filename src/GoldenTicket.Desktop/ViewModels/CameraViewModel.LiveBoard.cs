@@ -74,7 +74,21 @@ public sealed partial class CameraViewModel
         finally
         {
             if (!_disposed && _gameTableAlignmentPendingRevision == revision)
+            {
+                // A stale frame, weak reference match, or alignment error must not leave
+                // piece analysis waiting forever. Recheck the current crop before releasing
+                // evidence; an uncertain orientation is held and retried by the live check.
+                _gameTableAlignmentPendingRevision = null;
                 _lastLiveBoardCheckAt = DateTimeOffset.MinValue;
+                if (_gameTablePreviewRequested && ReferenceEquals(reference, _gameTableReference) &&
+                    ReferenceEquals(initial, _gameTableRegistration) && Capture.IsRunning &&
+                    Capture.LatestFrame is { } current && current.Age <= TimeSpan.FromSeconds(2) &&
+                    initial.Matches(current))
+                {
+                    CheckLiveBoardAlignment(current);
+                    if (IsGameTablePreviewUpright) QueueGameTableAnalysis(current);
+                }
+            }
         }
     }
 

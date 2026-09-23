@@ -28,11 +28,13 @@ backend. Rules and game AI remain on the CPU.
    preview to select the intended camera, framing and focus. Google documents the
    [Pixel USB webcam workflow](https://support.google.com/pixelcamera/answer/14274129?hl=en).
 2. Choose the webcam in **Settings** or **Camera**. **Refresh** checks its available native
-   formats. Keep **1080p preferred · best available**, then in **Camera** select
-   **Start preview**. The app first requests exact 1920 × 1080 at the native frame rate closest
-   to 30 fps, then falls back through usable native modes of at least 1280 × 720. **4K · best
-   available** appears only when the webcam advertises a usable native 3840 × 2160 mode;
-   it permits modes up to that size and falls back when necessary.
+   formats. Keep the default **Auto** quality, then in **Camera** select **Start preview**.
+   Auto tries the webcam's best supported native format in order: 3840 × 2160 (4K), modes
+   at least 1920 × 1080 (including 1440p), then modes at least 1280 × 720. Within a resolution
+   it prefers a native frame rate near 15 fps for 4K and 30 fps for lower resolutions. A
+   rejected format can fall through to the next usable native mode. **4K preferred** appears
+   when the webcam advertises a usable native 3840 × 2160 mode; **1080p preferred** and
+   **720p** are explicit alternatives.
    A 720p camera is allowed, with a warning that gameplay and train detection may be less reliable
    in poor lighting. That warning remains visible during setup, reconnect, and gameplay.
    Below-720p cameras and delivered frames are not compatible. If the format check fails, 4K
@@ -44,7 +46,7 @@ backend. Rules and game AI remain on the CPU.
    advertised usable modes. A camera without that format, or one delivering a different
    size, reports an error rather than substituting another resolution. The existing 720p
    warning reports the delivered dimensions. The selection survives reconnects during
-   this app session; reopening the app restores the default 1080p preference.
+   this app session; reopening the app restores Auto.
 3. Check the reported camera dimensions and processing dimensions separately. A 1920 × 1080
    source enhanced to 3840 × 2160 is explicitly identified as upscaled. Larger output pixels do
    not add captured detail or make that source native 4K.
@@ -71,7 +73,7 @@ camera matches. You can explicitly select a different camera in Settings or Came
 the original camera image; analysis continues on the enhanced path. This comparison uses ordinary
 bounded filtering and bicubic upscaling, not NVIDIA RTX Video Super Resolution; the app does not
 integrate the RTX Video SDK. It does not affect the gameplay board display, and there is no
-enhancement checkbox in main Settings. The conditional **4K · best available** capture option
+enhancement checkbox in main Settings. The conditional **4K preferred** capture option
 still selects a native camera format when the webcam supports it.
 **Show piece outlines** is available only in the technical Camera screen and enables ML inference and its
 overlay. Turning it off clears the current result; turning it on waits for a fresh result.
@@ -136,18 +138,22 @@ It requires a fresh camera frame and valid crop but does not require the scene-r
 and does not save a game. Export remains a manual local file operation.
 
 **Capture reference photo** attaches a source-derived, unsharpened crop to the selected validated
-checkpoint. It retains the separate stable-scene, operator-attestation, crop/camera identity,
-checksum and checkpoint-binding readback checks. The photo uses the current plaintext sidecar
-format. It does not substitute the enhanced preview or painted outlines as evidence.
+checkpoint. Ordinary capture retains the separate stable-scene gate. All captures require operator
+attestation, crop/camera identity, checksum and checkpoint-binding readback checks. The photo uses
+the current plaintext sidecar format. For an unfinished placement, format 2 uses the fresh upright
+game-table crop and also requires a camera-observed color inventory and exact occupied-slot mask,
+checked before and after capture. Existing format 1 photos remain readable. The photo does not
+substitute the enhanced preview or painted outlines as evidence.
 A logical checkpoint alone still contains no photograph. A completed user Save Game requires
 its matching validated photo; missing or corrupt attachments block checkpoint reload with an
 error. These checks establish image integrity and binding, not machine-verified board contents.
 
 ## Processing implementation
 
-`CameraCaptureService` ranks native source modes across color Record/Preview streams. It tries
-advertised modes within the chosen pixel bound and 5–60 fps, preferring 15 fps when resolution is
-equal. Rejected formats or reader starts can fall through to another advertised candidate within
+`CameraCaptureService` ranks native source modes across color Record/Preview streams. Auto tries
+advertised modes within 3840 × 2160 and 5–60 fps, ordered by resolution tier and pixel count;
+it prefers 15 fps at 4K and 30 fps below 4K when resolution is equal. Rejected formats or reader
+starts can fall through to another advertised candidate within
 the startup deadline. Shared mode never sets a format. Source negotiation and the dimensions of
 the bitmap actually delivered by Windows are distinct metadata.
 

@@ -69,7 +69,8 @@ public sealed partial class GameCoordinator
         _store = store;
         _state = state;
         _publicView = Projector.ProjectPublic(state);
-        _turnTiming = new TurnTimingTracker(clock, timing, restored);
+        _turnTiming = new TurnTimingTracker(clock, timing, restored,
+            awaitingScoreMarker: state.PendingScoreMarkerMove is not null);
         _turnTiming.Synchronize(_publicView);
     }
 

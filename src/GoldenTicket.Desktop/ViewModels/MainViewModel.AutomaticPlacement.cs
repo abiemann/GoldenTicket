@@ -1,3 +1,4 @@
+using GoldenTicket.Application;
 using GoldenTicket.Domain;
 using GoldenTicket.Domain.Engine;
 using GoldenTicket.Vision;
@@ -121,7 +122,7 @@ public sealed partial class MainViewModel
                     : null
             });
             if (scoreObservation.Confirmed)
-                _ = FinishScoreMarkerStepAsync(scoreStep);
+                _ = FinishScoreMarkerStepAsync(scoreStep, analysis);
             return;
         }
         if (_scoreMarkerStep is not null || _claimCompletionInProgress || _operationInProgress ||
@@ -406,7 +407,8 @@ public sealed partial class MainViewModel
             var command = new SubmitClaimEvidence(
                 new CommandEnvelope(coordinator.SessionId, CommandId.New(),
                     placement.StateVersion, placement.SeatId),
-                placement.OperationId, evidence, source, summary);
+                placement.OperationId, evidence, source, summary,
+                RequireScoreMarkerConfirmation: true);
             var outcome = await coordinator.SubmitAsync(command);
             if (!outcome.IsAccepted)
             {
@@ -441,9 +443,16 @@ public sealed partial class MainViewModel
                 return;
             }
 
-            var step = new ScoreMarkerStep(coordinator.SessionId, placement.OperationId,
-                placement.SeatId, placement.SeatName, placement.Color,
-                PrintedScore(beforeScore), PrintedScore(beforeScore + points), points);
+            if (coordinator.Public.PendingScoreMarkerMove is not { } pending ||
+                pending.OperationId != placement.OperationId || pending.SeatId != placement.SeatId ||
+                pending.FromPrintedScore != PrintedScore(beforeScore) ||
+                pending.ToPrintedScore != PrintedScore(beforeScore + points) || pending.Points != points)
+            {
+                RequireReload();
+                return;
+            }
+
+            var step = CreateScoreMarkerStep(coordinator, pending);
             _scoreMarkerStep = step;
             Table.ShowPendingScoreMarker(coordinator.Public.TurnNumber,
                 step.SeatName, step.Color, step.ToPrintedScore);
@@ -458,11 +467,7 @@ public sealed partial class MainViewModel
                     !ReferenceEquals(coordinator, _coordinator)) return;
             }
             step.ReadyForMarker = true;
-            Game.ShowGuidance("Scoring", step.SeatName,
-                $"Move {step.SeatName}'s {step.Color} scoring marker {step.Points} " +
-                $"{(step.Points == 1 ? "space" : "spaces")} " +
-                $"from {step.FromPrintedScore} to {step.ToPrintedScore}. " +
-                $"The game will continue when the camera sees the marker on {step.ToPrintedScore}.");
+            ShowScoreMarkerGuidance(step);
             NotifyScoreMarkerDetectionPromptChanged();
         }
         catch (Exception error)
@@ -481,7 +486,34 @@ public sealed partial class MainViewModel
         }
     }
 
-    private async Task FinishScoreMarkerStepAsync(ScoreMarkerStep step)
+    private static ScoreMarkerStep CreateScoreMarkerStep(GameCoordinator coordinator,
+        GoldenTicket.Domain.Model.PendingScoreMarkerMove pending)
+    {
+        var seat = coordinator.Public.SeatOf(pending.SeatId);
+        return new(coordinator.SessionId, pending.OperationId, pending.SeatId,
+            seat.DisplayName, seat.Color, pending.FromPrintedScore,
+            pending.ToPrintedScore, pending.Points);
+    }
+
+    private void RestorePendingScoreMarkerStep(GameCoordinator coordinator)
+    {
+        if (coordinator.Public.PendingScoreMarkerMove is not { } pending) return;
+        var step = CreateScoreMarkerStep(coordinator, pending);
+        step.ReadyForMarker = true;
+        _scoreMarkerStep = step;
+        _scoreMarkerMoveVerifier.Reset();
+        NotifyScoreMarkerDetectionPromptChanged();
+        OnPropertyChanged(nameof(CanRevealPrivateSeat));
+    }
+
+    private void ShowScoreMarkerGuidance(ScoreMarkerStep step) =>
+        Game.ShowGuidance("Scoring", step.SeatName,
+            $"Move {step.SeatName}'s {step.Color} scoring marker {step.Points} " +
+            $"{(step.Points == 1 ? "space" : "spaces")} " +
+            $"from {step.FromPrintedScore} to {step.ToPrintedScore}. " +
+            $"The game will continue when the camera sees the marker on {step.ToPrintedScore}.");
+
+    private async Task FinishScoreMarkerStepAsync(ScoreMarkerStep step, GameTableAnalysis analysis)
     {
         if (_scoreCompletionInProgress || _scoreMarkerStep != step || !step.ReadyForMarker ||
             _coordinator?.SessionId != step.SessionId) return;
@@ -489,6 +521,16 @@ public sealed partial class MainViewModel
         SetOperationInProgress(true);
         try
         {
+            var outcome = await _coordinator.SubmitAsync(new ConfirmScoreMarkerMove(
+                _coordinator.NewEnvelope(step.SeatId), step.OperationId, analysis.ModelId,
+                $"{step.Color} marker at printed score {step.ToPrintedScore}; " +
+                $"camera epoch {analysis.Board.Epoch}, frame {analysis.Board.Sequence}, " +
+                $"crop {analysis.CropRevision}, model revision {analysis.ModelRevision}."));
+            if (!outcome.IsAccepted)
+            {
+                RequireReload();
+                return;
+            }
             _coordinator.ReleaseTurnTimingForScoreMarker();
             await PersistTurnClockAsync();
             _scoreMarkerStep = null;

@@ -58,6 +58,8 @@ public sealed record PublicView(
     bool RebuildAttested,
     string? CheckpointFault)
 {
+    public PendingScoreMarkerMove? PendingScoreMarkerMove { get; init; }
+
     public PublicSeatSummary SeatOf(SeatId id) => Seats.First(s => s.SeatId == id);
 
     /// <summary>DESIGN 9.2: gameplay commands and AI submissions are refused in these lifecycles.</summary>

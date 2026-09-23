@@ -9,7 +9,8 @@ using Windows.Storage.Streams;
 namespace GoldenTicket.Vision;
 
 public sealed record CameraDevice(string Id, string Name);
-public enum CameraCapturePreference { Balanced1080p, HighDetail2160p, SharedCurrent, Native720p }
+// Append values so existing settings and serialized preferences retain their meaning.
+public enum CameraCapturePreference { Balanced1080p, HighDetail2160p, SharedCurrent, Native720p, AutoBest }
 public enum CameraResolutionTier { Incompatible, Hd720p, FullHd1080p, UltraHd4K }
 public sealed record CameraFormat(int Width, int Height, double FramesPerSecond, string Subtype)
 {
@@ -62,22 +63,28 @@ public static class CameraFormatPolicy
                 .OrderBy(f => Math.Abs(f.FramesPerSecond - 30))
                 .ThenBy(f => f.Subtype, StringComparer.Ordinal)
                 .ToArray();
-        if (preference is not (CameraCapturePreference.Balanced1080p or CameraCapturePreference.HighDetail2160p))
+        if (preference is not (CameraCapturePreference.Balanced1080p or CameraCapturePreference.HighDetail2160p or
+            CameraCapturePreference.AutoBest))
             throw new ArgumentOutOfRangeException(nameof(preference), "Shared capture keeps the camera's current format.");
-        var maxPixels = preference == CameraCapturePreference.HighDetail2160p ? 3840L * 2160 : 1920L * 1080;
-        var preferredFramesPerSecond = preference == CameraCapturePreference.Balanced1080p ? 30 : 15;
+        var maxPixels = preference == CameraCapturePreference.Balanced1080p ? 1920L * 1080 : 3840L * 2160;
         return formats.Where(f => IsUsableFormat(f) && (long)f.Width * f.Height <= maxPixels)
             .Distinct()
             .OrderByDescending(f => preference == CameraCapturePreference.Balanced1080p &&
                 f.Width == 1920 && f.Height == 1080)
+            .ThenByDescending(f => GetResolutionTier(f.Width, f.Height))
             .ThenByDescending(f => (long)f.Width * f.Height)
-            .ThenBy(f => Math.Abs(f.FramesPerSecond - preferredFramesPerSecond))
+            .ThenBy(f => Math.Abs(f.FramesPerSecond - PreferredFrameRate(f, preference)))
             .ThenBy(f => f.Subtype, StringComparer.Ordinal)
             .ToArray();
     }
 
+    private static int PreferredFrameRate(CameraFormat format, CameraCapturePreference preference) =>
+        preference == CameraCapturePreference.AutoBest
+            ? GetResolutionTier(format.Width, format.Height) == CameraResolutionTier.UltraHd4K ? 15 : 30
+            : preference == CameraCapturePreference.Balanced1080p ? 30 : 15;
+
     internal static void ValidateCapturedResolution(int width, int height,
-        CameraCapturePreference preference = CameraCapturePreference.Balanced1080p)
+        CameraCapturePreference preference = CameraCapturePreference.AutoBest)
     {
         if (preference == CameraCapturePreference.Native720p && (width != 1280 || height != 720))
             throw new InvalidOperationException($"The 720p option requires native 1280 × 720 frames, but the camera provided {width} × {height}. Select another camera quality or a camera with a native 720p mode.");
@@ -155,7 +162,7 @@ public sealed class CameraCaptureService : ICameraCapture
     }
 
     public async Task StartAsync(CameraDevice device,
-        CameraCapturePreference preference = CameraCapturePreference.Balanced1080p,
+        CameraCapturePreference preference = CameraCapturePreference.AutoBest,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(device);
@@ -359,7 +366,7 @@ public sealed class CameraCaptureService : ICameraCapture
         Volatile.Write(ref _latest, null);
         Volatile.Write(ref _deliveredFrameDimensions, null);
         _lastCopyTimestamp = 0;
-        _activePreference = CameraCapturePreference.Balanced1080p;
+        _activePreference = CameraCapturePreference.AutoBest;
     }
 
     public async ValueTask DisposeAsync()

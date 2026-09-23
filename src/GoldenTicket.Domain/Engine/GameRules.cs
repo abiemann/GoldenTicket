@@ -148,7 +148,12 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
                 $"but the match is at {state.StateVersion}.");
         }
 
-        if (state.Lifecycle == SessionLifecycle.Finished)
+        if (state.PendingScoreMarkerMove is not null && command is not ConfirmScoreMarkerMove)
+            return CommandResult.Reject("ScoreMarkerMoveRequired",
+                "Check the committed scoring marker position before continuing the match.");
+
+        // The last claim may finish the digital match while its physical marker still needs checking.
+        if (state.Lifecycle == SessionLifecycle.Finished && command is not ConfirmScoreMarkerMove)
             return CommandResult.Reject("MatchFinished", "The match is over.");
 
         // DESIGN 9.2: while a save is being captured, the game is packed, or the board is being
@@ -172,7 +177,8 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
 
         // DESIGN 21.1: a rare unresolved supply state must still be savable, so the lifecycle
         // controls are allowed through the pause that blocks ordinary play.
-        if (state.TurnPhase == TurnPhase.RulesDecisionRequired && !isLifecycleCommand && !isRulesResolution)
+        if (state.TurnPhase == TurnPhase.RulesDecisionRequired && !isLifecycleCommand &&
+            !isRulesResolution && command is not ConfirmScoreMarkerMove)
         {
             return CommandResult.Reject("RulesDecisionRequired",
                 state.RulesDecision?.Explanation ?? "The match is paused on an unresolved supply state.");
@@ -195,6 +201,7 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
             RequestTicketOffer c => HandleRequestTicketOffer(context, c),
             PlanClaim c => HandlePlanClaim(context, c),
             SubmitClaimEvidence c => HandleSubmitClaimEvidence(context, c),
+            ConfirmScoreMarkerMove c => HandleConfirmScoreMarkerMove(context, c),
             CancelPendingClaim c => HandleCancelPendingClaim(context, c),
             ConfirmBeforeStateRestored c => HandleConfirmRestored(context, c),
             _ => CommandResult.Reject("UnknownCommand", $"{command.GetType().Name} is not a supported command."),
@@ -849,6 +856,7 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
             return CommandResult.Reject("ReservedCardMissing", "A reserved card is no longer in the seat's hand.");
 
         var points = Constants.ScoreForLength(route.Length);
+        var scoreBeforeClaim = state.RouteScore[claim.SeatId];
 
         if (command.Evidence == EvidenceKind.CameraAutomatic)
             context.Emit(new CameraVerificationRecorded(
@@ -869,7 +877,29 @@ public sealed class GameRules(BoardManifest manifest, CardCatalog catalog, TimeP
             state.TrainStock[claim.SeatId] - route.Length,
             command.Evidence));
 
+        if (command.RequireScoreMarkerConfirmation)
+            context.Emit(new ScoreMarkerMoveRequired(claim.OperationId, claim.SeatId,
+                scoreBeforeClaim % 100 + 1, (scoreBeforeClaim + points) % 100 + 1, points));
+
         EndTurn(context, claim.SeatId, TurnAction.ClaimRoute);
+        return CommandResult.Accept(context.Events);
+    }
+
+    private CommandResult HandleConfirmScoreMarkerMove(TransitionContext context,
+        ConfirmScoreMarkerMove command)
+    {
+        if (context.State.PendingScoreMarkerMove is not { } pending)
+            return CommandResult.Reject("NoPendingScoreMarkerMove", "No scoring marker move is waiting.");
+        if (pending.OperationId != command.OperationId)
+            return CommandResult.Reject("OperationMismatch", "That marker check belongs to another claim.");
+        if (command.Envelope.ActorSeatId != pending.SeatId)
+            return CommandResult.Reject("WrongSeat", "That marker belongs to another seat.");
+        if (string.IsNullOrWhiteSpace(command.Detector) || string.IsNullOrWhiteSpace(command.EvidenceSummary))
+            return CommandResult.Reject("CameraEvidenceDetailsMissing",
+                "The marker check must record its detector and evidence summary.");
+
+        context.Emit(new ScoreMarkerMoveConfirmed(pending.OperationId, pending.SeatId,
+            command.Detector, command.EvidenceSummary, _time.GetUtcNow()));
         return CommandResult.Accept(context.Events);
     }
 

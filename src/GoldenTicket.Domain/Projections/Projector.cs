@@ -81,7 +81,10 @@ public static class Projector
                     checkpoint.PhysicalTarget)
                 : null,
             state.RebuildAttested,
-            state.CheckpointFault);
+            state.CheckpointFault)
+        {
+            PendingScoreMarkerMove = state.PendingScoreMarkerMove,
+        };
     }
 
     public static SeatView ProjectSeat(GameState state, SeatId seat) =>

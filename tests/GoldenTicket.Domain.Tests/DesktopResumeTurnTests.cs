@@ -14,6 +14,63 @@ namespace GoldenTicket.Domain.Tests;
 
 public sealed class DesktopResumeTurnTests
 {
+    [Fact]
+    public async Task Committed_claim_restores_its_score_marker_step_before_the_next_turn()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var store = new InMemorySessionStore();
+        var saved = await CreateAsync(store, computer: false);
+        await PlanClaimAsync(saved);
+        var claim = Assert.IsType<GoldenTicket.Domain.Projections.PublicPendingClaim>(saved.Public.PendingClaim);
+        Assert.True((await saved.SubmitAsync(new SubmitClaimEvidence(saved.NewEnvelope(claim.SeatId),
+            claim.OperationId, EvidenceKind.CameraAutomatic, "synthetic-test-model",
+            "Whole board verified.", RequireScoreMarkerConfirmation: true), token)).IsAccepted);
+        var pending = Assert.IsType<PendingScoreMarkerMove>(saved.Public.PendingScoreMarkerMove);
+        var version = saved.Public.StateVersion;
+
+        var model = await ReloadAsync(store);
+        try
+        {
+            var resumed = Coordinator(model);
+            Assert.Equal(pending, resumed.Public.PendingScoreMarkerMove);
+            Assert.True(model.NeedsBoardReconciliation);
+            Assert.False(model.CanRevealPrivateSeat);
+
+            model.BoardReconciliationAcknowledged = true;
+            await model.ConfirmBoardReconciledAsync();
+            Assert.False(model.IsResumeTurnAnnouncementOpen);
+            Assert.True(model.ShowScoreMarkerDetectionPrompt);
+            Assert.Contains($"from {pending.FromPrintedScore} to {pending.ToPrintedScore}",
+                model.Game.GuidanceInstruction);
+            Assert.Equal(version, resumed.Public.StateVersion);
+
+            model.Camera.IsGameTablePreviewUpright = true;
+            var at = DateTimeOffset.UtcNow;
+            var color = Enum.Parse<MarkerColor>(resumed.Public.SeatOf(pending.SeatId).Color.ToString());
+            Publish(1, pending.FromPrintedScore, at);
+            Assert.Equal(pending, resumed.Public.PendingScoreMarkerMove);
+            Publish(2, pending.ToPrintedScore, at.AddSeconds(1.1));
+            Publish(3, pending.ToPrintedScore, at.AddSeconds(2.2));
+            for (var attempt = 0; attempt < 100 &&
+                 (resumed.Public.PendingScoreMarkerMove is not null || model.ShowScoreMarkerDetectionPrompt); attempt++)
+                await Task.Delay(20, token);
+            Assert.Null(resumed.Public.PendingScoreMarkerMove);
+            Assert.Equal(version + 1, resumed.Public.StateVersion);
+            Assert.False(model.ShowScoreMarkerDetectionPrompt);
+
+            void Publish(long sequence, int score, DateTimeOffset capturedAt)
+            {
+                var frame = CameraFrame.CopyFromBgra32(320, 200, new byte[320 * 200 * 4],
+                    sequence: sequence, epoch: 1, capturedAt: capturedAt);
+                typeof(CameraViewModel).GetProperty(nameof(CameraViewModel.GameTableAnalysis))!
+                    .SetValue(model.Camera, new GameTableAnalysis(frame, [],
+                        [new ScoreMarkerReading(0, color, score, ScoreMarkerReadingStatus.Read,
+                            "Printed score track position read.")], 1, 1, "synthetic-test-model"));
+            }
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -79,7 +136,10 @@ public sealed class DesktopResumeTurnTests
         var expected = Assert.IsType<GoldenTicket.Domain.Projections.PublicPendingClaim>(saved.Public.PendingClaim);
         var turn = saved.Public.TurnNumber;
         Assert.True((await saved.SaveAndPackAwayAsync("Unfinished turn", cancellationToken: TestContext.Current.CancellationToken)).SafeToPack);
-        await photos.AttachAsync((await saved.GetCheckpointAsync(cancellationToken: TestContext.Current.CancellationToken))!);
+        var emptyPlacement = new CheckpointPendingPlacement(expected.OperationId, expected.RouteId,
+            expected.SeatId, saved.Public.SeatOf(expected.SeatId).Color, expected.TrainCount, 0);
+        await photos.AttachAsync((await saved.GetCheckpointAsync(cancellationToken: TestContext.Current.CancellationToken))!,
+            emptyPlacement);
         var model = await ReloadAsync(store, photos);
         try
         {

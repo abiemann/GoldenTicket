@@ -49,7 +49,15 @@ public sealed record SubmitClaimEvidence(
     OperationId OperationId,
     EvidenceKind Evidence,
     string Operator,
-    string Reason) : GameCommand(Envelope);
+    string Reason,
+    bool RequireScoreMarkerConfirmation = false) : GameCommand(Envelope);
+
+/// <summary>Records a fresh camera check of the score marker required by a committed claim.</summary>
+public sealed record ConfirmScoreMarkerMove(
+    CommandEnvelope Envelope,
+    OperationId OperationId,
+    string Detector,
+    string EvidenceSummary) : GameCommand(Envelope);
 
 /// <summary>
 /// DESIGN 8.4: requests cancellation. If trains were already placed, the operator must remove them

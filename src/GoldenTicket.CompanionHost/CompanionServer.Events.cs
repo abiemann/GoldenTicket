@@ -45,7 +45,11 @@ public sealed partial class CompanionServer
         var tab = context.Request.Headers["X-GoldenTicket-Tab"].ToString();
         if (tab.Length is < 20 or > 100 || !tab.All(char.IsAsciiLetterOrDigit))
         { context.Response.StatusCode = 400; return; }
-        using var subscription = _events.Open((context.Request.Cookies[CookieName] ?? "") + ":" + tab);
+        // Authenticate before allocating a stream so unpaired and pending sockets cannot
+        // consume the capacity reserved for the approved controller.
+        var approvedController = StreamCredentials(context) is not null;
+        using var subscription = _events.Open((context.Request.Cookies[CookieName] ?? "") + ":" + tab,
+            approvedController);
         if (subscription is null) { context.Response.StatusCode = 429; return; }
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, subscription.Stopped);
         var token = stop.Token;

@@ -34,6 +34,8 @@ public sealed record PublicEventEntry(string Kind, SeatId? Seat, string Text);
 [JsonDerivedType(typeof(ManualVerificationRecorded), nameof(ManualVerificationRecorded))]
 [JsonDerivedType(typeof(CameraVerificationRecorded), nameof(CameraVerificationRecorded))]
 [JsonDerivedType(typeof(ClaimCommitted), nameof(ClaimCommitted))]
+[JsonDerivedType(typeof(ScoreMarkerMoveRequired), nameof(ScoreMarkerMoveRequired))]
+[JsonDerivedType(typeof(ScoreMarkerMoveConfirmed), nameof(ScoreMarkerMoveConfirmed))]
 [JsonDerivedType(typeof(ClaimCancellationRequested), nameof(ClaimCancellationRequested))]
 [JsonDerivedType(typeof(ClaimCancelled), nameof(ClaimCancelled))]
 [JsonDerivedType(typeof(TurnCompleted), nameof(TurnCompleted))]
@@ -303,6 +305,28 @@ public sealed record ClaimCommitted(
     public override PublicEventEntry ToPublicEntry(BoardManifest manifest) =>
         new("ClaimCommitted", SeatId,
             $"Claimed {RouteText(manifest, RouteId)} for {Points} point{(Points == 1 ? "" : "s")}.");
+}
+
+/// <summary>
+/// Committed with the route claim, so an interruption cannot lose the physical scoring step.
+/// Printed positions wrap after 100 while the digital route score remains unbounded.
+/// </summary>
+public sealed record ScoreMarkerMoveRequired(
+    OperationId OperationId, SeatId SeatId, int FromPrintedScore,
+    int ToPrintedScore, int Points) : GameEvent
+{
+    public override EventVisibility Visibility => EventVisibility.Public;
+}
+
+/// <summary>Fresh camera evidence that the marker reached the committed target position.</summary>
+public sealed record ScoreMarkerMoveConfirmed(
+    OperationId OperationId, SeatId SeatId, string Detector,
+    string EvidenceSummary, DateTimeOffset RecordedAt) : GameEvent
+{
+    public override EventVisibility Visibility => EventVisibility.Public;
+
+    public override PublicEventEntry ToPublicEntry(BoardManifest manifest) =>
+        new("ScoreMarkerMoveConfirmed", SeatId, "Scoring marker position confirmed by the camera.");
 }
 
 /// <summary>

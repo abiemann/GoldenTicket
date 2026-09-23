@@ -21,7 +21,7 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
 {
     public const int StoreSchemaVersion = 4;
 
-    /// <summary>Unit separator; seat names are free text and must not collide with it.</summary>
+    /// <summary>Legacy save rows used this delimiter; new rows use a JSON string array.</summary>
     private const char SeatNameSeparator = '\u001f';
 
     /// <summary>DESIGN 19.1: settings and matches live outside the installation directory.</summary>
@@ -97,7 +97,7 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
             ("$rulesPolicy", state.Manifest.RulesPolicyVersion),
             ("$lifecycle", state.Lifecycle.ToString()),
             ("$turnNumber", state.TurnNumber),
-            ("$seatNames", string.Join(SeatNameSeparator, state.Seats.Select(seat => seat.DisplayName))),
+            ("$seatNames", JsonSerializer.Serialize(state.Seats.Select(seat => seat.DisplayName).ToArray())),
             ("$createdAt", now),
             ("$updatedAt", now));
 
@@ -327,7 +327,7 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
                     DateTimeOffset.Parse(reader.GetString(5)),
                     lifecycle,
                     reader.GetInt32(2),
-                    reader.GetString(3).Split(SeatNameSeparator),
+                    ReadSeatNames(reader.GetString(3)),
                     LatestCheckpointName: reader.IsDBNull(6) ? null : reader.GetString(6)));
             }
             catch (Exception error) when (error is SqliteException or FormatException or ArgumentException or
@@ -342,6 +342,22 @@ public sealed class SqliteSessionStore(string rootDirectory) : ISessionStore
         }
 
         return [.. summaries.OrderByDescending(summary => summary.UpdatedAt)];
+    }
+
+    private static IReadOnlyList<string> ReadSeatNames(string stored)
+    {
+        // Retain compatibility with rows created before names were stored as a JSON array.
+        if (stored.StartsWith('['))
+        {
+            try
+            {
+                if (JsonSerializer.Deserialize<string[]>(stored) is { } names &&
+                    names.All(name => name is not null))
+                    return names;
+            }
+            catch (JsonException) { /* A legacy display name may start with '['. */ }
+        }
+        return stored.Split(SeatNameSeparator);
     }
 
     public Task DeleteSessionAsync(SessionId sessionId, CancellationToken cancellationToken)

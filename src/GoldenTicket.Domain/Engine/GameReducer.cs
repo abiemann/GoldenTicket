@@ -86,6 +86,8 @@ public static class GameReducer
             case ManualVerificationRecorded: break; // Evidence only; the commit changes state.
             case CameraVerificationRecorded: break; // Evidence only; the commit changes state.
             case ClaimCommitted e: ApplyClaimCommitted(state, e); break;
+            case ScoreMarkerMoveRequired e: ApplyScoreMarkerMoveRequired(state, e); break;
+            case ScoreMarkerMoveConfirmed e: ApplyScoreMarkerMoveConfirmed(state, e); break;
             case ClaimCancellationRequested e: ApplyCancellationRequested(state, e); break;
             case ClaimCancelled e: ApplyClaimCancelled(state, e); break;
             case TurnCompleted e: ApplyTurnCompleted(state, e); break;
@@ -315,6 +317,22 @@ public static class GameReducer
         state.PendingClaim = null;
         state.BoardRevision++;
         state.TurnPhase = TurnPhase.TurnStart;
+    }
+
+    private static void ApplyScoreMarkerMoveRequired(GameState state, ScoreMarkerMoveRequired e)
+    {
+        if (state.PendingScoreMarkerMove is not null)
+            throw new InvalidDataException("A scoring marker move is already pending.");
+        state.PendingScoreMarkerMove = new(e.OperationId, e.SeatId,
+            e.FromPrintedScore, e.ToPrintedScore, e.Points);
+    }
+
+    private static void ApplyScoreMarkerMoveConfirmed(GameState state, ScoreMarkerMoveConfirmed e)
+    {
+        if (state.PendingScoreMarkerMove is not { } pending ||
+            pending.OperationId != e.OperationId || pending.SeatId != e.SeatId)
+            throw new InvalidDataException("The confirmed scoring marker move is not pending.");
+        state.PendingScoreMarkerMove = null;
     }
 
     private static void ApplyCancellationRequested(GameState state, ClaimCancellationRequested e)

@@ -29,7 +29,7 @@ public static class StateHash
     /// and insertion-order differences. This contains referee secrets and must not enter public logs.
     /// </summary>
     public static string Canonicalize(GameState state) =>
-        CanonicalizeCore(state) + PackAwaySuffix(state) + RulesPolicySuffix(state);
+        CanonicalizeCore(state) + PackAwaySuffix(state) + RulesPolicySuffix(state) + ScoreMarkerSuffix(state);
 
     /// <summary>
     /// The gameplay fingerprint: the same content, with lifecycle, the transaction counters and the
@@ -56,7 +56,9 @@ public static class StateHash
         normalised.RebuildAttested = false;
         normalised.CheckpointFault = null;
 
-        var content = CanonicalizeCore(normalised) + (includeRulesPolicies ? RulesPolicySuffix(normalised) : string.Empty);
+        var content = CanonicalizeCore(normalised) +
+                      (includeRulesPolicies ? RulesPolicySuffix(normalised) : string.Empty) +
+                      ScoreMarkerSuffix(normalised);
         return (includeRulesPolicies ? "logical-v2:" : "logical-v1:") +
                Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
     }
@@ -90,6 +92,10 @@ public static class StateHash
                 state.RebuildAttested,
                 state.CheckpointFault,
             });
+
+    private static string ScoreMarkerSuffix(GameState state) => state.PendingScoreMarkerMove is null
+        ? string.Empty
+        : "\n" + JsonSerializer.Serialize(new { state.PendingScoreMarkerMove });
 
     private static string CanonicalizeCore(GameState state) => JsonSerializer.Serialize(new
     {

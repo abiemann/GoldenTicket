@@ -16,7 +16,7 @@ public interface ICameraCapture : IAsyncDisposable
     IReadOnlyList<CameraFormat> AvailableFormats { get; }
     long Epoch { get; }
 
-    Task StartAsync(CameraDevice device, CameraCapturePreference preference = CameraCapturePreference.Balanced1080p,
+    Task StartAsync(CameraDevice device, CameraCapturePreference preference = CameraCapturePreference.AutoBest,
         CancellationToken cancellationToken = default);
     Task StopAsync();
     CameraFrame GetFreshFrame(TimeSpan maximumAge);

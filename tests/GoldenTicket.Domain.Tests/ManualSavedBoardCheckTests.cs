@@ -6,6 +6,7 @@ using GoldenTicket.Domain.Engine;
 using GoldenTicket.Domain.Events;
 using GoldenTicket.Domain.Model;
 using GoldenTicket.Domain.Randomness;
+using GoldenTicket.Persistence;
 
 namespace GoldenTicket.Domain.Tests;
 
@@ -148,7 +149,11 @@ public sealed class ManualSavedBoardCheckTests
             if (packAway)
             {
                 Assert.True((await game.SaveAndPackAwayAsync("Manual recovery", cancellationToken: token)).SafeToPack);
-                await fixture.Photos.AttachAsync((await game.GetCheckpointAsync(cancellationToken: token))!);
+                var pending = game.Public.PendingClaim;
+                var placement = pending is null ? null : new CheckpointPendingPlacement(
+                    pending.OperationId, pending.RouteId, pending.SeatId,
+                    game.Public.SeatOf(pending.SeatId).Color, pending.TrainCount, 0);
+                await fixture.Photos.AttachAsync((await game.GetCheckpointAsync(cancellationToken: token))!, placement);
             }
             fixture.Model = new MainViewModel(TestManifest.Manifest, fixture.Store, fixture.Photos.Store);
             fixture.Model.SetGameLayerVisible(true);

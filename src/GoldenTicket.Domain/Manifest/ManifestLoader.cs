@@ -16,6 +16,10 @@ public static class ManifestLoader
     public const string ClassicUsProfileId = "ttr-us-classic-en-v1";
     public const int SupportedSchemaVersion = 1;
     public const int SupportedRulesPolicyVersion = 1;
+    // Display names and lane labels guide people to a physical board location. The original
+    // dataHash predates those fields and is embedded in existing save journals, so changing its
+    // algorithm would make those saves unreadable. Pin the shipped instructions separately.
+    private const string ClassicUsInstructionHash = "sha256:4192d937a5310d64b29ce83da107d0a8516ffa4e06743aca10d8c3795f53f7d0";
 
     /// <summary>Loads the pinned classic North America profile from the default data location.</summary>
     public static BoardManifest LoadClassicUs() => LoadClassicUs(LocateClassicUs());
@@ -38,6 +42,13 @@ public static class ManifestLoader
 
         if (string.IsNullOrWhiteSpace(manifest.DataHash))
             throw new InvalidDataException("The runtime board manifest must record its validated dataHash.");
+
+        var instructionHash = ComputeInstructionHash(manifest);
+        if (!string.Equals(instructionHash, ClassicUsInstructionHash, StringComparison.Ordinal))
+            throw new InvalidDataException(
+                $"The classic board's printed city names or physical lane labels differ from this build's pinned instructions. " +
+                $"Expected {ClassicUsInstructionHash}, computed {instructionHash}. " +
+                "Review and version the physical instructions before changing them.");
 
         return manifest;
     }
@@ -138,6 +149,24 @@ public static class ManifestLoader
 
         var digest = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
         return "sha256:" + Convert.ToHexStringLower(digest);
+    }
+
+    /// <summary>
+    /// Hashes physical instructions omitted by the original, save-compatible dataHash. Only the
+    /// pinned runtime profile enforces this digest; developer tools may still inspect candidates.
+    /// </summary>
+    public static string ComputeInstructionHash(BoardManifest manifest)
+    {
+        var builder = new StringBuilder();
+        foreach (var city in manifest.Cities.OrderBy(c => c.StableId.Value, StringComparer.Ordinal))
+            builder.Append("city:").Append(city.StableId.Value).Append('|')
+                .Append(city.DisplayName).Append('\n');
+
+        foreach (var route in manifest.Routes.OrderBy(r => r.RouteId.Value, StringComparer.Ordinal))
+            builder.Append("route:").Append(route.RouteId.Value).Append('|')
+                .Append(route.DisplayLaneLabel ?? "-").Append('\n');
+
+        return "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
     }
 
     /// <summary>

@@ -11,6 +11,7 @@ public sealed class CameraFormatPolicyTests
         Assert.Equal(1, (int)CameraCapturePreference.HighDetail2160p);
         Assert.Equal(2, (int)CameraCapturePreference.SharedCurrent);
         Assert.Equal(3, (int)CameraCapturePreference.Native720p);
+        Assert.Equal(4, (int)CameraCapturePreference.AutoBest);
     }
 
     [Fact]
@@ -100,6 +101,32 @@ public sealed class CameraFormatPolicyTests
     }
 
     [Fact]
+    public void Auto_mode_ranks_native_capabilities_4k_then_full_hd_then_hd()
+    {
+        CameraFormat[] formats =
+        [
+            new(1280, 720, 30, "NV12"), new(1920, 1080, 30, "NV12"),
+            new(3840, 2160, 15, "MJPG"), new(2560, 1440, 30, "MJPG")
+        ];
+
+        var ranked = CameraFormatPolicy.RankFormats(formats, CameraCapturePreference.AutoBest);
+
+        Assert.Equal(new[] { formats[2], formats[3], formats[1], formats[0] }, ranked);
+    }
+
+    [Theory]
+    [InlineData(3840, 2160)]
+    [InlineData(2560, 1440)]
+    [InlineData(1920, 1080)]
+    [InlineData(1280, 720)]
+    public void Auto_mode_uses_the_only_advertised_usable_native_format(int width, int height)
+    {
+        var format = new CameraFormat(width, height, 30, "MJPG");
+
+        Assert.Equal(format, Assert.Single(CameraFormatPolicy.RankFormats([format], CameraCapturePreference.AutoBest)));
+    }
+
+    [Fact]
     public void Balanced_mode_caps_native_resolution_at_1080p()
     {
         CameraFormat[] formats = [new(3840, 2160, 15, "NV12"), new(2560, 1440, 15, "NV12"), new(1920, 1080, 30, "MJPG")];
@@ -162,6 +189,7 @@ public sealed class CameraFormatPolicyTests
     [InlineData(CameraCapturePreference.Balanced1080p)]
     [InlineData(CameraCapturePreference.HighDetail2160p)]
     [InlineData(CameraCapturePreference.Native720p)]
+    [InlineData(CameraCapturePreference.AutoBest)]
     public void A_720p_only_webcam_is_usable_but_cannot_fall_back_to_sub_hd(CameraCapturePreference preference)
     {
         CameraFormat[] formats = [new(640, 480, 30, "MJPG"), new(1280, 720, 30, "MJPG"), new(1024, 768, 30, "MJPG")];

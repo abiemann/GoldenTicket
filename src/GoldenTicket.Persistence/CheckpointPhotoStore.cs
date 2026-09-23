@@ -108,6 +108,7 @@ public sealed record CheckpointPhotoAttachment(CheckpointPhotoReference Referenc
 /// </summary>
 public sealed class CheckpointPhotoStore
 {
+    private const int CurrentPhotoFormatVersion = 2;
     public const int MaximumPngBytes = 32 * 1024 * 1024;
     public const int MaximumDimension = 8192;
     public const long MaximumPixels = 32_000_000;
@@ -155,6 +156,8 @@ public sealed class CheckpointPhotoStore
         ValidateCheckpoint(checkpoint);
         ValidatePendingPlacement(pendingPlacement, checkpoint);
         ValidateInventory(observedTrainInventory, checkpoint, pendingPlacement);
+        ValidateRequiredPendingEvidence(CurrentPhotoFormatVersion, checkpoint,
+            observedTrainInventory, pendingPlacement);
         ArgumentNullException.ThrowIfNull(capture);
         ValidateCapture(capture, checkpoint, requireFresh: true);
         cancellationToken.ThrowIfCancellationRequested();
@@ -167,7 +170,7 @@ public sealed class CheckpointPhotoStore
         try
         {
             var (width, height) = BoardPngValidator.Validate(image);
-            var reference = new CheckpointPhotoReference(1, checkpoint.SessionId.Value,
+            var reference = new CheckpointPhotoReference(CurrentPhotoFormatVersion, checkpoint.SessionId.Value,
                 checkpoint.CheckpointId.Value, ContentHash(checkpoint), checkpoint.LogicalStateHash,
                 checkpoint.PhysicalTargetHash, checkpoint.ProfileId, checkpoint.ManifestHash,
                 checkpoint.SourceStateVersion, checkpoint.SourceJournalSequence, checkpoint.BoardRevision,
@@ -301,7 +304,8 @@ public sealed class CheckpointPhotoStore
 
     private void ValidateAssociation(CheckpointPhotoReference reference, PackAwayCheckpoint checkpoint)
     {
-        if (reference.FormatVersion != 1 || reference.SessionId != checkpoint.SessionId.Value ||
+        if (reference.FormatVersion is not (1 or CurrentPhotoFormatVersion) ||
+            reference.SessionId != checkpoint.SessionId.Value ||
             reference.CheckpointId != checkpoint.CheckpointId.Value ||
             reference.CheckpointContentHash != ContentHash(checkpoint) ||
             reference.LogicalStateHash != checkpoint.LogicalStateHash ||
@@ -315,6 +319,21 @@ public sealed class CheckpointPhotoStore
         ValidateCapture(reference.Capture, checkpoint, requireFresh: false);
         ValidatePendingPlacement(reference.PendingPlacement, checkpoint);
         ValidateInventory(reference.ObservedTrainInventory, checkpoint, reference.PendingPlacement);
+        ValidateRequiredPendingEvidence(reference.FormatVersion, checkpoint,
+            reference.ObservedTrainInventory, reference.PendingPlacement);
+    }
+
+    private static void ValidateRequiredPendingEvidence(int formatVersion, PackAwayCheckpoint checkpoint,
+        CheckpointTrainInventory? inventory, CheckpointPendingPlacement? pending)
+    {
+        // Version 1 photos predate exact physical-progress capture. Keep them readable, but a
+        // version 2 attachment must never turn an unfinished placement into a whole-route target.
+        if (formatVersion >= 2 && checkpoint.SuspendedTurnPhase == TurnPhase.AwaitingPhysicalPlacement &&
+            (inventory is null || pending is null))
+            throw new InvalidDataException("A photo of an unfinished placement needs its observed train inventory and exact occupied route slots.");
+        if (formatVersion >= 2 && checkpoint.SuspendedTurnPhase == TurnPhase.AwaitingPhysicalPlacement &&
+            inventory?.Provenance != CheckpointTrainInventoryProvenance.CameraObserved)
+            throw new InvalidDataException("A photo of an unfinished placement needs a camera-observed train inventory.");
     }
 
     private static void ValidatePendingPlacement(CheckpointPendingPlacement? pending, PackAwayCheckpoint checkpoint)

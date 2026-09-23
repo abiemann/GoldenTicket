@@ -12,6 +12,24 @@ namespace GoldenTicket.Domain.Tests;
 
 public class CompanionHostTests
 {
+    [Fact]
+    public async Task PairingFloodCannotSpendTheApprovedControllersActionBudget()
+    {
+        await using var server = new CompanionServer(new CoordinatorCompanionBridge(() => null));
+        var context = new DefaultHttpContext();
+        context.Request.Method = "POST";
+        context.Request.Path = "/api/pair";
+        for (var attempt = 0; attempt < 100; attempt++) Assert.True(server.AllowPost(context));
+        Assert.False(server.AllowPost(context));
+
+        context.Request.Path = "/api/hide";
+        Assert.True(server.AllowPost(context));
+        context.Request.Path = "/api/reveal";
+        Assert.True(server.AllowPost(context));
+        context.Request.Path = "/api/command";
+        Assert.True(server.AllowPost(context));
+    }
+
     private sealed class Clock : TimeProvider
     {
         public DateTimeOffset Now = DateTimeOffset.UtcNow;

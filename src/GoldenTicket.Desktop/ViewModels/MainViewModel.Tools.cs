@@ -1,9 +1,13 @@
 using CommunityToolkit.Mvvm.Input;
+using GoldenTicket.Application;
 using GoldenTicket.CompanionHost;
 using GoldenTicket.Desktop.Services;
 using GoldenTicket.Domain;
 using GoldenTicket.Domain.Model;
+using GoldenTicket.Domain.Projections;
 using GoldenTicket.Persistence;
+using GoldenTicket.Vision;
+using System.ComponentModel;
 using System.Security.Cryptography;
 
 namespace GoldenTicket.Desktop.ViewModels;
@@ -49,24 +53,127 @@ public sealed partial class MainViewModel
             if (args.PropertyName == nameof(ShowPracticalHandoff))
                 TakePracticalTurnCommand.NotifyCanExecuteChanged();
         };
-        CheckpointPhoto = new CheckpointPhotoViewModel(_checkpointPhotoStore, async token =>
+        CheckpointPhoto = new CheckpointPhotoViewModel(_checkpointPhotoStore,
+            CaptureCheckpointPhotoAsync, Camera, ShowCameraCommand) { CaptureAllowed = false };
+    }
+
+    private async Task<CheckpointPhotoCaptureInput> CaptureCheckpointPhotoAsync(CancellationToken token)
+    {
+        var coordinator = _coordinator;
+        if (coordinator?.Public.Lifecycle is not (SessionLifecycle.PackedAway or SessionLifecycle.Rebuilding) ||
+            await coordinator.GetCheckpointAsync(token) is not { IsSafeToPackAway: true } checkpoint)
+            throw new InvalidOperationException("Save and pack the game before attaching its reference photo.");
+
+        var pending = checkpoint.SuspendedTurnPhase == TurnPhase.AwaitingPhysicalPlacement
+            ? coordinator.Public.PendingClaim ?? throw new InvalidOperationException(
+                "The unfinished route is missing from the saved game. Reload before capturing its photo.")
+            : null;
+        if (pending is not null && pending.OperationId != checkpoint.PendingOperationId)
+            throw new InvalidOperationException("The unfinished route changed. Reload before capturing its photo.");
+
+        BoardInventoryObservation? before = null;
+        GameTableAnalysis? beforeAnalysis = null;
+        if (pending is not null)
         {
-            var coordinator = _coordinator;
-            var checkpointId = coordinator?.Public.Checkpoint?.CheckpointId;
-            if (coordinator?.Public.Lifecycle is not
-                (SessionLifecycle.PackedAway or SessionLifecycle.Rebuilding))
-                throw new InvalidOperationException("Save and pack the game before attaching its reference photo.");
-            var photo = await Camera.CapturePhotoAsync(token);
-            if (coordinator != _coordinator || coordinator.Public.Checkpoint?.CheckpointId != checkpointId ||
+            (before, beforeAnalysis) = await ConfirmCheckpointPhotoInventoryAsync(coordinator,
+                checkpoint, pending, 0, null, token);
+        }
+
+        // For unfinished placements the game-table crop is the one used for the exact-slot
+        // detections. Its capture API verifies epoch, registration and model revisions.
+        var photo = pending is null
+            ? await Camera.CapturePhotoAsync(token)
+            : await Camera.CaptureGameTablePhotoAsync(token);
+        try
+        {
+            if (coordinator != _coordinator || coordinator.Public.Checkpoint?.CheckpointId != checkpoint.CheckpointId ||
                 coordinator.Public.Lifecycle is not (SessionLifecycle.PackedAway or SessionLifecycle.Rebuilding))
-            {
-                CryptographicOperations.ZeroMemory(photo.PngBytes);
                 throw new InvalidOperationException("The selected checkpoint changed while capturing. Check the board and try again.");
+
+            CheckpointTrainInventory? observedInventory = null;
+            CheckpointPendingPlacement? pendingPlacement = null;
+            if (pending is not null && before is not null && beforeAnalysis is not null)
+            {
+                if (photo.CameraEpoch != beforeAnalysis.Board.Epoch ||
+                    photo.BoardCropRevision != beforeAnalysis.CropRevision ||
+                    photo.FrameSequence < beforeAnalysis.Board.Sequence)
+                    throw new InvalidOperationException("The camera crop changed after checking the unfinished placement. Try the photo again.");
+                var (after, afterAnalysis) = await ConfirmCheckpointPhotoInventoryAsync(coordinator,
+                    checkpoint, pending, photo.FrameSequence, before.PendingSlotMask, token);
+                if (afterAnalysis.Board.Epoch != photo.CameraEpoch ||
+                    afterAnalysis.CropRevision != photo.BoardCropRevision ||
+                    beforeAnalysis.ModelRevision != afterAnalysis.ModelRevision ||
+                    !before.ConfirmedByColor.OrderBy(pair => pair.Key)
+                        .SequenceEqual(after.ConfirmedByColor.OrderBy(pair => pair.Key)))
+                    throw new InvalidOperationException("The board changed while capturing its reference photo. Try again.");
+
+                var counts = after.ConfirmedByColor;
+                int Count(MarkerColor color) => counts.TryGetValue(color, out var value) ? value : 0;
+                observedInventory = new CheckpointTrainInventory(
+                    Count(MarkerColor.Blue), Count(MarkerColor.Red), Count(MarkerColor.Green),
+                    Count(MarkerColor.Yellow), Count(MarkerColor.Black),
+                    CheckpointTrainInventoryProvenance.CameraObserved);
+                pendingPlacement = new CheckpointPendingPlacement(pending.OperationId, pending.RouteId,
+                    pending.SeatId, coordinator.Public.SeatOf(pending.SeatId).Color, pending.TrainCount,
+                    after.PendingSlotMask ?? throw new InvalidOperationException(
+                        "The unfinished route's exact train spaces could not be checked."));
             }
             return new CheckpointPhotoCaptureInput(photo.PngBytes,
                 new CheckpointPhotoCapture(photo.CapturedAt, photo.CameraId,
-                    photo.CameraEpoch, photo.BoardCropRevision, false));
-        }, Camera, ShowCameraCommand) { CaptureAllowed = false };
+                    photo.CameraEpoch, photo.BoardCropRevision, false), observedInventory, pendingPlacement);
+        }
+        catch
+        {
+            CryptographicOperations.ZeroMemory(photo.PngBytes);
+            throw;
+        }
+    }
+
+    private async Task<(BoardInventoryObservation Observation, GameTableAnalysis Analysis)>
+        ConfirmCheckpointPhotoInventoryAsync(GameCoordinator coordinator, PackAwayCheckpoint checkpoint,
+            PublicPendingClaim pending, long minimumSequence, int? requiredPendingMask,
+            CancellationToken token)
+    {
+        var routes = checkpoint.PhysicalTarget.Select(route => new BoardInventoryRoute(route.RouteId.Value,
+            ToMarkerColor(coordinator.Public.SeatOf(route.SeatId).Color), route.Length)).ToArray();
+        var pendingRoute = new BoardInventoryRoute(pending.RouteId.Value,
+            ToMarkerColor(coordinator.Public.SeatOf(pending.SeatId).Color), pending.TrainCount);
+        var verifier = new BoardInventoryVerifier(routes, pendingRoute, requiredPendingMask);
+        var completion = new TaskCompletionSource<(BoardInventoryObservation, GameTableAnalysis)>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        BoardInventoryObservation? last = null;
+        void Observe(object? sender, PropertyChangedEventArgs args)
+        {
+            if (args.PropertyName != nameof(CameraViewModel.GameTableAnalysis) ||
+                Camera.GameTableAnalysis is not { } analysis || !Camera.IsGameTablePreviewUpright ||
+                analysis.Board.Sequence <= minimumSequence ||
+                coordinator != _coordinator || coordinator.Public.Checkpoint?.CheckpointId != checkpoint.CheckpointId)
+                return;
+            try
+            {
+                last = verifier.Observe(analysis.Board, analysis.Candidates,
+                    analysis.CropRevision, analysis.ModelRevision);
+                if (last.State == BoardInventoryState.Unsupported)
+                    completion.TrySetException(new InvalidOperationException(
+                        "The camera cannot verify this unfinished route's exact train spaces."));
+                else if (last.Confirmed)
+                    completion.TrySetResult((last, analysis));
+            }
+            catch (Exception ex) { completion.TrySetException(ex); }
+        }
+
+        Camera.PropertyChanged += Observe;
+        try
+        {
+            Observe(Camera, new PropertyChangedEventArgs(nameof(CameraViewModel.GameTableAnalysis)));
+            try { return await completion.Task.WaitAsync(TimeSpan.FromSeconds(15), token); }
+            catch (TimeoutException)
+            {
+                throw new InvalidOperationException("The camera could not verify the unfinished placement. " +
+                    DescribeGameExitInventoryIssue(last));
+            }
+        }
+        finally { Camera.PropertyChanged -= Observe; }
     }
 
     private bool CanCompanionControl => CanConnectPhone && Connection.UseQuickPlay && !_toolsDisposed && !_exitRequested &&
