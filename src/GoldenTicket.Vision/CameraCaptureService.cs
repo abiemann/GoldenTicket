@@ -22,7 +22,7 @@ public sealed record CameraFrameDimensions(int Width, int Height);
 public static class CameraFormatPolicy
 {
     public const string MinimumResolutionMessage =
-        "This webcam is not compatible with gameplay. At least 1280 × 720 (720p) is required; 1920 × 1080 (1080p) is recommended.";
+        "This webcam is not compatible with gameplay. At least 1280 × 720 (720p) is required.";
     public const string Native720pUnavailableMessage =
         "The 720p option is unavailable: this camera does not advertise a native 1280 × 720 format at 5–60 fps. Select another camera quality.";
 
@@ -209,7 +209,7 @@ public sealed class CameraCaptureService : ICameraCapture
                 throw new InvalidOperationException(preference == CameraCapturePreference.Native720p
                     ? CameraFormatPolicy.Native720pUnavailableMessage
                     : preference == CameraCapturePreference.SharedCurrent
-                    ? "The current shared camera format is not compatible. Select 1080p camera quality or change the webcam's current format to at least 1280 × 720 (720p), at 5–60 fps."
+                    ? "The current shared camera format is not compatible. Change it to at least 1280 × 720 (720p) at 5–60 fps, or select Auto camera quality."
                     : !AvailableFormats.Any(CameraFormatPolicy.IsUsableFormat)
                         ? CameraFormatPolicy.MinimumResolutionMessage + " A native format at 5–60 fps is needed."
                         : "No advertised camera format fits the selected quality. Choose a supported camera quality of at least 720p.");

@@ -271,7 +271,6 @@ public sealed class CameraFormatPolicyTests
 
         Assert.Equal(CameraFormatPolicy.MinimumResolutionMessage, error.Message);
         Assert.Contains("720p", error.Message);
-        Assert.Contains("1080p", error.Message);
     }
 
     [Fact]

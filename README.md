@@ -32,7 +32,7 @@ The application is being developed and playtested with a real physical board and
 - A Windows 11 laptop or desktop.
 - The classic English North America board, trains and scoring markers. Leave the physical cards
   and destination tickets in the box; the app manages them for every player.
-- A camera with a clear view of the entire board. **1080p is preferred; 720p is the minimum.**
+- A camera with a clear view of the entire board. **720p is the minimum.**
   Native 4K capture is available when the camera supports it. Keep all four corners visible and
   provide enough light to distinguish the pieces.
 - For Quick play, one shared phone/tablet on the same local network as the laptop. Solo play and
@@ -210,14 +210,19 @@ observations for placement and scoring checks.
 Settings offers **Auto · prefer GPU**, **CPU only**, and **GPU · CPU fallback**. Image processing
 and model inference report their actual backends; GPU processing falls back to CPU when needed.
 Camera quality defaults to **Auto**, which tries the webcam's best supported native mode in
-order: 4K, 1080p or better, then 720p. Explicit 4K, 1080p, 720p and shared-current options remain
-available. The app distinguishes capture resolution from the processed image size.
+order: 4K, 1080p or better, then 720p. The label shows the highest usable advertised format,
+such as **Auto (2160p)**, **Auto (1440p)**, **Auto (1080p)** or **Auto (720p)**. The **1080p** and
+**720p** choices appear only when the webcam advertises a usable native 1920 × 1080 or
+1280 × 720 format, respectively, and only when that choice is lower than Auto's highest mode;
+**Shared · current Windows format** remains available. The app distinguishes capture resolution
+from the processed image size.
 
-To use 720p, select **720p** under **Camera quality**, then
-stop and start preview in **Camera**. This requests a native 1280 × 720 stream, preferring
-30 fps, and reports an error if the webcam cannot supply that size. The game shows **Using
-1280 × 720** while it runs. Camera quality can be changed by selecting another option and
-restarting preview; reopening the app restores Auto.
+When Auto selects a higher mode, use **720p** under **Camera quality**, then stop and start
+preview in **Camera**. This requests a native 1280 × 720 stream, preferring
+30 fps, and reports an error if the webcam cannot supply that size. The Camera screen reports
+the delivered capture dimensions. On a 720p-only webcam, Auto already selects that mode. Camera
+quality can be changed by selecting another option and restarting preview; reopening the app
+restores Auto.
 
 The app remembers your selected webcam across restarts. If it disconnects, the board shows
 which webcam it is waiting for and reconnects when that camera returns. You can choose another

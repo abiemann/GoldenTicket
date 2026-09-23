@@ -1519,29 +1519,30 @@ native runtime is currently required. Capture remains direct WinRT video-only ac
 
 #### Implemented capture and output policy, September 19, 2026
 
-The current direct WinRT implementation defaults to **Auto · best native quality**. It ranks
+The current direct WinRT implementation defaults to **Auto**. It ranks
 advertised formats at 3840 × 2160 first, then formats at least 1920 × 1080, then formats at
 least 1280 × 720. It prefers a frame rate near 15 fps at 4K and 30 fps at lower resolutions,
 within the supported 5–60 fps range. Selected-device discovery checks advertised formats without
-starting a frame reader. Explicit **4K preferred** appears only when the selected webcam
-advertises usable native 3840 × 2160; **1080p preferred** limits the pixel budget to
-1920 × 1080. A rejected mode or reader startup falls through to another advertised
+starting a frame reader. The Auto label reports the highest usable advertised format as
+**Auto (2160p)**, **Auto (1440p)**, **Auto (1080p)** or **Auto (720p)**, as applicable; it does
+not promise the resolution that the reader will deliver. **1080p** appears only with a usable
+native 1920 × 1080 mode below Auto's highest mode and limits the pixel budget to 1920 × 1080.
+A rejected mode or reader startup falls through to another advertised
 candidate within the startup budget. Shared current mode never changes another camera owner's format. The reader
 does not request an artificial output size. Its actual delivered bitmap dimensions are reported
 separately from negotiated source metadata and subsequent enhancement dimensions.
 
-The **720p** camera quality option requests only advertised native
-1280 × 720 modes, preferring 30 fps within the existing 5–60 fps range. Negotiated and delivered
+The **720p** camera quality option appears only with a usable advertised native
+1280 × 720 format below Auto's highest mode and requests only native 1280 × 720 modes,
+preferring 30 fps within the existing 5–60 fps range. Negotiated and delivered
 dimensions must both match; it never substitutes 1080p or rescales a stream to satisfy the choice.
 The choice applies on preview restart and survives camera reconnects within the app session.
 It is not persisted: a new app instance returns to Auto.
 
-1080p is recommended for gameplay. A usable 720p camera is permitted with a persistent warning
-that gameplay and train detection may be less reliable in poor lighting, visible in Settings,
-board setup/reconnect, the Camera utility, and the game table. Below-720p cameras are rejected;
+Usable 720p capture is supported without a quality warning. Below-720p cameras are rejected;
 the same minimum applies to the current shared mode and actual delivered frame dimensions.
-An unsuccessful capability query does not assume 4K support: the option stays hidden and the
-user is told to start preview to check the current format. Preview enhancement is not offered in
+An unsuccessful capability query leaves only Auto and Shared available until native modes can
+be verified; the user is told to start preview to check the current format. Preview enhancement is not offered in
 main Settings. The technical Camera screen retains **Enhanced preview** for raw-versus-filtered
 comparison; this does not imply native capture resolution or alter the gameplay board display.
 

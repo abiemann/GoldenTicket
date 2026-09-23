@@ -83,9 +83,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<NormalizedPoint> SelectedCorners { get; } = [];
     public IReadOnlyList<CameraPreferenceOption> Preferences { get; private set; } =
     [
-        new(CameraCapturePreference.AutoBest, "Auto · best native quality"),
-        new(CameraCapturePreference.Balanced1080p, "1080p preferred"),
-        new(CameraCapturePreference.Native720p, "720p"),
+        new(CameraCapturePreference.AutoBest, "Auto"),
         new(CameraCapturePreference.SharedCurrent, "Shared · current Windows format")
     ];
 

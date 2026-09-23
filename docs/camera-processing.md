@@ -32,20 +32,24 @@ backend. Rules and game AI remain on the CPU.
    Auto tries the webcam's best supported native format in order: 3840 × 2160 (4K), modes
    at least 1920 × 1080 (including 1440p), then modes at least 1280 × 720. Within a resolution
    it prefers a native frame rate near 15 fps for 4K and 30 fps for lower resolutions. A
-   rejected format can fall through to the next usable native mode. **4K preferred** appears
-   when the webcam advertises a usable native 3840 × 2160 mode; **1080p preferred** and
-   **720p** are explicit alternatives.
-   A 720p camera is allowed, with a warning that gameplay and train detection may be less reliable
-   in poor lighting. That warning remains visible during setup, reconnect, and gameplay.
-   Below-720p cameras and delivered frames are not compatible. If the format check fails, 4K
-   stays hidden until support can be verified; start preview to check the camera's current format.
+   rejected format can fall through to the next usable native mode. The Auto label shows the
+   highest usable advertised format, such as **Auto (2160p)**, **Auto (1440p)**,
+   **Auto (1080p)** or **Auto (720p)**. **1080p** appears only when the webcam advertises a
+   usable native 1920 × 1080 format below Auto's maximum; **720p** appears only for a usable
+   native 1280 × 720 format below Auto's maximum. There is no separate 4K choice.
+   If a 1080p format fails to start, that choice can fall back to another usable native format
+   within its 1920 × 1080 pixel budget; check the delivered dimensions after preview starts.
+   A usable 720p camera is supported without a quality warning. The user reported successful
+   720p testing on September 22; full-game acceptance at 720p is still pending.
+   Below-720p cameras and delivered frames are not compatible. If the format check fails, only
+   Auto and Shared remain until support can be verified; start preview to check the camera's current format.
    **Shared current format** reads the camera's existing mode without changing its owner's format.
    It enforces the same 720p minimum.
-   To use native 720p, select **720p** and
+   To use native 720p on a webcam whose Auto mode selects a higher format, select **720p** and
    stop/start preview. It requests exactly native 1280 × 720, preferring 30 fps among the
    advertised usable modes. A camera without that format, or one delivering a different
-   size, reports an error rather than substituting another resolution. The existing 720p
-   warning reports the delivered dimensions. The selection survives reconnects during
+   size, reports an error rather than substituting another resolution. The Camera screen
+   reports the delivered dimensions. The selection survives reconnects during
    this app session; reopening the app restores Auto.
 3. Check the reported camera dimensions and processing dimensions separately. A 1920 × 1080
    source enhanced to 3840 × 2160 is explicitly identified as upscaled. Larger output pixels do
@@ -73,8 +77,8 @@ camera matches. You can explicitly select a different camera in Settings or Came
 the original camera image; analysis continues on the enhanced path. This comparison uses ordinary
 bounded filtering and bicubic upscaling, not NVIDIA RTX Video Super Resolution; the app does not
 integrate the RTX Video SDK. It does not affect the gameplay board display, and there is no
-enhancement checkbox in main Settings. The conditional **4K preferred** capture option
-still selects a native camera format when the webcam supports it.
+enhancement checkbox in main Settings. Auto still selects a native 4K camera format when the
+webcam advertises a usable one.
 **Show piece outlines** is available only in the technical Camera screen and enables ML inference and its
 overlay. Turning it off clears the current result; turning it on waits for a fresh result.
 

@@ -13,6 +13,9 @@ public sealed partial class CameraViewModel
     private bool _cameraCapabilitiesEnabled;
     private IReadOnlyList<CameraFormat>? _selectedCameraFormats;
     private CameraFrameDimensions? _lastQualityDimensions;
+    // Hide unverified modes during discovery without losing a user's choice across reconnects.
+    private CameraCapturePreference? _preferencePendingCapabilities;
+    private bool _settingPreferenceOptions;
 
     [ObservableProperty] private bool _hasNative4K;
     [ObservableProperty] private bool _isCheckingCameraCapabilities;
@@ -22,11 +25,18 @@ public sealed partial class CameraViewModel
     partial void OnCameraCompatibilityMessageChanged(string value) =>
         OnPropertyChanged(nameof(HasCameraCompatibilityMessage));
 
+    partial void OnSelectedPreferenceChanged(CameraPreferenceOption value)
+    {
+        if (!_settingPreferenceOptions) _preferencePendingCapabilities = null;
+    }
+
     partial void OnSelectedDeviceChanged(CameraDevice? value)
     {
         // Picker refreshes can temporarily clear selection. That must not forget which
         // webcam to wait for, or replace it with another camera moved by the collection.
         if (!_refreshingDeviceList && value is not null) RememberCamera(value);
+        if (SelectedPreference?.Value is { } preference && preference != CameraCapturePreference.AutoBest)
+            _preferencePendingCapabilities = preference;
         _cameraCapabilitiesRevision++;
         _cameraCapabilitiesCancellation?.Cancel();
         _selectedCameraFormats = null;
@@ -74,6 +84,8 @@ public sealed partial class CameraViewModel
         catch (Exception ex)
         {
             if (_disposed || revision != _cameraCapabilitiesRevision || SelectedDevice?.Id != device.Id) return;
+            if (SelectedPreference?.Value is { } preference && preference != CameraCapturePreference.AutoBest)
+                _preferencePendingCapabilities = preference;
             _selectedCameraFormats = null;
             HasNative4K = false;
             UpdateCameraQualityOptions();
@@ -96,28 +108,37 @@ public sealed partial class CameraViewModel
         _lastQualityDimensions = null;
         HasNative4K = CameraFormatPolicy.Supports4K(formats);
         UpdateCameraQualityOptions();
-        var usable = formats.Where(CameraFormatPolicy.IsUsableFormat)
-            .OrderByDescending(format => (long)format.Width * format.Height).FirstOrDefault();
-        CameraCompatibilityMessage = usable is null
-            ? "This webcam is not compatible. Gameplay needs at least 720p (1280 × 720). Choose a 1080p or better webcam."
-            : CameraFormatPolicy.Supports1080p(formats) ? "" : ReducedCameraQualityMessage(usable.Width, usable.Height);
+        CameraCompatibilityMessage = formats.Any(CameraFormatPolicy.IsUsableFormat)
+            ? ""
+            : "This webcam is not compatible. Gameplay needs a native format of at least 720p (1280 × 720) at 5–60 fps.";
     }
 
     private void UpdateCameraQualityOptions()
     {
-        var selected = SelectedPreference?.Value ?? CameraCapturePreference.AutoBest;
-        var autoLabel = "Auto · best native quality";
-        if (_selectedCameraFormats is { } formats &&
-            CameraFormatPolicy.RankFormats(formats, CameraCapturePreference.AutoBest).FirstOrDefault() is { } best)
-            autoLabel = $"Auto · {best.Width} × {best.Height}";
-        List<CameraPreferenceOption> options = [new(CameraCapturePreference.AutoBest, autoLabel),
-            new(CameraCapturePreference.Balanced1080p, "1080p preferred")];
-        if (HasNative4K) options.Add(new(CameraCapturePreference.HighDetail2160p, "4K preferred"));
-        options.Add(new(CameraCapturePreference.Native720p, "720p"));
+        var selected = _preferencePendingCapabilities ?? SelectedPreference?.Value ?? CameraCapturePreference.AutoBest;
+        var best = _selectedCameraFormats is { } formats
+            ? CameraFormatPolicy.RankFormats(formats, CameraCapturePreference.AutoBest).FirstOrDefault()
+            : null;
+        var autoLabel = best is null ? "Auto" : $"Auto ({best.Height}p)";
+        List<CameraPreferenceOption> options = [new(CameraCapturePreference.AutoBest, autoLabel)];
+        if (_selectedCameraFormats is { } nativeFormats)
+        {
+            if (best is not { Width: 1920, Height: 1080 } &&
+                nativeFormats.Any(format => CameraFormatPolicy.IsUsableFormat(format) &&
+                                            format.Width == 1920 && format.Height == 1080))
+                options.Add(new(CameraCapturePreference.Balanced1080p, "1080p"));
+            if (best is not { Width: 1280, Height: 720 } &&
+                nativeFormats.Any(format => CameraFormatPolicy.IsUsableFormat(format) &&
+                                            format.Width == 1280 && format.Height == 720))
+                options.Add(new(CameraCapturePreference.Native720p, "720p"));
+        }
         options.Add(new(CameraCapturePreference.SharedCurrent, "Shared · current Windows format"));
         Preferences = options;
         OnPropertyChanged(nameof(Preferences));
-        SelectedPreference = options.FirstOrDefault(option => option.Value == selected) ?? options[0];
+        _settingPreferenceOptions = true;
+        try { SelectedPreference = options.FirstOrDefault(option => option.Value == selected) ?? options[0]; }
+        finally { _settingPreferenceOptions = false; }
+        if (_selectedCameraFormats is not null) _preferencePendingCapabilities = null;
     }
 
     private void UpdateDeliveredCameraQuality()
@@ -127,15 +148,9 @@ public sealed partial class CameraViewModel
             ? new CameraFrameDimensions(format.Width, format.Height) : null);
         if (dimensions is null || dimensions == _lastQualityDimensions) return;
         _lastQualityDimensions = dimensions;
-        CameraCompatibilityMessage = CameraFormatPolicy.GetResolutionTier(dimensions.Width, dimensions.Height) switch
-        {
-            CameraResolutionTier.Incompatible =>
-                "This webcam is delivering less than 720p and is not compatible. Choose a 1080p or better webcam.",
-            CameraResolutionTier.Hd720p => ReducedCameraQualityMessage(dimensions.Width, dimensions.Height),
-            _ => ""
-        };
+        CameraCompatibilityMessage =
+            CameraFormatPolicy.GetResolutionTier(dimensions.Width, dimensions.Height) == CameraResolutionTier.Incompatible
+                ? "This webcam is delivering less than 720p and is not compatible. Use a camera that delivers at least 1280 × 720."
+                : "";
     }
-
-    private static string ReducedCameraQualityMessage(int width, int height) =>
-        $"Using {width} × {height}. A 1080p webcam is recommended. Gameplay and train detection may be less reliable in poor lighting.";
 }

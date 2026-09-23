@@ -613,6 +613,7 @@ internal static partial class Program
                     AutomationProperties.GetName(combo) == "Image processor preference");
                 var destinationsWithTrainCards = Descendants<CheckBox>(dialog).Single(box =>
                     AutomationProperties.GetName(box) == "Show Destinations when viewing Train cards");
+                var compatibility = (TextBlock)view.FindName("SettingsCameraCompatibilityMessage");
                 var ok = Descendants<Button>(dialog).Single(button => button.Content as string == "OK");
                 if (!IsElementShown(dialog) || displayMode.SelectedValue is not DisplayMode.Resizable ||
                     !ReferenceEquals(quality.SelectedItem, model.Camera.SelectedPreference) ||
@@ -621,19 +622,20 @@ internal static partial class Program
                     !ReferenceEquals(processor.SelectedItem, model.Camera.SelectedProcessor) ||
                     Descendants<CheckBox>(dialog).Any(box => IsElementShown(box) &&
                         box.Content as string is "Enhanced 4K preview" or "Show piece outlines") ||
-                    destinationsWithTrainCards.IsChecked != true || ok.ActualHeight < 48 ||
+                    destinationsWithTrainCards.IsChecked != true || IsElementShown(compatibility) ||
+                    ok.ActualHeight < 48 ||
                     ok.HorizontalAlignment != HorizontalAlignment.Right ||
                     Descendants<Button>(dialog).Any(button => Equals(button.Tag, "NavigationBack")))
                     throw new InvalidOperationException("Settings must use the same live camera preferences as the utility screens.");
             });
-            model.Camera.CameraCompatibilityMessage = "Using 1280 × 720. A 1080p webcam is recommended. Gameplay and train detection may be less reliable in poor lighting.";
-            await RenderSizes("game-settings-720p-warning", () => new GameScreenView { DataContext = model }, view =>
+            model.Camera.CameraCompatibilityMessage = CameraFormatPolicy.MinimumResolutionMessage;
+            await RenderSizes("game-settings-sub-720p-error", () => new GameScreenView { DataContext = model }, view =>
             {
                 var warning = (TextBlock)view.FindName("SettingsCameraCompatibilityMessage");
                 if (!IsElementShown(warning) || warning.Text != model.Camera.CameraCompatibilityMessage ||
                     AutomationProperties.GetLiveSetting(warning) != AutomationLiveSetting.Polite ||
                     warning.TextWrapping != TextWrapping.Wrap)
-                    throw new InvalidOperationException("The 720p Settings warning must be visible, wrapped, and announced politely.");
+                    throw new InvalidOperationException("The below-720p Settings error must be visible, wrapped, and announced politely.");
             }, [(1000, 620), (1280, 800)]);
             model.Camera.CameraCompatibilityMessage = "";
             ((Button)settingsView.FindName("SettingsOkButton"))
@@ -663,6 +665,7 @@ internal static partial class Program
                 var dialog = (Border)view.FindName("CameraSetupDialog");
                 var roster = (Border)view.FindName("AiSelectionDialog");
                 var help = (TextBlock)view.FindName("CameraSetupHelp");
+                var compatibility = (TextBlock)view.FindName("CameraSetupCompatibilityMessage");
                 var frame = (Border)view.FindName("CameraSetupPreviewFrame");
                 var preview = (Image)view.FindName("CameraSetupPreview");
                 var corners = (Canvas)view.FindName("CameraSetupCornerOverlay");
@@ -673,6 +676,7 @@ internal static partial class Program
                 if (!IsElementShown(dialog) || IsElementShown(roster) ||
                     !model.Game.IsCameraSetup || model.Setup.ManualVerificationAccepted ||
                     help.Text != "Position the board game and camera so the entire board is visible" ||
+                    IsElementShown(compatibility) ||
                     cancel.Content as string != "CANCEL" || play.Content as string != "PLAY!" ||
                     play.IsEnabled || corners.Children.Count != 0 ||
                     Bounds(help).Bottom >= Bounds(frame).Top ||
@@ -683,15 +687,15 @@ internal static partial class Program
                         .ParentBinding.Path.Path != "Camera.Preview")
                     throw new InvalidOperationException("Camera setup must hide the roster, share the preview, and hold PLAY until ML finds all four corners.");
             }, [(875, 680), (1280, 800)]);
-            model.Camera.CameraCompatibilityMessage = "Using 1280 × 720. A 1080p webcam is recommended. Gameplay and train detection may be less reliable in poor lighting.";
-            await RenderSizes("game-camera-setup-720p-warning", () => new GameScreenView { DataContext = model }, view =>
+            model.Camera.CameraCompatibilityMessage = CameraFormatPolicy.MinimumResolutionMessage;
+            await RenderSizes("game-camera-setup-sub-720p-error", () => new GameScreenView { DataContext = model }, view =>
             {
                 var warning = (TextBlock)view.FindName("CameraSetupCompatibilityMessage");
                 var frame = (Border)view.FindName("CameraSetupPreviewFrame");
                 if (!IsElementShown(warning) || warning.Text != model.Camera.CameraCompatibilityMessage ||
                     warning.TransformToAncestor(view).TransformBounds(new Rect(warning.RenderSize)).Bottom >=
                     frame.TransformToAncestor(view).TransformBounds(new Rect(frame.RenderSize)).Top)
-                    throw new InvalidOperationException("The camera warning must sit above the setup preview without covering the board.");
+                    throw new InvalidOperationException("The below-720p error must sit above the setup preview without covering the board.");
             }, [(1280, 800)]);
             model.Camera.CameraCompatibilityMessage = "";
             var camera = model.Camera;
@@ -1094,10 +1098,16 @@ internal static partial class Program
                     throw new InvalidOperationException("The latest public action must have two centered lines reserved along the bottom of the player tile.");
             }
 
-            await RenderSizes("game-table-two", () => new GameScreenView { DataContext = model }, Verify,
+            await RenderSizes("game-table-two", () => new GameScreenView { DataContext = model }, view =>
+            {
+                Verify(view);
+                var table = Descendants<GameTableView>(view).Single();
+                if (IsElementShown((TextBlock)table.FindName("GameCameraCompatibilityMessage")))
+                    throw new InvalidOperationException("A compatible camera must not show a warning on the game table.");
+            },
                 [(1000, 620), (1280, 800)]);
-            model.Camera.CameraCompatibilityMessage = "Using 1280 × 720. A 1080p webcam is recommended. Gameplay and train detection may be less reliable in poor lighting.";
-            await RenderSizes("game-table-720p-warning", () => new GameScreenView { DataContext = model }, view =>
+            model.Camera.CameraCompatibilityMessage = CameraFormatPolicy.MinimumResolutionMessage;
+            await RenderSizes("game-table-sub-720p-error", () => new GameScreenView { DataContext = model }, view =>
             {
                 Verify(view);
                 var table = Descendants<GameTableView>(view).Single();
@@ -1109,7 +1119,7 @@ internal static partial class Program
                 if (!IsElementShown(warning) || warning.Text != model.Camera.CameraCompatibilityMessage ||
                     Bounds(warning).IntersectsWith(Bounds(guidance)) ||
                     Bounds(warning).IntersectsWith(Bounds(board)))
-                    throw new InvalidOperationException("The game camera warning must remain visible without covering the board or turn guidance.");
+                    throw new InvalidOperationException("The below-720p game camera error must remain visible without covering the board or turn guidance.");
             }, [(1280, 800)]);
             model.Camera.CameraCompatibilityMessage = "";
             AddSeat(2);
