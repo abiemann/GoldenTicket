@@ -254,8 +254,11 @@ public sealed partial class GameScreenViewModel : ObservableObject
             ? _main.PrivateSeat!.SeatName : _main.Table.ActiveSeatName);
     public string GuidanceInstruction => _guidanceOverride?.Instruction ??
         (_main.IsCheckingResumedGame ? "Saved board." : _main.Table.Instruction);
-    public bool ShowFinalTurn => _main.Table.IsFinalTurn &&
-        !_main.IsCheckingResumedGame && _guidanceOverride is null;
+    public string FinalTurnSuffix => _main.Table.IsFinalTurn && !_main.IsCheckingResumedGame &&
+        GuidanceTurn == _main.Table.TurnText &&
+        (_main.Table.TurnText.StartsWith("Turn ", StringComparison.Ordinal) ||
+         _main.Table.TurnText.StartsWith("Up next: Turn ", StringComparison.Ordinal))
+            ? " (Final)" : "";
     public bool ShowManualPlacementControls => _main.Table.Placement is { AwaitingRestore: false } placement &&
         !RoutePlacementVerifier.Supports(placement.RouteId.Value, placement.TrainCount);
 
@@ -276,7 +279,7 @@ public sealed partial class GameScreenViewModel : ObservableObject
         OnPropertyChanged(nameof(GuidanceTurn));
         OnPropertyChanged(nameof(GuidanceSeat));
         OnPropertyChanged(nameof(GuidanceInstruction));
-        OnPropertyChanged(nameof(ShowFinalTurn));
+        OnPropertyChanged(nameof(FinalTurnSuffix));
     }
 
     [ObservableProperty] private bool _showPlacementTarget;

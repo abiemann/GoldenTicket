@@ -1122,6 +1122,50 @@ internal static partial class Program
             await RenderSizes("game-table-five", () => new GameScreenView { DataContext = model }, Verify,
                 [(1000, 620), (1280, 800)]);
 
+            model.Table.TurnText = "Turn 73";
+            model.Table.IsFinalTurn = true;
+            model.GameClockSuffix = "  ·  0:18:37";
+            typeof(GameScreenViewModel).GetMethod("ShowGuidance", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(model.Game, ["Turn 73", "Computer 1",
+                    "Please place 4 Red trains on Atlanta - New Orleans (lane B). The camera needs to see a train in every space before continuing."]);
+            await RenderSizes("game-table-final-turn-placement",
+                () => new GameScreenView { DataContext = model }, view =>
+                {
+                    var gameTable = Descendants<GameTableView>(view).Single();
+                    var phase = (TextBlock)gameTable.FindName("GuidancePhaseText");
+                    var seat = (TextBlock)gameTable.FindName("GuidanceSeatText");
+                    var instruction = (TextBlock)gameTable.FindName("GuidanceInstructionText");
+                    if (phase.Text != "Turn 73 (Final)  ·  0:18:37" ||
+                        seat.Text != "Computer 1" ||
+                        !instruction.Text.StartsWith("Please place 4 Red trains", StringComparison.Ordinal))
+                        throw new InvalidOperationException("Computer placement guidance must retain the final-turn marker beside the turn clock.");
+                }, [(1000, 620), (1280, 800)]);
+            model.Table.IsFinalTurn = false;
+            await RenderSizes("game-table-ordinary-turn-placement",
+                () => new GameScreenView { DataContext = model }, view =>
+                {
+                    var gameTable = Descendants<GameTableView>(view).Single();
+                    var phase = (TextBlock)gameTable.FindName("GuidancePhaseText");
+                    if (phase.Text != "Turn 73  ·  0:18:37")
+                        throw new InvalidOperationException("The final-turn marker must clear when this is no longer a final turn.");
+                }, [(1280, 800)]);
+            typeof(GameScreenViewModel).GetMethod("ClearGuidance", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(model.Game, null);
+            model.Table.IsFinalTurn = true;
+            model.Table.TurnText = "Up next: Turn 74";
+            model.GameClockSuffix = "";
+            await RenderSizes("game-table-final-turn-up-next",
+                () => new GameScreenView { DataContext = model }, view =>
+                {
+                    var gameTable = Descendants<GameTableView>(view).Single();
+                    var phase = (TextBlock)gameTable.FindName("GuidancePhaseText");
+                    if (phase.Text != "Up next: Turn 74 (Final)")
+                        throw new InvalidOperationException("The next-turn handoff must retain its final-turn marker.");
+                }, [(1280, 800)]);
+            model.Table.TurnText = "Setup";
+            model.Table.IsFinalTurn = false;
+            model.GameClockSuffix = "";
+
             var paymentHand = new[]
             {
                 TrainCardKind.Blue, TrainCardKind.Blue, TrainCardKind.Yellow,
