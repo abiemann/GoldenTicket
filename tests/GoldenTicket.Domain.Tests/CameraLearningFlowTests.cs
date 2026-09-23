@@ -83,6 +83,7 @@ public sealed class CameraLearningFlowTests
         Assert.All(fixture.Camera.MarkerScores, row => Assert.Equal("—", row.ValueText));
         Assert.False(fixture.Camera.CanSaveDetectionExample);
         fixture.Refresh();
+        fixture.TickPreview();
         await fixture.ProcessAsync();
         Assert.Equal(1, fixture.Model.Calls);
         Assert.NotNull(fixture.Camera.Preview);
@@ -151,10 +152,11 @@ public sealed class CameraLearningFlowTests
     public async Task Slow_result_expires_using_source_clock_even_while_capture_delivers_fresh_frames()
     {
         await using var fixture = new Fixture();
-        fixture.Camera.UseEnhancedPreview = true;
         await fixture.InitializeAsync();
+        fixture.TickPreview();
         await fixture.ProcessAsync();
-        Assert.Equal(3456, fixture.Camera.Preview!.PixelWidth);
+        Assert.Equal(fixture.Frame.Width, fixture.Camera.Preview!.PixelWidth);
+        Assert.Equal(fixture.Frame.Bgra32.ToArray(), Pixels(fixture.Camera.Preview));
         fixture.Refresh();
         fixture.Model.Pause();
         var processing = fixture.ProcessAsync();
@@ -163,6 +165,7 @@ public sealed class CameraLearningFlowTests
             await fixture.Model.Entered.Task.WaitAsync(TimeSpan.FromSeconds(60), Token);
             fixture.Clock.Advance(TimeSpan.FromMilliseconds(2001));
             fixture.Refresh(inverted: true);
+            fixture.TickPreview();
         }
         finally
         {
@@ -177,10 +180,6 @@ public sealed class CameraLearningFlowTests
         Assert.Equal(TimeSpan.Zero, fixture.Frame.Age);
         Assert.Equal(TimeSpan.FromMilliseconds(2001), fixture.Model.LastBoard!.Age);
         Assert.Equal(fixture.Frame.Width, fixture.Camera.Preview!.PixelWidth);
-        Assert.Equal(fixture.Frame.Bgra32.ToArray(), Pixels(fixture.Camera.Preview));
-        fixture.Camera.UseEnhancedPreview = false;
-        fixture.Camera.UseEnhancedPreview = true;
-        Assert.Equal(fixture.Frame.Width, fixture.Camera.Preview.PixelWidth);
         Assert.Equal(fixture.Frame.Bgra32.ToArray(), Pixels(fixture.Camera.Preview));
     }
 
@@ -214,6 +213,7 @@ public sealed class CameraLearningFlowTests
             Assert.Empty(fixture.Camera.PieceOutlines);
             AssertNoMarkerScores(fixture.Camera);
             fixture.Refresh(inverted: true);
+            fixture.TickPreview();
             processing = fixture.ProcessAsync();
             await processing.WaitAsync(TimeSpan.FromSeconds(5), Token);
             Assert.Equal(1, fixture.Model.Calls);
@@ -238,6 +238,33 @@ public sealed class CameraLearningFlowTests
     }
 
     [Fact]
+    public async Task Applying_processor_reloads_the_loaded_piece_model_with_the_new_inference_preference()
+    {
+        await using var fixture = new Fixture();
+        await fixture.InitializeAsync();
+        await fixture.ProcessAsync();
+        Assert.Equal((fixture.ModelDirectory, false), Assert.Single(fixture.FactoryCalls));
+        Assert.NotEmpty(fixture.Camera.PieceOutlines);
+
+        fixture.Camera.SelectedProcessor = fixture.Camera.ProcessorModes.Single(option => option.Value == FrameComputeMode.Auto);
+        await fixture.Camera.ApplyProcessorCommand.ExecuteAsync(null);
+
+        Assert.Equal(new[]
+        {
+            (fixture.ModelDirectory, false),
+            (fixture.ModelDirectory, true)
+        }, fixture.FactoryCalls.ToArray());
+        Assert.Equal(1, fixture.Model.DisposeCalls);
+        Assert.Contains("synthetic-pieces-v2", fixture.Camera.ModelStatus);
+        Assert.Empty(fixture.Camera.PieceOutlines);
+
+        fixture.Refresh();
+        await fixture.ProcessAsync();
+        Assert.NotEmpty(fixture.Camera.PieceOutlines);
+        Assert.Equal(1, fixture.Model.Calls);
+    }
+
+    [Fact]
     public async Task Inference_failure_clears_old_predictions_and_keeps_raw_preview_available()
     {
         await using var fixture = new Fixture();
@@ -245,6 +272,7 @@ public sealed class CameraLearningFlowTests
         await fixture.ProcessAsync();
         fixture.Model.Failure = new InvalidOperationException("synthetic inference failure");
         fixture.Refresh();
+        fixture.TickPreview();
         await fixture.ProcessAsync();
 
         Assert.Empty(fixture.Camera.PieceOutlines);
@@ -263,6 +291,7 @@ public sealed class CameraLearningFlowTests
     {
         await using var fixture = new Fixture((_, _) => throw new InvalidDataException("synthetic invalid model hash"));
         await fixture.InitializeAsync();
+        fixture.TickPreview();
         await fixture.ProcessAsync();
 
         Assert.Contains("synthetic invalid model hash", fixture.Camera.ModelStatus);
@@ -483,7 +512,7 @@ public sealed class CameraLearningFlowTests
                 return factory is not null ? factory(directory, preferGpu) : FactoryCalls.Count == 1 ? Model : _replacement;
             });
             Camera.SelectedProcessor = Camera.ProcessorModes.Single(option => option.Value == FrameComputeMode.Cpu);
-            Camera.UseEnhancedPreview = false;
+            Camera.ShowPieceOutlines = true;
             Capture.ActiveDevice = new CameraDevice("synthetic-ml-camera", "Synthetic ML camera");
             Camera.IsRunning = true;
             Refresh();
@@ -521,6 +550,19 @@ public sealed class CameraLearningFlowTests
             typeof(CameraViewModel).GetMethod("QueueFrameProcessing", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .Invoke(Camera, [Frame]);
             return (Task)typeof(CameraViewModel).GetField("_frameWork", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(Camera)!;
+        }
+
+        public void TickPreview()
+        {
+            var wasBusy = Camera.IsBusy;
+            try
+            {
+                // Exercise the normal raw preview without starting a second diagnostic pass.
+                Camera.IsBusy = true;
+                typeof(CameraViewModel).GetMethod("PreviewTick", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(Camera, [null, EventArgs.Empty]);
+            }
+            finally { Camera.IsBusy = wasBusy; }
         }
 
         public async ValueTask DisposeAsync()

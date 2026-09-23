@@ -1,5 +1,7 @@
 using GoldenTicket.Testing;
 using System.Reflection;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Vision;
 
@@ -8,24 +10,25 @@ namespace GoldenTicket.Domain.Tests;
 public sealed class CameraProcessingFlowTests
 {
     [Fact]
-    public async Task Preview_reports_delivered_and_processed_sizes_and_never_changes_source_pixels()
+    public async Task Technical_preview_displays_original_camera_pixels_without_upscaling()
     {
         await using var fixture = new Fixture();
         var raw = fixture.Frame;
         var bytes = raw.Bgra32.ToArray();
         await fixture.InitializeCpuAsync();
-        await fixture.ProcessAsync();
-        Assert.NotNull(fixture.Camera.Preview);
-        Assert.Equal(3840, fixture.Camera.Preview.PixelWidth);
-        Assert.Equal(2160, fixture.Camera.Preview.PixelHeight);
+        fixture.Tick();
+        var preview = Assert.IsAssignableFrom<BitmapSource>(fixture.Camera.Preview);
+        Assert.Equal(640, preview.PixelWidth);
+        Assert.Equal(360, preview.PixelHeight);
+        var converted = new FormatConvertedBitmap(preview, PixelFormats.Bgra32, null, 0);
+        var displayed = new byte[bytes.Length];
+        converted.CopyPixels(displayed, raw.Width * 4, 0);
+        Assert.Equal(bytes, displayed);
         Assert.Contains("640 × 360", fixture.Camera.FormatText);
-        Assert.Contains("upscaled", fixture.Camera.ProcessingText);
+        Assert.Contains("original camera image", fixture.Camera.ProcessingText);
+        Assert.DoesNotContain("upscaled", fixture.Camera.ProcessingText, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("CPU", fixture.Camera.ComputeStatus);
         Assert.Equal(bytes, raw.Bgra32.ToArray());
-        fixture.Camera.UseEnhancedPreview = false;
-        Assert.Equal(640, fixture.Camera.Preview.PixelWidth);
-        fixture.Camera.UseEnhancedPreview = true;
-        Assert.Equal(3840, fixture.Camera.Preview.PixelWidth);
     }
 
     [Fact]
@@ -162,6 +165,9 @@ public sealed class CameraProcessingFlowTests
                 .Invoke(Camera, [Frame]);
             await (Task)typeof(CameraViewModel).GetField("_frameWork", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(Camera)!;
         }
+        public void Tick() =>
+            typeof(CameraViewModel).GetMethod("PreviewTick", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .Invoke(Camera, [null, EventArgs.Empty]);
         public ValueTask DisposeAsync() => Camera.DisposeAsync();
     }
 }

@@ -8,7 +8,6 @@
              d:DataContext="{d:DesignInstance vm:CameraViewModel}" mc:Ignorable="d">
     <UserControl.Resources>
         <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
-        <local:PlayerColorBrushConverter x:Key="PlayerColorBrush" />
         <Style x:Key="CornerSelectionButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
             <Setter Property="Content" Value="Select four board corners" />
             <Style.Triggers>
@@ -21,7 +20,6 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <Grid Margin="20">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
@@ -53,16 +51,12 @@
                     </WrapPanel>
                     <WrapPanel Margin="0,8,0,0">
                         <ComboBox Width="265" MinHeight="34" ItemsSource="{Binding ProcessorModes}" SelectedItem="{Binding SelectedProcessor}"
-                                  DisplayMemberPath="Label" AutomationProperties.Name="Image processor preference" />
+                                  DisplayMemberPath="Label" AutomationProperties.Name="Image processor preference"
+                                  IsEnabled="{Binding CanApplyProcessor}" />
                         <Button Content="Apply processor" Command="{Binding ApplyProcessorCommand}" Style="{StaticResource SecondaryButton}"
                                 IsEnabled="{Binding CanApplyProcessor}" />
                     </WrapPanel>
                     <TextBlock Text="{Binding ProcessingText}" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,6,0,0" />
-                    <WrapPanel Margin="0,8,0,0">
-                        <CheckBox Content="Enhanced preview" IsChecked="{Binding UseEnhancedPreview}" Margin="0,0,22,0"
-                                  ToolTip="Uncheck to compare the original camera frame. Analysis continues on the enhanced image." />
-                        <CheckBox Content="Show piece outlines" IsChecked="{Binding ShowPieceOutlines}" />
-                    </WrapPanel>
                 </StackPanel>
             </Border>
             <StackPanel Grid.Row="1" Margin="0,12">
@@ -108,7 +102,6 @@
                     <TextBlock Text="Camera preview is off" FontSize="22" Foreground="{StaticResource Text.OnDark}"
                                HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"
                                Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}" />
-                    <Canvas x:Name="DetectionOverlay" IsHitTestVisible="False" />
                     <Canvas x:Name="CornerOverlay" IsHitTestVisible="False" />
                 </Grid>
                 </Border>
@@ -144,54 +137,7 @@
                     </StackPanel>
                 </Border>
             </Grid>
-            <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,12,0,0">
-                <StackPanel>
-                    <TextBlock Style="{StaticResource Heading}" Text="Piece outlines" />
-                    <TextBlock TextWrapping="Wrap" Text="Check the selected board outline and clear your hands. The local ML model finds pieces in the current image. White rectangles mark trains; white squares mark score markers. An empty-board photo is not needed." />
-                    <WrapPanel Margin="0,10,0,8">
-                        <Button Content="Reload ML model" Command="{Binding ReloadPieceModelCommand}" Style="{StaticResource SecondaryButton}" IsEnabled="{Binding CanReloadPieceModel}"
-                                ToolTip="Reload the installed local model. Uses CPU when CPU only is selected above; otherwise prefers GPU." />
-                    </WrapPanel>
-                    <TextBlock x:Name="PieceModelStatus" Text="{Binding ModelStatus}" TextWrapping="Wrap" Margin="0,0,0,6" />
-                    <TextBlock Text="{Binding DetectionText}" TextWrapping="Wrap" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite" />
-                    <TextBlock Text="Score track" FontWeight="SemiBold" Margin="0,12,0,6" />
-                    <ItemsControl x:Name="MarkerScoresList" ItemsSource="{Binding MarkerScores}" AutomationProperties.Name="Score track values by marker color">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border BorderBrush="{DynamicResource Ornament}" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="0,0,8,8" MinWidth="132"
-                                        AutomationProperties.Name="{Binding AccessibleText}">
-                                    <StackPanel>
-                                        <StackPanel Orientation="Horizontal">
-                                            <Ellipse Width="14" Height="14" Fill="{Binding Color, Converter={StaticResource PlayerColorBrush}}"
-                                                     Stroke="{DynamicResource Text.Primary}" StrokeThickness="1" Margin="0,0,6,0" />
-                                            <TextBlock Text="{Binding Color}" FontWeight="SemiBold" />
-                                        </StackPanel>
-                                        <TextBlock Text="{Binding ValueText}" FontSize="24" FontWeight="SemiBold" Margin="0,4,0,0" />
-                                        <TextBlock Text="{Binding StatusText}" Style="{StaticResource Caption}" />
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                    <TextBlock Text="{Binding MarkerScoreStatus}" TextWrapping="Wrap" />
-                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,6,0,0" Text="Reads marker colors and printed track positions on the upright USA board. Keep the crop close to its outer edge. Keep scoring markers side by side, never stacked, so each is visible from directly above. Full laps are not inferred; these readings do not change game scores." />
-                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,0" Text="This is an experimental model. Check for missing, extra or merged outlines, especially on touching pieces and glare. Train colors and route ownership are not read. Outlines do not change the game." />
-                    <TextBlock Text="Review note (optional)" Margin="0,12,0,4" />
-                    <TextBox x:Name="DetectionReviewNoteBox" Text="{Binding DetectionReviewNote, UpdateSourceTrigger=PropertyChanged}"
-                             MaxLength="2000" TextWrapping="Wrap" MinHeight="44" AcceptsReturn="True"
-                             AutomationProperties.Name="What did the ML outlines miss or get wrong?" />
-                    <WrapPanel Margin="0,8,0,0">
-                        <Button x:Name="SaveDetectionExampleButton" Content="Save detection example…" Command="{Binding SaveDetectionExampleCommand}"
-                                IsEnabled="{Binding CanSaveDetectionExample}" Style="{StaticResource SecondaryButton}" />
-                    </WrapPanel>
-                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Text="Saves the exact analyzed board image, model predictions and your note in one local ZIP for review. Nothing is uploaded or automatically added to training." />
-                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Text="{Binding LastDetectionExamplePath}" Margin="0,4,0,0" />
-                </StackPanel>
-            </Border>
-            <Expander Grid.Row="4" Header="Camera formats and setup guidance" Margin="0,12,0,0">
+            <Expander Grid.Row="3" Header="Camera formats and setup guidance" Margin="0,12,0,0">
                 <StackPanel Margin="10">
                     <TextBlock TextWrapping="Wrap" Text="Use a rigid stand, keep the USB cable slack, and fit the board into the image with even lighting. On Pixel, choose Webcam in USB preferences. If another app owns the camera, close it or try Shared mode. No microphone is opened." />
                     <TextBlock Text="Formats reported by this camera:" FontWeight="SemiBold" Margin="0,10,0,6" />

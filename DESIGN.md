@@ -1168,7 +1168,8 @@ a future alternative requiring its own comparison evidence.
 Developer tools provide annotation, training, ONNX export and CPU/DirectML evaluation. Reviewed
 piece and board-corner models and manifests are committed under `assets/models/` and copied into
 build/publish output. Training photos and intermediate checkpoints remain local in `artifacts/`.
-Piece outlines and local review ZIPs expose detections for diagnosis. Physical color is read from
+Internal diagnostics and local review ZIPs expose detections for developer analysis. The former
+Piece outlines Camera panel has been removed. Physical color is read from
 the analyzed image by a separate color sampler, not predicted by the two-class model or inferred
 from route ownership. See [model details](docs/piece-recognition-ml.md) and section 24 for the
 photo regressions already run and independent-session coverage still to collect.
@@ -1545,16 +1546,16 @@ It is not persisted: a new app instance returns to Auto.
 Usable 720p capture is supported without a quality warning. Below-720p cameras are rejected;
 the same minimum applies to the current shared mode and actual delivered frame dimensions.
 An unsuccessful capability query leaves only Auto and Shared available until native modes can
-be verified; the user is told to start preview to check the current format. Preview enhancement is not offered in
-main Settings. The technical Camera screen retains **Enhanced preview** for raw-versus-filtered
-comparison; this does not imply native capture resolution or alter the gameplay board display.
+be verified; the user is told to start preview to check the current format. The technical Camera
+preview displays the original frame at the delivered camera resolution, with no enhancement toggle
+or per-frame 4K enhancement pass. This does not alter the gameplay board display.
 
 The processing target preserves aspect ratio inside 3840 × 2160. It does not stretch the 8:5 board:
 an exported board crop is 3456 × 2160. A lower-resolution source is explicitly identified as
 upscaled; interpolation cannot recover missing captured detail. Manual exports use deterministic
 enhancement. Checkpoint photos retain the unsharpened source-derived crop, its camera/crop
-identity and existing evidence checks. Changing the preview toggle does not change the evidence
-source or grant any route-verification authority.
+identity and existing evidence checks. The displayed preview does not change the evidence source
+or grant any route-verification authority.
 
 Read-only inspection of the connected Pixel's `Android Webcam` found a current 1920 × 1080,
 15 fps NV12 source and no advertised resolution above 1080p. This describes that UVC connection,
@@ -1577,22 +1578,26 @@ cannot be forcibly interrupted. GPU execution checks completion and falls back t
 initialization, execution or device-loss failures.
 
 **Auto · prefer GPU**, **CPU only**, and **GPU · CPU fallback** are explicit choices. **Apply
-processor** activates and locally persists the requested mode. The displayed CPU/chip or GPU/lightning
-badge reflects the actual resizing/enhancement backend, with adapter and fallback details in its
-tooltip. Rules, AI and the historical piece comparison use CPU. A GPU enhancement badge
-therefore means real image-processing shader execution; it does not claim learned inference.
+processor** activates and locally persists the requested mode. It controls the backend for
+manual board-photo export and the preference used when loading the local ML model; the preview
+still displays the original camera frame. The displayed CPU/chip or GPU/lightning badge reflects
+the active resizing/enhancement backend, with adapter and fallback details in its tooltip. Rules,
+AI and the historical piece comparison use CPU. A GPU enhancement badge means real
+image-processing shader execution; it does not claim learned inference.
 
 The enhancement is deterministic and nongenerative: a small luminance adjustment smooths weak
 noise and sharpens stronger edges with a bounded correction, followed by bicubic resizing clamped
 to local source-channel limits to avoid ringing. This is ordinary image filtering and interpolation;
-the app does not integrate NVIDIA RTX Video Super Resolution or the RTX Video SDK. Raw and enhanced
-previews can be compared through **Enhanced preview** in the technical Camera screen; analysis
-continues on the enhanced path. Frame work is serialized and
+the app does not integrate NVIDIA RTX Video Super Resolution or the RTX Video SDK. The technical
+Camera preview shows the original delivered frame; it does not run this enhancement pass each
+frame. Manual photo exports remain processed, while checkpoint photos and game analysis use
+camera-derived crops. Optional diagnostic frame work is serialized and
 superseded work is dropped. Camera epoch, crop, processor and reference revisions reject stale
-results; changes of crop/camera/processor clear the empty-board reference and candidate overlays.
+results; changes of crop/camera/processor clear the empty-board reference and stale detections.
 
 The historical empty-board difference detector remains available for comparison. Current gameplay
-and live piece outlines use independent ONNX detection; they do not require an empty-board reference.
+uses independent ONNX detection; it does not require an empty-board reference. The technical
+Camera screen no longer displays piece outlines or its score-track preview.
 Current camera/crop/model revisions and source freshness gate publication of inference results.
 The original [camera report](docs/camera-processing.md) records preprocessing measurements;
 [current registration evidence](docs/evidence/canonical-alignment-2026-09-19/validation.md) covers
@@ -1607,18 +1612,20 @@ The model contract is fixed FP32 opset 17, 640-pixel tiles with stride 512 on a 
 BGR 0–255 input, two decoded classes, midpoint ownership of overlap regions, and classwise NMS.
 Model hash/graph/tensor validation and a real warm-up precede inference. Hardware adapter
 selection prefers dedicated memory and excludes software adapters; provider diagnostics record
-actual operator assignment. One frame worker preserves source age and checks camera, crop,
-processing and model revisions before publishing. Results older than two seconds expire.
-The camera is rectified and enhanced in the same order as training exports. Review ZIPs contain
-that exact unpainted crop and unreviewed predictions, not a later frame. The separate enhancement
+actual operator assignment. The optional internal Camera diagnostic worker preserves source age
+and checks camera, crop, processing and model revisions before publishing. Its results older than
+two seconds expire. That diagnostic path rectifies and enhances a camera frame in the same order
+as training exports; review ZIPs contain that exact unpainted crop and unreviewed predictions,
+not a later frame. Gameplay analyzes its separately validated raw-derived board crop. The separate
+enhancement
 badge does not imply ML GPU execution. See [current evidence](docs/evidence/ml-preview-2026-09-13/validation.md).
 
-The Piece outlines panel also reads detected score markers through `ScoreMarkerReader`.
+The internal `ScoreMarkerReader` reads detected score markers for game-board checks and diagnostics.
 This separate local color/position estimate uses the exact analyzed crop and the upright
 USA board's perimeter geometry; it does not add detections or infer train ownership.
 Aligned markers may share a printed row/column value. Missing, uncertain or duplicate-color
-readings do not become numeric scores. The cards expire and invalidate with their source
-outlines, including immediately when stopping capture. Printed 1–100 positions do not infer
+readings do not become numeric scores. The readings expire and invalidate with their source
+detections, including immediately when stopping capture. Printed 1–100 positions do not infer
 completed laps and never write to authoritative game scores.
 
 Dated retraining records describe the models and photos evaluated at that revision. They are

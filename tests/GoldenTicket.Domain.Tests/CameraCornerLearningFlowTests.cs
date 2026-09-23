@@ -1087,7 +1087,6 @@ public sealed class CameraCornerLearningFlowTests
                     return factory is null ? Model : factory(directory, preferGpu);
                 });
             Camera.SelectedProcessor = Camera.ProcessorModes.Single(option => option.Value == FrameComputeMode.Cpu);
-            Camera.UseEnhancedPreview = false;
             Capture.ActiveDevice = new CameraDevice("synthetic-corner-camera", "Synthetic corner camera");
             Camera.IsRunning = true;
             Refresh();

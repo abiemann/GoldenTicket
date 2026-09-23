@@ -1,4 +1,4 @@
-# Camera processing and experimental piece outlines
+# Camera processing and learned piece detection
 
 Updated September 22, 2026. This describes the current implementation, its measured hardware
 observations and the acceptance work still needed. It supplements [DESIGN §17.3–17.4](../DESIGN.md)
@@ -6,17 +6,20 @@ and [TODO](../TODO.md); it does not replace the full automatic-verification requ
 
 ## What is available
 
-The Windows app can prefer a native 4K camera mode, process images on the CPU or a validated
-hardware GPU, compare raw and enhanced previews, and outline trains and score markers using a
+The Windows app can prefer a native 4K camera mode, show the original camera image in the
+technical preview, process board photos on the CPU or a validated hardware GPU, and detect trains
+and score markers using a
 locally trained ONNX model. The current ML experiment replaces live empty-board differencing.
 Inference runs locally without a cloud service, subscription, Internet connection or runtime
 asset download. Reviewed runtime models and their embedded trained weights are versioned under
 `assets/models/`; training photos, labels and intermediate checkpoints remain ignored development artifacts.
 
-The game still uses explicit manual verification. Outlines never spend cards, claim a route,
-identify its owner, score points or advance a turn. The CPU/GPU indicator describes actual image
-resizing/enhancement. The Piece outlines card separately reports the ML model and actual inference
-backend. Rules and game AI remain on the CPU.
+The game still uses explicit manual verification. Model predictions never spend cards, claim a
+route, identify its owner, score points or advance a turn. The CPU/GPU indicator describes the
+backend available for manual board-photo processing; it does not identify the model's inference
+backend or imply that the live preview is processed. The experimental
+Piece outlines card, score-track preview and Reload ML model button have been removed from the
+technical Camera screen. Rules and game AI remain on the CPU.
 
 ## Set up the camera
 
@@ -51,9 +54,9 @@ backend. Rules and game AI remain on the CPU.
    size, reports an error rather than substituting another resolution. The Camera screen
    reports the delivered dimensions. The selection survives reconnects during
    this app session; reopening the app restores Auto.
-3. Check the reported camera dimensions and processing dimensions separately. A 1920 × 1080
-   source enhanced to 3840 × 2160 is explicitly identified as upscaled. Larger output pixels do
-   not add captured detail or make that source native 4K.
+3. Check the reported camera dimensions. The technical preview shows the original frame at its
+   delivered resolution. Manual board-photo exports may be processed at larger dimensions;
+   interpolation does not add captured detail or make a 1080p source native 4K.
 4. With the local [corner model](board-corners-ml.md) installed, ML selects the four outer board
    corners once when the preview starts, with a narrow outward margin of about 0.25% per side.
    The yellow outline shows the crop that will be saved. Check the complete score track
@@ -65,22 +68,26 @@ backend. Rules and game AI remain on the CPU.
    any numbered corner before or after selection to adjust it. Keyboard users press **1–4** and
    arrow keys; hold **Shift** for larger steps. Invalid corners remain editable.
 5. Use **Auto · prefer GPU**, **CPU only**, or **GPU · CPU fallback**, then **Apply processor** to
-   change the processor. The setting is saved locally for the next launch. The status and tooltip
-   report the active adapter and any fallback, separately from the selected preference.
+   change the backend for manual board-photo export and the ML model-loading preference. The
+   setting is saved locally for the next launch. The status and tooltip report the active adapter
+   and any fallback, separately from the selected preference. This setting does not filter the
+   technical camera preview.
 
 If the selected webcam disconnects, recovery waits for that device instead of switching to the
 laptop camera or another available webcam. It remembers the Windows device ID and display name.
 The same ID takes precedence; if Windows changes it, a name match is used only when exactly one
 camera matches. You can explicitly select a different camera in Settings or Camera.
 
-**Enhanced preview** in the technical Camera screen is enabled by default. Uncheck it to compare
-the original camera image; analysis continues on the enhanced path. This comparison uses ordinary
-bounded filtering and bicubic upscaling, not NVIDIA RTX Video Super Resolution; the app does not
-integrate the RTX Video SDK. It does not affect the gameplay board display, and there is no
-enhancement checkbox in main Settings. Auto still selects a native 4K camera format when the
-webcam advertises a usable one.
-**Show piece outlines** is available only in the technical Camera screen and enables ML inference and its
-overlay. Turning it off clears the current result; turning it on waits for a fresh result.
+The technical Camera preview displays the original camera frame at its delivered resolution,
+without filtering, upscaling, or a per-frame 4K enhancement pass. The **Enhanced preview** control
+was removed because interpolation can make the displayed image look blurrier. Manual board-photo
+export still uses a processed crop, while game analysis and checkpoint photos use separate
+camera-derived crops. Export processing uses ordinary bounded filtering and bicubic upscaling,
+not NVIDIA RTX Video Super Resolution; the app does not integrate the RTX Video SDK. Auto still
+selects a native 4K camera format when the webcam advertises a usable one.
+The technical Camera screen no longer displays ML piece outlines. The game uses the local model
+for board analysis with separate evidence checks. Removing the preview controls does not change
+the game's recognition path.
 
 ### Zoom and position the preview
 
@@ -99,31 +106,31 @@ zoomed. Arrow keys make finer adjustments at higher zoom; **Shift** still increa
 Zooming and panning only change the view. They do not change the selected crop, source resolution,
 image processing or exported photo.
 
-## Try piece outlines
+## Learned piece detection
 
-Check all four board corners, including the complete score track, and enable **Show piece
-outlines**. Pieces may already be on the board. An empty-board reference is no longer required.
-The local model classifies the current image into trains and score markers; it does not classify
-their colors or assign route ownership. Train candidates appear as white rectangles rotated to
-follow their visible shape when a local image fit is reliable; uncertain fits keep the original
-model box. Score markers stay white squares. Counts describe the current prediction, not a verified
-inventory. Review ZIPs preserve original model boxes and optional fitted polygons separately.
+Check all four board corners, including the complete score track. Pieces may already be on the
+board; an empty-board reference is no longer required. The local model classifies the analyzed
+image into trains and score markers; it does not classify their colors or assign route ownership.
+An optional local image fit finds the visible train body when reliable; uncertain fits keep the
+original model box. Counts describe predictions, not a verified inventory. Developer review ZIPs
+preserve original model boxes and optional fitted polygons separately.
 Gameplay uses the center of a validated fitted train body for route matching, falling back to the
 model-box center if the fit is uncertain. This reduces diagonal-train lane errors without changing
 the model's detections, confidence thresholds or checks for adjacent lanes.
 
 The model loads from `models/pieces/` beside the executable. Builds copy the committed
 `assets/models/pieces/` ONNX model and manifest there, so a fresh checkout includes the
-reviewed weights. Missing or invalid installed files still show an explicit ML-unavailable status. See [ML setup and validation](piece-recognition-ml.md) for the
-reproducible training and deployment path. **Reload ML model** reloads local weights and applies
-the current CPU/GPU preference to inference; **Apply processor** changes image processing.
+reviewed weights. Missing or invalid installed files still produce an ML-unavailable status. See
+[ML setup and validation](piece-recognition-ml.md) for the reproducible training and deployment
+path. After replacing an installed model pair, restart the app to load it in all sessions.
+**Apply processor** changes image processing and reloads the shared piece model when it was
+already initialized. The model may choose a CPU fallback independently of image processing.
 
-When an outline is wrong, enter a short description and choose **Save detection example…**.
-The ZIP saves the exact analyzed board image and its predictions, confidence values, model hash,
-frame/crop identity and your note. It is marked unreviewed. Saving does not train or modify the
-model; examples are reviewed and corrected before a later training round.
+Developer review ZIPs can preserve the exact analyzed board image and its predictions,
+confidence values, model hash and frame/crop identity. They are marked unreviewed; saving an
+example does not train or modify the model.
 
-Crop, camera, processor and model changes clear old outlines and wait for a current result.
+Crop, camera, processor and model changes clear old detection results and wait for a current result.
 If the camera moves on the technical camera screen, choose **Detect board corners** again or
 reposition the handles. That screen's initial ML corner selection does not continuously track the
 board or detect hands. The game table separately checks its live board against the upright board
@@ -147,7 +154,7 @@ attestation, crop/camera identity, checksum and checkpoint-binding readback chec
 the current plaintext sidecar format. For an unfinished placement, format 2 uses the fresh upright
 game-table crop and also requires a camera-observed color inventory and exact occupied-slot mask,
 checked before and after capture. Existing format 1 photos remain readable. The photo does not
-substitute the enhanced preview or painted outlines as evidence.
+substitute a displayed preview or painted outlines as evidence.
 A logical checkpoint alone still contains no photograph. A completed user Save Game requires
 its matching validated photo; missing or corrupt attachments block checkpoint reload with an
 error. These checks establish image integrity and binding, not machine-verified board contents.
@@ -176,11 +183,12 @@ cooperative budget; GPU readback waits are bounded at three seconds. An individu
 call cannot be forcibly interrupted. Expected GPU initialization/execution failures fall back to
 CPU and disclose the active backend; explicit CPU mode avoids GPU initialization.
 
-The camera pipeline processes one frame at a time and drops superseded work. It checks camera
-epoch, age, crop, processor and model revisions before displaying results. A backend change
-invalidates current outlines. Published outlines expire after two seconds independently of
-whether the camera continues supplying fresh frames, so stalled processing cannot leave an old
-overlay presented as current. No stale result is allowed to become a game command.
+Normal technical preview frames bypass `FrameProcessor`. Optional internal diagnostic processing
+handles one frame at a time and drops superseded work. It checks camera epoch, age, crop,
+processor and model revisions before publishing results. A backend change invalidates current
+detections. Internal preview detections expire after two seconds independently
+of whether the camera continues supplying fresh frames. No stale result is allowed to become a
+game command.
 
 Derived frames retain the source capture timestamp and monotonic clock through enhancement and
 rectification. Production capture uses the system clock. Camera flow tests use an explicitly
@@ -188,7 +196,7 @@ advanced clock so slow CI processing does not accidentally turn a fresh-frame te
 one; separate tests verify the unchanged two-second expiry and scene-stability timing.
 
 The historical `PieceCandidateDetector` remains available to baseline tests and the comparison
-tool. It is no longer called by the live outline pipeline. It samples equally rectified images, aligns small reference translations,
+tool. It is no longer called by the learned detection pipeline. It samples equally rectified images, aligns small reference translations,
 rejects major scene changes/motion, and evaluates changed color components by shape. Its sampling
 is bounded at 960 × 640 and area-averages pixels; it does not treat interpolation as additional
 sensor evidence. This is an experimental baseline designed to withhold doubtful results, with
@@ -275,7 +283,8 @@ evaluate the current image independently and count misses and false positives.
 - Repeat the Android Webcam unplug/replug test after the identity fix, with the laptop camera
   still available. Confirm it waits for and resumes Android Webcam without manual reselection.
   Camera jog and Windows sleep/resume recovery remain separate physical checks.
-- Compare raw/enhanced views and CPU/GPU outputs on the mounted board. Check responsiveness over
+- Compare the original camera preview with processed board-photo exports and CPU/GPU outputs on
+  the mounted board. Check responsiveness over
   a complete game; the synthetic microbenchmark is not an end-to-end frame-rate promise.
 - Test actual GPU failure/fallback and additional integrated/discrete adapter families. Confirm
   the persisted CPU preference and GPU preference on a CPU-only machine report the correct state.

@@ -334,10 +334,12 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
         _previewSequence = frame.Sequence;
         try
         {
-            // During play, spend inference time on the accepted board rather than a second
-            // utility-screen enhancement/model pass. Keep its camera preview current and raw.
-            if (Preview is null || !_processorReady || _gameTablePreviewRequested && IsGameTablePreviewUpright)
-                Preview = ToBitmap(frame);
+            // Keep the camera preview at its captured resolution. Technical ML diagnostics,
+            // when enabled internally, run separately and never replace this image.
+            Preview = ToBitmap(frame);
+            FormatText = $"Camera delivered {frame.Width} × {frame.Height}" +
+                (Capture.NegotiatedFormat is { } format ? $" · {format.FramesPerSecond:0.#} fps · {format.Subtype}" : "");
+            ProcessingText = $"Preview: original camera image at {frame.Width} × {frame.Height}. Board photo exports are processed separately.";
             if (!CornersMatch(frame)) ClearRegistration();
             if (_registration is { } registration)
             {

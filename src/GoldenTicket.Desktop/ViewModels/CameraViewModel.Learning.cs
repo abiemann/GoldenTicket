@@ -28,29 +28,36 @@ public sealed partial class CameraViewModel
         ShowPieceOutlines && Capture.IsRunning && review.Board.Epoch == Capture.Epoch &&
         review.Board.Age <= TimeSpan.FromSeconds(2);
 
-    partial void OnIsModelBusyChanged(bool value) => OnPropertyChanged(nameof(CanReloadPieceModel));
+    partial void OnIsModelBusyChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanReloadPieceModel));
+        OnPropertyChanged(nameof(CanApplyProcessor));
+    }
 
-    private Task EnsurePieceModelAsync() => _modelInitialization ??= LoadPieceModelCoreAsync();
+    private Task EnsurePieceModelAsync(FrameComputeMode? mode = null) =>
+        _modelInitialization ??= LoadPieceModelCoreAsync(mode ?? SelectedProcessor.Value);
 
     [RelayCommand]
-    private async Task ReloadPieceModelAsync()
+    private Task ReloadPieceModelAsync() => ReloadPieceModelAsync(SelectedProcessor.Value);
+
+    private async Task ReloadPieceModelAsync(FrameComputeMode mode)
     {
         if (!CanReloadPieceModel) return;
         _modelRevision++;
         ClearGameTableAnalysis();
         ClearDetectionPreview();
-        _modelInitialization = LoadPieceModelCoreAsync();
+        _modelInitialization = LoadPieceModelCoreAsync(mode);
         await _modelInitialization;
         _previewSequence = -1;
     }
 
-    private async Task LoadPieceModelCoreAsync()
+    private async Task LoadPieceModelCoreAsync(FrameComputeMode mode)
     {
         IsModelBusy = true;
         ModelStatus = "Loading the local ML model…";
         // The same explicit CPU preference also provides a way to diagnose ML GPU problems.
         // A reload is required to change inference provider; enhancement can change independently.
-        var preferGpu = SelectedProcessor.Value != FrameComputeMode.Cpu;
+        var preferGpu = mode != FrameComputeMode.Cpu;
         try
         {
             var status = await Task.Run(() =>

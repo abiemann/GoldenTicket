@@ -233,15 +233,18 @@ Press **Shift+Escape** for technical screens, including camera setup, saved matc
 In **Saved matches**, select a match and choose **Delete selected match** to remove it and its
 saved board photos after confirmation. The currently loaded match cannot be deleted.
 
-In the camera preview you can:
+The Camera preview shows the original frame at the webcam's delivered resolution, without
+filtering or upscaling. In the camera preview you can:
 
 - Retry **Detect board corners**, select four corners manually, or drag the numbered handles.
   Press **1–4** to select a corner and use arrow keys to nudge it; **Shift** makes larger steps.
 - Zoom up to **800%**, pan, or choose **Fit** without changing the exported board crop.
-- Inspect **Piece outlines** and **Score track** readings, or **Reload ML model** after updating
-  local model files. Score-track readings are printed positions, not inferred full-lap totals.
-- Use **Save detection example…** to export the analyzed image, model predictions and a note.
-  Examples are kept for review; exporting one does not automatically train a model.
+
+The experimental **Piece outlines** card, score-track preview, and **Reload ML model** button
+have been removed from the Camera screen. The local detector still supports game-board analysis;
+its predictions and score-marker readings do not directly change game scores or claim routes.
+Restart the app after replacing a locally installed model pair. Developer checks and review
+artifacts are described in the [model guide](docs/piece-recognition-ml.md).
 
 Board-decision diagnostics are written locally to
 `%LOCALAPPDATA%\GoldenTicket\diagnostics\board-interactions.jsonl`. They include placement checks

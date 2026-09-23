@@ -6,7 +6,6 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
-using Polygon = System.Windows.Shapes.Polygon;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Desktop.Views;
 using GoldenTicket.Vision;
@@ -25,11 +24,6 @@ internal static partial class Program
             camera.Status = "Synthetic preview zoom and pan test. No capture device is opened.";
             NormalizedPoint[] originalCorners = [new(.05, .05), new(.95, .05), new(.95, .95), new(.05, .95)];
             foreach (var corner in originalCorners) camera.SelectedCorners.Add(corner);
-            camera.PieceOutlines =
-            [
-                new(false, [new(.45, .4), new(.57, .43), new(.56, .49), new(.44, .46)]),
-                new(true, [new(.62, .55), new(.67, .55), new(.67, .63), new(.62, .63)])
-            ];
             var fixturePixels = new byte[camera.Preview.PixelWidth * camera.Preview.PixelHeight * 4];
             camera.Preview.CopyPixels(fixturePixels, camera.Preview.PixelWidth * 4, 0);
             var referenceFrame = CameraFrame.CopyFromBgra32(camera.Preview.PixelWidth, camera.Preview.PixelHeight, fixturePixels);
@@ -80,8 +74,8 @@ internal static partial class Program
                 var visible = new Point(area.ActualWidth / 2, area.ActualHeight / 2);
                 ZoomPoint(ZoomMap(view, visible, false), new((visible.X - panned.Left) / panned.Width,
                     (visible.Y - panned.Top) / panned.Height), "Pointer mapping must use the panned and zoomed image rectangle.");
-                VerifyZoomOverlay(view, camera, panned);
-                checks.Add("Pan, click mapping, train/player outlines, and fixed 30-pixel corner handles share the displayed image transform.");
+                VerifyZoomCornerHandles(view, camera, panned);
+                checks.Add("Pan, click mapping, and fixed 30-pixel corner handles share the displayed image transform.");
 
                 // A new immutable preview is a new camera-frame presentation, not a request to fit.
                 var panBeforeFrame = ZoomField<Vector>(view, "_previewPan");
@@ -91,8 +85,8 @@ internal static partial class Program
                 ZoomNear((ZoomField<Vector>(view, "_previewPan") - panBeforeFrame).Length, 0, "Fresh frames must retain the user's pan.");
                 ZoomRect(ZoomRectangle(view), panned, "A fresh frame must not jump to a different image rectangle.");
                 VerifyActualZoomedImage(view, panned);
-                VerifyZoomOverlay(view, camera, panned);
-                checks.Add("Replacing a preview frame with the same camera geometry retains zoom, pan, and overlay alignment.");
+                VerifyZoomCornerHandles(view, camera, panned);
+                checks.Add("Replacing a preview frame with the same camera geometry retains zoom, pan, and corner alignment.");
 
                 ZoomCall(view, "PanBy", new Vector(1_000_000, 1_000_000));
                 var upperLeft = ZoomRectangle(view);
@@ -170,11 +164,6 @@ internal static partial class Program
                 checks.Add("Preview keyboard shortcuts plus, minus, and zero operate zoom and Fit without changing crop selection.");
 
                 // Save a rendered zoomed view for visual QA, including the offscreen clipped image.
-                camera.PieceOutlines =
-                [
-                    new(false, [new(.45, .4), new(.57, .43), new(.56, .49), new(.44, .46)]),
-                    new(true, [new(.62, .55), new(.67, .55), new(.67, .63), new(.62, .63)])
-                ];
                 ZoomCall(view, "SetZoom", 2d, visible);
                 camera.Problem = null;
                 await Arrange(root, width, height);
@@ -205,7 +194,7 @@ internal static partial class Program
             Fixture = "Detached WPF views with synthetic images and references. No camera, network, OS input, or model inference.",
             Cases = allChecks
         }, new JsonSerializerOptions { WriteIndented = true }));
-        Console.WriteLine("Camera preview zoom: mapping, anchor, pan clamps, overlays, frame retention, reference isolation, keyboard precision, and no-frame controls passed in two sizes.");
+        Console.WriteLine("Camera preview zoom: mapping, anchor, pan clamps, corner handles, frame retention, reference isolation, keyboard precision, and no-frame controls passed in two sizes.");
     }
 
     private static object? ZoomCall(CameraView view, string method, params object[] arguments) =>
@@ -249,7 +238,7 @@ internal static partial class Program
         ZoomNear(actual.Width, expected.Width, message); ZoomNear(actual.Height, expected.Height, message);
     }
 
-    private static void VerifyZoomOverlay(CameraView view, CameraViewModel camera, Rect rectangle)
+    private static void VerifyZoomCornerHandles(CameraView view, CameraViewModel camera, Rect rectangle)
     {
         var handles = ((Canvas)view.FindName("CornerOverlay")).Children.OfType<Border>().ToArray();
         if (handles.Length != camera.SelectedCorners.Count)
@@ -263,21 +252,8 @@ internal static partial class Program
             ZoomNear(Canvas.GetTop(handles[index]) + 15, rectangle.Top + camera.SelectedCorners[index].Y * rectangle.Height,
                 "Corner handle vertical position must follow the displayed image.");
         }
-        var overlay = (Canvas)view.FindName("DetectionOverlay");
-        var outlines = overlay.Children.OfType<Polygon>().Where(shape => shape.Stroke == Brushes.White).ToArray();
-        if (overlay.IsHitTestVisible || outlines.Length != 2)
-            throw new InvalidOperationException("Zoomed piece overlays must stay visible and must not intercept editing input.");
-        var candidate = camera.PieceOutlines[0];
-        for (var index = 0; index < 4; index++)
-        {
-            ZoomNear(outlines[0].Points[index].X, rectangle.Left + candidate.SensorOutline[index].X * rectangle.Width,
-                "Train outline horizontal position must follow the displayed image.");
-            ZoomNear(outlines[0].Points[index].Y, rectangle.Top + candidate.SensorOutline[index].Y * rectangle.Height,
-                "Train outline vertical position must follow the displayed image.");
-        }
-        var marker = outlines[1].Points;
-        ZoomNear(marker.Max(point => point.X) - marker.Min(point => point.X), marker.Max(point => point.Y) - marker.Min(point => point.Y),
-            "Player-marker outline must remain square under preview zoom.");
+        if (view.FindName("DetectionOverlay") is not null)
+            throw new InvalidOperationException("Zoomed preview must not expose the removed piece-overlay canvas.");
     }
 
     private static void VerifyActualZoomedImage(CameraView view, Rect expected)

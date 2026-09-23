@@ -48,7 +48,7 @@ Technical crop selection is deliberately stationary after the initial attempt. M
 requires a retry or handle adjustment; this is not continuous board tracking. Manual edits take priority
 over work in progress. A rejected or failed retry preserves an existing valid crop, and a missing
 model leaves manual placement available. The corner status names the active inference backend.
-The next attempt applies the current CPU/GPU preference. Piece outlines start using the accepted
+The next attempt applies the current CPU/GPU preference. Learned piece analysis uses the accepted
 crop without an empty-board reference; corners do not verify game state or route ownership.
 
 ## Local deployment

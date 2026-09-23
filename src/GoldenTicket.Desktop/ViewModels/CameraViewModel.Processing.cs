@@ -24,8 +24,6 @@ public sealed partial class CameraViewModel
     private FrameProcessingBackend? _activeBackend;
     private long _processingRevision;
     private long _referenceRevision;
-    private CameraFrame? _lastRawPreview;
-    private CameraFrame? _lastEnhancedPreview;
     private CameraFrame? _outlinedFrame;
 
     public IReadOnlyList<ProcessorOption> ProcessorModes { get; } =
@@ -39,22 +37,15 @@ public sealed partial class CameraViewModel
     [ObservableProperty] private string _computeStatus = "Checking processor…";
     [ObservableProperty] private string _computeBadge = "Processor…";
     [ObservableProperty] private string _computeExplanation = "A local hardware check selects GPU processing when available, otherwise CPU. No downloads are required.";
-    [ObservableProperty] private string _processingText = "Processing target: 4K. Camera source resolution will be reported when preview starts.";
+    [ObservableProperty] private string _processingText = "Preview shows the original camera image when it starts.";
     [ObservableProperty] private bool _isProcessorBusy;
-    [ObservableProperty] private bool _useEnhancedPreview = true;
-    [ObservableProperty] private bool _showPieceOutlines = true;
+    [ObservableProperty] private bool _showPieceOutlines;
     [ObservableProperty] private bool _hasPieceReference;
     [ObservableProperty] private string _detectionText = "Waiting for a board crop before showing ML piece outlines.";
     [ObservableProperty] private IReadOnlyList<PreviewPieceOutline> _pieceOutlines = [];
-    public bool CanApplyProcessor => !IsBusy && !IsProcessorBusy && !_disposed;
+    public bool CanApplyProcessor => !IsBusy && !IsProcessorBusy && !IsModelBusy && !_disposed;
 
     partial void OnIsProcessorBusyChanged(bool value) => OnPropertyChanged(nameof(CanApplyProcessor));
-
-    partial void OnUseEnhancedPreviewChanged(bool value)
-    {
-        var frame = value ? _lastEnhancedPreview : _lastRawPreview;
-        if (frame is not null) Preview = ToBitmap(frame);
-    }
 
     partial void OnShowPieceOutlinesChanged(bool value)
     {
@@ -85,7 +76,7 @@ public sealed partial class CameraViewModel
             if (_disposed) return;
             _processorReady = true;
             UpdateProcessorStatus(status);
-            await EnsurePieceModelAsync();
+            await EnsurePieceModelAsync(mode);
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         catch (Exception ex)
@@ -100,13 +91,17 @@ public sealed partial class CameraViewModel
     [RelayCommand]
     private async Task ApplyProcessorAsync()
     {
-        if (_disposed || IsBusy || IsProcessorBusy) return;
+        if (_disposed || IsBusy || IsProcessorBusy || IsModelBusy) return;
         var mode = SelectedProcessor.Value;
+        var hadModelLoad = _modelInitialization is not null;
         _processingRevision++;
         ResetPieceReference();
         _initialization = InitializeProcessorCoreAsync(mode);
         await _initialization;
         if (_disposed || !_processorReady) return;
+        // A prior ML load is cached, so applying a processor choice must reload
+        // inference to pick up the corresponding CPU/GPU preference.
+        if (hadModelLoad) await ReloadPieceModelAsync(mode);
         try { Services.FrameProcessingPreferences.Save(_processingSettingsPath, mode); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -120,9 +115,9 @@ public sealed partial class CameraViewModel
         _activeBackend = status.Backend;
         var gpu = status.Backend == FrameProcessingBackend.Gpu;
         ComputeBadge = gpu ? "ϟ GPU ϟ" : "▣ CPU";
-        ComputeStatus = ComputeBadge + " · image processing";
+        ComputeStatus = ComputeBadge + " · board photo export";
         ComputeExplanation = $"Requested: {status.RequestedMode}. Active: {status.AdapterName}. " +
-            "Resizing and enhancement use this processor. ML inference has its own status under Piece outlines. " +
+            "Board photo exports use this processor; the live preview shows original camera frames. Applying a processor also reloads ML inference with the requested CPU/GPU preference; inference can fall back to CPU. " +
             (status.FallbackReason is { Length: > 0 } reason ? "CPU fallback: " + reason : "Game rules run on CPU.");
     }
 
@@ -143,7 +138,7 @@ public sealed partial class CameraViewModel
 
     private void QueueFrameProcessing(CameraFrame frame)
     {
-        if (_processingFrame || IsBusy || IsProcessorBusy || _disposed) return;
+        if (!ShowPieceOutlines || _processingFrame || IsBusy || IsProcessorBusy || _disposed) return;
         _processingFrame = true;
         _frameWork = ProcessPreviewFrameAsync(frame);
     }
@@ -194,8 +189,7 @@ public sealed partial class CameraViewModel
                     catch (OperationCanceledException) { throw; }
                     catch (Exception error) { detectionError = error.Message; }
                 }
-                return (Enhanced: ToBitmap(result.Frame), Raw: ToBitmap(frame),
-                    Board: board is null ? null : ToBitmap(board), Detection: detection, Error: detectionError,
+                return (Board: board is null ? null : ToBitmap(board), Detection: detection, Error: detectionError,
                     Scores: detection is not null && board is not null
                         ? ScoreMarkerReader.Read(board, detection.Candidates) : []);
             }, _lifetime.Token);
@@ -211,29 +205,19 @@ public sealed partial class CameraViewModel
             {
                 ClearDetectionPreview();
                 DetectionText = "Waiting for a fresh processed image before outlining pieces. ML results older than two seconds are discarded.";
-                // Slow ML must not freeze the camera while capture continues. The old result and
-                // enhanced image stay discarded; display a current raw frame with its own identity.
+                // Slow ML must not freeze the camera while capture continues. Discard old results
+                // and display a current raw frame with its own identity.
                 if (Capture.LatestFrame is { } current && Capture.IsRunning &&
                     current.Epoch == Capture.Epoch && current.Epoch == frame.Epoch &&
                     current.Age <= TimeSpan.FromSeconds(2))
                 {
-                    _lastRawPreview = current;
-                    _lastEnhancedPreview = null;
                     Preview = ToBitmap(current);
                     ProcessingText = "Showing current camera image while ML catches up.";
                 }
                 return;
             }
-            _lastRawPreview = frame;
-            _lastEnhancedPreview = result.Frame;
-            Preview = UseEnhancedPreview ? prepared.Enhanced : prepared.Raw ?? ToBitmap(frame);
             if (prepared.Board is not null) BoardPreview = prepared.Board;
             UpdateProcessorStatus(result.Status);
-            FormatText = $"Camera delivered {frame.Width} × {frame.Height}" +
-                (Capture.NegotiatedFormat is { } format ? $" · {format.FramesPerSecond:0.#} fps · {format.Subtype}" : "");
-            ProcessingText = $"Processing {result.Frame.Width} × {result.Frame.Height}" +
-                (result.IsUpscaled ? $" · upscaled from {frame.Width} × {frame.Height}; not native 4K" : " · native source resolution") +
-                $" · {result.ProcessingTime.TotalMilliseconds:0} ms. Enhancement adds no new captured detail.";
             if (prepared.Detection is { } detection && registration is not null && !IsModelBusy)
             {
                 _outlinedFrame = frame;
@@ -304,8 +288,6 @@ public sealed partial class CameraViewModel
         lock (_detectionGate) _pieceDetector.Clear();
         HasPieceReference = false;
         ClearDetectionPreview();
-        _lastRawPreview = null;
-        _lastEnhancedPreview = null;
         DetectionText = "Select the board corners to see ML piece outlines. No empty-board reference is needed.";
     }
 
@@ -420,7 +402,5 @@ public sealed partial class CameraViewModel
             _pieceModel = null;
         }
         ClearDetectionPreview();
-        _lastRawPreview = null;
-        _lastEnhancedPreview = null;
     }
 }

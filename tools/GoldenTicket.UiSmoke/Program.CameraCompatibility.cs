@@ -49,9 +49,8 @@ internal static partial class Program
                     !ReferenceEquals(quality.ItemsSource, camera.Preferences) ||
                     !ReferenceEquals(quality.SelectedItem, camera.SelectedPreference))
                     throw new InvalidOperationException($"The {tier} camera compatibility message must appear only for an incompatible webcam.");
-                if (!Descendants<CheckBox>(view).Any(box =>
-                    box.Content as string == "Enhanced preview" && IsElementShown(box)))
-                    throw new InvalidOperationException("The technical enhancement comparison must not claim native 4K capture.");
+                if (Descendants<CheckBox>(view).Any(box => box.Content as string == "Enhanced preview"))
+                    throw new InvalidOperationException("The technical Camera screen must show the original camera image without an enhancement toggle.");
             }, [(1280, 800)]);
         }
         await using var fullHdAndHd = new CameraViewModel(getCameraFormats: (_, _) =>

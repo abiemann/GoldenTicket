@@ -336,7 +336,8 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   See the [bounded validation record](docs/evidence/camera-processing-2026-09-12/validation.md).
 - [ ] **Processing and outline physical acceptance.** Measure empty-board false positives and
   per-piece misses across printed routes, shadows, touching trains and lighting; test live
-  raw/enhanced preview and native-4K input on actual hardware. Exported-reference reload and
+  original-frame preview, processed photo exports, and native-4K input on actual hardware.
+  Exported-reference reload and
   jog/return checks apply only when explicitly comparing the historical difference baseline.
   Complete adapter/device-loss and preference-switching acceptance. Image enhancement must remain
   separate from unsharpened checkpoint evidence. A successful photo pair is not general recognition
@@ -372,20 +373,22 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   reviewed-label COCO exporter with source hashes and capture-group split isolation. The
   [ML sequence](docs/piece-recognition-ml.md) starts with independent image detection; no trained
   model, inference runtime or recognition accuracy gain is included in this step.
-- [x] **First learned piece-outline experiment.** Audit 29 local photos / 954 labels, preserve
+- [x] **First learned piece-detection experiment.** Audit 29 local photos / 954 labels, preserve
   capture-date groups, train and export a two-class YOLOX-Nano detector, and integrate independent
-  ONNX CPU/DirectML inference into the preview. Empty-board capture is no longer a prerequisite.
-  Add exact-frame review ZIPs with model hashes and notes. See the
-  [experiment and validation](docs/piece-recognition-ml.md); this is experimental visual feedback.
-- [x] **Rotated train outlines.** Fit an optional display rectangle to the train pixels within each
+  ONNX CPU/DirectML inference. Empty-board capture is no longer a prerequisite.
+  Add exact-frame review ZIPs with model hashes and notes. The former Camera preview card
+  was removed; game-board analysis still uses the detector. See the
+  [experiment and validation](docs/piece-recognition-ml.md).
+- [x] **Rotated train geometry.** Fit an optional rectangle to the train pixels within each
   ML detection; uncertain fits retain the original box and markers remain square. Preserve original
   model predictions for evaluation and save fitted geometry separately for review. This is local
   image fitting, not learned rotation; live-camera angle accuracy still needs review.
-- [x] **Score marker values in Piece outlines.** Show each detected marker's color and printed
-  track position, preserving shared rows/columns. Clear stale readings and display missing,
-  uncertain and duplicate colors explicitly. The supplied photo reads yellow 20, blue 15,
-  red 11, black 11 and green 50 on CPU/DirectML; 57 focused checks and four WPF render cases
-  pass. These observations do not change game scores or infer full laps. See the
+- [x] **Score marker readings.** Read each detected marker's color and printed track position,
+  preserving shared rows/columns. Clear stale readings and handle missing, uncertain and
+  duplicate colors explicitly. The former Camera score cards have been removed. The supplied
+  photo reads yellow 20, blue 15, red 11, black 11 and green 50 on CPU/DirectML. The September
+  13 evidence recorded 57 focused checks and four WPF render cases before the UI removal.
+  These observations do not change game scores or infer full laps. See the
   [score-marker checks](docs/evidence/score-markers-2026-09-13/validation.md).
 - [x] Recognize markers sharing a corner diagonally, as in the black/red pair on 50.
   Require a clearly read corner anchor, keep the fallback within a small inward region,

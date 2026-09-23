@@ -42,6 +42,7 @@ public sealed class CameraMarkerScoreTests
     public async Task Empty_detection_and_disabled_outlines_are_distinct_states()
     {
         await using var camera = new CameraViewModel();
+        camera.ShowPieceOutlines = true;
         Publish(camera);
         Assert.All(camera.MarkerScores, row => Assert.Equal("Not detected", row.StatusText));
         Publish(camera, new ScoreMarkerReading(0, MarkerColor.Green, 50, ScoreMarkerReadingStatus.Read, ""));

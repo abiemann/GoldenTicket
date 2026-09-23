@@ -1,10 +1,12 @@
 # Learning to recognize physical pieces
 
-Updated September 22, 2026. **Piece outlines uses a locally trained ML detector**, whose accepted
-runtime weights are included in the source checkout. This replaces empty-board differencing in the camera preview.
-The model supplies visual observations; separate position, color and freshness checks verify game actions.
+Updated September 22, 2026. The game uses a locally trained ML detector whose accepted runtime
+weights are included in the source checkout. This replaces empty-board differencing in board
+analysis. The model supplies visual observations; separate position, color and freshness checks
+verify game actions. The experimental Piece outlines panel and score cards have been removed from
+the technical Camera screen.
 
-## Try it in the camera preview
+## Setup and developer checks
 
 1. Build the desktop project. Its required tracked deployment pair is
    `assets/models/pieces/piece-detector.onnx` and `assets/models/pieces/manifest.json`.
@@ -12,26 +14,22 @@ The model supplies visual observations; separate position, color and freshness c
    checkout includes the trained weights and needs neither model downloads nor retraining.
    The application does not download models.
 2. Start the camera. With the separate [corner model](board-corners-ml.md) installed, ML selects
-   the four outer corners automatically. Check the complete score track is inside the outline;
+   the four outer corners automatically. Check the complete score track is inside the crop;
    adjust the handles, retry **Detect board corners**, or choose **Select four board corners**.
-   No empty-board or camera-framing reference is required for outlines. Clear hands and inspect
-   the white train rectangles and score-marker squares. Train outlines follow the visible train
-   angle when a local image fit is reliable; uncertain fits keep the original upright model box.
-3. Read the separate **ML** backend/model status under **Piece outlines**. The top CPU/GPU badge
-   describes image enhancement. **Reload ML model** reloads the locally installed pair and
-   prefers GPU, unless **CPU only** is selected above. Changing enhancement alone does not
-   silently replace the inference session.
-4. Enter an optional note about a missing, extra or merged outline and choose **Save detection
-   example…**. The ZIP contains the exact analyzed, unpainted board image and `predictions.json`,
-   including model SHA-256, confidence, source identity, explicit coordinate units and your note.
-   Original model boxes and optional image-fitted `orientedOutline` polygons are stored separately.
-   Capture continues; the saved image and predictions stay paired. Existing files are not replaced.
-   Predictions are marked unreviewed and are never automatically treated as training labels.
+   No empty-board or camera-framing reference is required for the learned detector.
+3. The Camera screen's CPU/GPU badge describes image enhancement, not piece-model inference.
+   Gameplay board analysis uses the model independently. Developer tools and internal logs expose
+   model/provider details. Restart the app after replacing an installed model pair; **Apply
+   processor** also reloads the shared piece model when changing the processing preference.
+4. For model investigation, developer review ZIPs retain the exact analyzed, unpainted board image
+   and `predictions.json`, including model SHA-256, confidence, source identity, coordinate units
+   and an optional note. Original model boxes and optional image-fitted `orientedOutline` polygons
+   are stored separately. Predictions remain unreviewed and never become training labels
+   automatically. The Camera screen no longer provides the Save detection example control.
 
-Disabling outlines stops inference for subsequent frames and clears old predictions. Camera,
-crop, processing or model changes invalidate in-flight results. Published outlines expire after
-two seconds even while the camera is still supplying newer frames. Loading/inference failures
-leave the normal preview and manual game available and report the ML failure.
+Camera, crop, processing or model changes invalidate in-flight results. Diagnostic preview
+detections, when enabled internally, expire after two seconds. Loading or inference failures leave the normal camera
+preview and manual game available and report the ML failure.
 
 Training photos, reviewed labels, PyTorch checkpoints, environments and diagnostic logs remain
 ignored local artifacts. After a future candidate passes validation, promote only its accepted
@@ -71,8 +69,9 @@ reproduce the original raw-camera dropout.
 
 ### Score markers by color
 
-The **Score track** cards under Piece outlines show blue, red, green, yellow and black marker
-values from the same analyzed image. After ML locates a `player-marker`, a separate local
+The internal score-marker reader estimates blue, red, green, yellow and black marker values from
+the same analyzed image. The former **Score track** preview cards have been removed. After ML
+locates a `player-marker`, a separate local
 reader samples its interior color and maps its center to the perimeter of the upright classic
 USA board. It reads the printed 1–100 track, including 20, 50, 70 and 100 at its corners;
 it cannot determine how many full laps a player has completed. Train colors and route
@@ -85,9 +84,9 @@ This requires a known-color anchor independently agreeing on both adjoining edge
 bounded inward displacement, and no direct reading of a different cell. It does not widen
 ordinary score-cell boundaries or infer a score from the game's requested target.
 Unknown color, off-track or ambiguous positions do not produce a numeric value. Missing colors
-show **Not detected**, and multiple detections of one color show **Multiple markers** rather
-than choosing one. Turning outlines off, changing camera/crop/model, stopping capture or
-letting results expire clears both outlines and scores.
+are marked **Not detected**, and multiple detections of one color are marked **Multiple markers**
+rather than choosing one. Changing camera/crop/model, stopping capture or letting results expire
+clears internal detections and readings.
 
 The score reader does not retrain or alter the detector, its boxes, confidence or thresholds.
 
@@ -142,7 +141,8 @@ run; the best validation checkpoint was selected. The fixed runtime contract is:
 
 For the live model input, the raw camera frame is rectified to 3456 × 2160, then gently enhanced
 using the same processing order as the exported training photographs. The detector subsequently
-normalizes that crop as above. Unchecking **Enhanced 4K preview** changes display only. This first
+normalizes that crop as above. The technical Camera preview displays the original camera frame;
+it does not change this model input. This first
 model does not exploit every pixel of native 4K; the camera/export path retains 4K dimensions.
 Upscaling cannot recover missing sensor detail. Future native 4K/tile-size comparisons require
 new measurements and a versioned manifest.
@@ -195,13 +195,13 @@ with related layouts kept together. See the
 [Boston false-positive check](evidence/boston-false-positive-2026-09-13/validation.md).
 
 The user then requested retraining. The [second model](evidence/ml-retrain-2026-09-13/validation.md)
-uses all 32 reviewed photos and is installed for local preview. At the unchanged 0.30 threshold,
+uses all 32 reviewed photos and was installed for the then-current local preview. At the unchanged 0.30 threshold,
 the fixed comparison improves from 21 misses and eight extras to zero of each across these photos.
 The crowded black markers are detected and the Boston printed-slot extra box is gone; the real
 yellow train near Little Rock remains detected. CPU/DirectML fixture checks agree.
 **These are in-sample results:** the photos were used in training. New capture sessions are still
 needed to judge generalization and intermittent live failures. The previous model is retained for
-rollback. Use **Reload ML model** in an already open app to load the new installed pair.
+rollback. Restart the app to load a new installed pair in all sessions.
 
 A subsequent changed layout, photo `184806`, was reviewed separately without further training.
 The frozen second model matches **78 of 79 trains and all five markers, with no extras**. A yellow
@@ -272,7 +272,7 @@ already detected all 43 trains; this adds HQ training coverage and preserves sav
 results, rather than establishing improved independent-session accuracy.
 
 The current difference detector remains available to developer diagnostics for comparison;
-the live Piece outlines feature no longer calls it. The old lighting failure observations are
+the learned detection pipeline does not call it. The old lighting failure observations are
 preserved in [the glare record](glare-test.md).
 
 ## Runtime and remaining acceptance

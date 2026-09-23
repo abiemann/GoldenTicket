@@ -1975,38 +1975,35 @@ internal static partial class Program
         camera.Preview = SyntheticCropFixture();
         camera.IsRunning = true;
         camera.FormatText = "Camera delivered 1920 × 1080 · synthetic presentation fixture";
-        camera.ProcessingText = "Processing 3840 × 2160 · upscaled from 1920 × 1080; not native 4K";
+        camera.ProcessingText = "Preview: original camera image at 1920 × 1080. Board photo exports are processed separately.";
         camera.ComputeBadge = "▣ CPU";
         camera.ComputeStatus = "▣ CPU · synthetic status fixture";
-        camera.DetectionText = "One train candidate and one player marker. Synthetic overlay geometry; no camera opened.";
+        camera.DetectionText = "Synthetic internal detections; no camera opened.";
         PreviewPieceOutline[] syntheticOutlines =
         [
             new(false, [new(.2,.25), new(.33,.31), new(.31,.35), new(.18,.29)]),
             new(true, [new(.6,.6), new(.65,.6), new(.65,.67), new(.6,.67)])
         ];
-        await RenderSizes("camera-processing-outlines-synthetic", () =>
+        await RenderSizes("camera-processing-no-diagnostics", () =>
         {
             camera.PieceOutlines = syntheticOutlines;
             return new CameraView { DataContext = camera };
         }, view =>
         {
-            var overlay = (Canvas)view.FindName("DetectionOverlay");
-            var whites = overlay.Children.OfType<System.Windows.Shapes.Polygon>()
-                .Where(shape => shape.Stroke == Brushes.White).ToArray();
-            if (whites.Length != 2 || overlay.IsHitTestVisible)
-                throw new InvalidOperationException("The preview must show two white candidate outlines that cannot intercept corner editing.");
-            var marker = whites[1].Points;
-            if (Math.Abs((marker[1].X - marker[0].X) - (marker[2].Y - marker[1].Y)) > .01)
-                throw new InvalidOperationException("The player-marker outline must remain square after image scaling and letterboxing.");
-            camera.ShowPieceOutlines = false;
-            if (overlay.Children.Count != 0) throw new InvalidOperationException("The outline toggle must hide all candidate geometry.");
-            camera.ShowPieceOutlines = true;
-            if (overlay.Children.Count != 0) throw new InvalidOperationException("Re-enabling ML outlines must wait for a fresh result instead of restoring old detections.");
+            if (view.FindName("DetectionOverlay") is not null ||
+                view.FindName("MarkerScoresList") is not null ||
+                VisibleText(view).Contains("Piece outlines", StringComparison.Ordinal) ||
+                Descendants<CheckBox>(view).Any(box =>
+                    Equals(box.Content, "Show piece outlines") || Equals(box.Content, "Enhanced preview")) ||
+                Descendants<Button>(view).Any(button => button.Content as string is "Reload ML model" or "Save detection example…"))
+                throw new InvalidOperationException("Camera must show the original image without enhancement or piece-outline controls.");
+            if (!IsElementShown((Image)view.FindName("PreviewImage")))
+                throw new InvalidOperationException("Removing diagnostics must preserve the live preview.");
         });
         camera.ClearPieceReferenceCommand.Execute(null);
         if (camera.PieceOutlines.Count != 0 || camera.HasPieceReference)
             throw new InvalidOperationException("Clearing the piece reference must immediately remove all outlines.");
-        Console.WriteLine("Processing presentation: best-native/Auto defaults with unverified 4K hidden, white train/player geometry, square marker, toggle and reference clearing passed.");
+        Console.WriteLine("Processing presentation: best-native/Auto defaults, hidden camera diagnostics, preserved preview, and reference clearing passed.");
     }
 
     private static async Task VerifyKeyboardCornerHandler()

@@ -90,7 +90,6 @@ public partial class CameraView : UserControl
         }
         else if (e.PropertyName == nameof(CameraViewModel.HasBoardCrop)) DrawCorners();
         else if (e.PropertyName == nameof(CameraViewModel.IsBusy) && _subscribed?.IsBusy == true) EndPan();
-        else if (e.PropertyName is nameof(CameraViewModel.PieceOutlines) or nameof(CameraViewModel.ShowPieceOutlines)) DrawDetections();
     }
 
     private void ResetKeyboardPoint()
@@ -310,7 +309,6 @@ public partial class CameraView : UserControl
 
     private void DrawCorners()
     {
-        DrawDetections();
         if (CornerOverlay is null) return;
         CornerOverlay.Children.Clear();
         if (DataContext is not CameraViewModel vm) return;
@@ -347,33 +345,4 @@ public partial class CameraView : UserControl
         }
     }
 
-    private void DrawDetections()
-    {
-        if (DetectionOverlay is null) return;
-        DetectionOverlay.Children.Clear();
-        if (DataContext is not CameraViewModel { ShowPieceOutlines: true } vm) return;
-        var rectangle = ImageRectangle();
-        if (rectangle.IsEmpty) return;
-        foreach (var candidate in vm.PieceOutlines)
-        {
-            if (candidate.SensorOutline.Count != 4 || candidate.SensorOutline.Any(point =>
-                !double.IsFinite(point.X) || !double.IsFinite(point.Y) || point.X < 0 || point.X > 1 || point.Y < 0 || point.Y > 1)) continue;
-            var points = new PointCollection(candidate.SensorOutline.Select(point => new Point(
-                rectangle.Left + point.X * rectangle.Width, rectangle.Top + point.Y * rectangle.Height)));
-            if (candidate.IsPlayerMarker)
-            {
-                var left = points.Min(point => point.X);
-                var top = points.Min(point => point.Y);
-                var right = points.Max(point => point.X);
-                var bottom = points.Max(point => point.Y);
-                var size = Math.Max(right - left, bottom - top);
-                var x = (left + right - size) / 2;
-                var y = (top + bottom - size) / 2;
-                points = new PointCollection([new(x, y), new(x + size, y), new(x + size, y + size), new(x, y + size)]);
-            }
-            // A dark backing keeps the requested white outline visible on pale printed routes.
-            DetectionOverlay.Children.Add(new Polygon { Points = points, Stroke = Brushes.Black, StrokeThickness = 4, Opacity = .65 });
-            DetectionOverlay.Children.Add(new Polygon { Points = points, Stroke = Brushes.White, StrokeThickness = 2 });
-        }
-    }
 }
