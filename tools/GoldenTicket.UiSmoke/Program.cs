@@ -88,6 +88,7 @@ internal static partial class Program
                 await VerifyGameMenu();
                 await VerifyAiStyleSelection();
                 await VerifyGameTableLayout();
+                await VerifyFivePlayerTrayLayout();
                 await VerifyPlacementTarget();
                 await VerifyInventoryProblemMarkers();
                 await VerifyManualSavedBoardCheck();
@@ -449,7 +450,7 @@ internal static partial class Program
     }
 
     private static async Task RenderSizes(string name, Func<UserControl> make, Action<UserControl>? verify = null,
-        IReadOnlyList<(int width, int height)>? sizes = null)
+        IReadOnlyList<(int width, int height)>? sizes = null, int settleDelayMs = 0)
     {
         foreach (var (width, height) in sizes ?? [(1280, 800), (1000, 620)])
         {
@@ -459,6 +460,11 @@ internal static partial class Program
                 Background = (Brush)System.Windows.Application.Current.Resources["Surface.Window"] };
             TextElement.SetForeground(root, (Brush)System.Windows.Application.Current.Resources["Text.Primary"]);
             await Arrange(root, width, height);
+            if (settleDelayMs > 0)
+            {
+                await Task.Delay(settleDelayMs);
+                await Arrange(root, width, height);
+            }
             if (view is CameraView cameraView)
             {
                 // A detached render tree has no window to deliver Loaded after its image binding and

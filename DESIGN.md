@@ -212,9 +212,12 @@ The public screen contains:
   events. Consecutive train-card draws are summarized together without exposing blind card kinds.
   Seats alternate between the left and right sides of the board, starting on the left; five
   players form a column of three on the left and two on the right, centered vertically together.
-  Private card previews use a free gap in their owner's side column. Each tile aligns the player
-  name, train cards, and destinations on one row with score and
-  counts beneath; remaining trains are text above the stacks, and the action line is centered.
+  Private card previews open below their owner's tile when space allows. With five players, the
+  left seats shift to make room; Players 2 and 4 remain fixed, and Player 2's tray opens directly
+  beneath their tile. Player 4's longer destination tray opens above their tile to stay on screen.
+  Closing the tray restores the ordinary left-seat positions. Each tile aligns the player name,
+  train cards, and destinations on one row with score and counts beneath; remaining trains are
+  text above the stacks, and the action line is centered.
   With two to five players, the draw piles and face-up train market sit centered along the
   bottom after setup; no player tile occupies this area.
   For one human, the T pile and face-up market submit legal train-card draws directly from the

@@ -56,8 +56,11 @@ See the
   five players occupy three places on the left and two on the right. Center the draw piles and
   five-card market along the bottom after opening setup for all player counts. In solo play,
   T and D stacks reveal compact private card previews only when clicked; ordinary turns stay on
-  the game table. Preserve the panel above the board as the human guidance area for the current
-  phase, acting seat and next instruction throughout the game.
+  the game table. With five players, open left-side previews below their owners and shift nearby
+  left seats to make room. Keep Players 2 and 4 fixed; open Player 2's tray directly below, and
+  place Player 4's longer destination tray above to keep it on screen. Preserve the panel above
+  the board as the human guidance area for the current phase, acting seat and next instruction
+  throughout the game.
 - [x] Group the solo train-card preview by color, including locomotives, with a top-left quantity
   badge for duplicates so large hands remain easy to count.
 - [x] Replace the technical final-score list with themed portrait standings over the live board,

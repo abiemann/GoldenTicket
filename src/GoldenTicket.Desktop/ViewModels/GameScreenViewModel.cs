@@ -233,6 +233,8 @@ public sealed partial class GameScreenViewModel : ObservableObject
         };
         _main.PropertyChanged += (_, args) =>
         {
+            if (args.PropertyName == nameof(MainViewModel.SoloCardPanelKind))
+                RefreshTableSeats();
             if (args.PropertyName is nameof(MainViewModel.IsCheckingResumedGame) or
                 nameof(MainViewModel.ShowSoloOpeningTicketsOnBoard))
                 NotifyGuidanceChanged();
@@ -365,18 +367,20 @@ public sealed partial class GameScreenViewModel : ObservableObject
         ShowPlacementTarget = true;
     }
 
-    private void TableSeatsChanged(object? sender, NotifyCollectionChangedEventArgs? e)
+    private void TableSeatsChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
+        RefreshTableSeats();
+
+    private void RefreshTableSeats()
     {
-        // Keep the same seat positions during opening choices and normal play.
-        // With five players, three on the left and two on the
-        // right share the same vertical center, leaving the bottom clear for cards.
-        (double Left, double Top)[] positions = _main.Table.Seats.Count switch
+        var activeSeatIndex = -1;
+        for (var index = 0; index < _main.Table.Seats.Count; index++)
         {
-            2 => [(10, 330), (1180, 330)],
-            3 => [(10, 330), (1180, 330), (10, 530)],
-            4 => [(10, 265), (1180, 265), (10, 530), (1180, 530)],
-            _ => [(10, 205), (1180, 205), (10, 395), (1180, 585), (10, 585)],
-        };
+            if (_main.Table.Seats[index] is not { Operator: "human", IsActive: true }) continue;
+            activeSeatIndex = index;
+            break;
+        }
+        var positions = GameTableLayout.SeatPositions(_main.Table.Seats.Count,
+            activeSeatIndex, _main.SoloCardPanelKind);
         TableSeats = _main.Table.Seats.Select((seat, index) =>
         {
             var choice = SeatChoices.SingleOrDefault(candidate => candidate.TrainColor == seat.Color);

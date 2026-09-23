@@ -15,7 +15,6 @@ public partial class GameTableView : UserControl
     private const double CenteredFaceUpMarketLeft = 622;
     private const double OuterDrawPilesLeft = 14;
     private const double OuterFaceUpMarketLeft = 975;
-    private const double PlayerStationHeight = 160;
 
     private MainViewModel? _model;
     private bool _updateQueued;
@@ -51,6 +50,7 @@ public partial class GameTableView : UserControl
         if (_model is not null)
         {
             _model.PropertyChanged -= OnModelPropertyChanged;
+            _model.Game.PropertyChanged -= OnGamePropertyChanged;
             _model.Table.Seats.CollectionChanged -= OnSeatsChanged;
             _model.CardDrawn -= OnCardDrawn;
         }
@@ -59,6 +59,7 @@ public partial class GameTableView : UserControl
         if (_model is not null)
         {
             _model.PropertyChanged += OnModelPropertyChanged;
+            _model.Game.PropertyChanged += OnGamePropertyChanged;
             _model.Table.Seats.CollectionChanged += OnSeatsChanged;
             _model.CardDrawn += OnCardDrawn;
         }
@@ -76,6 +77,12 @@ public partial class GameTableView : UserControl
     }
 
     private void OnSeatsChanged(object? sender, NotifyCollectionChangedEventArgs e) => QueueDrawPanelPosition();
+
+    private void OnGamePropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(GameScreenViewModel.TableSeats))
+            PositionSoloCardPanel();
+    }
 
     private void QueueDrawPanelPosition()
     {
@@ -109,18 +116,28 @@ public partial class GameTableView : UserControl
         if (station is null) return;
 
         Canvas.SetLeft(SoloCardPanel, Math.Clamp(station.Left, 8, TableScene.Width - SoloCardPanel.Width - 8));
-        var estimatedPanelHeight = _model?.ShowSoloDestinations == true ? 188 : 132;
+        var estimatedPanelHeight = GameTableLayout.TrayHeight(_model!.SoloCardPanelKind);
+        if (_model.Table.Seats.Count == 5 && _model.ShowSoloCardPanel)
+        {
+            // Player 4's longer destination tray fits in the gap above its fixed tile.
+            var abovePlayerFour = _model.ShowSoloDestinations &&
+                station.Seat.SeatId == _model.Table.Seats[3].SeatId;
+            Canvas.SetTop(SoloCardPanel, abovePlayerFour
+                ? station.Top - estimatedPanelHeight - GameTableLayout.TrayGap
+                : station.Top + GameTableLayout.StationHeight + GameTableLayout.TrayGap);
+            return;
+        }
         var column = _model!.Game.TableSeats
             .Where(tile => Math.Abs(tile.Left - station.Left) < SoloCardPanel.Width).ToArray();
         // Prefer beside the owner's station, then another free gap in the same column.
         // The third station must remain visible when the solo player opens their cards.
-        var candidates = new[] { station.Top + PlayerStationHeight + 6,
+        var candidates = new[] { station.Top + GameTableLayout.StationHeight + 6,
             station.Top - estimatedPanelHeight - 8, 8d }
-            .Concat(column.Select(tile => tile.Top + PlayerStationHeight + 6));
+            .Concat(column.Select(tile => tile.Top + GameTableLayout.StationHeight + 6));
         var top = candidates.First(candidate => candidate >= 8 &&
             candidate + estimatedPanelHeight <= TableScene.Height - 8 &&
             column.All(tile => candidate + estimatedPanelHeight + 6 <= tile.Top ||
-                candidate >= tile.Top + PlayerStationHeight + 6));
+                candidate >= tile.Top + GameTableLayout.StationHeight + 6));
         Canvas.SetTop(SoloCardPanel, top);
     }
 
@@ -131,20 +148,14 @@ public partial class GameTableView : UserControl
 
         if (SoloCardPanel.RenderTransform is not System.Windows.Media.TranslateTransform transform) return;
         transform.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty, null);
+        transform.Y = 0;
         SoloCardPanel.BeginAnimation(OpacityProperty, null);
         if (!SystemParameters.ClientAreaAnimation)
         {
-            transform.Y = 0;
             SoloCardPanel.Opacity = 1;
             return;
         }
 
-        transform.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty,
-            new DoubleAnimation(-32, 0, new Duration(TimeSpan.FromMilliseconds(280)))
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-                FillBehavior = FillBehavior.Stop,
-            });
         SoloCardPanel.BeginAnimation(OpacityProperty,
             new DoubleAnimation(0, 1, new Duration(TimeSpan.FromMilliseconds(220)))
             {
