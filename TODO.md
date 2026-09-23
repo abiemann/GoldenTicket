@@ -289,6 +289,12 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   3840 × 2160 format. Display the actual delivered
   dimensions separately from processing output. Shared-read-only inspection confirms the current
   Pixel UVC connection advertises 1080p at most. Physical native-4K camera acceptance remains open.
+- [x] **Native 720p selection.** Add **720p** to camera quality.
+  Request only native 1280 × 720 near 30 fps, reject other delivered
+  sizes, and retain the selection through camera reconnects within the running app. Reopening
+  the app restores the default 1080p preference. On September 22, the user reported that Android
+  Webcam gameplay at 720p was working so far and the game had been saved. Reload and board
+  redetection at 720p remain to be confirmed.
 - [ ] **720p webcam performance and gameplay acceptance.** Test a real webcam delivering
   1280 × 720 with the whole board visible, under good and poor lighting. Measure board-corner,
   train/color and scoring-marker detection accuracy, missed/false detections, response time and

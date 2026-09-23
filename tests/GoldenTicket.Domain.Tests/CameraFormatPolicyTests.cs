@@ -5,6 +5,81 @@ namespace GoldenTicket.Domain.Tests;
 public sealed class CameraFormatPolicyTests
 {
     [Fact]
+    public void Native_720p_preserves_existing_preference_values()
+    {
+        Assert.Equal(0, (int)CameraCapturePreference.Balanced1080p);
+        Assert.Equal(1, (int)CameraCapturePreference.HighDetail2160p);
+        Assert.Equal(2, (int)CameraCapturePreference.SharedCurrent);
+        Assert.Equal(3, (int)CameraCapturePreference.Native720p);
+    }
+
+    [Fact]
+    public void Native_720p_uses_only_advertised_exact_720p_formats()
+    {
+        CameraFormat[] formats =
+        [
+            new(1920, 1080, 30, "MJPG"), new(3840, 2160, 30, "MJPG"),
+            new(640, 480, 30, "MJPG"), new(1280, 721, 30, "MJPG"),
+            new(1281, 720, 30, "MJPG"), new(720, 1280, 30, "MJPG"),
+            new(1280, 720, 30, "NV12")
+        ];
+
+        Assert.Equal(formats[6], Assert.Single(CameraFormatPolicy.RankFormats(formats, CameraCapturePreference.Native720p)));
+    }
+
+    [Fact]
+    public void Native_720p_never_falls_back_when_no_usable_exact_format_is_advertised()
+    {
+        CameraFormat[] formats =
+        [
+            new(1920, 1080, 30, "MJPG"), new(640, 480, 30, "MJPG"),
+            new(1280, 720, 4, "NV12"), new(1280, 720, 61, "NV12"),
+            new(1280, 720, double.NaN, "NV12"), new(1280, 720, double.PositiveInfinity, "NV12")
+        ];
+
+        Assert.Empty(CameraFormatPolicy.RankFormats(formats, CameraCapturePreference.Native720p));
+        Assert.Empty(CameraFormatPolicy.RankFormats([], CameraCapturePreference.Native720p));
+    }
+
+    [Fact]
+    public void Native_720p_prefers_30fps_and_retains_native_frame_rate_and_subtype_fallbacks()
+    {
+        CameraFormat[] formats =
+        [
+            new(1280, 720, 60, "MJPG"), new(1280, 720, 15, "MJPG"),
+            new(1280, 720, 29.97, "MJPG"), new(1280, 720, 30, "NV12"),
+            new(1280, 720, 30, "MJPG"), new(1280, 720, 30, "NV12"),
+            new(1280, 720, 5, "MJPG")
+        ];
+
+        var ranked = CameraFormatPolicy.RankFormats(formats, CameraCapturePreference.Native720p);
+
+        Assert.Equal(new[] { formats[4], formats[3], formats[2], formats[1], formats[6], formats[0] }, ranked);
+    }
+
+    [Theory]
+    [InlineData(1920, 1080)]
+    [InlineData(3840, 2160)]
+    [InlineData(1280, 721)]
+    [InlineData(1281, 720)]
+    [InlineData(640, 480)]
+    [InlineData(720, 1280)]
+    [InlineData(int.MaxValue, int.MaxValue)]
+    public void Native_720p_rejects_mismatched_negotiated_or_delivered_dimensions(int width, int height)
+    {
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            CameraFormatPolicy.ValidateCapturedResolution(width, height, CameraCapturePreference.Native720p));
+
+        Assert.Contains("720p option", error.Message);
+        Assert.Contains("native 1280 × 720", error.Message);
+        Assert.Contains($"camera provided {width} × {height}", error.Message);
+    }
+
+    [Fact]
+    public void Native_720p_accepts_exact_negotiated_and_delivered_dimensions() =>
+        CameraFormatPolicy.ValidateCapturedResolution(1280, 720, CameraCapturePreference.Native720p);
+
+    [Fact]
     public void High_detail_prefers_native_4k_even_when_preview_1080p_is_listed_first()
     {
         CameraFormat[] formats = [new(1920, 1080, 15, "NV12"), new(3840, 2160, 30, "MJPG"), new(1280, 720, 30, "NV12")];
@@ -86,6 +161,7 @@ public sealed class CameraFormatPolicyTests
     [Theory]
     [InlineData(CameraCapturePreference.Balanced1080p)]
     [InlineData(CameraCapturePreference.HighDetail2160p)]
+    [InlineData(CameraCapturePreference.Native720p)]
     public void A_720p_only_webcam_is_usable_but_cannot_fall_back_to_sub_hd(CameraCapturePreference preference)
     {
         CameraFormat[] formats = [new(640, 480, 30, "MJPG"), new(1280, 720, 30, "MJPG"), new(1024, 768, 30, "MJPG")];

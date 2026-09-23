@@ -211,6 +211,12 @@ and model inference report their actual backends; GPU processing falls back to C
 Camera quality shows supported native formats and distinguishes capture resolution from the
 processed image size.
 
+To use 720p, select **720p** under **Camera quality**, then
+stop and start preview in **Camera**. This requests a native 1280 × 720 stream, preferring
+30 fps, and reports an error if the webcam cannot supply that size. The game shows **Using
+1280 × 720** while it runs. Camera quality can be changed by selecting another option and
+restarting preview; reopening the app restores the default 1080p preference.
+
 The app remembers your selected webcam across restarts. If it disconnects, the board shows
 which webcam it is waiting for and reconnects when that camera returns. You can choose another
 webcam in Settings or Camera. If multiple cameras have the same name and the original device

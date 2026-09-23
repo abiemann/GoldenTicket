@@ -54,6 +54,78 @@ public sealed class CameraCapabilitiesTests
     }
 
     [Fact]
+    public async Task Native_720p_choice_starts_native_hd_on_a_full_hd_camera_and_reports_actual_quality()
+    {
+        var capture = new FakeCameraCapture { AvailableFormats = [FullHd, Hd] };
+        capture.StartHandler = (device, preference, _) =>
+        {
+            Assert.Equal(FullHdDevice, device);
+            Assert.Equal(CameraCapturePreference.Native720p, preference);
+            capture.NegotiatedFormat = Hd;
+            capture.DeliveredFrameDimensions = new(1280, 720);
+            return Task.CompletedTask;
+        };
+        await using var camera = new CameraViewModel(capture: capture,
+            getCameraFormats: (_, _) => Task.FromResult<IReadOnlyList<CameraFormat>>([FullHd, Hd]));
+        SetField(camera, "_processorReady", true);
+        camera.SelectedDevice = FullHdDevice;
+        await camera.RefreshSelectedCameraCapabilitiesAsync();
+        camera.SelectedPreference = camera.Preferences.Single(option => option.Value == CameraCapturePreference.Native720p);
+
+        await camera.StartCommand.ExecuteAsync(null);
+
+        Assert.True(camera.IsRunning, camera.Problem);
+        Assert.Null(camera.Problem);
+        Assert.Equal(CameraCapturePreference.Native720p, camera.SelectedPreference.Value);
+        Assert.Contains("1280 × 720", camera.FormatText);
+        Assert.Contains("1280 × 720", camera.CameraCompatibilityMessage);
+        Assert.Contains("poor lighting", camera.CameraCompatibilityMessage);
+    }
+
+    [Fact]
+    public async Task Native_720p_choice_survives_camera_rediscovery_but_is_not_the_next_app_default()
+    {
+        IReadOnlyList<CameraDevice> connected = [FullHdDevice];
+        await using var camera = new CameraViewModel(capture: new FakeCameraCapture(),
+            enumerateDevices: _ => Task.FromResult(connected),
+            getCameraFormats: (_, _) => Task.FromResult<IReadOnlyList<CameraFormat>>([FullHd, Hd]));
+        await camera.RefreshDevicesCommand.ExecuteAsync(null);
+        camera.SelectedPreference = camera.Preferences.Single(option => option.Value == CameraCapturePreference.Native720p);
+        connected = [];
+        await camera.RefreshDevicesCommand.ExecuteAsync(null);
+        Assert.Null(camera.SelectedDevice);
+        Assert.Equal(CameraCapturePreference.Native720p, camera.SelectedPreference.Value);
+        connected = [FullHdDevice];
+        await camera.RefreshDevicesCommand.ExecuteAsync(null);
+        Assert.Equal(FullHdDevice, camera.SelectedDevice);
+        Assert.Equal(CameraCapturePreference.Native720p, camera.SelectedPreference.Value);
+
+        await using var restarted = CreateCamera([FullHd, Hd]);
+        Assert.Equal(CameraCapturePreference.Balanced1080p, restarted.SelectedPreference.Value);
+    }
+
+    [Fact]
+    public async Task Native_720p_without_a_native_hd_mode_stops_capture_without_falling_back_to_1080p()
+    {
+        var capture = new FakeCameraCapture { IsRunning = true, ActiveDevice = FullHdDevice, NegotiatedFormat = FullHd };
+        await using var camera = new CameraViewModel(capture: capture,
+            getCameraFormats: (_, _) => Task.FromResult<IReadOnlyList<CameraFormat>>([FullHd]));
+        capture.AvailableFormats = [FullHd];
+        camera.SelectedDevice = FullHdDevice;
+        await camera.RefreshSelectedCameraCapabilitiesAsync();
+        camera.SelectedPreference = camera.Preferences.Single(option => option.Value == CameraCapturePreference.Native720p);
+
+        await camera.StartCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, capture.StartCalls);
+        Assert.False(capture.IsRunning);
+        Assert.False(camera.IsRunning);
+        Assert.False(GetField<bool>(camera, "_processorReady"));
+        Assert.Equal(CameraFormatPolicy.Native720pUnavailableMessage, camera.Problem);
+        Assert.Equal(CameraCapturePreference.Native720p, camera.SelectedPreference.Value);
+    }
+
+    [Fact]
     public async Task A_720p_camera_warns_about_poor_lighting_but_can_start_preview()
     {
         var capture = new FakeCameraCapture

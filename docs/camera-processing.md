@@ -39,6 +39,12 @@ backend. Rules and game AI remain on the CPU.
    stays hidden until support can be verified; start preview to check the camera's current format.
    **Shared current format** reads the camera's existing mode without changing its owner's format.
    It enforces the same 720p minimum.
+   To use native 720p, select **720p** and
+   stop/start preview. It requests exactly native 1280 × 720, preferring 30 fps among the
+   advertised usable modes. A camera without that format, or one delivering a different
+   size, reports an error rather than substituting another resolution. The existing 720p
+   warning reports the delivered dimensions. The selection survives reconnects during
+   this app session; reopening the app restores the default 1080p preference.
 3. Check the reported camera dimensions and processing dimensions separately. A 1920 × 1080
    source enhanced to 3840 × 2160 is explicitly identified as upscaled. Larger output pixels do
    not add captured detail or make that source native 4K.

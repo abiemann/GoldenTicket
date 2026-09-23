@@ -84,6 +84,7 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
     public IReadOnlyList<CameraPreferenceOption> Preferences { get; private set; } =
     [
         new(CameraCapturePreference.Balanced1080p, "1080p preferred · best available"),
+        new(CameraCapturePreference.Native720p, "720p"),
         new(CameraCapturePreference.SharedCurrent, "Shared · current Windows format")
     ];
 
@@ -219,6 +220,13 @@ public sealed partial class CameraViewModel : ObservableObject, IAsyncDisposable
             {
                 await Capture.StopAsync();
                 throw new InvalidOperationException(CameraCompatibilityMessage);
+            }
+            if (SelectedPreference.Value == CameraCapturePreference.Native720p &&
+                _selectedCameraFormats is { } nativeFormats &&
+                CameraFormatPolicy.RankFormats(nativeFormats, CameraCapturePreference.Native720p).Count == 0)
+            {
+                await Capture.StopAsync();
+                throw new InvalidOperationException(CameraFormatPolicy.Native720pUnavailableMessage);
             }
             await InitializeProcessingAsync();
             if (_disposed || selected != SelectedDevice) return;

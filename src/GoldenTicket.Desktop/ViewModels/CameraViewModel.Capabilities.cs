@@ -112,6 +112,7 @@ public sealed partial class CameraViewModel
             balancedLabel = $"{hd.Height}p · best available";
         List<CameraPreferenceOption> options = [new(CameraCapturePreference.Balanced1080p, balancedLabel)];
         if (HasNative4K) options.Add(new(CameraCapturePreference.HighDetail2160p, "4K · best available"));
+        options.Add(new(CameraCapturePreference.Native720p, "720p"));
         options.Add(new(CameraCapturePreference.SharedCurrent, "Shared · current Windows format"));
         Preferences = options;
         OnPropertyChanged(nameof(Preferences));

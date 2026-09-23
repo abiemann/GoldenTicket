@@ -1522,6 +1522,12 @@ candidate within the startup budget. Shared current mode never changes another c
 does not request an artificial output size. Its actual delivered bitmap dimensions are reported
 separately from negotiated source metadata and subsequent enhancement dimensions.
 
+The **720p** camera quality option requests only advertised native
+1280 × 720 modes, preferring 30 fps within the existing 5–60 fps range. Negotiated and delivered
+dimensions must both match; it never substitutes 1080p or rescales a stream to satisfy the choice.
+The choice applies on preview restart and survives camera reconnects within the app session.
+It is not persisted: a new app instance returns to the default 1080p preference.
+
 1080p is recommended for gameplay. A usable 720p camera is permitted with a persistent warning
 that gameplay and train detection may be less reliable in poor lighting, visible in Settings,
 board setup/reconnect, the Camera utility, and the game table. Below-720p cameras are rejected;

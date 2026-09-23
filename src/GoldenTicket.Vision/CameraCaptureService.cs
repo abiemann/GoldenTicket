@@ -9,7 +9,7 @@ using Windows.Storage.Streams;
 namespace GoldenTicket.Vision;
 
 public sealed record CameraDevice(string Id, string Name);
-public enum CameraCapturePreference { Balanced1080p, HighDetail2160p, SharedCurrent }
+public enum CameraCapturePreference { Balanced1080p, HighDetail2160p, SharedCurrent, Native720p }
 public enum CameraResolutionTier { Incompatible, Hd720p, FullHd1080p, UltraHd4K }
 public sealed record CameraFormat(int Width, int Height, double FramesPerSecond, string Subtype)
 {
@@ -22,6 +22,8 @@ public static class CameraFormatPolicy
 {
     public const string MinimumResolutionMessage =
         "This webcam is not compatible with gameplay. At least 1280 × 720 (720p) is required; 1920 × 1080 (1080p) is recommended.";
+    public const string Native720pUnavailableMessage =
+        "The 720p option is unavailable: this camera does not advertise a native 1280 × 720 format at 5–60 fps. Select another camera quality.";
 
     public static CameraResolutionTier GetResolutionTier(int width, int height)
     {
@@ -54,6 +56,12 @@ public static class CameraFormatPolicy
         CameraCapturePreference preference)
     {
         ArgumentNullException.ThrowIfNull(formats);
+        if (preference == CameraCapturePreference.Native720p)
+            return formats.Where(f => IsUsableFormat(f) && f.Width == 1280 && f.Height == 720)
+                .Distinct()
+                .OrderBy(f => Math.Abs(f.FramesPerSecond - 30))
+                .ThenBy(f => f.Subtype, StringComparer.Ordinal)
+                .ToArray();
         if (preference is not (CameraCapturePreference.Balanced1080p or CameraCapturePreference.HighDetail2160p))
             throw new ArgumentOutOfRangeException(nameof(preference), "Shared capture keeps the camera's current format.");
         var maxPixels = preference == CameraCapturePreference.HighDetail2160p ? 3840L * 2160 : 1920L * 1080;
@@ -68,8 +76,11 @@ public static class CameraFormatPolicy
             .ToArray();
     }
 
-    internal static void ValidateCapturedResolution(int width, int height)
+    internal static void ValidateCapturedResolution(int width, int height,
+        CameraCapturePreference preference = CameraCapturePreference.Balanced1080p)
     {
+        if (preference == CameraCapturePreference.Native720p && (width != 1280 || height != 720))
+            throw new InvalidOperationException($"The 720p option requires native 1280 × 720 frames, but the camera provided {width} × {height}. Select another camera quality or a camera with a native 720p mode.");
         if (GetResolutionTier(width, height) == CameraResolutionTier.Incompatible)
             throw new InvalidOperationException(width > CameraFrame.MaximumWidth || height > CameraFrame.MaximumHeight
                 ? "The camera delivered a format outside the supported 3840 × 2160 bounds. Select a lower camera quality."
@@ -95,6 +106,7 @@ public sealed class CameraCaptureService : ICameraCapture
     private volatile bool _disposed;
     private string? _error;
     private CameraFrameDimensions? _deliveredFrameDimensions;
+    private CameraCapturePreference _activePreference;
 
     public bool IsRunning => _running;
     public string? LastError => Volatile.Read(ref _error);
@@ -187,7 +199,9 @@ public sealed class CameraCaptureService : ICameraCapture
                         .Where(native => ToFormat(native) == f).Select(native => (Source: s, Format: native))))
                     .ToArray();
             if (candidates.Length == 0)
-                throw new InvalidOperationException(preference == CameraCapturePreference.SharedCurrent
+                throw new InvalidOperationException(preference == CameraCapturePreference.Native720p
+                    ? CameraFormatPolicy.Native720pUnavailableMessage
+                    : preference == CameraCapturePreference.SharedCurrent
                     ? "The current shared camera format is not compatible. Select 1080p camera quality or change the webcam's current format to at least 1280 × 720 (720p), at 5–60 fps."
                     : !AvailableFormats.Any(CameraFormatPolicy.IsUsableFormat)
                         ? CameraFormatPolicy.MinimumResolutionMessage + " A native format at 5–60 fps is needed."
@@ -202,7 +216,7 @@ public sealed class CameraCaptureService : ICameraCapture
                     if (preference != CameraCapturePreference.SharedCurrent)
                         await source.SetFormatAsync(format).AsTask(token);
                     var negotiated = ToFormat(source.CurrentFormat);
-                    CameraFormatPolicy.ValidateCapturedResolution(negotiated.Width, negotiated.Height);
+                    CameraFormatPolicy.ValidateCapturedResolution(negotiated.Width, negotiated.Height, preference);
                     if (!CameraFormatPolicy.IsUsableFormat(negotiated))
                         throw new InvalidOperationException("The camera did not provide a supported frame rate (5–60 fps).");
                     if (preference != CameraCapturePreference.SharedCurrent &&
@@ -211,7 +225,9 @@ public sealed class CameraCaptureService : ICameraCapture
                     // A reader without output dimensions preserves the native source resolution.
                     _reader = await capture.CreateFrameReaderAsync(source, MediaEncodingSubtypes.Bgra8).AsTask(token);
                     _reader.AcquisitionMode = MediaFrameReaderAcquisitionMode.Realtime;
+                    _activePreference = preference;
                     _reader.FrameArrived += FrameArrived;
+                    Volatile.Write(ref _error, null);
                     _running = true;
                     var startStatus = await _reader.StartAsync().AsTask(token);
                     if (startStatus != MediaFrameReaderStartStatus.Success)
@@ -220,7 +236,6 @@ public sealed class CameraCaptureService : ICameraCapture
                         throw new InvalidOperationException(LastError ?? "The camera stopped during startup.");
                     NegotiatedFormat = negotiated;
                     ActiveDevice = device;
-                    Volatile.Write(ref _error, null);
                     return;
                 }
                 catch (Exception ex) when (ex is COMException or ArgumentException or InvalidOperationException)
@@ -268,7 +283,7 @@ public sealed class CameraCaptureService : ICameraCapture
             if (original is null) return;
             var width = original.PixelWidth;
             var height = original.PixelHeight;
-            CameraFormatPolicy.ValidateCapturedResolution(width, height);
+            CameraFormatPolicy.ValidateCapturedResolution(width, height, _activePreference);
             CameraFrame.ValidateSize(width, height, checked(width * height * 4));
             using var converted = SoftwareBitmap.Convert(original, BitmapPixelFormat.Bgra8, BitmapAlphaMode.Ignore);
             var buffer = new Windows.Storage.Streams.Buffer((uint)(width * height * 4));
@@ -344,6 +359,7 @@ public sealed class CameraCaptureService : ICameraCapture
         Volatile.Write(ref _latest, null);
         Volatile.Write(ref _deliveredFrameDimensions, null);
         _lastCopyTimestamp = 0;
+        _activePreference = CameraCapturePreference.Balanced1080p;
     }
 
     public async ValueTask DisposeAsync()
