@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Automation;
@@ -116,7 +117,7 @@ internal static partial class Program
             AutomationProperties.GetName(button).StartsWith("Draw face-up ", StringComparison.Ordinal) &&
             button.CommandParameter is MarketSlotRow { Kind: not null and not TrainCardKind.Locomotive } && button.IsEnabled);
         model.Camera.IsGameTablePreviewUpright = true;
-        await InvokePracticalDrawImmediately(model, table, faceUp, activeName, initialCards + 1);
+        await VerifyOpenPracticalTrayDraw(model, table, faceUp, activeName, initialCards + 1);
         table.UpdateLayout();
         if (model.Table.Seats.Single(seat => seat.DisplayName == activeName).CardCount != initialCards + 1 ||
             model.Table.ActiveSeatName != activeName || !model.HasAcceptedPracticalTurn || model.ShowPracticalHandoff ||
@@ -136,6 +137,7 @@ internal static partial class Program
         if (!model.ShowPracticalHandoff || !model.TakePracticalTurnCommand.CanExecute(null))
             throw new InvalidOperationException("A fresh clear board must release the next player's handoff.");
         checks.Add("Take my turn leaves cards closed until clicked; cards award immediately and fly with rotation to their original owner, then a fresh-board check gates the next human's handoff.");
+        checks.Add("An already-open train-card tray updates its bound hand on the first draw without hiding or replaying its entrance animation.");
 
         await TakePracticalTurnThroughButton(model);
         table.UpdateLayout();
@@ -271,6 +273,48 @@ internal static partial class Program
         {
             var seat = model.Table.Seats.Single(seat => seat.DisplayName == playerName);
             return destinationCards > 0 ? seat.TicketCount : seat.CardCount;
+        }
+    }
+
+    private static async Task VerifyOpenPracticalTrayDraw(
+        MainViewModel model, GameTableView table, Button button, string playerName, int expectedCards)
+    {
+        // Let the deliberate tray opening finish before watching for an unwanted second entrance.
+        await Arrange(table, 1280, 800);
+        await Task.Delay(320);
+        var panel = (Border)table.FindName("SoloCardPanel");
+        var cards = (ItemsControl)table.FindName("SoloTrainCards");
+        var translation = (TranslateTransform)panel.RenderTransform;
+        if (!IsElementShown(panel) || !IsElementShown(cards) ||
+            Math.Abs(translation.Y) > .1 || panel.Opacity < .999)
+            throw new InvalidOperationException("The existing train-card tray must be fully open before the first draw.");
+
+        var visibility = DependencyPropertyDescriptor.FromProperty(UIElement.VisibilityProperty, typeof(Border));
+        var offset = DependencyPropertyDescriptor.FromProperty(TranslateTransform.YProperty, typeof(TranslateTransform));
+        var opacity = DependencyPropertyDescriptor.FromProperty(UIElement.OpacityProperty, typeof(Border));
+        var visibilityChanges = new List<Visibility>();
+        var entranceRestarted = false;
+        void VisibilityChanged(object? sender, EventArgs args) => visibilityChanges.Add(panel.Visibility);
+        void EntranceChanged(object? sender, EventArgs args) =>
+            entranceRestarted |= Math.Abs(translation.Y) > .1 || panel.Opacity < .999;
+        visibility.AddValueChanged(panel, VisibilityChanged);
+        offset.AddValueChanged(translation, EntranceChanged);
+        opacity.AddValueChanged(panel, EntranceChanged);
+        try
+        {
+            await InvokePracticalDrawImmediately(model, table, button, playerName, expectedCards);
+            await Arrange(table, 1280, 800);
+            if (visibilityChanges.Count != 0 || entranceRestarted || !IsElementShown(panel) ||
+                !IsElementShown(cards) || cards.Items.Cast<SoloTrainCardRow>().Sum(card => card.Count) != expectedCards)
+                throw new InvalidOperationException("Drawing with the train-card tray open must update its visible hand without closing or animating open again. " +
+                    $"Visibility changes=[{string.Join(", ", visibilityChanges)}], entrance restarted={entranceRestarted}, " +
+                    $"displayed cards={cards.Items.Cast<SoloTrainCardRow>().Sum(card => card.Count)}, expected={expectedCards}.");
+        }
+        finally
+        {
+            visibility.RemoveValueChanged(panel, VisibilityChanged);
+            offset.RemoveValueChanged(translation, EntranceChanged);
+            opacity.RemoveValueChanged(panel, EntranceChanged);
         }
     }
 

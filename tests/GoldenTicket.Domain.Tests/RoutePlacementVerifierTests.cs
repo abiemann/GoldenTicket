@@ -9,6 +9,10 @@ public sealed class RoutePlacementVerifierTests
     private const string LaneB = "atlanta--raleigh--b";
     private static readonly (double X, double Y)[] A = [(1586, 755), (1643, 712)];
     private static readonly (double X, double Y)[] B = [(1605, 770), (1656, 727)];
+    // Independently digitized rectangle corners in the empty 1996 x 1248 reference photo,
+    // averaged to centers. Never derive this regression scene from the geometry under test.
+    private static readonly (double X, double Y)[] DenverPhoenixPrintedCenters =
+        [(538.6, 896.3), (562.3, 833.3), (602.1, 778.9), (656.9, 736.4), (721.4, 706.3)];
 
     [Fact]
     public void Two_blue_trains_in_the_exact_lane_confirm_only_after_a_second_fresh_frame()
@@ -51,6 +55,87 @@ public sealed class RoutePlacementVerifierTests
             (A[0].X, A[0].Y, MarkerColor.Blue, .9), (A[1].X, A[1].Y, MarkerColor.Blue, .9));
         Assert.Equal(RoutePlacementState.Incomplete,
             verifier.Observe(first.Frame, [], LaneA, MarkerColor.Blue, 2, "op-1", 1, 1).State);
+    }
+
+    [Fact]
+    public void Denver_phoenix_trains_on_the_printed_curve_confirm_placement_and_inventory()
+        => AssertDenverPhoenixConfirms(DenverPhoenixPrintedCenters, DenverPhoenixPrintedCenters);
+
+    [Fact]
+    public void Recorded_denver_phoenix_camera_centers_confirm_all_five_trains()
+    {
+        // Two independently captured September 22 frames. All five trains were blue
+        // at >94% confidence, but the old lane geometry accepted only its end spaces.
+        // These effective centers include the guarded image fit where available.
+        AssertDenverPhoenixConfirms(
+            [(536.1066, 897.9792), (562.3076, 834.7641), (599.6532, 783.0302),
+                (651.6306, 740.4168), (714.4726, 711.0691)],
+            [(536.0411, 897.6616), (561.9719, 835.3096), (598.4978, 782.3954),
+                (651.5720, 740.7132), (716.9634, 709.5865)]);
+    }
+
+    private static void AssertDenverPhoenixConfirms((double X, double Y)[] firstCenters,
+        (double X, double Y)[] secondCenters)
+    {
+        const string route = "denver--phoenix";
+        var now = DateTimeOffset.UtcNow;
+        var first = SceneAtResolution(1996, 1248, 1, 1, now, firstCenters.Select(point =>
+            (point.X, point.Y, MarkerColor.Blue, .95)).ToArray());
+        var second = SceneAtResolution(1996, 1248, 2, 1, now.AddSeconds(1.1), secondCenters.Select(point =>
+            (point.X, point.Y, MarkerColor.Blue, .95)).ToArray());
+        var placement = new RoutePlacementVerifier();
+        var inventory = new BoardInventoryVerifier([new(route, MarkerColor.Blue, 5)]);
+
+        Assert.Equal(RoutePlacementState.Stabilizing,
+            placement.Observe(first.Frame, first.Candidates, route, MarkerColor.Blue, 5, "claim", 1, 1).State);
+        Assert.Equal(BoardInventoryState.Stabilizing, inventory.Observe(first.Frame, first.Candidates, 1, 1).State);
+        var accepted = placement.Observe(second.Frame, second.Candidates,
+            route, MarkerColor.Blue, 5, "claim", 1, 1);
+        Assert.True(accepted.Confirmed);
+        Assert.Equal(5, accepted.MatchedCount);
+        Assert.Equal(0, accepted.UnverifiedSlotMask);
+        Assert.True(inventory.Observe(second.Frame, second.Candidates, 1, 1).Confirmed);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void Denver_phoenix_still_requires_a_distinct_train_on_each_printed_space(int missing)
+    {
+        const string route = "denver--phoenix";
+        var trains = DenverPhoenixPrintedCenters.Where((_, index) => index != missing).Select(point =>
+            (point.X, point.Y, MarkerColor.Blue, .96)).ToArray();
+        var scene = SceneAtResolution(1996, 1248, 1, 1, DateTimeOffset.UtcNow, trains);
+        var observed = new RoutePlacementVerifier().Observe(scene.Frame, scene.Candidates,
+            route, MarkerColor.Blue, 5, "claim", 1, 1);
+
+        Assert.Equal(RoutePlacementState.Incomplete, observed.State);
+        Assert.Equal(4, observed.MatchedCount);
+        Assert.Equal(1 << missing, observed.UnverifiedSlotMask);
+        Assert.Equal(BoardInventoryState.MissingTrains,
+            new BoardInventoryVerifier([new(route, MarkerColor.Blue, 5)])
+                .Observe(scene.Frame, scene.Candidates, 1, 1).State);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Denver_phoenix_correction_does_not_accept_a_displaced_or_wrong_color_train(bool wrongColor)
+    {
+        const string route = "denver--phoenix";
+        var trains = DenverPhoenixPrintedCenters.Select((point, index) =>
+            (point.X + (index == 2 && !wrongColor ? 45 : 0), point.Y,
+                index == 2 && wrongColor ? MarkerColor.Red : MarkerColor.Blue, .96)).ToArray();
+        var scene = SceneAtResolution(1996, 1248, 1, 1, DateTimeOffset.UtcNow, trains);
+        var observed = new RoutePlacementVerifier().Observe(scene.Frame, scene.Candidates,
+            route, MarkerColor.Blue, 5, "claim", 1, 1);
+
+        Assert.Equal(wrongColor ? RoutePlacementState.WrongColor : RoutePlacementState.Incomplete, observed.State);
+        Assert.Equal(wrongColor ? 2 : 4, observed.MatchedCount);
+        Assert.Equal(0b00100, observed.UnverifiedSlotMask);
     }
 
     [Theory]

@@ -924,7 +924,7 @@ public sealed partial class MainViewModel : ObservableObject
     /// Lets computer seats play whatever is available, then republishes the public screen. It stops
     /// at any point that needs a human or the operator (DESIGN 4.5).
     /// </summary>
-    private async Task PumpAsync()
+    private async Task PumpAsync(bool preserveTrainCardPanel = false)
     {
         UpdateTurnClock();
         if (_coordinator is null || _driver is null || IsGameInputPaused || _scoreMarkerStep is not null ||
@@ -946,14 +946,16 @@ public sealed partial class MainViewModel : ObservableObject
             Busy = null;
         }
 
-        await RefreshAsync();
+        await RefreshAsync(preserveTrainCardPanel);
     }
 
-    private async Task RefreshAsync()
+    private async Task RefreshAsync(bool preserveTrainCardPanel = false)
     {
         if (_coordinator is null) return;
         UpdateTurnClock();
-        CloseSoloCardPanel();
+        if (!(preserveTrainCardPanel && ShowSoloTrainCards && IsGameTableHumanTurn &&
+            _coordinator.Public.TurnPhase == TurnPhase.AwaitingSecondTrainCard))
+            CloseSoloCardPanel();
 
         var view = _coordinator.Public;
         OnPropertyChanged(nameof(IsSoloHumanTurn));

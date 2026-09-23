@@ -228,8 +228,10 @@ public sealed class DesktopSingleHumanTests
         finally { await model.DisposeToolsAsync(); }
     }
 
-    [Fact]
-    public async Task Solo_train_preview_groups_duplicate_colors_and_refreshes_counts_after_a_draw()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Solo_train_preview_groups_duplicate_colors_and_refreshes_counts_after_a_draw(bool blindDraw)
     {
         var store = new InMemorySessionStore();
         var model = NewSingleHumanMatch(store);
@@ -269,26 +271,102 @@ public sealed class DesktopSingleHumanTests
             Assert.Equal(before.Hand.ToArray(),
                 (await coordinator.GetSeatViewAsync(human.Seat.SeatId, cancellationToken: TestContext.Current.CancellationToken)).Hand.ToArray());
 
-            // A matching face-up draw must update the existing yellow preview, not add a duplicate.
+            var presentationChanges = new List<(bool PanelVisible, bool TrainsVisible, int CardCount)>();
+            model.PropertyChanged += (_, args) =>
+            {
+                if (args.PropertyName is nameof(MainViewModel.ShowSoloCardPanel) or
+                    nameof(MainViewModel.ShowSoloTrainCards) or nameof(MainViewModel.SoloTrainCards))
+                    presentationChanges.Add((model.ShowSoloCardPanel, model.ShowSoloTrainCards,
+                        model.SoloTrainCards.Sum(card => card.Count)));
+            };
+
+            // A draw updates the already-open tray without an intermediate close or empty hand.
             var yellow = model.Table.Market.First(slot => slot.Kind == TrainCardKind.Yellow);
             Assert.True(model.DrawSoloFaceUpCommand.CanExecute(yellow));
-            await model.DrawSoloFaceUpCommand.ExecuteAsync(yellow);
+            if (blindDraw) await model.DrawSoloBlindCommand.ExecuteAsync(null);
+            else await model.DrawSoloFaceUpCommand.ExecuteAsync(yellow);
 
             Assert.True(model.IsSoloHumanTurn);
             Assert.True(model.ShowSoloTrainCards);
-            Assert.Equal(3, model.SoloTrainCards.Count);
-            Assert.Equal(2, Assert.Single(model.SoloTrainCards, card => card.Kind == TrainCardKind.Yellow).Count);
+            Assert.NotEmpty(presentationChanges);
+            Assert.All(presentationChanges, change =>
+            {
+                Assert.True(change.PanelVisible);
+                Assert.True(change.TrainsVisible);
+                Assert.InRange(change.CardCount, 4, 5);
+            });
+            if (!blindDraw)
+            {
+                Assert.Equal(3, model.SoloTrainCards.Count);
+                Assert.Equal(2, Assert.Single(model.SoloTrainCards, card => card.Kind == TrainCardKind.Yellow).Count);
+            }
             Assert.Equal(5, model.SoloTrainCards.Sum(card => card.Count));
             var after = await coordinator.GetSeatViewAsync(human.Seat.SeatId, cancellationToken: TestContext.Current.CancellationToken);
+            Assert.Equal(after.Hand.GroupBy(card => card.Kind).OrderBy(group => group.Key)
+                .Select(group => (group.Key, group.Count())), model.SoloTrainCards.Select(card => (card.Kind, card.Count)));
             Assert.Equal(before.Hand.Length + 1, after.Hand.Length);
             Assert.All(before.Hand, card => Assert.Contains(card, after.Hand));
             Assert.Equal(5, after.Hand.Select(card => card.Id).Distinct().Count());
-            Assert.Equal(TrainCardKind.Yellow,
-                Assert.Single(after.Hand, card => !before.Hand.Any(old => old.Id == card.Id)).Kind);
+            var awarded = Assert.Single(after.Hand, card => !before.Hand.Any(old => old.Id == card.Id));
+            if (!blindDraw) Assert.Equal(TrainCardKind.Yellow, awarded.Kind);
             Assert.Null(model.PrivateSeat);
             Assert.Equal(Screen.Table, model.Screen);
         }
         finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Theory]
+    [InlineData("hide")]
+    [InlineData("focus-return")]
+    public async Task Refreshing_an_open_train_tray_after_a_draw_cannot_undo_a_privacy_close(string action)
+    {
+        var store = new DelayedStore();
+        var model = NewSingleHumanMatch(store);
+        Task? drawing = null;
+        try
+        {
+            await model.StartMatchAsync();
+            await model.CommitTicketsAsync();
+            var human = model.Game.TableSeats.Single(tile => tile.Seat.Operator == "human");
+            await model.ToggleSoloTrainCardsCommand.ExecuteAsync(human);
+            Assert.True(model.ShowSoloTrainCards);
+            Assert.Equal(4, model.SoloTrainCards.Sum(card => card.Count));
+
+            store.DelayNextCommit();
+            drawing = model.DrawSoloBlindCommand.ExecuteAsync(null);
+            await store.CommitStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            if (action == "hide") model.HidePrivateSeat();
+            else
+            {
+                model.SetWindowActive(false);
+                model.SetWindowActive(true);
+            }
+            Assert.False(model.ShowSoloCardPanel);
+            Assert.Empty(model.SoloTrainCards);
+
+            store.ReleaseCommit.TrySetResult();
+            await drawing.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+            Assert.Equal(5, model.Table.Seats.Single(seat => seat.Operator == "human").CardCount);
+            Assert.Equal("Taking a second train card", model.Table.PhaseText);
+            Assert.False(model.ShowSoloCardPanel);
+            Assert.Empty(model.SoloTrainCards);
+            Assert.Empty(model.SoloDestinationMarkers);
+            Assert.Null(model.PrivateSeat);
+            await model.ToggleSoloTrainCardsCommand.ExecuteAsync(human);
+            Assert.True(model.ShowSoloTrainCards);
+            Assert.Equal(5, model.SoloTrainCards.Sum(card => card.Count));
+        }
+        finally
+        {
+            store.ReleaseCommit.TrySetResult();
+            try
+            {
+                if (drawing is not null)
+                    await drawing.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+            }
+            finally { await model.DisposeToolsAsync(); }
+        }
     }
 
     [Fact]

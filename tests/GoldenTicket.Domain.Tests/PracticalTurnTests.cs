@@ -185,6 +185,9 @@ public sealed class PracticalTurnTests
             Assert.Equal(originalTurn + 1, coordinator.Public.TurnNumber);
             Assert.NotEqual(seat, coordinator.Public.ActiveSeatId);
             Assert.True(model.IsCheckingBoardBeforeNextTurn);
+            Assert.False(model.ShowSoloCardPanel);
+            Assert.Empty(model.SoloTrainCards);
+            Assert.Empty(model.SoloDestinationMarkers);
             Assert.False(model.ShowPracticalHandoff);
             Assert.False(model.TakePracticalTurnCommand.CanExecute(null));
             await CompleteBoardHandoffAsync(model);

@@ -169,7 +169,7 @@ public sealed class DesktopCompletedSaveTests
         Assert.True((await coordinator.SubmitAsync(
             new ResumePackedGame(coordinator.NewEnvelope(), checkpoint.CheckpointId), token)).IsAccepted);
         await (Task)typeof(MainViewModel).GetMethod("RefreshAsync", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(model, null)!;
+            .Invoke(model, [false])!;
         Assert.False(model.Table.IsPackedAway, model.Status);
     }
 }

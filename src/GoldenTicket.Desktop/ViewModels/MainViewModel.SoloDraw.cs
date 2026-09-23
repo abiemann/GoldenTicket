@@ -231,10 +231,10 @@ public sealed partial class MainViewModel
                 ? new SelectTrainCard(coordinator.NewEnvelope(seat.SeatId), null) : null
             : _rules.GetLegalActions(seat).DrawableFaceUpSlots.Contains(slot.Value)
                 ? new SelectTrainCard(coordinator.NewEnvelope(seat.SeatId), slot) : null,
-        reopenTrainCards: true);
+        showTrainCardsAfterDraw: true);
 
     private async Task SubmitSoloActionAsync(
-        Func<GameCoordinator, SeatView, GameCommand?> build, bool reopenTrainCards = false)
+        Func<GameCoordinator, SeatView, GameCommand?> build, bool showTrainCardsAfterDraw = false)
     {
         if (!CanUseSoloDrawPiles || _coordinator is not { } coordinator) return;
         var active = coordinator.Public.ActiveSeatId;
@@ -259,17 +259,23 @@ public sealed partial class MainViewModel
             Status = null;
             NotifyAcceptedLocalCardAction(outcome);
             BeginCardTurnBoardCheck(seat.Public);
-            await PumpAsync();
+            await PumpAsync(preserveTrainCardPanel: showTrainCardsAfterDraw &&
+                ReferenceEquals(coordinator, _coordinator) && _revealGeneration == generation &&
+                coordinator.Public.ActiveSeatId == active &&
+                coordinator.Public.TurnPhase == TurnPhase.AwaitingSecondTrainCard);
         }
         catch (Exception) { RequireReload(); }
         finally { SetOperationInProgress(false); }
 
-        if (accepted && reopenTrainCards && IsGameTableHumanTurn &&
-            _coordinator?.Public.TurnPhase == TurnPhase.AwaitingSecondTrainCard)
+        if (accepted && showTrainCardsAfterDraw && ReferenceEquals(coordinator, _coordinator) &&
+            _revealGeneration == generation && IsGameTableHumanTurn &&
+            coordinator.Public.ActiveSeatId == active &&
+            coordinator.Public.TurnPhase == TurnPhase.AwaitingSecondTrainCard)
         {
             var human = Game.TableSeats.FirstOrDefault(tile =>
                 tile.Seat.SeatId == active && tile.Seat.Operator == "human");
-            if (human is not null) await ToggleSoloCardsAsync(human, SoloCardPanelSelection.TrainCards);
+            if (human is not null)
+                await UpdateSoloCardPanelAsync(human, SoloCardPanelSelection.TrainCards, toggle: false);
         }
     }
 }

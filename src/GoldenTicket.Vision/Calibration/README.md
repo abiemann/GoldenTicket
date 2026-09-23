@@ -8,7 +8,7 @@ need the original photograph or a separately installed image file.
 | Property | Value |
 | --- | --- |
 | Board profile | `ttr-us-classic-en-v1` |
-| Geometry version | `classic-us-slots-2026-09-22-v6` |
+| Geometry version | `classic-us-slots-2026-09-22-v7` |
 | Reference size | 320 × 200 |
 | Resource SHA-256 | `0b8ab46ff79d5ea6ddc9aef338c340e394a4bca498bf6a797a4740c909baccec` |
 | Original photo | `GoldenTicket-board-20260914-181653.png` |
@@ -58,3 +58,19 @@ photograph. The Saint Louis-side center stays at `(1321, 689)`. This centers the
 right-hand placement sphere on its printed space in both the laptop and companion
 views and keeps camera verification aligned with that cue. The artwork reference,
 model and global tolerances are unchanged.
+
+## Denver–Phoenix curve correction, September 22
+
+The v7 geometry remeasures all five Denver–Phoenix space centers and their individual
+directions against the original empty-board photograph. In Phoenix-to-Denver order,
+the centers are `(539, 897)`, `(562, 833)`, `(602, 779)`, `(657, 736)` and `(721, 706)`
+in the 1996 × 1248 reference axes. The old middle centers lay too far right of the
+printed curve, so correctly placed trains could fail the position check.
+
+Three shared-camera frames of the reported board reproduced two of five accepted
+spaces with v6, despite five separate blue detections at 94.9–96.1% confidence. Offline
+replay of the same frames with v7 accepts all five spaces and confirms the route after
+the second distinct frame. This is a captured-frame check, not a completed in-game
+retest. Regression tests cover measured centers, missing individual trains, wrong
+colors and displaced trains. The detector, artwork reference and global tolerances
+are unchanged; placement spheres use the corrected geometry as well.

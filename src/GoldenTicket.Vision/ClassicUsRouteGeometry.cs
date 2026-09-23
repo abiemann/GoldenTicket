@@ -19,7 +19,7 @@ public readonly record struct BoardSlotPoint(double X, double Y, double TangentX
 public static class ClassicUsRouteGeometry
 {
     public const string ProfileId = "ttr-us-classic-en-v1";
-    public const string GeometryVersion = "classic-us-slots-2026-09-22-v6";
+    public const string GeometryVersion = "classic-us-slots-2026-09-22-v7";
     // The original 3456 × 2160 empty-board photo, before scaling to the 1996 × 1248
     // reference used below. The original user photo is not shipped; its compact grayscale
     // calibration is embedded by ClassicUsBoardAlignment to keep live crops in these axes.
@@ -70,7 +70,10 @@ public static class ClassicUsRouteGeometry
             ["denver--kansas-city--b"] = Lane((837, 715), (907, 716), (974, 700), (1037, 676)),
             ["denver--oklahoma-city"] = Lane((812, 742), (876, 779), (945, 798), (1010, 803)),
             ["denver--omaha"] = Lane((816, 646), (869, 607), (936, 587), (1007, 569)),
-            ["denver--phoenix"] = Lane((553, 894), (586, 831), (632, 777), (683, 730), (733, 701)),
+            // Remeasured against the empty reference: the old middle centers cut across
+            // the inside of this curve. Follow each printed rectangle's center/direction.
+            ["denver--phoenix"] = [Point(539, 897, .24, -.97), Point(562, 833, .47, -.88),
+                Point(602, 779, .72, -.70), Point(657, 736, .86, -.51), Point(721, 706, .95, -.32)],
             ["denver--salt-lake-city--a"] = Lane((572, 613), (640, 617), (706, 637)),
             ["denver--salt-lake-city--b"] = Lane((572, 637), (640, 643), (705, 663)),
             ["denver--santa-fe"] = Lane((763, 745), (760, 808)),

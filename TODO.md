@@ -116,6 +116,10 @@ See the
 - [ ] Test each route, especially adjacent parallel lanes and curved six-space routes, under
   live overhead-camera conditions. Record false acceptances, abstentions and detection latency;
   synthetic fixtures and a handful of photos do not establish physical-camera accuracy.
+- [x] Correct Denver–Phoenix's printed-space centers and directions against the empty-board
+  reference. Three captured frames reproduced the reported 2/5 verification and replay at 5/5
+  with the correction, without changing detection thresholds. Missing, displaced and wrong-color
+  trains remain covered by regression tests. See the [calibration record](src/GoldenTicket.Vision/Calibration/README.md#denverphoenix-curve-correction-september-22).
 - [x] Refine reloaded board crops against their saved photo to correct small corner errors before
   assigning trains to parallel lanes. Three captured frames replayed with both failing Duluth–Omaha
   crops now verify all 20 saved trains; the adjacent empty lane remains rejected. See the

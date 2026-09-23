@@ -73,7 +73,10 @@ public sealed partial class MainViewModel
     private Task ToggleSoloDestinationsAsync(GameTableSeat? tile) =>
         ToggleSoloCardsAsync(tile, SoloCardPanelSelection.Destinations);
 
-    private async Task ToggleSoloCardsAsync(GameTableSeat? tile, SoloCardPanelSelection kind)
+    private Task ToggleSoloCardsAsync(GameTableSeat? tile, SoloCardPanelSelection kind) =>
+        UpdateSoloCardPanelAsync(tile, kind, toggle: true);
+
+    private async Task UpdateSoloCardPanelAsync(GameTableSeat? tile, SoloCardPanelSelection kind, bool toggle)
     {
         if (_coordinator is not { StorageFaulted: false } coordinator || tile is null ||
             !IsGameTableHumanTurn || !IsGameplayScreenActive(Screen.Table) ||
@@ -82,13 +85,15 @@ public sealed partial class MainViewModel
             coordinator.Public.ActiveSeatId != tile.Seat.SeatId ||
             !Table.Seats.Any(seat => seat.SeatId == tile.Seat.SeatId && seat.Operator == "human")) return;
 
-        if (SoloCardPanelKind == kind)
+        if (toggle && SoloCardPanelKind == kind)
         {
             CloseSoloCardPanel();
             return;
         }
 
-        CloseSoloCardPanel();
+        // Refreshing an open hand must keep its visibility and entrance animation intact.
+        // A deliberate stack click still toggles it, and changing panel kind opens anew.
+        if (SoloCardPanelKind != kind) CloseSoloCardPanel();
         var generation = _soloCardsGeneration;
         var version = coordinator.Public.StateVersion;
         try

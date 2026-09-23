@@ -219,6 +219,8 @@ The public screen contains:
   bottom after setup; no player tile occupies this area.
   For one human, the T pile and face-up market submit legal train-card draws directly from the
   table; after the first draw, the hand preview can show the new card without leaving the board.
+  If the train-card tray is already open, update its contents in place without closing it or
+  replaying the opening animation. Turn handoffs and privacy actions still close the tray.
   The D pile opens an in-game destination choice below the board, with endpoint rings and lines
   on the board. The human must keep the rule's minimum before play continues. Draw controls are
   available only during that human's applicable turn phase and are disabled for the computer.
