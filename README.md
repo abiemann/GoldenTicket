@@ -46,6 +46,16 @@ Visual Studio with the **.NET desktop development** workload is the preferred de
 A framework-dependent build copied to another laptop needs the .NET 10 Windows Desktop and
 ASP.NET Core runtimes. Both recognition models are bundled with the project and copied during build.
 
+## Board and Webcam Setup
+
+![An Android phone mounted as an overhead webcam above the board, with GoldenTicket on a laptop](docs/images/board-and-webcam-setup.jpg)
+
+Mount the webcam directly above the center of the playing board, with its lens pointing straight
+down. In the photo, our Android phone was used as a webcam about **33 inches (84 cm)** above the
+board. Adjust the height and framing for your camera so the whole board, including all four
+corners and the scoring track, is visible with a slight border of table around every edge. Keep
+the camera steady and the view clear during play.
+
 ## Start a game
 
 1. Choose **Start a new game**. On **Choose players**, click a portrait to cycle through human,
@@ -68,7 +78,15 @@ that score so the camera can see each color.
 its window size, maximized state or full-screen choice. If no camera is connected, board setup
 keeps looking; use its camera selector when more than one is available.
 
-### Quick play: scan QR → join → play
+### Multiple Humans (privacy) Quick play: scan QR → join → play
+
+<table>
+  <tr>
+    <td><a href="docs/images/companion-private-hand-and-destinations.jpg"><img src="docs/images/companion-private-hand-and-destinations.jpg" alt="Private train cards and destination map on the shared phone" width="280"></a></td>
+    <td><a href="docs/images/companion-cards-covered.jpg"><img src="docs/images/companion-cards-covered.jpg" alt="Cards covered before passing the phone to the next player" width="280"></a></td>
+    <td><a href="docs/images/companion-qr-pairing.jpg"><img src="docs/images/companion-qr-pairing.jpg" alt="Laptop QR code and phone pairing screen" width="280"></a></td>
+  </tr>
+</table>
 
 **No installation needed.** Use the laptop's **LAN Game** controls to open the connection options.
 
