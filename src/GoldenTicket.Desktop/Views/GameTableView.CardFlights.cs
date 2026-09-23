@@ -9,6 +9,7 @@ namespace GoldenTicket.Desktop.Views;
 public partial class GameTableView
 {
     private readonly Dictionary<Border, Storyboard> _cardFlights = [];
+    private readonly Dictionary<Border, TaskCompletionSource> _cardFlightCompletions = [];
 
     private void OnCardDrawn(object? sender, CardFlightEventArgs flight)
     {
@@ -28,10 +29,10 @@ public partial class GameTableView
         var from = source.TranslatePoint(new Point(source.ActualWidth / 2, source.ActualHeight / 2), TableScene);
         var to = new Point(owner.Left + 125, owner.Top + 80);
         for (var index = 0; index < Math.Clamp(flight.Count, 1, 3); index++)
-            FlyCard(flight, from, to, source.ActualWidth, source.ActualHeight, index);
+            flight.TrackPresentation(FlyCard(flight, from, to, source.ActualWidth, source.ActualHeight, index));
     }
 
-    private void FlyCard(CardFlightEventArgs flight, Point from, Point to, double width, double height, int index)
+    private Task FlyCard(CardFlightEventArgs flight, Point from, Point to, double width, double height, int index)
     {
         var card = CreateFlyingCard(flight, width, height);
         card.Tag = flight;
@@ -70,14 +71,21 @@ public partial class GameTableView
         AddFlightAnimation(storyboard, card, new PropertyPath(OpacityProperty),
             new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(90)) { BeginTime = TimeSpan.FromMilliseconds(450) });
         _cardFlights[card] = storyboard;
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _cardFlightCompletions[card] = completion;
         storyboard.Completed += (_, _) =>
         {
-            storyboard.Remove(this);
-            _cardFlights.Remove(card);
-            DrawCardFlightLayer.Children.Remove(card);
-            PulseOwnerStack(flight);
+            try { RemoveCardFlight(card); PulseOwnerStack(flight); }
+            finally { completion.TrySetResult(); }
         };
-        storyboard.Begin(this, isControllable: true);
+        try { storyboard.Begin(this, isControllable: true); }
+        catch
+        {
+            RemoveCardFlight(card);
+            completion.TrySetResult();
+            throw;
+        }
+        return completion.Task;
     }
 
     private static PropertyPath FlightTransformProperty(int child, DependencyProperty property) =>
@@ -138,9 +146,20 @@ public partial class GameTableView
 
     private void ClearCardFlights()
     {
-        foreach (var storyboard in _cardFlights.Values) storyboard.Remove(this);
-        _cardFlights.Clear();
+        foreach (var card in _cardFlights.Keys.ToArray())
+        {
+            var completion = _cardFlightCompletions.GetValueOrDefault(card);
+            try { RemoveCardFlight(card); }
+            finally { completion?.TrySetResult(); }
+        }
         DrawCardFlightLayer?.Children.Clear();
+    }
+
+    private void RemoveCardFlight(Border card)
+    {
+        if (_cardFlights.Remove(card, out var storyboard)) storyboard.Remove(this);
+        _cardFlightCompletions.Remove(card);
+        DrawCardFlightLayer.Children.Remove(card);
     }
 
     private static IEnumerable<T> FlightDescendants<T>(DependencyObject root) where T : DependencyObject

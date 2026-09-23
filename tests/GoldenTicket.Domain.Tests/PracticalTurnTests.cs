@@ -241,6 +241,199 @@ public sealed class PracticalTurnTests
     }
 
     [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task Final_train_draw_awards_immediately_but_keeps_the_open_hand_until_the_card_lands(
+        bool firstFaceUp, bool finalFaceUp)
+    {
+        var model = NewPracticalMatch();
+        var landing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            await StartActiveMatchAsync(model);
+            await model.TakePracticalTurnAsync();
+            await model.ToggleSoloTrainCardsCommand.ExecuteAsync(model.Game.TableSeats[0]);
+            await DrawTrainAsync(model, firstFaceUp);
+            var coordinator = Coordinator(model);
+            var seat = coordinator.Public.ActiveSeatId;
+            var turn = coordinator.Public.TurnNumber;
+            var handBefore = (await coordinator.GetSeatViewAsync(seat,
+                TestContext.Current.CancellationToken)).Hand;
+            var presented = new TaskCompletionSource<CardFlightEventArgs>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            model.CardDrawn += (_, flight) =>
+            {
+                flight.TrackPresentation(landing.Task);
+                presented.TrySetResult(flight);
+            };
+
+            var draw = DrawTrainAsync(model, finalFaceUp);
+            var flight = await presented.Task.WaitAsync(TimeSpan.FromSeconds(2),
+                TestContext.Current.CancellationToken);
+            await WaitUntilAsync(() => model.Table.Seats.Single(row => row.SeatId == seat).CardCount == 6);
+
+            Assert.False(draw.IsCompleted);
+            Assert.Equal(seat, flight.SeatId);
+            Assert.Equal(finalFaceUp ? CardFlightSource.FaceUpTrain : CardFlightSource.TrainPile, flight.Source);
+            var awardedHand = (await coordinator.GetSeatViewAsync(seat,
+                TestContext.Current.CancellationToken)).Hand;
+            Assert.Equal(6, awardedHand.Length);
+            var awardedCard = Assert.Single(awardedHand.Except(handBefore));
+            if (finalFaceUp) Assert.Equal(flight.VisibleKind, awardedCard.Kind);
+            else Assert.Null(flight.VisibleKind);
+            Assert.Equal(turn + 1, coordinator.Public.TurnNumber);
+            Assert.NotEqual(seat, coordinator.Public.ActiveSeatId);
+            Assert.Equal(coordinator.Public.FaceUp.ToArray(), model.Table.Market.Select(slot => slot.Kind).ToArray());
+            Assert.True(model.ShowSoloTrainCards);
+            Assert.NotEmpty(model.SoloTrainCards);
+            Assert.False(model.IsCheckingBoardBeforeNextTurn);
+            Assert.False(model.ShowPracticalHandoff);
+            Assert.False(model.DrawSoloBlindCommand.CanExecute(null));
+            Assert.False(model.DrawSoloTicketsCommand.CanExecute(null));
+            Assert.All(model.Table.Market, slot => Assert.False(model.DrawSoloFaceUpCommand.CanExecute(slot)));
+            Assert.False(model.TakePracticalTurnCommand.CanExecute(null));
+            var awardedState = await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken);
+
+            landing.SetResult();
+            await draw.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+
+            Assert.True(model.IsCheckingBoardBeforeNextTurn);
+            Assert.False(model.ShowSoloCardPanel);
+            Assert.Empty(model.SoloTrainCards);
+            Assert.Empty(model.BoardDestinationMarkers);
+            Assert.Equal(awardedState, await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken));
+            await CompleteBoardHandoffAsync(model);
+            AssertCoveredHandoff(model);
+        }
+        finally
+        {
+            landing.TrySetResult();
+            await model.DisposeToolsAsync();
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task First_train_draw_does_not_wait_for_the_flight_before_allowing_the_second_card(bool faceUp)
+    {
+        var model = NewPracticalMatch();
+        var landing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            await StartActiveMatchAsync(model);
+            await model.TakePracticalTurnAsync();
+            await model.ToggleSoloTrainCardsCommand.ExecuteAsync(model.Game.TableSeats[0]);
+            var seat = Coordinator(model).Public.ActiveSeatId;
+            var flights = 0;
+            model.CardDrawn += (_, flight) =>
+            {
+                flights++;
+                flight.TrackPresentation(landing.Task);
+            };
+
+            await DrawTrainAsync(model, faceUp)
+                .WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+
+            Assert.Equal(1, flights);
+            Assert.False(landing.Task.IsCompleted);
+            Assert.Equal(seat, Coordinator(model).Public.ActiveSeatId);
+            Assert.Equal(TurnPhase.AwaitingSecondTrainCard, Coordinator(model).Public.TurnPhase);
+            Assert.True(model.ShowSoloTrainCards);
+            Assert.Equal(5, model.SoloTrainCards.Sum(card => card.Count));
+            Assert.True(model.DrawSoloBlindCommand.CanExecute(null));
+            Assert.False(model.IsCheckingBoardBeforeNextTurn);
+        }
+        finally
+        {
+            landing.TrySetResult();
+            await model.DisposeToolsAsync();
+        }
+    }
+
+    [Theory]
+    [InlineData("focus-return")]
+    [InlineData("hide")]
+    public async Task Privacy_hides_the_outgoing_hand_immediately_during_a_final_card_flight(string transition)
+    {
+        var model = NewPracticalMatch();
+        var landing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            await StartActiveMatchAsync(model);
+            await model.TakePracticalTurnAsync();
+            await DrawTrainAsync(model, false);
+            var coordinator = Coordinator(model);
+            var seat = coordinator.Public.ActiveSeatId;
+            model.CardDrawn += (_, flight) => flight.TrackPresentation(landing.Task);
+            var draw = DrawTrainAsync(model, false);
+            await WaitUntilAsync(() => model.Table.Seats.Single(row => row.SeatId == seat).CardCount == 6);
+            Assert.False(draw.IsCompleted);
+            Assert.True(model.ShowSoloTrainCards);
+            var awardedState = await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken);
+
+            if (transition == "focus-return")
+            {
+                model.SetWindowActive(false);
+                model.SetWindowActive(true);
+            }
+            else model.HidePrivateSeat();
+
+            Assert.False(model.ShowSoloCardPanel);
+            Assert.Empty(model.SoloTrainCards);
+            Assert.Empty(model.BoardDestinationMarkers);
+            landing.SetResult();
+            await draw.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+
+            Assert.False(model.ShowSoloCardPanel);
+            Assert.Empty(model.SoloTrainCards);
+            Assert.True(model.IsCheckingBoardBeforeNextTurn);
+            Assert.Equal(awardedState, await coordinator.ComputeStateHashAsync(TestContext.Current.CancellationToken));
+            await CompleteBoardHandoffAsync(model);
+            AssertCoveredHandoff(model);
+        }
+        finally
+        {
+            landing.TrySetResult();
+            await model.DisposeToolsAsync();
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Failed_or_cancelled_final_card_animation_cannot_undo_the_card_or_block_handoff(bool cancelled)
+    {
+        var model = NewPracticalMatch();
+        try
+        {
+            await StartActiveMatchAsync(model);
+            await model.TakePracticalTurnAsync();
+            await DrawTrainAsync(model, false);
+            var coordinator = Coordinator(model);
+            var seat = coordinator.Public.ActiveSeatId;
+            model.CardDrawn += (_, flight) => flight.TrackPresentation(cancelled
+                ? Task.FromCanceled(new CancellationToken(canceled: true))
+                : Task.FromException(new InvalidOperationException("Animation view was removed.")));
+
+            await DrawTrainAsync(model, true)
+                .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+
+            Assert.Equal(6, (await coordinator.GetSeatViewAsync(seat,
+                TestContext.Current.CancellationToken)).Hand.Length);
+            Assert.Equal(6, model.Table.Seats.Single(row => row.SeatId == seat).CardCount);
+            Assert.True(model.IsCheckingBoardBeforeNextTurn);
+            Assert.False(model.ShowSoloCardPanel);
+            Assert.Empty(model.SoloTrainCards);
+            await CompleteBoardHandoffAsync(model);
+            AssertCoveredHandoff(model);
+        }
+        finally { await model.DisposeToolsAsync(); }
+    }
+
+    [Theory]
     [InlineData("focus")]
     [InlineData("hide")]
     [InlineData("game-layer")]
@@ -386,6 +579,11 @@ public sealed class PracticalTurnTests
         model.SetGameLayerVisible(true);
         return model;
     }
+
+    private static Task DrawTrainAsync(MainViewModel model, bool faceUp) => faceUp
+        ? model.DrawSoloFaceUpCommand.ExecuteAsync(model.Table.Market.First(slot =>
+            slot.Kind != TrainCardKind.Locomotive && model.DrawSoloFaceUpCommand.CanExecute(slot)))
+        : model.DrawSoloBlindCommand.ExecuteAsync(null);
 
     private static async Task StartAsync(MainViewModel model)
     {

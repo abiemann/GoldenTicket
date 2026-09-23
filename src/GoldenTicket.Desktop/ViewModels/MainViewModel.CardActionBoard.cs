@@ -90,18 +90,21 @@ public sealed partial class MainViewModel
         });
     }
 
-    private void NotifyAcceptedLocalCardAction(SubmitOutcome outcome)
+    private Task NotifyAcceptedLocalCardAction(SubmitOutcome outcome)
     {
-        if (!outcome.IsAccepted || outcome.WasDuplicate || outcome.Result.Transition is not { } transition) return;
+        if (!outcome.IsAccepted || outcome.WasDuplicate || outcome.Result.Transition is not { } transition)
+            return Task.CompletedTask;
+        var presentations = new List<Task>();
         foreach (var entry in transition.Events)
         {
             if (entry is FaceUpCardTaken faceUp)
-                OnLocalTrainCardAccepted(faceUp.SeatId, faceUp.Slot, faceUp.Kind);
+                presentations.Add(OnLocalTrainCardAccepted(faceUp.SeatId, faceUp.Slot, faceUp.Kind));
             else if (entry is BlindCardDrawn blind)
-                OnLocalTrainCardAccepted(blind.SeatId, null, TrainCardKind.Locomotive);
+                presentations.Add(OnLocalTrainCardAccepted(blind.SeatId, null, TrainCardKind.Locomotive));
             else if (entry is TicketOfferCreated tickets)
-                OnLocalDestinationCardsAccepted(tickets.SeatId, tickets.Offered.Length);
+                presentations.Add(OnLocalDestinationCardsAccepted(tickets.SeatId, tickets.Offered.Length));
         }
+        return Task.WhenAll(presentations);
     }
 
     private void SetCardBoardWarning(string? message)

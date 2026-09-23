@@ -89,6 +89,23 @@ public sealed partial class TableViewModel : ObservableObject
     [ObservableProperty] private bool _rebuildAttested;
     [ObservableProperty] private bool _rebuildAcknowledged;
 
+    /// <summary>Publish a durable card draw while its flight still belongs to the outgoing turn.</summary>
+    internal void UpdateCardDraw(PublicView view, IReadOnlyList<PublicEventEntry> history)
+    {
+        for (var index = 0; index < Seats.Count; index++)
+        {
+            var row = Seats[index];
+            var seat = view.SeatOf(row.SeatId);
+            Seats[index] = row with
+            {
+                CardCount = seat.TrainCardCount,
+                TicketCount = seat.TicketCount + seat.PendingTicketOfferCount,
+                LastAction = LastActionFor(row.SeatId, history)
+            };
+        }
+        UpdateMarket(view);
+    }
+
     public void Update(PublicView view, IReadOnlyList<PublicEventEntry> history)
     {
         WholeBoardAcknowledged = false;
@@ -148,12 +165,7 @@ public sealed partial class TableViewModel : ObservableObject
                 LastActionFor(seat.SeatId, history)));
         }
 
-        Market.Clear();
-        for (var slot = 0; slot < view.FaceUp.Length; slot++)
-        {
-            var kind = view.FaceUp[slot];
-            Market.Add(new MarketSlotRow(slot, kind, kind?.ToString() ?? "empty"));
-        }
+        UpdateMarket(view);
 
         ClaimedRoutes.Clear();
         foreach (var (routeId, seatId) in view.RouteOwners.OrderBy(pair => pair.Value.Value).ThenBy(pair => pair.Key.Value))
@@ -177,6 +189,16 @@ public sealed partial class TableViewModel : ObservableObject
         Placement = !view.IsGameplaySuspended && view.PendingClaim is { } pending
             ? BuildPlacement(view, pending)
             : null;
+    }
+
+    private void UpdateMarket(PublicView view)
+    {
+        Market.Clear();
+        for (var slot = 0; slot < view.FaceUp.Length; slot++)
+        {
+            var kind = view.FaceUp[slot];
+            Market.Add(new MarketSlotRow(slot, kind, kind?.ToString() ?? "empty"));
+        }
     }
 
     /// <summary>

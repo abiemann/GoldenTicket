@@ -220,7 +220,9 @@ The public screen contains:
   For one human, the T pile and face-up market submit legal train-card draws directly from the
   table; after the first draw, the hand preview can show the new card without leaving the board.
   If the train-card tray is already open, update its contents in place without closing it or
-  replaying the opening animation. Turn handoffs and privacy actions still close the tray.
+  replaying the opening animation. On the final train-card draw, keep the open tray visible
+  until the card lands in its owner's tile, then close it and begin the turn handoff.
+  Privacy actions still close the tray immediately.
   The D pile opens an in-game destination choice below the board, with endpoint rings and lines
   on the board. The human must keep the rule's minimum before play continues. Draw controls are
   available only during that human's applicable turn phase and are disabled for the computer.
@@ -251,7 +253,11 @@ result beside the picker. On the themed laptop board, an accepted face-up card o
 card flies along an arc while rotating into the original player's tile. The public stack updates
 from the committed state, including destination tickets temporarily held in the pending offer.
 The animation never changes the rules, reveals blind cards or delays saving; reduced-motion
-settings skip the flight.
+settings skip the flight. When a final train-card draw leaves an open tray, public card counts
+and the replenished market update immediately while the outgoing player's tray waits for the
+flight's actual completion. New actions stay disabled until that presentation finishes and
+the normal board check begins. Removed views release the wait; presentation failure has a
+bounded fallback so a saved draw cannot leave the turn stuck.
 
 The game completes these actions through the rules engine. After the second train card, a
 face-up locomotive, or a kept destination offer ends a human's turn, the camera checks fresh

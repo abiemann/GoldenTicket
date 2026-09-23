@@ -257,7 +257,18 @@ public sealed partial class MainViewModel
             }
             accepted = true;
             Status = null;
-            NotifyAcceptedLocalCardAction(outcome);
+            var presentation = NotifyAcceptedLocalCardAction(outcome);
+            if (showTrainCardsAfterDraw && ShowSoloTrainCards &&
+                ReferenceEquals(coordinator, _coordinator) && _revealGeneration == generation &&
+                (coordinator.Public.TurnNumber != seat.Public.TurnNumber ||
+                    coordinator.Public.Lifecycle == SessionLifecycle.Finished))
+            {
+                // The cards already belong to the outgoing player. Publish their stack and
+                // the replenished market now, then finish the visual turn when the card lands.
+                Table.UpdateCardDraw(coordinator.Public, coordinator.PublicHistory);
+                await presentation;
+            }
+            if (!ReferenceEquals(coordinator, _coordinator) || _toolsDisposed) return;
             BeginCardTurnBoardCheck(seat.Public);
             await PumpAsync(preserveTrainCardPanel: showTrainCardsAfterDraw &&
                 ReferenceEquals(coordinator, _coordinator) && _revealGeneration == generation &&

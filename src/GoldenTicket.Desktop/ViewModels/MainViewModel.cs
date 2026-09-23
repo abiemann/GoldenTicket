@@ -571,7 +571,7 @@ public sealed partial class MainViewModel : ObservableObject
             }
             if (accepted)
             {
-                NotifyAcceptedLocalCardAction(outcome);
+                _ = NotifyAcceptedLocalCardAction(outcome);
                 BeginCardTurnBoardCheck(beforeAction);
             }
             await PumpAsync();

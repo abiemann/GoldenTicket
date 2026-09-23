@@ -126,7 +126,8 @@ internal static partial class Program
             throw new InvalidOperationException("The first face-up card must be awarded while the same player's themed game remains open for the second draw.");
         var blind = Descendants<Button>(table).Single(button =>
             AutomationProperties.GetName(button) == "Draw a train card from the pile");
-        await InvokePracticalDrawImmediately(model, table, blind, activeName, initialCards + 2);
+        await InvokePracticalDrawImmediately(model, table, blind, activeName, initialCards + 2,
+            waitForLandingBeforeClosingTray: true);
         table.UpdateLayout();
         if (model.Table.Seats.Single(seat => seat.DisplayName == activeName).CardCount != initialCards + 2 ||
             model.Table.ActiveSeatName == activeName || model.HasAcceptedPracticalTurn || model.ShowPracticalHandoff ||
@@ -138,6 +139,7 @@ internal static partial class Program
             throw new InvalidOperationException("A fresh clear board must release the next player's handoff.");
         checks.Add("Take my turn leaves cards closed until clicked; cards award immediately and fly with rotation to their original owner, then a fresh-board check gates the next human's handoff.");
         checks.Add("An already-open train-card tray updates its bound hand on the first draw without hiding or replaying its entrance animation.");
+        checks.Add("The final train card is awarded immediately while its owner's open tray remains visible during the flight; landing then closes the tray and begins the board check.");
 
         await TakePracticalTurnThroughButton(model);
         table.UpdateLayout();
@@ -184,19 +186,28 @@ internal static partial class Program
     private static async Task TakePracticalTurnThroughButton(MainViewModel model)
     {
         var view = new GameScreenView { DataContext = model };
-        await Arrange(view, 1280, 800);
-        InvokePracticalButton(PracticalTurnButton(view));
-        for (var attempt = 0; attempt < 40 && !model.HasAcceptedPracticalTurn; attempt++) await Task.Delay(50);
-        // Acceptance is recorded before the awaited setup/offer refresh. Wait for the actual
-        // command to finish, whether it presents required ticket choices or leaves trays closed.
-        if (model.TakePracticalTurnCommand.ExecutionTask is { } pending) await pending;
-        if (!model.HasAcceptedPracticalTurn || model.ShowPracticalHandoff || model.Screen != Screen.Table)
-            throw new InvalidOperationException("The actual Take my turn button must accept the handoff while keeping the game table active.");
+        try
+        {
+            await Arrange(view, 1280, 800);
+            InvokePracticalButton(PracticalTurnButton(view));
+            for (var attempt = 0; attempt < 40 && !model.HasAcceptedPracticalTurn; attempt++) await Task.Delay(50);
+            // Acceptance is recorded before the awaited setup/offer refresh. Wait for the actual
+            // command to finish, whether it presents required ticket choices or leaves trays closed.
+            if (model.TakePracticalTurnCommand.ExecutionTask is { } pending) await pending;
+            if (!model.HasAcceptedPracticalTurn || model.ShowPracticalHandoff || model.Screen != Screen.Table)
+                throw new InvalidOperationException("The actual Take my turn button must accept the handoff while keeping the game table active.");
+        }
+        finally
+        {
+            // Discarded detached views must not keep presenting later card flights.
+            view.RaiseEvent(new RoutedEventArgs(FrameworkElement.UnloadedEvent));
+            view.DataContext = null;
+        }
     }
 
     private static async Task InvokePracticalDrawImmediately(
         MainViewModel model, GameTableView table, Button button, string playerName, int expectedCards,
-        int destinationCards = 0)
+        int destinationCards = 0, bool waitForLandingBeforeClosingTray = false)
     {
         var analysisBeforeClick = model.Camera.GameTableAnalysis;
         var owner = model.Game.TableSeats.Single(tile => tile.Seat.DisplayName == playerName);
@@ -217,7 +228,8 @@ internal static partial class Program
             animations.TryGetValue(flyingCard, out storyboard);
             midpoint = ObservePracticalFlightMidpoint(table, flyingCard, storyboard, destinationCards > 0
                 ? "practical-destination-card-flight-midpoint.png" : source is null
-                    ? "practical-blind-card-flight-midpoint.png" : "practical-face-up-card-flight-midpoint.png");
+                    ? "practical-blind-card-flight-midpoint.png" : "practical-face-up-card-flight-midpoint.png",
+                waitForLandingBeforeClosingTray ? VerifyFinalDrawMidpoint : null);
         }
         model.CardDrawn += CaptureFlight;
         try
@@ -229,8 +241,6 @@ internal static partial class Program
             if (CurrentCardCount() != expectedCards ||
                 !ReferenceEquals(analysisBeforeClick, model.Camera.GameTableAnalysis))
                 throw new InvalidOperationException("Clicking a card pile or face-up card must award the draw to the clicking player before another camera frame arrives.");
-            if (button.Command is CommunityToolkit.Mvvm.Input.IAsyncRelayCommand { ExecutionTask: { } pending })
-                await pending.WaitAsync(TimeSpan.FromSeconds(2));
             if (flights.Count != 1 || flights[0].SeatId != owner.Seat.SeatId || flights[0].Count != Math.Max(1, destinationCards) ||
                 flights[0].Source != (destinationCards > 0 ? CardFlightSource.DestinationPile :
                     source is null ? CardFlightSource.TrainPile : CardFlightSource.FaceUpTrain) ||
@@ -266,6 +276,12 @@ internal static partial class Program
             }
             else if (layer.Children.Count != 0)
                 throw new InvalidOperationException("Reduced-motion mode must award cards without leaving animated visuals on the board.");
+            // The final draw deliberately waits for its production storyboard to finish. Drive
+            // detached clocks through landing before waiting for the command's final refresh.
+            if (button.Command is CommunityToolkit.Mvvm.Input.IAsyncRelayCommand { ExecutionTask: { } pending })
+                await pending.WaitAsync(TimeSpan.FromSeconds(2));
+            if (waitForLandingBeforeClosingTray && model.ShowSoloCardPanel)
+                throw new InvalidOperationException("The outgoing player's train-card tray must close after the final card lands.");
         }
         finally { model.CardDrawn -= CaptureFlight; }
 
@@ -273,6 +289,15 @@ internal static partial class Program
         {
             var seat = model.Table.Seats.Single(seat => seat.DisplayName == playerName);
             return destinationCards > 0 ? seat.TicketCount : seat.CardCount;
+        }
+
+        void VerifyFinalDrawMidpoint()
+        {
+            if (!model.ShowSoloTrainCards || !IsElementShown((Border)table.FindName("SoloCardPanel")) ||
+                !IsElementShown((ItemsControl)table.FindName("SoloTrainCards")) ||
+                model.IsCheckingBoardBeforeNextTurn || model.ShowPracticalHandoff ||
+                button.Command is not CommunityToolkit.Mvvm.Input.IAsyncRelayCommand { ExecutionTask.IsCompleted: false })
+                throw new InvalidOperationException("The final card must finish flying before its owner's open train-card tray closes or the board check/handoff begins.");
         }
     }
 
@@ -319,7 +344,7 @@ internal static partial class Program
     }
 
     private static async Task<(double X, double Y, double Angle)> ObservePracticalFlightMidpoint(
-        GameTableView table, Border card, Storyboard? storyboard, string screenshot)
+        GameTableView table, Border card, Storyboard? storyboard, string screenshot, Action? verify = null)
     {
         await Task.Delay(150);
         var transforms = (TransformGroup)card.RenderTransform;
@@ -329,6 +354,7 @@ internal static partial class Program
         if (PresentationSource.FromVisual(table) is null)
             storyboard?.SeekAlignedToLastTick(table, TimeSpan.FromMilliseconds(150), TimeSeekOrigin.BeginTime);
         table.UpdateLayout();
+        verify?.Invoke();
         var motion = (movement.X, movement.Y, transforms.Children.OfType<RotateTransform>().Single().Angle);
         Save(table, screenshot, 1280, 800);
         return motion;
