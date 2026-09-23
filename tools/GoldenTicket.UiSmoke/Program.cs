@@ -1908,10 +1908,10 @@ internal static partial class Program
     private static async Task VerifyProcessingPresentation()
     {
         await using var camera = new CameraViewModel();
-        if (camera.SelectedPreference.Value != CameraCapturePreference.Balanced1080p ||
+        if (camera.SelectedPreference.Value != CameraCapturePreference.AutoBest ||
             camera.Preferences.Any(option => option.Value == CameraCapturePreference.HighDetail2160p) ||
             camera.SelectedProcessor.Value != FrameComputeMode.Auto)
-            throw new InvalidOperationException("Camera defaults must request native 1080p, hide unverified 4K support, and use automatic hardware processing.");
+            throw new InvalidOperationException("Camera defaults must select the best native quality, hide unverified 4K support, and use automatic hardware processing.");
         camera.Preview = SyntheticCropFixture();
         camera.IsRunning = true;
         camera.FormatText = "Camera delivered 1920 × 1080 · synthetic presentation fixture";
@@ -1946,7 +1946,7 @@ internal static partial class Program
         camera.ClearPieceReferenceCommand.Execute(null);
         if (camera.PieceOutlines.Count != 0 || camera.HasPieceReference)
             throw new InvalidOperationException("Clearing the piece reference must immediately remove all outlines.");
-        Console.WriteLine("Processing presentation:1080p/Auto defaults with unverified 4K hidden, white train/player geometry, square marker, toggle and reference clearing passed.");
+        Console.WriteLine("Processing presentation: best-native/Auto defaults with unverified 4K hidden, white train/player geometry, square marker, toggle and reference clearing passed.");
     }
 
     private static async Task VerifyKeyboardCornerHandler()

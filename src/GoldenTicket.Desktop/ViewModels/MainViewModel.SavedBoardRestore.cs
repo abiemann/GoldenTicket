@@ -1,16 +1,15 @@
 using GoldenTicket.Application;
 using GoldenTicket.Domain;
 using GoldenTicket.Domain.Engine;
+using GoldenTicket.Desktop.Services;
 using GoldenTicket.Vision;
 
 namespace GoldenTicket.Desktop.ViewModels;
 
 public sealed partial class MainViewModel
 {
-    private SavedBoardRestoreVerifier? _savedBoardRestoreVerifier;
-    private string? _savedBoardRestoreCheckpoint;
+    private SavedBoardRestoreSession? _savedBoardRestoreSession;
     private string? _savedBoardRestoreGuidance;
-    private bool _savedBoardRestoreCompleting;
     internal (RouteId RouteId, int TrainCount, int SlotMask)? SavedBoardRestoreTarget { get; private set; }
 
     private void StartSavedBoardRestore()
@@ -29,12 +28,8 @@ public sealed partial class MainViewModel
             new BoardInventoryRoute(route.RouteId.Value,
                 ToMarkerColor(view.SeatOf(route.SeatId).Color), route.Length)).ToArray();
         var pending = CheckpointPhoto.PendingPlacement;
-        var pendingRoute = pending is null ? null : new BoardInventoryRoute(pending.RouteId.Value,
-            ToMarkerColor(pending.Color), pending.RouteLength);
-        _savedBoardRestoreVerifier = new SavedBoardRestoreVerifier(markers, routes,
-            pendingRoute, pending?.OccupiedSlotMask);
-        _savedBoardRestoreCheckpoint = checkpoint.CheckpointId.Value;
-        _savedBoardRestoreCompleting = false;
+        _savedBoardRestoreSession = new SavedBoardRestoreSession(checkpoint.CheckpointId.Value,
+            markers, routes, checkpoint.PhysicalTarget, pending);
         _savedBoardRestoreGuidance = null;
         Game.UpdateInventoryProblemMarkers("restore", null);
         SetSavedBoardRestoreTarget(null);
@@ -50,10 +45,8 @@ public sealed partial class MainViewModel
 
     private void CancelSavedBoardRestore()
     {
-        _savedBoardRestoreVerifier = null;
-        _savedBoardRestoreCheckpoint = null;
+        _savedBoardRestoreSession = null;
         _savedBoardRestoreGuidance = null;
-        _savedBoardRestoreCompleting = false;
         Game.UpdateInventoryProblemMarkers("restore", null);
         SetSavedBoardRestoreTarget(null);
         NotifyManualReloadCommands();
@@ -61,16 +54,16 @@ public sealed partial class MainViewModel
 
     private void ObserveSavedBoardRestore()
     {
-        if (_savedBoardRestoreVerifier is not { } verifier || _savedBoardRestoreCompleting ||
+        if (_savedBoardRestoreSession is not { IsCompleting: false } session ||
             _coordinator is not { } coordinator || _operationInProgress || _mustReload ||
             _exitRequested || IsGameExitMenuOpen ||
             coordinator.Public.Lifecycle is not (SessionLifecycle.PackedAway or SessionLifecycle.Rebuilding) ||
-            coordinator.Public.Checkpoint?.CheckpointId.Value != _savedBoardRestoreCheckpoint ||
+            coordinator.Public.Checkpoint?.CheckpointId.Value != session.CheckpointId ||
             !Camera.IsGameTablePreviewUpright || Camera.GameTableAnalysis is not { } analysis)
             return;
 
-        var result = verifier.Observe(analysis.Board, analysis.Scores, analysis.Candidates,
-            analysis.CropRevision, analysis.ModelRevision);
+        if (session.Observe(analysis) is not { } progress) return;
+        var result = progress.Observation;
         BoardInteractionLog.Write("reload.board-check.frame", new
         {
             analysis.Board.Sequence, analysis.Board.Epoch,
@@ -110,30 +103,17 @@ public sealed partial class MainViewModel
             case SavedBoardRestoreStage.CheckingTrains:
                 if (result.Inventory is { } inventory)
                     Game.UpdateInventoryProblemMarkers("restore", inventory,
-                        CheckpointPhoto.PendingPlacement is { } partial &&
-                        inventory.RouteId == partial.RouteId.Value ? partial.OccupiedSlotMask : null);
-                var route = result.Inventory?.RouteId is { } routeId &&
-                    result.Inventory.State is BoardInventoryState.MissingTrains or
-                        BoardInventoryState.WrongColor or BoardInventoryState.Ambiguous
-                    ? coordinator.Public.Checkpoint?.PhysicalTarget
-                        .FirstOrDefault(target => target.RouteId.Value == routeId)
-                    : null;
-                if (route is not null)
-                    SetSavedBoardRestoreTarget((route.RouteId, route.Length, (1 << route.Length) - 1));
-                else if (CheckpointPhoto.PendingPlacement is { } pending &&
-                    result.Inventory?.RouteId == pending.RouteId.Value)
-                    SetSavedBoardRestoreTarget((pending.RouteId, pending.RouteLength, pending.OccupiedSlotMask));
-                else if (result.Inventory?.State != BoardInventoryState.WaitingForFreshFrame)
-                    SetSavedBoardRestoreTarget(null);
+                        progress.PendingSlotMask);
+                if (progress.ShouldUpdateTarget) SetSavedBoardRestoreTarget(progress.Target);
                 ShowSavedBoardRestoreGuidance(DescribeSavedTrainCheck(result.Inventory));
                 return;
             case SavedBoardRestoreStage.Confirmed:
+                if (!session.TryBeginCompletion()) return;
                 Game.UpdateInventoryProblemMarkers("restore", null);
                 SetSavedBoardRestoreTarget(null);
-                _savedBoardRestoreCompleting = true;
                 NotifyManualReloadCommands();
                 ShowSavedBoardRestoreGuidance("Saved scoring markers and trains verified.");
-                _ = CompleteSavedBoardRestoreAsync(coordinator, _savedBoardRestoreCheckpoint!);
+                _ = CompleteSavedBoardRestoreAsync(coordinator, session);
                 return;
         }
     }
@@ -174,7 +154,7 @@ public sealed partial class MainViewModel
             return "Saved trains.";
         if (observation.State == BoardInventoryState.Unsupported)
             return "The camera cannot verify this saved route automatically. Play stays paused until the saved board can be checked.";
-        if (observation.RouteId is { } pendingRouteId && CheckpointPhoto.PendingPlacement is { } pending &&
+        if (observation.RouteId is { } pendingRouteId && _savedBoardRestoreSession?.PendingPlacement is { } pending &&
             pending.RouteId.Value == pendingRouteId)
             return $"Unfinished {pending.Color} placement on {_manifest.Describe(pending.RouteId)} " +
                 $"({pending.TrainCount} trains in the saved photo).";
@@ -216,10 +196,14 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(SavedBoardRestoreTarget));
     }
 
-    private async Task CompleteSavedBoardRestoreAsync(GameCoordinator coordinator, string checkpointId)
+    private async Task CompleteSavedBoardRestoreAsync(GameCoordinator coordinator, SavedBoardRestoreSession session)
     {
-        if (_coordinator != coordinator || coordinator.Public.Checkpoint?.CheckpointId.Value != checkpointId)
-            return;
+        bool IsSameSession() => _coordinator == coordinator &&
+            ReferenceEquals(_savedBoardRestoreSession, session);
+        bool IsCurrentCheckpoint() => IsSameSession() &&
+            coordinator.Public.Checkpoint?.CheckpointId.Value == session.CheckpointId &&
+            coordinator.Public.Lifecycle is SessionLifecycle.PackedAway or SessionLifecycle.Rebuilding;
+        if (!IsCurrentCheckpoint()) return;
         SetOperationInProgress(true);
         HidePrivateSeat();
         try
@@ -229,6 +213,7 @@ public sealed partial class MainViewModel
             {
                 var begin = await coordinator.SubmitAsync(new BeginBoardRebuild(
                     coordinator.NewEnvelope(), checkpoint.CheckpointId));
+                if (!IsCurrentCheckpoint()) return;
                 if (!begin.IsAccepted)
                 {
                     Status = begin.Result.Rejection?.Message;
@@ -241,6 +226,7 @@ public sealed partial class MainViewModel
                 var attest = await coordinator.SubmitAsync(new AttestBoardRebuild(
                     coordinator.NewEnvelope(), checkpoint.CheckpointId,
                     checkpoint.PhysicalTargetHash, Environment.UserName + " (camera-verified)"));
+                if (!IsCurrentCheckpoint()) return;
                 if (!attest.IsAccepted)
                 {
                     Status = attest.Result.Rejection?.Message;
@@ -250,6 +236,7 @@ public sealed partial class MainViewModel
             }
             var resume = await coordinator.SubmitAsync(new ResumePackedGame(
                 coordinator.NewEnvelope(), checkpoint.CheckpointId));
+            if (!IsSameSession()) return;
             if (!resume.IsAccepted)
             {
                 Status = resume.Result.Rejection?.Message;
@@ -257,7 +244,7 @@ public sealed partial class MainViewModel
                 return;
             }
 
-            BoardInteractionLog.Write("reload.board-check.confirmed", new { checkpoint = checkpointId });
+            BoardInteractionLog.Write("reload.board-check.confirmed", new { checkpoint = session.CheckpointId });
             CancelSavedBoardRestore();
             Game.ClearGuidance();
             Status = null;
@@ -271,10 +258,9 @@ public sealed partial class MainViewModel
         finally
         {
             SetOperationInProgress(false);
-            if (!_mustReload && _savedBoardRestoreVerifier is { } verifier)
+            if (!_mustReload && ReferenceEquals(_savedBoardRestoreSession, session))
             {
-                verifier.Reset();
-                _savedBoardRestoreCompleting = false;
+                session.ResetAfterFailedCompletion();
                 NotifyManualReloadCommands();
                 _savedBoardRestoreGuidance = null;
                 ShowSavedBoardRestoreGuidance("Saved board.");

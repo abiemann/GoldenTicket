@@ -138,7 +138,7 @@ public sealed class SavedBoardReloadTests
             Assert.Contains(corrupt ? "damaged or unreadable" : "incomplete", reloaded.Setup.SavedMatchMessage);
             Assert.Null(typeof(MainViewModel).GetField("_coordinator",
                 BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(reloaded));
-            Assert.Null(typeof(MainViewModel).GetField("_savedBoardRestoreVerifier",
+            Assert.Null(typeof(MainViewModel).GetField("_savedBoardRestoreSession",
                 BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(reloaded));
             var after = await store.RestoreAsync(saved.SessionId, TestManifest.Manifest,
                 TestManifest.Catalog, CancellationToken.None);

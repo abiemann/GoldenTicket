@@ -83,11 +83,8 @@ public sealed partial class MainViewModel
     private void ClearGameExitInventoryCheck()
     {
         Game.UpdateInventoryProblemMarkers("save", null);
-        _gameExitInventoryVerifier = null;
-        _gameExitInventoryCompletion = null;
-        _lastGameExitInventoryObservation = null;
-        _gameExitObserveAfterTimeout = false;
-        _gameExitMinimumFrameSequence = 0;
+        _saveGameWorkflow?.Reset();
+        _saveGameWorkflow = null;
         GameExitEvidence = null;
     }
 }

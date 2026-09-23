@@ -133,6 +133,10 @@ public sealed class ArchitectureTests
 
     private static Dictionary<string, Project> ReadProductionProjects() =>
         Directory.EnumerateFiles(Path.Combine(TestManifest.RepositoryRoot, "src"), "*.csproj", SearchOption.AllDirectories)
+            // WPF generates a short-lived *_wpftmp.csproj beside Desktop during a parallel
+            // solution test run. It is an intermediate build project, not a production layer.
+            .Where(path => !Path.GetFileNameWithoutExtension(path)
+                .EndsWith("_wpftmp", StringComparison.Ordinal))
             .ToDictionary(path => Path.GetFileNameWithoutExtension(path), ReadProject, StringComparer.Ordinal);
 
     private static Project ReadProject(string path) => new(Path.GetFullPath(path), XDocument.Load(path));

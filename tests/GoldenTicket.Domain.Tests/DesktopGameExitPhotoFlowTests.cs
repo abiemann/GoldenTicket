@@ -2,6 +2,7 @@ using GoldenTicket.Testing;
 using System.Reflection;
 using System.Security.Cryptography;
 using GoldenTicket.Application;
+using GoldenTicket.Desktop.Services;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain;
 using GoldenTicket.Domain.Engine;
@@ -15,6 +16,56 @@ namespace GoldenTicket.Domain.Tests;
 
 public sealed class DesktopGameExitPhotoFlowTests
 {
+    [Fact]
+    public async Task Save_does_not_write_a_checkpoint_when_its_session_is_no_longer_current()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "GoldenTicket.Tests", Guid.NewGuid().ToString("N"));
+        var store = new SqliteSessionStore(root);
+        var manifest = ManifestLoader.LoadClassicUs();
+        var model = new MainViewModel(manifest, store,
+            camera: new CameraViewModel(capture: new FakeCameraCapture()));
+        model.Setup.ManualVerificationAccepted = true;
+        model.SetGameLayerVisible(true);
+        try
+        {
+            await model.StartMatchAsync();
+            await model.CommitTicketsAsync();
+            var coordinator = (GameCoordinator)typeof(MainViewModel).GetField("_coordinator",
+                BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(model)!;
+            var beforeHash = await coordinator.ComputeStateHashAsync(
+                cancellationToken: TestContext.Current.CancellationToken);
+            using var camera = new SyntheticCamera(model.Camera);
+            camera.Publish();
+            var workflow = new SaveGameWorkflow(manifest, model.Camera,
+                new CheckpointPhotoStore(root), TimeSpan.FromSeconds(5));
+            var isCurrent = true;
+            var save = workflow.RunAsync(coordinator, "Must not save", () => isCurrent,
+                TestContext.Current.CancellationToken);
+            workflow.Observe(model.Camera.GameTableAnalysis, true);
+            isCurrent = false;
+            for (var attempt = 0; !save.IsCompleted && attempt < 30; attempt++)
+            {
+                await Task.Delay(100, TestContext.Current.CancellationToken);
+                camera.Publish();
+                workflow.Observe(model.Camera.GameTableAnalysis, true);
+            }
+            var outcome = await save.WaitAsync(TimeSpan.FromSeconds(2),
+                TestContext.Current.CancellationToken);
+            Assert.Equal(SaveGameFailure.GameChanged, outcome.Failure);
+            Assert.Equal(beforeHash, await coordinator.ComputeStateHashAsync(
+                cancellationToken: TestContext.Current.CancellationToken));
+            var restored = await store.RestoreAsync(coordinator.SessionId, manifest,
+                CardCatalog.FromManifest(manifest), TestContext.Current.CancellationToken);
+            Assert.Null(restored.State.Checkpoint);
+        }
+        finally
+        {
+            await model.DisposeToolsAsync();
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task Technical_photo_after_interrupted_pending_save_records_exact_slots_and_inventory()
     {
@@ -358,6 +409,7 @@ public sealed class DesktopGameExitPhotoFlowTests
         var store = new SqliteSessionStore(root);
         var manifest = ManifestLoader.LoadClassicUs();
         var model = new MainViewModel(manifest, store, camera: new CameraViewModel(capture: new FakeCameraCapture()));
+        model.GameSaveInventoryTimeout = TimeSpan.FromMilliseconds(100);
         model.Setup.ManualVerificationAccepted = true;
         model.SetGameLayerVisible(true);
         try
@@ -373,11 +425,7 @@ public sealed class DesktopGameExitPhotoFlowTests
             var save = model.SaveGameToMenuCommand.ExecuteAsync(null);
             var evidence = Assert.IsType<BoardCheckEvidence>(model.GameExitEvidence);
 
-            // Exercise the timeout path without sleeping through its fifteen-second deadline.
-            var completion = (TaskCompletionSource<BoardInventoryObservation>)typeof(MainViewModel)
-                .GetField("_gameExitInventoryCompletion", BindingFlags.NonPublic | BindingFlags.Instance)!
-                .GetValue(model)!;
-            completion.SetException(new TimeoutException());
+            // A short injected deadline exercises the real timeout path without a long wait.
             await save.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
             Assert.False(model.IsGameExitSaving);
             Assert.True(model.IsGameExitMenuOpen);

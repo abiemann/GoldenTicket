@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using GoldenTicket.CompanionHost;
+using GoldenTicket.Desktop.Services;
 using GoldenTicket.Desktop.ViewModels;
 using GoldenTicket.Domain.Engine;
 using GoldenTicket.Vision;
@@ -334,8 +335,9 @@ public sealed partial class AutomaticPhysicalFlowTests
     }
 
     private static CompanionBoardImage? CompanionMapImage(MainViewModel model) =>
-        (CompanionBoardImage?)typeof(MainViewModel).GetField("_companionBoardImage", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(model);
+        ((CompanionBoardMapPublisher)typeof(MainViewModel)
+            .GetField("_companionBoardMapPublisher", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(model)!).CurrentImage;
 
     private static BitmapSource NewCompanionCityDotFrame(int targetX, int targetY)
     {

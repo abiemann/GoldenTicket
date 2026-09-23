@@ -2,6 +2,7 @@ using System.IO;
 using System.Security.Cryptography;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using GoldenTicket.Desktop.Services;
 using GoldenTicket.Domain;
 using GoldenTicket.Domain.Model;
 using GoldenTicket.Persistence;
@@ -11,14 +12,8 @@ namespace GoldenTicket.Desktop.ViewModels;
 
 public sealed partial class MainViewModel
 {
-    private BoardInventoryVerifier? _gameExitInventoryVerifier;
-    private TaskCompletionSource<BoardInventoryObservation>? _gameExitInventoryCompletion;
-    private BoardInventoryObservation? _lastGameExitInventoryObservation;
-    private long _gameExitInventoryFrameSequence;
-    private long _gameExitInventoryCameraEpoch;
-    private long _gameExitInventoryCropRevision;
-    private long _gameExitMinimumFrameSequence;
-    private bool _gameExitObserveAfterTimeout;
+    private SaveGameWorkflow? _saveGameWorkflow;
+    internal TimeSpan GameSaveInventoryTimeout { get; set; } = TimeSpan.FromSeconds(15);
 
     [ObservableProperty] private bool _isGameExitMenuOpen;
     [ObservableProperty] private bool _isGameExitSaving;
@@ -71,16 +66,11 @@ public sealed partial class MainViewModel
 
     private void ObserveGameExitInventory()
     {
-        if (!IsGameExitMenuOpen || _gameExitInventoryVerifier is not { } verifier ||
-            (!_gameExitObserveAfterTimeout &&
-                (_gameExitInventoryCompletion is not { } waiting || waiting.Task.IsCompleted)) ||
-            Camera.GameTableAnalysis is not { } analysis ||
-            !Camera.IsGameTablePreviewUpright ||
-            analysis.Board.Sequence <= _gameExitMinimumFrameSequence) return;
+        if (!IsGameExitMenuOpen || _saveGameWorkflow?.Observe(Camera.GameTableAnalysis,
+            Camera.IsGameTablePreviewUpright) is not { } update) return;
 
-        var observation = verifier.Observe(analysis.Board, analysis.Candidates,
-            analysis.CropRevision, analysis.ModelRevision);
-        _lastGameExitInventoryObservation = observation;
+        var analysis = update.Analysis;
+        var observation = update.Observation;
         UpdateGameExitEvidence(analysis, observation);
         BoardInteractionLog.Write("save.board-check.frame", new
         {
@@ -88,11 +78,11 @@ public sealed partial class MainViewModel
             analysis.CropRevision, analysis.ModelRevision,
             state = observation.State.ToString(),
             observation.RouteId, observation.UnexpectedTrains, observation.UnexpectedDetections,
-            afterPhoto = _gameExitMinimumFrameSequence > 0
+            afterPhoto = update.AfterPhoto
         });
-        if (_gameExitObserveAfterTimeout)
+        if (update.AfterTimeout)
         {
-            if (observation.State is BoardInventoryState.Stabilizing or BoardInventoryState.Confirmed)
+            if (update.Recovered)
             {
                 ClearGameExitInventoryCheck();
                 GameExitStatus = "The board matches again. Select Save Game to save it.";
@@ -101,14 +91,7 @@ public sealed partial class MainViewModel
                 GameExitStatus = DescribeGameExitInventoryIssue(observation) + " Then try Save Game again.";
             return;
         }
-        if (observation.Confirmed)
-        {
-            _gameExitInventoryFrameSequence = analysis.Board.Sequence;
-            _gameExitInventoryCameraEpoch = analysis.Board.Epoch;
-            _gameExitInventoryCropRevision = analysis.CropRevision;
-            _gameExitInventoryCompletion!.TrySetResult(observation);
-        }
-        else
+        if (!observation.Confirmed)
         {
             GameExitStatus = observation.State == BoardInventoryState.Stabilizing
                 ? "Keep the board still while the camera confirms the train positions and colors…"
@@ -196,144 +179,44 @@ public sealed partial class MainViewModel
         ClearGameExitInventoryCheck();
         SetOperationInProgress(true);
         GameExitStatus = "Checking every train on the board by route and color…";
-        var capturedVersion = coordinator.Public.StateVersion;
-        var pending = coordinator.Public.PendingClaim;
-        var pendingRoute = pending is null ? null : new BoardInventoryRoute(pending.RouteId.Value,
-            ToMarkerColor(coordinator.Public.SeatOf(pending.SeatId).Color), pending.TrainCount);
         try
         {
-            var expected = coordinator.Public.RouteOwners
-                .Select(route => new BoardInventoryRoute(route.Key.Value,
-                    ToMarkerColor(coordinator.Public.SeatOf(route.Value).Color),
-                    _manifest.Route(route.Key).Length))
-                .ToArray();
-            _gameExitInventoryVerifier = new BoardInventoryVerifier(expected, pendingRoute);
-            _gameExitInventoryCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            _lastGameExitInventoryObservation = null;
-            _gameExitMinimumFrameSequence = 0;
+            var workflow = new SaveGameWorkflow(_manifest, Camera, _checkpointPhotoStore,
+                GameSaveInventoryTimeout);
+            workflow.StageChanged += OnSaveGameStageChanged;
+            _saveGameWorkflow = workflow;
+            var save = workflow.RunAsync(coordinator, Table.SaveName,
+                () => ReferenceEquals(coordinator, _coordinator) && IsGameExitMenuOpen);
             ObserveGameExitInventory();
-            BoardInventoryObservation inventory;
-            try
+            var outcome = await save;
+            switch (outcome.Failure)
             {
-                inventory = await _gameExitInventoryCompletion.Task.WaitAsync(TimeSpan.FromSeconds(15));
+                case SaveGameFailure.InventoryTimedOut:
+                    GameExitStatus = DescribeGameExitInventoryIssue(outcome.LastObservation) +
+                        " Then try Save Game again.";
+                    return;
+                case SaveGameFailure.GameChanged:
+                    GameExitStatus = "The game changed while checking the board. Try Save Game again.";
+                    return;
+                case SaveGameFailure.CheckpointUnverified:
+                    GameExitStatus = "The saved game has not passed readback verification. Try again after it is verified.";
+                    return;
+                case SaveGameFailure.CheckpointRejected:
+                    GameExitStatus = outcome.Detail;
+                    await RefreshAsync();
+                    return;
+                case SaveGameFailure.AfterPhotoTimedOut:
+                    GameExitStatus = "Save Game could not complete: The camera could not confirm that the board still matches the photo. " +
+                        DescribeGameExitInventoryIssue(outcome.LastObservation) +
+                        " Keep the board in place and try again.";
+                    return;
             }
-            catch (TimeoutException)
-            {
-                _gameExitObserveAfterTimeout = true;
-                GameExitStatus = DescribeGameExitInventoryIssue(_lastGameExitInventoryObservation) +
-                    " Then try Save Game again.";
-                return;
-            }
-            if (!ReferenceEquals(coordinator, _coordinator) ||
-                coordinator.Public.StateVersion != capturedVersion || !IsGameExitMenuOpen)
+
+            if (!ReferenceEquals(coordinator, _coordinator) || !IsGameExitMenuOpen)
             {
                 GameExitStatus = "The game changed while checking the board. Try Save Game again.";
                 return;
             }
-
-            var counts = inventory.ConfirmedByColor;
-            var pendingPlacement = pending is null ? null : new CheckpointPendingPlacement(
-                pending.OperationId, pending.RouteId, pending.SeatId,
-                coordinator.Public.SeatOf(pending.SeatId).Color, pending.TrainCount,
-                inventory.PendingSlotMask ?? throw new InvalidOperationException("The pending placement was not checked."));
-            var inventoryEpoch = _gameExitInventoryCameraEpoch;
-            var inventoryCrop = _gameExitInventoryCropRevision;
-            var inventorySequence = _gameExitInventoryFrameSequence;
-            var confirmedInventory = new CheckpointTrainInventory(
-                Count(MarkerColor.Blue), Count(MarkerColor.Red), Count(MarkerColor.Green),
-                Count(MarkerColor.Yellow), Count(MarkerColor.Black),
-                CheckpointTrainInventoryProvenance.CameraObserved);
-            int Count(MarkerColor color) => counts.TryGetValue(color, out var count) ? count : 0;
-
-            GameExitStatus = "Saving the game and checking its stored copy…";
-            PackAwayCheckpoint? checkpoint;
-            if (coordinator.Public.Lifecycle == SessionLifecycle.PackedAway)
-            {
-                checkpoint = await coordinator.GetCheckpointAsync();
-                if (checkpoint is not { IsSafeToPackAway: true })
-                {
-                    GameExitStatus = "The saved game has not passed readback verification. Try again after it is verified.";
-                    return;
-                }
-            }
-            else
-            {
-                var outcome = coordinator.Public.Lifecycle == SessionLifecycle.PreparingPackAway
-                    ? await coordinator.ContinuePackAwayAsync()
-                    : await coordinator.SaveAndPackAwayAsync(
-                        string.IsNullOrWhiteSpace(Table.SaveName)
-                            ? $"Game {DateTime.Now:yyyy-MM-dd HH:mm}"
-                            : Table.SaveName.Trim());
-                if (!outcome.SafeToPack)
-                {
-                    // A digital checkpoint can exist even when Save Game has not completed its
-                    // mandatory photo and inventory. Quit must preserve the earlier save instead.
-                    GameExitStatus = outcome.Rejection?.Message ?? outcome.Problem ??
-                        "The game save is not verified yet. Try again.";
-                    await RefreshAsync();
-                    return;
-                }
-                checkpoint = outcome.Checkpoint;
-            }
-
-            if (checkpoint is null) throw new InvalidOperationException("The saved checkpoint is missing.");
-            if (confirmedInventory.Blue + confirmedInventory.Red + confirmedInventory.Green +
-                confirmedInventory.Yellow + confirmedInventory.Black !=
-                    checkpoint.TotalTrainsOnBoard + (pendingPlacement?.TrainCount ?? 0))
-                throw new InvalidOperationException("The photographed board inventory does not match the saved route inventory.");
-
-            GameExitStatus = "Taking and checking a fresh photo of the saved board…";
-            CameraPhoto photo;
-            do
-            {
-                photo = await Camera.CaptureGameTablePhotoAsync();
-                if (photo.CapturedAt >= checkpoint.CreatedAt) break;
-                CryptographicOperations.ZeroMemory(photo.PngBytes);
-                await Task.Delay(150);
-            } while (DateTimeOffset.UtcNow - checkpoint.CreatedAt < TimeSpan.FromSeconds(5));
-
-            try
-            {
-                if (photo.CapturedAt < checkpoint.CreatedAt ||
-                    photo.CameraEpoch != inventoryEpoch ||
-                    photo.BoardCropRevision != inventoryCrop ||
-                    photo.FrameSequence < inventorySequence)
-                    throw new InvalidOperationException("The camera changed after the inventory check. Keep the board still and try Save Game again.");
-
-                // The photo is captured from the same crop after the checkpoint is frozen.
-                // Recheck fresh frames after its source frame so a changed board cannot be
-                // attached merely because the pre-save inventory was correct.
-                GameExitStatus = "Checking the board again after its photo…";
-                _gameExitInventoryVerifier = new BoardInventoryVerifier(expected, pendingRoute,
-                    pendingPlacement?.OccupiedSlotMask);
-                _gameExitInventoryCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
-                _lastGameExitInventoryObservation = null;
-                _gameExitMinimumFrameSequence = photo.FrameSequence;
-                BoardInventoryObservation afterPhoto;
-                try
-                {
-                    afterPhoto = await _gameExitInventoryCompletion.Task.WaitAsync(TimeSpan.FromSeconds(15));
-                }
-                catch (TimeoutException)
-                {
-                    _gameExitObserveAfterTimeout = true;
-                    throw new InvalidOperationException(
-                        "The camera could not confirm that the board still matches the photo. " +
-                        DescribeGameExitInventoryIssue(_lastGameExitInventoryObservation));
-                }
-                if (_gameExitInventoryCameraEpoch != photo.CameraEpoch ||
-                    _gameExitInventoryCropRevision != photo.BoardCropRevision ||
-                    !afterPhoto.ConfirmedByColor.OrderBy(pair => pair.Key)
-                        .SequenceEqual(counts.OrderBy(pair => pair.Key)))
-                    throw new InvalidOperationException("The board inventory changed during the save.");
-
-                await _checkpointPhotoStore.SaveReferenceAsync(checkpoint, photo.PngBytes,
-                    new CheckpointPhotoCapture(photo.CapturedAt, photo.CameraId,
-                    photo.CameraEpoch, photo.BoardCropRevision, true),
-                    CancellationToken.None, confirmedInventory, pendingPlacement);
-            }
-            finally { CryptographicOperations.ZeroMemory(photo.PngBytes); }
-
             // The photo and camera-observed inventory have both passed durable readback.
             // This checkpoint is now a completed Save Game even if menu navigation fails.
             await PersistTurnClockAsync();
@@ -349,17 +232,19 @@ public sealed partial class MainViewModel
         }
         finally
         {
-            if (!_gameExitObserveAfterTimeout) _gameExitInventoryVerifier = null;
-            _gameExitInventoryCompletion = null;
-            if (!_gameExitObserveAfterTimeout) _lastGameExitInventoryObservation = null;
-            _gameExitInventoryFrameSequence = 0;
-            _gameExitInventoryCameraEpoch = 0;
-            _gameExitInventoryCropRevision = 0;
-            if (!_gameExitObserveAfterTimeout) _gameExitMinimumFrameSequence = 0;
             IsGameExitSaving = false;
             SetOperationInProgress(false);
         }
     }
+
+    private void OnSaveGameStageChanged(SaveGameStage stage) => GameExitStatus = stage switch
+    {
+        SaveGameStage.CheckingInventory => "Checking every train on the board by route and color…",
+        SaveGameStage.SavingCheckpoint => "Saving the game and checking its stored copy…",
+        SaveGameStage.CapturingPhoto => "Taking and checking a fresh photo of the saved board…",
+        SaveGameStage.CheckingAfterPhoto => "Checking the board again after its photo…",
+        _ => throw new ArgumentOutOfRangeException(nameof(stage), stage, null)
+    };
 
     [RelayCommand]
     private async Task QuitToMenuAsync()

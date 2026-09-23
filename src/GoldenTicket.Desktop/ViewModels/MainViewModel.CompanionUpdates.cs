@@ -74,7 +74,7 @@ public sealed partial class MainViewModel
         var presentation = new CompanionPresentation(_coordinator?.SessionId.Value,
             _coordinator?.Public.StateVersion, CanCompanionControl, _coordinator?.StorageFaulted == true,
             CurrentCompanionBoardInteraction(), CurrentCompanionGuidance(), CurrentFinalStandingsImage()?.Info.Id,
-            _companionBoardMap);
+            _companionBoardMapPublisher.BoardMap);
         if (presentation == _lastCompanionPresentation) return;
         _lastCompanionPresentation = presentation;
         // A nonblocking invalidation: the SSE handler reads the public bridge on its own

@@ -89,6 +89,18 @@ AI and camera work must not hold the coordinator's writer while waiting for a pe
 Operations carry cancellation and state/operation identity where relevant. WPF owns dispatcher
 updates and subscriptions; the core never receives controls or a dispatcher.
 
+The desktop now gives three camera-facing workflows their own lifecycle owners:
+
+- `SaveGameWorkflow` owns the live inventory check, timeout recovery, checkpoint/readback,
+  post-checkpoint photo, second inventory check and photo attachment. `MainViewModel` decides
+  whether the user may start it and renders progress, evidence and navigation.
+- `SavedBoardRestoreSession` binds one verifier, physical target, pending placement and completion
+  latch to one checkpoint. The view model renders guidance and submits rebuild commands through
+  `GameCoordinator` only after that session confirms the board.
+- `CompanionBoardMapPublisher` owns encoded map cache, throttling and generation invalidation.
+  The view model supplies an eligible public context, frozen frame and targets. A late encode
+  cannot publish a map from an earlier session.
+
 ## Test structure
 
 - `tests/GoldenTicket.Core.Tests`: portable `net10.0` rules, coordinator, AI, SQLite, failure and
@@ -120,11 +132,12 @@ private views; it does not start a phone host.
 
 ## Remaining design debt and release gates
 
-`MainViewModel` and `CameraViewModel` still coordinate several workflows. Partial files aid
-navigation but do not create independent components. Further extraction should follow cohesive
-workflows with explicit inputs, outcomes and lifecycle ownership, especially save/rebuild and board
-reconciliation. Avoid a mechanical split into services that just call back into the same mutable
-view model. The capture port and portable tests provide seams for that work.
+`MainViewModel` and `CameraViewModel` still coordinate other physical and privacy workflows.
+Partial files aid navigation but do not create independent components. The save, saved-board restore
+and companion-map extractions above reduce shared mutable state; board reconciliation and other
+remaining workflows should follow the same explicit-input, outcome and lifecycle pattern. Avoid a
+mechanical split into services that just call back into the same mutable view model. The capture
+port and portable tests provide seams for that work.
 
 Desktop composition currently lives alongside navigation; a separate composition object becomes
 useful when additional runtime implementations are introduced. Existing concrete deterministic

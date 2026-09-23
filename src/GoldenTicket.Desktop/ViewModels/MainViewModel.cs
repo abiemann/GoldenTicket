@@ -75,6 +75,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         Setup = new SetupViewModel(manifest);
         Table = new TableViewModel(manifest);
+        InitializeCompanionMapPublisher();
         InitializeTools(camera);
         Game = new GameScreenViewModel(this);
         InitializeManualReload();

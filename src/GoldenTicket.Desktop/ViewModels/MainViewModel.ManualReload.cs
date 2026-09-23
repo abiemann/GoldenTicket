@@ -6,13 +6,13 @@ namespace GoldenTicket.Desktop.ViewModels;
 public sealed partial class MainViewModel
 {
     public bool ShowManualSavedBoardCheck => IsCheckingResumedGame &&
-        IsGameplayScreenActive(Screen.Table) && _savedBoardRestoreVerifier is not null &&
+        IsGameplayScreenActive(Screen.Table) && _savedBoardRestoreSession is { } session &&
         _coordinator?.Public is { VerificationMode: VerificationMode.Manual } view &&
         view.Lifecycle is SessionLifecycle.PackedAway or SessionLifecycle.Rebuilding &&
-        view.Checkpoint?.CheckpointId.Value == _savedBoardRestoreCheckpoint;
+        view.Checkpoint?.CheckpointId.Value == session.CheckpointId;
 
     public bool CanCheckSavedBoardMyself => ShowManualSavedBoardCheck &&
-        !_savedBoardRestoreCompleting && !_operationInProgress && Busy is null &&
+        _savedBoardRestoreSession is { IsCompleting: false } && !_operationInProgress && Busy is null &&
         !IsGameInputPaused && !_exitRequested && !_mustReload && !_toolsDisposed &&
         _windowActive && _systemAvailable && _coordinator is { StorageFaulted: false };
 
