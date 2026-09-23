@@ -29,8 +29,8 @@ same device identity on the laptop. There is one shared controller; replacing it
 controller. Only the expected human seat may reveal cards or submit digital actions.
 
 The phone can choose opening destination tickets, see its own train cards and tickets, draw visible
-or blind train cards, request/keep destination tickets with return ordering, and authorize a route
-with an explicit payment. The existing coordinator validates and durably journals every action.
+or blind train cards, request/keep destination tickets, and authorize a route with an explicit
+payment. Unkept tickets return in offer order. The coordinator validates and durably journals every action.
 Physical placement/cancellation, rules decisions, save/rebuild, and other administrative operations
 remain on Windows. A phone cannot issue those commands through the action endpoint.
 

@@ -724,7 +724,6 @@ test('a rejected ticket choice preserves checked destinations and uses choice-sp
   assert.ok(descendants(p.get('private')).some(node=>node.textContent==='Choice not saved. It is still your turn. The camera sees an unclaimed Yellow train.'));
   p.state.snapshot.boardInteraction.cardActionsBlocked=false;await p.push();
   assert.equal(descendants(p.get('private')).find(node=>node.textContent==='Keep selected tickets').disabled,false);
-  assert.equal(descendants(p.get('private')).find(node=>node.textContent==='Reverse return order').disabled,false);
 });
 
 test('first face-up draw refreshes in place and the next draw uses the new version and grant', async () => {

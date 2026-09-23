@@ -17,8 +17,8 @@ public sealed record CommandEnvelope(
 public abstract record GameCommand(CommandEnvelope Envelope);
 
 /// <summary>
-/// Keeps a subset of an open ticket offer. <paramref name="ReturnOrder"/> preserves the order the
-/// acting seat chose for its rejections (DESIGN 6.4); empty means "the order they were offered".
+/// Keeps a subset of an open ticket offer. <paramref name="ReturnOrder"/> preserves an explicitly
+/// supplied order for rejections (DESIGN 6.4); empty means "the order they were offered".
 /// </summary>
 public sealed record CommitTicketSelection(
     CommandEnvelope Envelope,

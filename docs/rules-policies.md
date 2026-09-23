@@ -13,7 +13,7 @@ have been checked against an official ruling yet; that is outstanding work befor
 | Situation | Decision | Status | Where it lives |
 |---|---|---|---|
 | Several seats return opening tickets | All opening offers are collected first; rejected tickets are then appended under the deck in seat order (seat 1, then seat 2, …). | House policy | `GameRules.HandleTicketSelection` → `SetupReturnsRecycled` |
-| Several tickets returned together | The acting seat chooses the order, and that order is preserved in the journal. With no order given, the offered order is used. | House policy | `CommitTicketSelection.ReturnOrder` |
+| Several tickets returned together | Current user interfaces return rejected tickets in offer order. An explicit order supplied by a command is preserved in the journal. | House policy | `GameRules.HandleTicketSelection` |
 | No second train card can be taken | Pause with `NoSelectableSecondDraw`, preserving the first revealed draw. The operator may then accept **end-turn-with-one-card**: the turn ends with the card already drawn. | House policy, reviewed | `RulesContinuations`, `GameRules.SecondPickPossible` |
 | Market cannot stabilise below three locomotives | Replacement is bounded at 10 attempts, then pauses with `MarketResetUnstable`. The operator may accept **stop-applying-locomotive-reset**: the market is left as it stands for the rest of the match. | House policy, reviewed | `RulesContinuations`, `GameRules.MaximumMarketResets` |
 | Market cannot be refilled completely | Pause with `PartialMarketSupply`, every revealed card preserved. The operator may accept **play-on-with-smaller-market**: play continues with however many cards the supply can show. | House policy, reviewed | `RulesContinuations`, `GameRules.MaintainMarket` |

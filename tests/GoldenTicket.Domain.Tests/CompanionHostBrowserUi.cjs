@@ -802,17 +802,20 @@ async function main() {
         await page.getByRole('button',{name:`Orange · slot ${slot+1}`,exact:true}).click(); await waitCovered(page);
         await page.getByText('Pass this device to Jordan.',{exact:true}).waitFor();
       });
-      await record(viewport.name+': ticket offer return ordering',async()=>{
+      await record(viewport.name+': ticket offer keeps selected cards',async()=>{
         await changeFixture(page,'turnStart'); await reveal(page);
         await page.getByRole('button',{name:'Draw destination tickets'}).click();
         await page.locator('#private input[type=checkbox]').first().waitFor({state:'visible'});
         assert.equal(requests.filter(r=>r.url==='/api/command').at(-1).body.command.kind,'drawTickets');
+        const offeredTickets=fixture.data.offeredTickets;
         await page.locator('#private input[type=checkbox]').nth(0).check();
-        const before=await page.getByText('Return order:',{exact:false}).textContent();
-        await page.getByRole('button',{name:'Reverse return order'}).click();
-        const after=await page.getByText('Return order:',{exact:false}).textContent(); assert.notEqual(before,after);
+        assert.equal(await page.getByRole('button',{name:'Reverse return order'}).count(),0);
+        assert.equal(await page.getByText('Return order:',{exact:false}).count(),0);
         await noOverflow(page); await screenshot(page,viewport.name+'-ticket-offer');
         await page.getByRole('button',{name:'Keep selected tickets'}).click(); await waitCovered(page);
+        const command=requests.filter(r=>r.url==='/api/command').at(-1).body.command;
+        assert.deepEqual(command.keptTickets,[offeredTickets[0].id]);
+        assert.deepEqual(command.returnedTickets,offeredTickets.slice(1).map(ticket=>ticket.id));
       });
       if(drawOnly) { assert.deepEqual(errors,[]); assert.deepEqual([...outsideLaptop],[]); await context.close(); continue; }
       await record(viewport.name+': route payment and laptop physical verification boundary',async()=>{

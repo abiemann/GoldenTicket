@@ -804,7 +804,7 @@ Some pathological supply states require an explicit software policy beyond ordin
 | Situation | Implemented policy |
 |---|---|
 | Several setup ticket returns | Collect all initial offers before recycling returns; append rejected cards in deterministic seat order. |
-| Several tickets returned together | Let the acting seat choose their order; preserve it in the journal. |
+| Several tickets returned together | Current user interfaces return unkept tickets in offer order. If a command supplies an explicit order, preserve that order in the journal. |
 | No selectable second draw | Preserve the first awarded card; offer an explicit end-turn-with-one-card continuation. |
 | Partial market supply | Preserve every revealed result; offer play with the smaller available market. |
 | Market reset cannot stabilize or is impossible | Bound reset work and pause; offer disabling locomotive resets for the rest of this match. |

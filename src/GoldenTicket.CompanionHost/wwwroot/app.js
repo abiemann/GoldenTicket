@@ -601,24 +601,19 @@
   function renderOffer(target) {
     const offered = privateData.offeredTickets;
     const selected = new Set();
-    let reversed = false, reverseButton;
     const offerChecks = [];
     target.append(element("h3", "Choose destination tickets"), element("p", `Keep at least ${privateData.minimumKeep}. Kept tickets stay with you for the entire game; unfinished tickets lose their points.`));
     const list = element("div", undefined, "tickets");
-    const kept = button("Keep selected tickets", () => submit("keepTickets", { keptTickets: offered.filter(t => selected.has(t.id)).map(t => t.id), returnedTickets: returns().map(t => t.id) }));
+    const kept = button("Keep selected tickets", () => submit("keepTickets", { keptTickets: offered.filter(t => selected.has(t.id)).map(t => t.id), returnedTickets: offered.filter(t => !selected.has(t.id)).map(t => t.id) }));
     kept.disabled = true;
-    const returned = element("p", "", "fine-print");
     const boardWarning = element("p", "", "detected-route-status"); boardWarning.setAttribute("role", "status");
-    const returns = () => { const values = offered.filter(t => !selected.has(t.id)); return reversed ? values.reverse() : values; };
     function update() {
       const board = snapshot.boardInteraction;
       const submitting = pendingCommand !== null;
       kept.disabled = submitting || selected.size < privateData.minimumKeep || Boolean(board?.cardActionsBlocked);
       for (const check of offerChecks) check.disabled = submitting;
-      if (reverseButton) reverseButton.disabled = submitting;
       boardWarning.hidden = !privateActionFeedback && !board?.cardActionsBlocked;
       boardWarning.textContent = actionFeedback() || (board?.cardActionsBlocked ? board.message || "Finish the train placement before keeping tickets." : "");
-      returned.textContent = `Return order: ${returns().map(t => t.label).join("; ") || "keep all"}`;
     }
     for (const ticket of offered) {
       const label = element("label", undefined, "ticket ticket-choice");
@@ -627,8 +622,8 @@
       check.addEventListener("change", () => { if (!privateData) return; check.checked ? selected.add(ticket.id) : selected.delete(ticket.id); update(); });
       label.append(check, element("span", `${ticket.label} · ${ticket.points} points`)); list.append(label);
     }
-    const actions = element("div", undefined, "actions"); reverseButton = button("Reverse return order", () => { reversed = !reversed; update(); }, "secondary"); actions.append(kept, reverseButton);
-    target.append(list, returned, boardWarning, actions);
+    const actions = element("div", undefined, "actions"); actions.append(kept);
+    target.append(list, boardWarning, actions);
     ticketOfferControls = { update }; renderedBoardInteraction = JSON.stringify(snapshot.boardInteraction || null); update();
   }
   function renderActions(target) {
