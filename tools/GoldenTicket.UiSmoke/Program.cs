@@ -1138,6 +1138,11 @@ internal static partial class Program
             await RenderSizes("game-table-five", () => new GameScreenView { DataContext = model }, Verify,
                 [(1000, 620), (1280, 800)]);
 
+            // This fixture supplies a synthetic clock without starting a match. A live timer tick
+            // would otherwise clear that value while the detached views are being rendered.
+            ((DispatcherTimer?)typeof(MainViewModel)
+                .GetField("_turnClockTimer", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(model))?.Stop();
             model.Table.TurnText = "Turn 73";
             model.Table.IsFinalTurn = true;
             model.GameClockSuffix = "  ·  0:18:37";
@@ -1154,7 +1159,7 @@ internal static partial class Program
                     if (phase.Text != "Turn 73 (Final)  ·  0:18:37" ||
                         seat.Text != "Computer 1" ||
                         !instruction.Text.StartsWith("Please place 4 Red trains", StringComparison.Ordinal))
-                        throw new InvalidOperationException("Computer placement guidance must retain the final-turn marker beside the turn clock.");
+                        throw new InvalidOperationException($"Computer placement guidance must retain the final-turn marker beside the turn clock. Actual phase: '{phase.Text}'; seat: '{seat.Text}'; instruction: '{instruction.Text}'.");
                 }, [(1000, 620), (1280, 800)]);
             model.Table.IsFinalTurn = false;
             await RenderSizes("game-table-ordinary-turn-placement",
