@@ -17,8 +17,9 @@ platform-neutral.
 
 The SDK/build prerequisites are development tools. For a framework-dependent installation on
 another laptop, install the matching .NET 10 Windows Desktop and ASP.NET Core runtimes first.
-An eventual installer must bundle or provision prerequisites during installation; installed gameplay
-must not download them. No Node/npm/Playwright dependency is shipped in the Windows app or phone browser.
+The v1.0.0 per-user installer wraps a self-contained package with the .NET, WPF and ASP.NET Core
+runtimes; installed gameplay does not download them. No Node/npm/Playwright dependency is shipped
+in the Windows app or phone browser.
 
 ## GitHub Actions
 

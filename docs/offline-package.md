@@ -1,8 +1,9 @@
 # Offline Windows package
 
-This is retained distribution tooling and historical package evidence. The current development
-workflow is [Visual Studio and GitHub CI](build-and-ci.md); routine personal ZIP creation is not
-requested, and CI does not invoke this packaging script.
+The current development workflow is [Visual Studio and GitHub CI](build-and-ci.md); routine
+personal ZIP creation is not requested. Release packaging runs separately from CI, using a clean
+documented source commit. The [Windows installer guide](windows-installer.md) describes the
+versioned Setup wrapper around this package.
 
 GoldenTicket's packaging script prepares a self-contained Windows 11 x64 ZIP. It includes the
 application, local companion browser assets, board data, .NET/WPF/ASP.NET runtimes, documentation,
@@ -12,8 +13,9 @@ part of that workflow.
 
 The first normal and cache-only offline builds passed the builder and executable checks; see
 [the package record](evidence/offline-package-2026-09-12/README.md) for source identity, local ZIP
-and checksums. Clean-machine and physical-device acceptance remain unverified. This is a portable distribution foundation,
-not an installer, signed release, automatic updater, or completed application acceptance.
+and checksums. Clean-machine and physical-device acceptance remain unverified. The ZIP is a
+portable distribution; the separate per-user installer builder wraps the same verified payload.
+Neither artifact is code-signed or automatically updated.
 
 ## Build from a documented source commit
 
@@ -125,7 +127,7 @@ unchanged.
    Current game and board-photo payloads are plaintext with integrity checks. Preserve each saved game's
    matching board-photo attachment: completed saves require it, and reload validates it before play.
 4. Windows may show its normal unsigned-application or camera-permission prompts. The package
-   does not disable those protections. A signed installer is still outstanding.
+   does not disable those protections. The separate per-user installer is also unsigned.
 5. For the companion, follow [phone setup](phone-setup.md). Laptop-only play does not require
    administrator rights. Authorizing the scoped Windows firewall rule or changing a managed
    network profile can require additional Windows permissions; the package does not bypass them.
@@ -155,6 +157,6 @@ acceptance tasks, not claims made by successful publication:
 | Separate new package folder and rollback to previous folder | Existing saves remain intact; incompatible save formats stop with an actionable message. |
 | Dependency notices and artifact hashes | Inventory matches shipped versions, notice-text gaps are resolved before wider distribution, and extracted payload hashes match. |
 
-An installer, uninstaller, signing, automatic update policy, and clean-machine/device evidence
-remain separate milestones. This script makes the portable package concrete and reviewable
-without asserting that the full DESIGN is finished.
+The per-user installer and uninstaller are built from this payload; signing, automatic updates,
+and clean-machine/device evidence remain separate milestones. This package builder does not
+assert that the full DESIGN is finished.

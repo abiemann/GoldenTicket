@@ -1,9 +1,11 @@
 # GoldenTicket implementation completion
 
-Updated September 12, 2026 after the [implementation audit](docs/AUDIT-2026-09-12.md).
-The complete requirements remain in [DESIGN.md](DESIGN.md). This is a partial manual desktop
-implementation with a game companion and camera/reference-photo tools, not a completed automatic
-camera-assisted product. See [September 12 progress and morning checks](docs/IMPLEMENTATION-2026-09-12.md).
+Updated September 23, 2026 after camera-assisted physical play and the latest CI run.
+The complete requirements remain in [DESIGN.md](DESIGN.md). The Windows app supports complete
+camera-assisted matches with local computer opponents and a shared-browser companion; physical
+play, save/rebuild, and webcam reconnection have been exercised. Distribution packaging and the
+remaining device, hardware, and failure-recovery checks are tracked below. The
+[September 12 implementation audit](docs/AUDIT-2026-09-12.md) is a historical snapshot.
 
 ## Architecture (September 22, 2026)
 
@@ -15,7 +17,8 @@ See the implemented [architecture and tradeoffs](docs/architecture.md).
 - [x] Inject a coherent camera-capture lifecycle and replace private-field capture test fixtures.
 - [x] Separate portable core tests from Windows integration; guard project dependencies in tests.
 - [x] Test shipped companion QR/networking code and document contributor boundaries.
-- [ ] Confirm the new portable-core job on Linux CI after these changes are pushed.
+- [x] Confirm the portable-core job on Linux CI. Both jobs passed in the
+  [September 23 Windows CI run](https://github.com/abiemann/GoldenTicket/actions/runs/35937601712).
 - [x] Extract Save Game, saved-board restore and companion-map publication state from
   `MainViewModel`, preserving checkpoint, camera epoch and existing acceptance checks.
 - [ ] Extract remaining board-reconciliation and privacy workflows as they are extended,
@@ -189,7 +192,9 @@ validation requirements; mark each feature complete only after those checks pass
   only after both the digital checkpoint and matching photo validate. This does not yet make the
   photograph itself a machine-verified checkpoint. Missing or invalid required photos block reload
   with an error; automatic journal recovery without a user checkpoint remains a separate path.
-- [ ] **Offline installer packaging** — self-contained Windows x64 distribution with required runtimes and assets included (M7).
+- [x] **Offline installer packaging foundation** — the versioned per-user Windows 11 x64 installer
+  wraps the verified self-contained distribution, including runtimes, browser assets and models.
+  The portable ZIP remains available; clean-machine and upgrade/uninstall acceptance are separate.
 - [ ] **Training mode, voice, story, and audio: last feature pass** — Training follows Story without effects/ambience; narration follows visual/voice/both settings. Complete photo save-and-rebuild and packaging foundation first (M6).
 
 The user's requested order puts voice/story/audio last. Keep essential visual guidance available
@@ -197,7 +202,7 @@ earlier; perform final release checks and package refresh after the narrative fe
 
 Development now uses Visual Studio and GitHub [Windows CI](.github/workflows/windows-ci.yml).
 Do not generate a personal app ZIP as a routine handoff. CI builds/tests and keeps diagnostic
-evidence only; future installer/distribution work remains a separate requirement. Installed
+evidence only; release packaging runs from a clean documented source commit. Installed
 Quick play must operate on the LAN without Internet access; PRACTICAL needs no network; see [the build/runtime contract](docs/build-and-ci.md).
 
 ## Audit fixes implemented
@@ -517,12 +522,12 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
 - [x] **Offline package build workflow.** A clean-source, locked-dependency PowerShell builder creates
   a self-contained Windows x64 ZIP with runtime/assets checks, notices, provenance and checksums.
   Actual package output is recorded separately in [packaging evidence](docs/offline-package.md);
-  clean-machine acceptance and an installer remain open.
+  a separate installer builder now wraps that verified payload. Clean-machine acceptance remains open.
 - [x] **Runtime packaging checks.** Separate reviewed Windows-runtime lock files preserve the
   development dependency locks. An explicit windowless executable diagnostic checks the loaded
   bundled runtime and native components before the ZIP is created.
 - [x] **First portable package built and checked.** Normal and cache-only offline builds passed;
-  the published executable passed eight component checks and every archived payload hash matched.
+  the published executable passed seven component checks and every archived payload hash matched.
   Source/artifact identities are in [package evidence](docs/evidence/offline-package-2026-09-12/README.md).
 - [x] Replace companion snapshot polling with event-driven SSE over the existing LAN HTTP connection.
   Push public game/camera/instruction changes, coalesce bursts, keep the connection alive without
@@ -615,10 +620,11 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   [recorded results](docs/ai-strategy-evidence.md) show stronger scores and ticket completion.
 - [ ] Playtest Aggressive against humans across seat counts and seeds, measuring disruption,
   game completion and decision time before making comparative difficulty claims.
-- [ ] **M7: distribution completion.** Validate the self-contained x64 ZIP on clean Windows, add an
-  installer, native dependency smoke checks, complete license/asset notice review and upgrades/uninstall
-  that retain saves. Establish packaging before the final narrative pass, then refresh it with the
-  finished audio assets. Re-run package advisories when preparing a release.
+- [ ] **M7: distribution acceptance.** Test the v1.0.0 installer and self-contained ZIP on clean
+  Windows without .NET, record native dependency checks, complete license/asset notice review,
+  and verify upgrade/uninstall retains saves. The installer builder and headless package checks
+  are implemented. Refresh the package after any future narrative assets are added and re-run
+  package advisories for subsequent releases.
 - [ ] **M6: Training, voice/story/audio last.** After photographed save-and-rebuild works, implement
   Standard/Training/Story presentation. Training uses the same story with effects and ambience off;
   speech follows Voice/Visual/Both. Add local speech/recorded fallback, original story/sound assets,

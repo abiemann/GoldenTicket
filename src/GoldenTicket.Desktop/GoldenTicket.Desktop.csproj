@@ -12,6 +12,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <RootNamespace>GoldenTicket.Desktop</RootNamespace>
     <AssemblyName>GoldenTicket</AssemblyName>
+    <Version>1.0.0</Version>
     <!-- DESIGN 17.1: no trimming, Native AOT, or single-file extraction in the first release. -->
     <PublishTrimmed>false</PublishTrimmed>
     <PublishSingleFile>false</PublishSingleFile>

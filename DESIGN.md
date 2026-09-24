@@ -107,9 +107,9 @@ The earlier document is background, not a second set of implementation orders. I
 
 The implementation plan must reach a complete local game, including setup, browser joining/pairing or PRACTICAL laptop handoffs, seat assignment, digital dealing, mobile pass-and-hide and PRACTICAL laptop handoffs, computer decisions, physical route verification, card-only turns, camera recovery, final scoring, story presentation, and photo-assisted save, pack away, and board restoration.
 
-The current build supports complete camera-assisted games. Story/audio, the wake gesture and
-installer delivery remain planned; their requirements below are separate from the implemented
-gameplay and its remaining hardware checks.
+The current build supports complete camera-assisted games and a per-user Windows installer
+builder. Story/audio and the wake gesture remain planned. Clean-machine installer acceptance and
+other hardware checks below remain separate from implemented gameplay.
 
 ### 2.2 Excluded features
 
@@ -1475,9 +1475,9 @@ Electron shell or separate user-managed web server.
 
 The desktop targets `net10.0-windows10.0.26100.0`, `win-x64`, with a technical Windows floor of
 `10.0.22000.0`. The SDK is pinned in `global.json`. The normal Visual Studio/CLI build is
-framework-dependent; a separate packaging workflow produces a self-contained x64 directory/ZIP.
-Trimming, Native AOT and single-file extraction are disabled. Clean-machine validation of the
-current distribution and an installer remain separate work.
+framework-dependent; separate tooling produces a self-contained x64 directory/ZIP and a per-user
+installer from the same verified payload. Trimming, Native AOT and single-file extraction are
+disabled. Clean-machine validation of the current distribution remains separate work.
 
 ### 17.2 Current dependencies and planned additions
 
@@ -1497,11 +1497,11 @@ not merely researched candidates. Self-contained packaging selects separate
 | Learned inference | Microsoft.ML.OnnxRuntime.DirectML 1.24.4, including CPU fallback | Bundled-model CPU/DirectML photo fixtures, warm-up and contract validation |
 | Storage | Microsoft.Data.Sqlite 10.0.12 and its locked SQLite native dependencies | Transaction, deduplication, replay, checkpoint/photo and fault tests |
 | Developer model tools | Local pinned Python/PyTorch/ONNX environments | Annotation, export and model evaluation tools; no consumer Python requirement |
-| Distribution | Framework-dependent development output; optional self-contained ZIP tooling | Historical package/component checks exist; current clean-machine run remains unrecorded |
+| Distribution | Framework-dependent development output; self-contained ZIP and per-user installer tooling | Historical ZIP/component checks exist; current clean-machine run remains unrecorded |
 
 OpenCvSharp and Microsoft.Windows.AI.MachineLearning were investigated earlier but are not
-current runtime dependencies. System.Speech, NAudio and an NSIS installer remain planned options,
-not shipped features. Switching provider or adding these packages requires an explicit dependency
+current runtime dependencies. System.Speech and NAudio remain planned options, not shipped
+features. The installer builder uses Inno Setup 7.1.0 only during packaging. Switching provider or adding these packages requires an explicit dependency
 change and fresh validation; the original investigation is not a requirement to replace the
 working ONNX Runtime path.
 
@@ -1697,9 +1697,9 @@ and a successful probe on one adapter are separate evidence from those physical 
 
 ### 17.5 Audio and packaging
 
-**Planned audio and installer work.** Current development output is framework-dependent; optional
-self-contained ZIP tooling already exists. The audio and installer requirements below describe
-the future distribution, not prerequisites for running the current game from Visual Studio.
+**Planned audio and distribution acceptance.** Current development output is framework-dependent;
+the self-contained ZIP and per-user installer builders exist. The audio requirements below remain
+future work. Clean-machine distribution acceptance is not a prerequisite for running from Visual Studio.
 
 Enumerate enabled local speech voices. If an appropriate voice is absent or fails, use the packaged English prompt/city/color/number recordings. Story and essential instructions must remain available on a clean offline machine without extra voice installation.
 
@@ -2452,16 +2452,18 @@ computer placement dots and current instructions.
 | Area | Evidence already available | What that evidence establishes |
 |---|---|---|
 | Physical board and Android tablet | The user's September 21 reports/screenshots and completed two-human/one-computer match; its saved journal was inspected in the [AI investigation](docs/ai-strategy-evidence.md) | Actual shared-browser and physical-board gameplay through final scoring. This is real-device testing, not merely an HTTP reachability experiment. Exact tablet model, OS/browser build and WAN state were not recorded. |
+| Human against two computer players | The user reported on September 23 that a complete game against two computer players went well | A real mixed human/computer game completed on the current feature set. The report did not record camera format, exact machine, or independent route-detection counts. |
 | Android browser backgrounding and rejoining | The user's September 22 confirmation of successful browser use after removal of the PWA | Backgrounding and rejoining work on the physical tablet. The reusable pairing PIN has no time expiry during hosting, supporting return to the game without generating a new code. |
 | Physical save and rebuild | The user confirmed on September 22, 2026 that save and rebuild was successfully completed that day | The normal physical save/rebuild walkthrough has been tested. Individual interrupted-operation and failure variants in section 22.8 were not separately reported. |
 | Webcam unplug/replug | The September 22 Android Webcam test switched capture to the laptop camera and required manual reselection. On September 23, after the identity fix, the user reported unplugging and reconnecting the webcam; the game re-found its stream and displayed it without incident. | The original hardware failure was reproduced, and a later physical test confirmed stream rediscovery and display. The September 23 report did not specify whether another camera was available, whether a game action was pending, or whether stale frames were rejected. |
+| Native 720p camera | The user reported successful 720p testing on September 22 | The selected 720p mode worked in that test. A separately identified full match at 720p has not been recorded. |
 | Rules, storage, application and Windows integration | Latest local Release verification: 356 core and 1,130 Windows integration tests passed, with a zero-warning solution build | Automated rules, transaction/replay, save/photo, coordinator, camera and companion regressions. The four earlier repaired timing-sensitive tests also passed 10 repetitions each in their recorded verification. |
 | Browser and WPF UI | 70 Node tests, 92 Chromium scenarios and 126 WPF render cases with zero binding warnings/errors in the latest local verification | Automated state transitions, first-draw continuity, blocked-draw handling, SSE/reconnect behavior, private maps, final standings and responsive layouts |
 | Simulation and AI | 20 invariant/replay simulations in the integration pass; 640 paired strategy games, including 320 untouched held-out games | Legal completion and measured improvement against frozen synthetic opponents. [AI evidence](docs/ai-strategy-evidence.md) also replays decisions from the failed real match. |
 | Camera/model integration | Physical play, reviewed-photo CPU/DirectML checks and [canonical alignment replays](docs/evidence/canonical-alignment-2026-09-19/validation.md), including 55 trains across 25 routes | Working learned recognition, geometry alignment and targeted regressions on actual camera frames. These are bounded measured cases, not an all-hardware error-rate estimate. |
 | Game artwork | The project owner's September 23 confirmation and the [artwork provenance review](docs/artwork-audit-2026-09-23.md) cover the background and ten portraits | All eleven shipped game-art PNGs have a local Codex generation trail and no apparent copied logo, board map, or licensed character in visual review. The root license offers only licensable project-owned rights in them; AI authorship and separate physical-board/game-data rights remain distinct. |
 | GPU preprocessing and developer tools | Actual 4K processing CPU/GPU comparison; 27 Python tests passed with two optional skips; 12 annotation checks | Tested processing operations and data tooling on the development setup. 4K processing input does not imply a native 4K camera was used. |
-| Packaging | [Historical self-contained ZIP validation](docs/evidence/offline-package-2026-09-12/README.md) passed runtime/component and archive checks on the development machine | Packaging tooling works for that recorded revision. It predates current gameplay changes and is not a clean-machine test of the current build. |
+| Packaging | [Historical self-contained ZIP validation](docs/evidence/offline-package-2026-09-12/README.md) passed runtime/component and archive checks on the development machine; a versioned per-user [installer builder](docs/windows-installer.md) now wraps verified packages | The old package evidence predates current gameplay changes. The v1.0.0 package must be built from its source commit; a local build is not a clean-machine test. |
 
 The local full-suite summary is retained at
 `artifacts/ci-failure-fix-20260921/summary.md`, with TRX files, logs and rendered evidence beside it.
@@ -2486,7 +2488,7 @@ performed, record its build, hardware and result instead of repeating a blanket 
 | Additional save/rebuild edge cases | The normal physical save/rebuild walkthrough passed on September 22. Remaining unrecorded variants include saving after the first card draw, during a destination choice or partial computer placement, then verifying exact continuation without duplicate payment or scoring. Save/photo/reload integration tests already cover these states. |
 | Hardware failure and long sessions | The September 23 physical unplug/replug retest confirmed stream rediscovery and display after the September 22 laptop-camera fallback failure. Still verify recovery with another camera available, preservation of a pending game action, and rejection of stale frames. Camera jog, sleep/resume, real GPU loss/fallback and controlled process/power/storage failure remain separate checks. Measure end-to-end claim/recovery/save latency and four-hour resource stability. Automated fault and stale-evidence tests are separate existing evidence. |
 | Recognition coverage and additional equipment | Independent sessions across lighting, poses, colors, map regions, touching pieces, hands and negative cases. The section 22 target corpus/rates have not been measured. Native 4K capture, a full 720p game, additional camera/GPU families and another physical board copy remain unrecorded. |
-| Clean-machine distribution | Build the current distribution and run offline on a clean Windows machine with its bundled dependencies. Installer install/update/uninstall tests follow implementation of the installer. |
+| Clean-machine distribution | Run the v1.0.0 distribution offline on a clean Windows machine with its bundled dependencies. Verify installer install/uninstall and saved-game retention; upgrade needs a later version. |
 | Exhaustive board-data review | Named sign-off for every route/lane/color/length and ticket value. The manifest still records this specific audit as unaudited; ordinary physical-board playtesting is already established. |
 
 The [device checklist](docs/companion-device-evidence.md) expands the phone/PRACTICAL cases.
@@ -2495,7 +2497,9 @@ and photo results. Use their dates and scope when planning the next check.
 
 ### 24.3 Release checklist
 
-These are future distribution gates, not setup barriers for the current development game:
+The v1.0.0 installer and ZIP provide a first downloadable Windows build for physical testing.
+The checks below remain broader consumer acceptance targets. Release notes must distinguish the
+recorded v1.0.0 results from unperformed clean-machine and device checks:
 
 - README, DESIGN, the task tracker, help and compatibility descriptions match the release source.
 - The supported physical edition and disclosed rare-supply policies are clear; the formal data review is recorded.
@@ -2514,7 +2518,7 @@ additional physical checks:
 
 - Palm wake/recheck gesture, expanded visibility/occlusion diagnostics and the optional printed-marker recovery approach.
 - Story/Training presentation, narration and sound, followed by their audio-device and offline tests.
-- Installer and current clean-machine distribution workflow.
+- Clean-machine installer/ZIP acceptance, upgrade/uninstall verification, and CI release automation.
 - Companion Save Game/Recheck, durable command-result queries and persistent approved-device registration if retained in scope. Current browser reload intentionally re-pairs.
 - The complete durable camera-photo evidence chain and photographed cancellation recovery in section 19.8. Current Save Game already validates the board before/after capture and the stored checkpoint/photo; its `LogicalStateOnly` metadata describes the storage contract, not an absence of camera checks.
 - Durable persistence of the post-claim scoring-marker obligation. Its current step is process-local; save waits for the marker move to finish. Crash/restart at this point remains a specific implementation/recovery concern.
@@ -2528,7 +2532,7 @@ service worker, remote server or installer is required for current LAN play from
 Sources were consulted on September 11, 2026. They establish edition facts and platform capabilities, not validation of an implementation. Package versions and terms must be locked and reviewed with the binaries actually shipped.
 
 This bibliography also retains investigated alternatives. OpenCvSharp, Windows ML, TypeScript,
-Vite and the audio/installer libraries listed here are not current application dependencies;
+Vite and the audio libraries listed here are not current application dependencies;
 section 17.2 and the package locks identify the implemented choices.
 
 ### 25.1 Product inputs and rules
@@ -2554,7 +2558,7 @@ section 17.2 and the package locks identify the implemented choices.
 
 - [Python license](https://docs.python.org/3/license.html), [PyTorch license](https://github.com/pytorch/pytorch/blob/main/LICENSE), and [torchvision license](https://github.com/pytorch/vision/blob/main/LICENSE): framework provenance; separate dataset/model rights remain necessary.
 - [Installed local speech voices](https://learn.microsoft.com/en-us/dotnet/api/system.speech.synthesis.speechsynthesizer.getinstalledvoices?view=net-10.0) and [NAudio license](https://github.com/naudio/NAudio/blob/release/2.x/license.txt).
-- [NSIS license](https://nsis.sourceforge.io/License): installer baseline and component-specific review.
+- [Inno Setup documentation](https://jrsoftware.org/ishelp/): per-user installer builder and component-specific review.
 
 ### 25.4 Browser companion and local hosting
 

@@ -43,10 +43,23 @@ The application is being developed and playtested with a real physical board and
 - For Quick play, one shared phone/tablet on the same local network as the laptop. Solo play and
   PRACTICAL need neither a phone nor a network.
 
-To build from source, use the **.NET 10 SDK**, pinned to **10.0.401** in [global.json](global.json).
-Visual Studio with the **.NET desktop development** workload is the preferred development setup.
-A framework-dependent build copied to another laptop needs the .NET 10 Windows Desktop and
-ASP.NET Core runtimes. Both recognition models are bundled with the project and copied during build.
+## Download and install
+
+For Windows 11 x64, download **GoldenTicket-Setup-1.0.0-win-x64.exe** and its `.sha256` file from
+the [v1.0.0 release](https://github.com/abiemann/GoldenTicket/releases/tag/v1.0.0). Compare the
+download's SHA-256 with the checksum file before running Setup:
+
+```powershell
+(Get-FileHash .\GoldenTicket-Setup-1.0.0-win-x64.exe -Algorithm SHA256).Hash
+```
+
+Setup installs for the current Windows user without administrator access or a separate .NET
+download. It includes the game, browser assets, recognition models, and .NET runtimes. The
+installer is **unsigned**, so Windows may ask you to confirm the publisher. Saved games and board
+photos live under `%LOCALAPPDATA%\GoldenTicket`; uninstalling leaves them in place. A portable ZIP
+is also attached for people who prefer to extract and run the app without installing it. The
+current release's clean-machine, device, and long-session acceptance remains to be recorded;
+see [release verification](DESIGN.md#24-release-readiness-and-remaining-evidence).
 
 ## Board and Webcam Setup
 
@@ -291,6 +304,11 @@ requires Internet access to restore development dependencies.
 
 ## Build, test and run
 
+To build from source, use the **.NET 10 SDK**, pinned to **10.0.401** in [global.json](global.json).
+Visual Studio with the **.NET desktop development** workload is the preferred development setup.
+A framework-dependent build copied to another laptop needs the .NET 10 Windows Desktop and
+ASP.NET Core runtimes. Both recognition models are bundled with the project and copied during build.
+
 Open `GoldenTicket.sln` in Visual Studio and set **GoldenTicket.Desktop** as the startup project,
 or use these commands on Windows:
 
@@ -357,7 +375,7 @@ and intermediate checkpoints stay in ignored `artifacts/`.
 - [Contributor guide](CONTRIBUTING.md): development conventions and checks.
 - [Rules policies](docs/rules-policies.md): decisions for rare rules and supply cases.
 - [Design](DESIGN.md): detailed product design, including future features.
-- [Roadmap](TODO.md): remaining work, including narration and installer work.
+- [Roadmap](TODO.md): remaining work, including narration and distribution acceptance.
 - [Validation records](docs/evidence/): detailed results and historical implementation reports.
 
 ## License
