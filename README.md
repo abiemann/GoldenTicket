@@ -35,8 +35,11 @@ The application is being developed and playtested with a real physical board and
 ## What you need
 
 - A Windows 11 laptop or desktop.
-- The classic English North America board, trains and scoring markers. Leave the physical cards
-  and destination tickets in the box; the app manages them for every player.
+- The classic English North America [Ticket to Ride base game (DOW7201)](https://store.asmodee.com/products/ticket-to-ride-1)
+  with its board, trains and scoring markers. Check the product code when buying a copy; remaining
+  stock or a used copy may be needed. The 2025 Refresh edition (DOW7201N) has not been validated
+  with GoldenTicket. Leave the physical cards and destination tickets in the box; the app manages
+  them for every player.
 - A camera with a clear view of the entire board. **720p is the minimum.**
   Native 4K capture is available when the camera supports it. Keep all four corners visible and
   provide enough light to distinguish the pieces.
