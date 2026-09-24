@@ -16,7 +16,10 @@ DLLs as part of a WinRT-calling program; it does not place them under PolyForm.
 
 The first installer is **unsigned**. Windows may show an unknown-publisher warning; it must not
 disable SmartScreen, camera permissions, or firewall checks. There is no automatic updater. The
-current clean-machine, physical-camera and LAN/device acceptance remains to be recorded in
+user reported installing v1.0.0 Setup on the development Windows 11 25H2 x64 PC (build
+26200.9457) on September 23, 2026, launching the installed app, and starting a game. The
+clean-machine, installed-build full-match, physical-camera and LAN/device checks remain to be
+recorded in
 [release readiness](../DESIGN.md#24-release-readiness-and-remaining-evidence).
 
 ## Build from the release source commit

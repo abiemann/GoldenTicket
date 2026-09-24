@@ -58,7 +58,8 @@ download. It includes the game, browser assets, recognition models, and .NET run
 installer is **unsigned**, so Windows may ask you to confirm the publisher. Saved games and board
 photos live under `%LOCALAPPDATA%\GoldenTicket`; uninstalling leaves them in place. A portable ZIP
 is also attached for people who prefer to extract and run the app without installing it. The
-current release's clean-machine, device, and long-session acceptance remains to be recorded;
+v1.0.0 Setup installed, launched and started a game on the development Windows 11 PC. Clean-machine,
+additional-device and long-session checks have not yet been recorded;
 see [release verification](DESIGN.md#24-release-readiness-and-remaining-evidence).
 
 ## Board and Webcam Setup

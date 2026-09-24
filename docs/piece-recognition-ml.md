@@ -74,8 +74,9 @@ the same analyzed image. The former **Score track** preview cards have been remo
 locates a `player-marker`, a separate local
 reader samples its interior color and maps its center to the perimeter of the upright classic
 USA board. It reads the printed 1–100 track, including 20, 50, 70 and 100 at its corners;
-it cannot determine how many full laps a player has completed. Train colors and route
-ownership remain unread, and no score reading changes game state.
+it cannot determine how many full laps a player has completed. This score-marker reader does not
+determine train colors or route ownership; the game checks those separately. Score readings alone
+do not change game state.
 
 Keep the crop close to all four outer board edges. Side-by-side markers aligned with the
 same score-track row or column can share a value; readings are not assigned distinct scores.

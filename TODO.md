@@ -1,10 +1,12 @@
 # GoldenTicket implementation completion
 
-Updated September 23, 2026 after camera-assisted physical play and the latest CI run.
+Updated September 23, 2026 after camera-assisted physical play, the v1.0.0 release and a local
+Setup install.
 The complete requirements remain in [DESIGN.md](DESIGN.md). The Windows app supports complete
 camera-assisted matches with local computer opponents and a shared-browser companion; physical
-play, save/rebuild, and webcam reconnection have been exercised. Distribution packaging and the
-remaining device, hardware, and failure-recovery checks are tracked below. The
+play, save/rebuild, and webcam reconnection have been exercised. The v1.0.0 installer and ZIP are
+published; remaining distribution acceptance, device, hardware and failure-recovery checks are
+tracked below. The
 [September 12 implementation audit](docs/AUDIT-2026-09-12.md) is a historical snapshot.
 
 ## Architecture (September 22, 2026)
@@ -50,7 +52,8 @@ See the
   for every selected color near printed 1. Missing colors and trains appear as actionable notices;
   the notice disappears when the camera, train, and marker checks are ready.
   Camera confirmation uses measured train-space centers for all 100 classic-US routes; each
-  requested space receives its own pulsing yellow cue. Live overhead-camera acceptance remains open.
+  requested space receives its own pulsing yellow cue. Physical play has been exercised; broader
+  accuracy measurements and failure-recovery checks remain open.
 - [x] Remember window size, maximized state and full-screen preference across launches, preserving
   normal dimensions through maximize, minimize and full-screen transitions.
 - [x] After PLAY, show the accepted live board crop in a uniformly scaled game table. Position
@@ -151,8 +154,9 @@ See the
   unknown colors; its screenshot has black readings at the support cutoff. Keep the same color
   support and competing-color thresholds, require agreement with the original leading color,
   and retain original route geometry. Live-camera validation remains open.
-- [ ] Persist the physical scoring-marker move gate across app restart; resume currently requires
-  board reconciliation, but it does not restore the in-memory post-claim marker instruction.
+- [x] Persist the physical scoring-marker move gate across app restart. The committed claim's
+  marker obligation is durable, blocks the next action, and restores its instruction after reload.
+  Physical overhead-camera validation remains a separate check below.
 - [ ] Validate score-piece color and printed-1 acceptance with the real overhead camera for all
   five colors and rotated board orientations; synthetic tests do not establish live accuracy.
 - [ ] Recognize the board's printed score-track orientation independently of marker placement;
@@ -160,42 +164,52 @@ See the
 - [x] The affected corner and score-piece tests pass (72 focused cases). Synthetic WPF checks
   cover 88 render cases, selection input, repeated transitions, resizing, privacy hiding and
   shared game/camera ownership, with no binding warnings.
-- [x] The full automated suite passed under the signed-in Windows user profile (719 cases).
-  Game-save storage tests also passed in a restricted context without DPAPI.
+- [x] The full automated suite at this game-screen checkpoint passed under the signed-in Windows
+  user profile (719 cases). Later release-time test counts are recorded in
+  [DESIGN §24](DESIGN.md#24-release-readiness-and-remaining-evidence). Game-save storage tests
+  also passed in a restricted context without DPAPI.
 - [ ] Perform a hands-on desktop check of focus, maximization, animation/reduced-motion settings
   and the live camera while switching layers on the target Windows machine.
 
-## Still missing: feature checklist
+## Feature status and remaining scope
 
-These six features remain unfinished. The milestone tasks below define their implementation and
-validation requirements; mark each feature complete only after those checks pass.
+Checked items describe implemented behavior. Unchecked items describe broader design work or
+validation still needed; the detailed milestone tasks below retain those separate checks.
 
-- [ ] **Camera tracking and recovery** — board recognition, move verification, and automatic recovery after camera movement (M3–M5).
+- [x] **Camera-assisted tracking, move verification, and basic recovery** — learned board corners,
+  upright alignment, fresh-frame route and whole-board checks, bounded re-registration after
+  framing changes or refocus, and selected-webcam stream reconnection are implemented. Physical
+  camera-assisted games and an unplug/replug stream retest have been reported (M3–M5).
+- [ ] **Expanded camera recovery and acceptance** — complete the planned `CameraVerified`
+  pause/reconciliation flow for significant movement and pending actions. Physically test jog/return,
+  reconnect with another camera present, stale-frame rejection, sleep/resume and broader hardware
+  and recognition conditions.
 - [ ] **Phone/tablet companion** — recommended browser Quick play and PRACTICAL laptop sharing,
   with private pass-and-hide on Android and iOS/iPadOS and laptop-hosted data
   and QR-assisted initial synchronization entirely within the LAN (M0/M2). No iPhone or iPad is
   available, so **iOS cannot be claimed as supported at release**; see
   [companion device evidence](docs/companion-device-evidence.md) for the honest wording and the
   borrowed-device checklist.
-- [ ] **CPU/GPU inference selection** — actual Auto/CPU/GPU preprocessing, preference persistence,
-  fallback and effective-backend status are implemented. Packaged-model execution and the full
-  hardware/provider acceptance matrix remain M4/M5; preprocessing is not ML inference.
-- [ ] **Photographed save and rebuild** — the state-only half is implemented (M2): named checkpoints,
-  the `PreparingPackAway`/`PackedAway`/`Rebuilding` lifecycle, commit-then-readback validation,
-  route-list guided reconstruction and exactly-once resume. Required operator-attested
-  reference photos use plaintext format v2 with a SHA-256 checksum, immutable checkpoint binding
-  and readback verification. Still missing:
-  the board diagram, machine-verified photograph and full evidence lifecycle.
-  The in-game Escape save now checks route positions and player colors from live frames, stores an
-  observed color inventory and any authorized pending placement's per-slot mask beside a fresh
-  board reference photo, and returns to the main menu
-  only after both the digital checkpoint and matching photo validate. This does not yet make the
-  photograph itself a machine-verified checkpoint. Missing or invalid required photos block reload
-  with an error; automatic journal recovery without a user checkpoint remains a separate path.
-- [x] **Offline installer packaging foundation** — the versioned per-user Windows 11 x64 installer
-  wraps the verified self-contained distribution, including runtimes, browser assets and models.
-  The portable ZIP remains available; clean-machine and upgrade/uninstall acceptance are separate.
-- [ ] **Training mode, voice, story, and audio: last feature pass** — Training follows Story without effects/ambience; narration follows visual/voice/both settings. Complete photo save-and-rebuild and packaging foundation first (M6).
+- [x] **Bundled CPU/DirectML model inference with fallback** — the shipped piece and corner ONNX
+  models run locally. The processor preference influences model loading; DirectML can fall back to
+  CPU. The Camera badge reports image processing, while model-provider details remain internal.
+- [ ] **Inference-provider UI and hardware acceptance** — show the effective model backend and
+  fallback clearly if that control remains in scope; test the packaged models across additional
+  GPU/CPU families and failures (M4/M5).
+- [x] **Photographed save and rebuild (current flow)** — Escape → Save Game checks the live board,
+  writes and reads back the checkpoint, captures a matching photo, validates its attachment, and
+  checks fresh frames again before leaving play. Reload checks the saved board before resuming.
+  The normal physical walkthrough passed on September 22. Photos remain operator-attested and
+  bound to their checkpoint with a checksum; missing or invalid required photos block reload.
+- [ ] **Expanded save evidence and rebuild presentation** — add a separate clean reconstruction
+  diagram, machine-verified photograph, full evidence lifecycle and interrupted-operation cases
+  (M2/M4). Automatic journal recovery without a completed user save remains a separate path.
+- [x] **Offline v1.0.0 release packaging** — the published per-user Windows 11 x64 installer wraps
+  the verified self-contained ZIP, including runtimes, browser assets and models. Local Setup
+  install, launch and game start passed; clean-machine and upgrade/uninstall acceptance are separate.
+- [ ] **Training mode, voice, story, and audio: last feature pass** — Training follows Story without
+  effects/ambience; narration follows visual/voice/both settings. Complete the planned save/rebuild
+  extensions before this feature pass, then refresh the release package with its assets (M6).
 
 The user's requested order puts voice/story/audio last. Keep essential visual guidance available
 earlier; perform final release checks and package refresh after the narrative features are finished.
@@ -337,20 +351,18 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   Camera/crop/processor changes invalidate references and stale work. Motion, insufficient detail
   and major scene changes withhold candidates. This is a low-false-positive baseline to evaluate,
   not a measured accuracy claim or an authority to spend cards, score or commit routes. The
-  September 13 ML experiment supersedes this baseline in the live preview; comparison tooling remains.
-- [x] **Processing and outline automated/image-pair checks.** The integrated automated/UI pass
+  September 13 ML experiment supersedes this baseline in game-board analysis; comparison tooling remains.
+- [x] **Historical processing and difference-baseline image-pair checks.** The automated pass
   succeeded. The supplied photo pair produced 15 train and 5 marker candidates in raw and enhanced
   comparisons; an unchanged empty-board comparison produced 0/0. RTX 4080 Laptop preprocessing
   matched the CPU within one channel level when upscaling and exactly in the native-4K fixture.
   See the [bounded validation record](docs/evidence/camera-processing-2026-09-12/validation.md).
-- [ ] **Processing and outline physical acceptance.** Measure empty-board false positives and
-  per-piece misses across printed routes, shadows, touching trains and lighting; test live
-  original-frame preview, processed photo exports, and native-4K input on actual hardware.
-  Exported-reference reload and
-  jog/return checks apply only when explicitly comparing the historical difference baseline.
-  Complete adapter/device-loss and preference-switching acceptance. Image enhancement must remain
-  separate from unsharpened checkpoint evidence. A successful photo pair is not general recognition
-  accuracy or a supported native-4K camera claim.
+- [ ] **Camera processing physical acceptance.** Test original-frame preview, processed photo
+  exports, native-4K input, adapter/device loss and preference switching on actual hardware.
+  Keep enhancement separate from unsharpened checkpoint evidence. If the historical difference
+  baseline is evaluated again, measure its false positives and misses across lighting and piece
+  layouts, including exported-reference reload and jog/return. A successful photo pair does not
+  establish general recognition accuracy or native-4K camera support.
 - [ ] **Controlled glare/reference experiment.** A later enhanced comparison of image `160803`
   against old empty reference `152343` returned 20 train/19 marker candidates; the comparison
   without additional enhancement returned 24/19. Visual review sees 15 trains/5 markers, with
@@ -385,7 +397,7 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
 - [x] **First learned piece-detection experiment.** Audit 29 local photos / 954 labels, preserve
   capture-date groups, train and export a two-class YOLOX-Nano detector, and integrate independent
   ONNX CPU/DirectML inference. Empty-board capture is no longer a prerequisite.
-  Add exact-frame review ZIPs with model hashes and notes. The former Camera preview card
+  Add exact-frame review ZIPs with model hashes and notes. The former Piece outlines panel
   was removed; game-board analysis still uses the detector. See the
   [experiment and validation](docs/piece-recognition-ml.md).
 - [x] **Rotated train geometry.** Fit an optional rectangle to the train pixels within each
@@ -418,7 +430,9 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   labels, retrain with recorded provenance and evaluate untouched new capture sessions. Include
   empty boards and lighting changes in held-out evaluation, all colors, crowding, motion and
   occlusion. Measure whole camera-to-outline latency and provider failures on more hardware.
-  Color recognition, route assignment and automatic game verification remain separate work.
+  The two-class model itself does not predict color or route; gameplay supplies separate color,
+  route-assignment and whole-board verification checks. Independent held-out accuracy and physical
+  recovery validation remain open.
 - [ ] **Independent crowded-marker checks.** The black marker in photo `20260913-171132`
   had low baseline confidence when surrounded by other markers. The second model now detects it
   in all three reviewed failure photos. Collect new paired isolated/clustered examples on light
@@ -557,24 +571,24 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   Android is available throughout; iOS/iPadOS may be tested during a borrowed-device session.
   Use [the device checklist](docs/companion-device-evidence.md) and record limitations honestly.
 
-- [ ] **M3: camera completion.** Validate the implemented WinRT acquisition, bounded frame ownership,
-  camera choice, native-format fallback, preview, CPU/GPU preprocessing and manual crop against
-  the real board. Evaluate the experimental empty-board detector. Add printable markers, board
-  landmarks, automatic calibration, detailed quality gates and recording/replay.
-- [ ] **M4: verification.** The board-first solo-human and Quick play paths confirm the new route and whole-board
-  inventory before payment, preserve the payment choices, then verify fresh post-payment captures
-  before completing the claim and handing off the turn. Complete the durable preauthorization substate, broader whole-board
-  recognition, occlusion/unknown foreground rejection, jog/reconnect recovery, stale-epoch
-  rejection, wake gesture, and explicit mode-change reconciliation. The score-marker move
-  obligation now commits with the claim and survives restart; validate it with the overhead camera.
-- [ ] **M4/M5: model inference.** Build on the implemented preprocessing preference/status flow.
-  For any required learned recognizer, default to Auto: detect adapters at launch, validate GPU execution with
-  the packaged model, and fall back to CPU on absence, incompatibility, timeout, or failure. Retain
-  explicit CPU/GPU preferences and distinguish them from the effective backend. Display a chip/CPU
-  icon or GPU text with lightning around it, with adapter/fallback details. Package native runtimes
-  and test safe switching. Evaluate a baseline first; if needed train on developer data, validate
-  held-out physical sets, and ship an offline model. Users never train or download a model.
-- [x] **M2: state-only pack away and rebuild.** Named checkpoints, durable packed/rebuild lifecycles,
+- [ ] **M3: broader camera validation.** WinRT acquisition, bounded frame ownership, camera
+  choice, native-format fallback, preview, CPU/GPU preprocessing, learned corners and manual crop
+  are implemented. Measure them across more physical boards, lighting, cameras and formats; extend
+  the independent recording/replay corpus. The marker fixture and per-region quality protocol in
+  [DESIGN §11](DESIGN.md#11-calibration-and-automatic-camera-recovery) describe planned extensions;
+  current play requires no printed markers.
+- [ ] **M4: expanded verification and recovery.** Board-first solo-human and Quick play paths check
+  the new route and whole-board inventory before payment, preserve payment choices, and require
+  fresh post-payment evidence before completing a claim. Complete the durable preauthorization
+  substate, occlusion/unknown-foreground handling, full jog/reconnect pause and reconciliation,
+  wake gesture if adopted, and explicit mode-change reconciliation. The post-claim scoring-marker
+  obligation is durable and restores after restart; validate that recovery with the overhead camera.
+- [ ] **M4/M5: inference provider UI and acceptance.** Piece and corner ONNX models, native runtimes,
+  CPU/DirectML selection and CPU fallback ship offline. The Camera badge currently describes image
+  processing; expose the effective model provider and fallback separately if retained in scope.
+  Test packaged-model switching and failures across more GPU/CPU families, and measure accuracy on
+  independent physical sessions. Users never train or download a model.
+- [x] **M2: durable pack-away state.** Named checkpoints, durable packed/rebuild lifecycles,
   frozen source state, commit-then-readback validation of the logical checkpoint, suspended
   partial operations preserved, route-list guided reconstruction with whole-target attestation,
   and exactly-once resume. Verified by `PackAwayTests` and `PackAwayDurabilityTests`. Completed
@@ -620,12 +634,13 @@ Quick play must operate on the LAN without Internet access; PRACTICAL needs no n
   [recorded results](docs/ai-strategy-evidence.md) show stronger scores and ticket completion.
 - [ ] Playtest Aggressive against humans across seat counts and seeds, measuring disruption,
   game completion and decision time before making comparative difficulty claims.
-- [ ] **M7: distribution acceptance.** Test the v1.0.0 installer and self-contained ZIP on clean
-  Windows without .NET, record native dependency checks, complete license/asset notice review,
-  and verify upgrade/uninstall retains saves. The installer builder and headless package checks
-  are implemented. Refresh the package after any future narrative assets are added and re-run
-  package advisories for subsequent releases.
-- [ ] **M6: Training, voice/story/audio last.** After photographed save-and-rebuild works, implement
+- [ ] **M7: distribution acceptance.** The v1.0.0 installer/ZIP and bundled-runtime checks are
+  complete. The package includes PolyForm terms, an artwork provenance review and dependency
+  notices with no recorded text gaps. On September 23, Setup installed,
+  launched and started a game on the development Windows 11 PC. Still test offline on clean
+  Windows 11 x64 without .NET, then verify uninstall retains saves; upgrade needs a later version.
+  Refresh the package after future narrative assets and re-run advisories for subsequent releases.
+- [ ] **M6: Training, voice/story/audio last.** After the planned save/rebuild extensions, implement
   Standard/Training/Story presentation. Training uses the same story with effects and ambience off;
   speech follows Voice/Visual/Both. Add local speech/recorded fallback, original story/sound assets,
   public-event filtering, volume/interruption controls, and mode persistence. Verify zero effects
