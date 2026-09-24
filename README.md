@@ -82,11 +82,13 @@ keeps looking; use its camera selector when more than one is available.
 
 <table>
   <tr>
-    <td><a href="docs/images/companion-private-hand-and-destinations.jpg"><img src="docs/images/companion-private-hand-and-destinations.jpg" alt="Private train cards and destination map on the shared phone" width="280"></a></td>
-    <td><a href="docs/images/companion-cards-covered.jpg"><img src="docs/images/companion-cards-covered.jpg" alt="Cards covered before passing the phone to the next player" width="280"></a></td>
-    <td><a href="docs/images/companion-qr-pairing.jpg"><img src="docs/images/companion-qr-pairing.jpg" alt="Laptop QR code and phone pairing screen" width="280"></a></td>
+    <td><a href="https://github.com/abiemann/GoldenTicket/blob/main/docs/images/companion-qr-pairing.jpg" title="Open in GitHub image viewer"><img src="docs/images/companion-qr-pairing.jpg" alt="Laptop QR code and phone pairing screen" width="280"></a></td>
+    <td><a href="https://github.com/abiemann/GoldenTicket/blob/main/docs/images/companion-cards-covered.jpg" title="Open in GitHub image viewer"><img src="docs/images/companion-cards-covered.jpg" alt="Cards covered before passing the phone to the next player" width="280"></a></td>
+    <td><a href="https://github.com/abiemann/GoldenTicket/blob/main/docs/images/companion-private-hand-and-destinations.jpg" title="Open in GitHub image viewer"><img src="docs/images/companion-private-hand-and-destinations.jpg" alt="Private train cards and destination map on the shared phone" width="280"></a></td>
   </tr>
 </table>
+
+Click a photo to open it in GitHub's image viewer; use Back to return here.
 
 **No installation needed.** Use the laptop's **LAN Game** controls to open the connection options.
 
