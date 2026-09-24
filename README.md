@@ -10,6 +10,8 @@ the instructions on the laptop or shared tablet. Play against computers, with ot
 GoldenTicket is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE).
 See [License](#license) for its scope and third-party material.
 
+[![Golden Ticket title art above a train in snowy mountains](assets/artwork/golden-ticket-snowy-twilight-20260914.png)](https://github.com/abiemann/GoldenTicket/blob/main/assets/artwork/golden-ticket-snowy-twilight-20260914.png)
+
 ## What you can do
 
 - **Play with 2–5 human and computer players.** Choose portraits with matching train colors, then select
