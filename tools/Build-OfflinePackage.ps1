@@ -156,9 +156,9 @@ try {
     }
 
     $started = [DateTimeOffset]::UtcNow
-    $name = 'GoldenTicket-win-x64-' + $started.ToString('yyyyMMdd-HHmmss') + '-' + $sourceCommit.Substring(0, 8) + '-' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
+    $packageName = 'GoldenTicket-win-x64-' + $started.ToString('yyyyMMdd-HHmmss') + '-' + $sourceCommit.Substring(0, 8) + '-' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
     $releaseRoot = Assert-Within (Join-Path $repository 'artifacts/release') $repository
-    $runRoot = Assert-Within (Join-Path $releaseRoot $name) $releaseRoot
+    $runRoot = Assert-Within (Join-Path $releaseRoot $packageName) $releaseRoot
     if (Test-Path -LiteralPath $runRoot) { throw 'The generated output directory already exists; no output will be replaced.' }
     [IO.Directory]::CreateDirectory($runRoot) | Out-Null
     $packageRoot = Assert-Within (Join-Path $runRoot 'GoldenTicket') $runRoot
@@ -365,13 +365,13 @@ try {
 
         $redistributionBasis = $null
         if ($package.Id -eq 'Microsoft.Windows.SDK.NET.Ref' -and $package.Version -eq '10.0.26100.57') {
-            foreach ($name in @('Microsoft.Windows.SDK.NET.dll', 'WinRT.Runtime.dll')) {
-                $sdkFile = Assert-Within (Join-Path $directory ('lib/net8.0/' + $name)) $directory
-                $publishedFile = Assert-Within (Join-Path $packageRoot $name) $packageRoot
+            foreach ($sdkProjectionFileName in @('Microsoft.Windows.SDK.NET.dll', 'WinRT.Runtime.dll')) {
+                $sdkFile = Assert-Within (Join-Path $directory ('lib/net8.0/' + $sdkProjectionFileName)) $directory
+                $publishedFile = Assert-Within (Join-Path $packageRoot $sdkProjectionFileName) $packageRoot
                 if (-not (Test-Path -LiteralPath $sdkFile -PathType Leaf) -or
                     (Get-FileHash -LiteralPath $sdkFile -Algorithm SHA256).Hash -ne
                     (Get-FileHash -LiteralPath $publishedFile -Algorithm SHA256).Hash) {
-                    throw "The published Windows SDK projection is not the unmodified listed redistributable: $name"
+                    throw "The published Windows SDK projection is not the unmodified listed redistributable: $sdkProjectionFileName"
                 }
             }
             $redistributionBasis = [ordered]@{
@@ -446,7 +446,7 @@ Packages still needing notice-text review: $(if ($needsNoticeReview.Count) { $ne
     }
     # The manifest covers every payload file except itself. The detached ZIP hash covers it too.
     Write-Json (Join-Path $packageRoot 'SHA256-MANIFEST.json') ([ordered]@{ formatVersion = 1; sourceCommit = $sourceCommit; files = $hashRows.ToArray() })
-    $zip = Assert-Within (Join-Path $runRoot ($name + '.zip')) $runRoot
+    $zip = Assert-Within (Join-Path $runRoot ($packageName + '.zip')) $runRoot
     [IO.Compression.ZipFile]::CreateFromDirectory($packageRoot, $zip, [IO.Compression.CompressionLevel]::Optimal, $true)
     $zipHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
     [IO.File]::WriteAllText($zip + '.sha256', $zipHash + '  ' + [IO.Path]::GetFileName($zip) + "`n", [Text.UTF8Encoding]::new($false))

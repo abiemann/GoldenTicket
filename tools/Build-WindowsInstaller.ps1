@@ -60,6 +60,9 @@ if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[0-9a-f]{40}$') { throw 'U
 $result = Read-Json $resultPath
 $provenance = Read-Json (Join-Path $packageRoot 'package-provenance.json')
 $manifest = Read-Json (Join-Path $packageRoot 'SHA256-MANIFEST.json')
+if ($result.zipFile -cne ([IO.Path]::GetFileName($runRoot) + '.zip')) {
+    throw 'The package ZIP name does not match its release directory.'
+}
 if ($result.sourceCommit -ne $sourceCommit -or $provenance.sourceCommit -ne $sourceCommit -or
     $manifest.sourceCommit -ne $sourceCommit -or -not $provenance.selfContained -or
     -not $provenance.headlessRuntimeChecksPassed) {
