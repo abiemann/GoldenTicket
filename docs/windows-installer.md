@@ -7,6 +7,13 @@ administrator account and does not download prerequisites. It adds Start Menu la
 shortcuts. Saved games and board photos live separately in `%LOCALAPPDATA%\GoldenTicket`, which
 the uninstaller does not remove.
 
+Setup presents `END-USER-TERMS.txt` for explicit acceptance. It includes the project's
+PolyForm Noncommercial license and the separate terms for the unmodified Microsoft Windows SDK
+projection DLLs. The same terms and source notices are in the portable ZIP, where there is no
+installer acceptance screen. Microsoft's
+[REDIST list](https://learn.microsoft.com/en-us/legal/windows-sdk/redist) permits those listed
+DLLs as part of a WinRT-calling program; it does not place them under PolyForm.
+
 The first installer is **unsigned**. Windows may show an unknown-publisher warning; it must not
 disable SmartScreen, camera permissions, or firewall checks. There is no automatic updater. The
 current clean-machine, physical-camera and LAN/device acceptance remains to be recorded in

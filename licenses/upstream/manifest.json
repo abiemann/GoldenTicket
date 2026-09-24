@@ -1,0 +1,65 @@
+{
+  "formatVersion": 1,
+  "groups": [
+    {
+      "packageIds": ["Microsoft.Data.Sqlite", "Microsoft.Data.Sqlite.Core"],
+      "version": "10.0.12",
+      "files": [
+        {
+          "path": "licenses/upstream/dotnet-dotnet/LICENSE.TXT",
+          "sourceUrl": "https://raw.githubusercontent.com/dotnet/dotnet/95017c711e6afc1085133d440e42b4bd78155701/LICENSE.TXT",
+          "sha256": "e1a7f024fdb8b7f09f5f75ed7f9723c9379dd6aa02f8ef0a24098ef7efb48c35"
+        }
+      ]
+    },
+    {
+      "packageIds": ["SharpGen.Runtime", "SharpGen.Runtime.COM"],
+      "version": "2.4.2-beta",
+      "files": [
+        {
+          "path": "licenses/upstream/sharpgen-tools/LICENSE.txt",
+          "sourceUrl": "https://raw.githubusercontent.com/SharpGenTools/SharpGenTools/6990bcafe124a4c22515ad19cee5a081da8db67b/LICENSE.txt",
+          "sha256": "a75432279f66fa094e65eba053a057073500c63d0b53e4eeae9d70ac4794de9a"
+        }
+      ]
+    },
+    {
+      "packageIds": ["SQLitePCLRaw.bundle_e_sqlite3", "SQLitePCLRaw.core", "SQLitePCLRaw.lib.e_sqlite3", "SQLitePCLRaw.provider.e_sqlite3"],
+      "version": "2.1.12",
+      "files": [
+        {
+          "path": "licenses/upstream/sqlitepclraw/LICENSE.TXT",
+          "sourceUrl": "https://raw.githubusercontent.com/ericsink/SQLitePCL.raw/v2.1.12/LICENSE.TXT",
+          "sha256": "3a0b32a74c46bdda3499ec9f39ab4f2a98fc2b239a1c1c1592086d26fdf76159"
+        },
+        {
+          "path": "licenses/upstream/sqlitepclraw/NOTICE.TXT",
+          "sourceUrl": "https://raw.githubusercontent.com/ericsink/SQLitePCL.raw/v2.1.12/NOTICE.TXT",
+          "sha256": "05cee421bdd2eedcd7ed29f2617a537154d14e81f3f88eb45bdccfbbcdc2281d"
+        }
+      ]
+    },
+    {
+      "packageIds": ["Vortice.D3DCompiler", "Vortice.Direct3D11", "Vortice.DirectX", "Vortice.DXGI"],
+      "version": "3.8.3",
+      "files": [
+        {
+          "path": "licenses/upstream/vortice-windows/LICENSE",
+          "sourceUrl": "https://raw.githubusercontent.com/amerkoleci/Vortice.Windows/9e609cb9439c9872aa1b339f177e40ec96f77239/LICENSE",
+          "sha256": "67f9fa2a5248ab5d47c8d2a31bc09bc2da2d2b1ee24b044942a945376c9ff613"
+        }
+      ]
+    },
+    {
+      "packageIds": ["Vortice.Mathematics"],
+      "version": "2.1.0",
+      "files": [
+        {
+          "path": "licenses/upstream/vortice-mathematics/LICENSE",
+          "sourceUrl": "https://raw.githubusercontent.com/amerkoleci/Vortice.Mathematics/fa05ec6dcba48f3f7331791da6dc7f3d866b2ad6/LICENSE",
+          "sha256": "8804e21b0f0d7d73a64793cf8f0fbd95001be3ad1e99d8c4c014d8959698205c"
+        }
+      ]
+    }
+  ]
+}

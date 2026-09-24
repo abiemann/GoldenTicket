@@ -1,0 +1,26 @@
+Microsoft Windows SDK component terms for GoldenTicket
+
+GoldenTicket includes the unmodified Microsoft.Windows.SDK.NET.dll and WinRT.Runtime.dll
+from Microsoft.Windows.SDK.NET.Ref 10.0.26100.57. Microsoft, not the GoldenTicket
+project, owns and licenses these components. They are separate from the GoldenTicket
+project materials covered by PolyForm Noncommercial 1.0.0.
+
+You may use these components only as part of GoldenTicket on a Microsoft operating
+system. Do not copy, modify, or distribute them separately from a permitted copy of
+the application. Do not remove or alter their copyright, trademark, or patent notices.
+Do not use Microsoft's names or trademarks to suggest Microsoft made or endorsed
+GoldenTicket. Do not use the components in malicious, deceptive, or unlawful software.
+Do not work around technical limits or reverse engineer, decompile, or disassemble
+these components, except where applicable law expressly permits that activity.
+For any permitted redistribution, require recipients to agree to terms that protect
+these components at least as much as the Microsoft Windows SDK license terms.
+
+The components are provided as is by Microsoft, without Microsoft warranties, to the
+extent permitted by applicable law. Nothing here limits rights that cannot legally
+be excluded. GoldenTicket's project license grants no additional rights to these
+Microsoft components.
+
+Microsoft's official redistribution list expressly includes both lib/net8.0 DLLs:
+https://learn.microsoft.com/en-us/legal/windows-sdk/redist
+The applicable Microsoft Windows SDK license terms are available at:
+https://aka.ms/WinSDKLicenseURL

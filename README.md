@@ -380,6 +380,8 @@ and intermediate checkpoints stay in ignored `artifacts/`.
 
 ## License
 
+Copyright © 2026 Alexander Biemann. See [NOTICE](NOTICE).
+
 GoldenTicket's original source code, documentation, and any licensable project-owned rights in
 bundled assets are offered under the [PolyForm Noncommercial License 1.0.0](LICENSE)
 (`PolyForm-Noncommercial-1.0.0`). Use, changes and distribution are permitted for the purposes
@@ -387,6 +389,10 @@ covered by that license. Commercial use requires separate permission from the ri
 
 The license does not override third-party terms. Dependencies and upstream material in the
 [recognition models](assets/models/README.md) retain their own licenses and notices. The
+[Microsoft Windows SDK component terms](MICROSOFT-COMPONENT-TERMS.txt) separately cover the
+bundled WinRT projection DLLs; [Microsoft's REDIST list](https://learn.microsoft.com/en-us/legal/windows-sdk/redist)
+identifies the permitted unmodified files. The release package retains resolved dependency
+license texts, notices, and source references in its `licenses/` directory. The
 [artwork audit](docs/artwork-audit-2026-09-23.md) documents the AI-generated images; this license
 grants only rights the project owner holds in them. It does not grant rights to publisher-owned
 Ticket to Ride board imagery, ticket content, names, or trademarks.

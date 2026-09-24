@@ -10,6 +10,7 @@ AppId={{9743bdfd-4680-465d-acfd-a25616b492da}
 AppName=GoldenTicket
 AppVersion={#ReleaseVersion}
 AppPublisher=GoldenTicket
+AppCopyright=Copyright © 2026 Alexander Biemann
 AppPublisherURL=https://github.com/abiemann/GoldenTicket
 AppSupportURL=https://github.com/abiemann/GoldenTicket/issues
 DefaultDirName={userpf}\GoldenTicket
@@ -22,7 +23,7 @@ OutputBaseFilename=GoldenTicket-Setup-{#ReleaseVersion}-win-x64
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-LicenseFile={#PackageDir}\LICENSE
+LicenseFile={#PackageDir}\END-USER-TERMS.txt
 UninstallDisplayIcon={app}\GoldenTicket.exe
 
 [Files]

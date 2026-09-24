@@ -90,8 +90,12 @@ An interrupted run remains there for diagnosis. A complete run has:
 - `GoldenTicket/SHA256-MANIFEST.json`, covering every payload file except the manifest itself.
   The detached archive SHA256 covers the complete ZIP, including that manifest.
 - `GoldenTicket/LICENSE`, containing the project's PolyForm Noncommercial 1.0.0 license.
+- `GoldenTicket/END-USER-TERMS.txt`, presenting the project license and separate Microsoft
+  component terms together for installer acceptance; both source terms also remain separate.
 - `GoldenTicket/licenses/`, retaining exact package specifications and available license/notices
-  from the local restored packages, including the shipped runtime packs.
+  from the local restored packages, including the shipped runtime packs. Thirteen resolved packages
+  also receive pinned full upstream license/notice texts under each package's `supplemental/`
+  directory. Their URLs and SHA-256 hashes are recorded in `licenses/dependencies.json`.
 
 The script checks that the published runtime configuration is self-contained, and that CoreCLR,
 WPF, ASP.NET/Kestrel, SQLite, Windows camera interop, the companion shell, and board data are
@@ -109,10 +113,16 @@ or framework-dependent runtime blocks packaging. These developer-machine checks 
 clean-machine/device acceptance table below.
 
 Some NuGet packages contain a license expression or URL without the full license text.
-`licenses/dependencies.json` preserves this distinction, and `PACKAGE-THIRD-PARTY-NOTICES.md` lists
-those packages for notice-text review before wider distribution. Collecting their metadata is
-not a completed license audit. The root project LICENSE and any other project notices are copied
-unchanged.
+`licenses/dependencies.json` preserves that distinction and records exact upstream sources
+for the thirteen resolved packages whose texts were missing. The builder verifies those
+checked-in texts before copying them. For Microsoft.Windows.SDK.NET.Ref 10.0.26100.57, it checks
+that the two published WinRT projection DLLs match the unmodified NuGet files named in
+[Microsoft's REDIST list](https://learn.microsoft.com/en-us/legal/windows-sdk/redist).
+`MICROSOFT-COMPONENT-TERMS.txt` and the combined end-user terms state the separate use and
+redistribution conditions. PolyForm does not cover those Microsoft files. The generated
+`PACKAGE-THIRD-PARTY-NOTICES.md` names any unresolved notice-text entries; an empty list
+does not replace review of a changed dependency graph. The root project LICENSE and project
+notices are copied unchanged.
 
 ## Run the extracted application
 

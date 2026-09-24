@@ -136,7 +136,9 @@ $requiredPackageLocks = @('GoldenTicket.Domain', 'GoldenTicket.Application', 'Go
     'GoldenTicket.Persistence', 'GoldenTicket.CompanionHost', 'GoldenTicket.Vision', 'GoldenTicket.Desktop') |
     ForEach-Object { 'src/' + $_ + '/packages.win-x64.lock.json' }
 foreach ($relative in $requiredDocumentation + $requiredPackageLocks +
-    @('tools/Build-OfflinePackage.ps1', 'global.json', 'NuGet.config', 'Directory.Build.props', 'Directory.Packages.props')) {
+    @('tools/Build-OfflinePackage.ps1', 'global.json', 'NuGet.config', 'Directory.Build.props',
+      'Directory.Packages.props', 'NOTICE', 'MICROSOFT-COMPONENT-TERMS.txt',
+      'licenses/upstream/manifest.json')) {
     $path = Assert-Within (Join-Path $repository $relative) $repository
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required source documentation/configuration is missing: $relative" }
     $null = Invoke-Text $git @('-C', $repository, 'ls-files', '--error-unmatch', '--', $relative)
@@ -255,10 +257,18 @@ try {
     foreach ($relative in $documentation | Where-Object { $_ }) {
         Copy-Confined (Join-Path $repository $relative) (Join-Path $packageRoot $relative) $packageRoot
     }
-    $projectNotices = @(Invoke-Text $git @('-C', $repository, 'ls-files', '--', 'LICENSE*', 'NOTICE*', 'COPYING*', 'THIRD-PARTY*')) -split "`n"
+    $projectNotices = @(Invoke-Text $git @('-C', $repository, 'ls-files', '--', 'LICENSE*', 'NOTICE*', 'COPYING*', 'THIRD-PARTY*', 'MICROSOFT-COMPONENT-TERMS.txt')) -split "`n"
     foreach ($relative in $projectNotices | Where-Object { $_ }) {
         Copy-Confined (Join-Path $repository $relative) (Join-Path $packageRoot $relative) $packageRoot
     }
+    $projectLicense = [IO.File]::ReadAllText((Join-Path $repository 'LICENSE'))
+    $projectNotice = [IO.File]::ReadAllText((Join-Path $repository 'NOTICE'))
+    $componentTerms = [IO.File]::ReadAllText((Join-Path $repository 'MICROSOFT-COMPONENT-TERMS.txt'))
+    $combinedTerms = "GoldenTicket end-user terms`n`n" + $projectNotice.TrimEnd() + "`n`n" +
+        "Installing or using GoldenTicket requires agreement to both separate sets of terms below. The project's PolyForm license does not apply to Microsoft components or other third-party materials.`n`n" +
+        "=== GoldenTicket project license ===`n`n" + $projectLicense.TrimEnd() + "`n`n" +
+        "=== Microsoft Windows SDK components ===`n`n" + $componentTerms.TrimEnd() + "`n"
+    [IO.File]::WriteAllText((Join-Path $packageRoot 'END-USER-TERMS.txt'), $combinedTerms, [Text.UTF8Encoding]::new($false))
 
     $assets = Get-Content -LiteralPath (Join-Path $repository 'src/GoldenTicket.Desktop/obj/project.assets.json') -Raw | ConvertFrom-Json -AsHashtable
     $packageFolders = @($assets.packageFolders.Keys)
@@ -281,6 +291,23 @@ try {
     foreach ($framework in $includedFrameworks) {
         Add-Package ($framework.name + '.Runtime.win-x64') $framework.version 'included runtime'
     }
+
+    $upstreamManifest = Get-Content -LiteralPath (Join-Path $repository 'licenses/upstream/manifest.json') -Raw | ConvertFrom-Json -AsHashtable
+    if ($upstreamManifest.formatVersion -ne 1) { throw 'The upstream notice manifest format is not supported.' }
+    $supplementalByPackage = @{}
+    foreach ($group in $upstreamManifest.groups) {
+        if ($group.version -notmatch '^[A-Za-z0-9_.+-]+$' -or @($group.files).Count -eq 0) {
+            throw 'An upstream notice group has an invalid version or no source files.'
+        }
+        foreach ($id in $group.packageIds) {
+            if ($id -notmatch '^[A-Za-z0-9_.-]+$') { throw "Invalid upstream notice package ID: $id" }
+            $key = ($id + '/' + $group.version).ToLowerInvariant()
+            if ($supplementalByPackage.ContainsKey($key)) { throw "Duplicate upstream notice mapping: $key" }
+            $supplementalByPackage[$key] = @($group.files)
+        }
+    }
+    $unmatchedSupplemental = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($key in $supplementalByPackage.Keys) { $null = $unmatchedSupplemental.Add($key) }
 
     $noticeRows = [Collections.Generic.List[object]]::new()
     $needsNoticeReview = [Collections.Generic.List[string]]::new()
@@ -311,7 +338,50 @@ try {
                 $copied.Add($license.Replace('\', '/'))
             }
         }
-        if ($copied.Count -eq 0) {
+        $supplementalSources = [Collections.Generic.List[object]]::new()
+        $packageKey = ($package.Id + '/' + $package.Version).ToLowerInvariant()
+        if ($supplementalByPackage.ContainsKey($packageKey)) {
+            $null = $unmatchedSupplemental.Remove($packageKey)
+            foreach ($source in $supplementalByPackage[$packageKey]) {
+                if ($source.path -notmatch '^licenses/upstream/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' -or
+                    $source.sourceUrl -notmatch '^https://raw\.githubusercontent\.com/' -or
+                    $source.sha256 -notmatch '^[0-9a-f]{64}$') {
+                    throw "Invalid upstream notice source for $packageKey."
+                }
+                $sourcePath = Assert-Within (Join-Path $repository $source.path) $repository
+                if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf) -or
+                    (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash -ne $source.sha256) {
+                    throw "The pinned upstream notice text is missing or changed: $($source.path)"
+                }
+                $relative = 'supplemental/' + [IO.Path]::GetFileName($source.path)
+                Copy-Confined $sourcePath (Join-Path $noticeDirectory $relative) $packageRoot
+                $copied.Add($relative)
+                $supplementalSources.Add([ordered]@{
+                    retainedFile = $relative; repositoryPath = $source.path
+                    sourceUrl = $source.sourceUrl; sha256 = $source.sha256
+                })
+            }
+        }
+
+        $redistributionBasis = $null
+        if ($package.Id -eq 'Microsoft.Windows.SDK.NET.Ref' -and $package.Version -eq '10.0.26100.57') {
+            foreach ($name in @('Microsoft.Windows.SDK.NET.dll', 'WinRT.Runtime.dll')) {
+                $sdkFile = Assert-Within (Join-Path $directory ('lib/net8.0/' + $name)) $directory
+                $publishedFile = Assert-Within (Join-Path $packageRoot $name) $packageRoot
+                if (-not (Test-Path -LiteralPath $sdkFile -PathType Leaf) -or
+                    (Get-FileHash -LiteralPath $sdkFile -Algorithm SHA256).Hash -ne
+                    (Get-FileHash -LiteralPath $publishedFile -Algorithm SHA256).Hash) {
+                    throw "The published Windows SDK projection is not the unmodified listed redistributable: $name"
+                }
+            }
+            $redistributionBasis = [ordered]@{
+                url = 'https://learn.microsoft.com/en-us/legal/windows-sdk/redist'
+                listedPackage = 'Microsoft.Windows.SDK.NET.Ref'
+                listedFiles = @('lib/net8.0/Microsoft.Windows.SDK.NET.dll', 'lib/net8.0/WinRT.Runtime.dll')
+                condition = 'Unmodified as part of a program that calls WinRT APIs; see END-USER-TERMS.txt.'
+            }
+        }
+        if ($copied.Count -eq 0 -and $null -eq $redistributionBasis) {
             $needsNoticeReview.Add($package.Id + '/' + $package.Version)
             if ($package.Reason -eq 'included runtime') { throw "The included runtime lacks its packaged license text: $($package.Id)" }
         }
@@ -321,7 +391,12 @@ try {
             licenseType = $licenseType; license = $license; licenseUrl = (Child-Text $metadata 'licenseUrl')
             retainedFiles = @($specifications[0].Name) + @($copied)
             licenseTextInPackage = $copied.Count -gt 0
+            supplementalSources = $supplementalSources.ToArray()
+            redistributionBasis = $redistributionBasis
         })
+    }
+    if ($unmatchedSupplemental.Count -ne 0) {
+        throw "The upstream notice manifest contains packages absent from the resolved graph: $($unmatchedSupplemental -join ', ')"
     }
     Write-Json (Join-Path $packageRoot 'licenses/dependencies.json') $noticeRows.ToArray()
     $noticeText = @"
@@ -329,14 +404,20 @@ try {
 
 This package retains the exact resolved NuGet package specifications, packaged license files,
 and notices under licenses/packages, including its .NET, WPF, and ASP.NET runtime packs.
-The dependency inventory is licenses/dependencies.json. Build-only SDK dependencies may also be listed.
+For thirteen packages whose NuGet archives contain no full license text, the builder also copies
+pinned upstream license and notice snapshots to each package's supplemental directory. The
+dependency inventory at licenses/dependencies.json gives their source URLs and SHA-256 hashes.
+Build-only SDK dependencies may also be listed.
 The application source commit is recorded in package-provenance.json.
 
-Some upstream packages supply a license expression or URL without including the complete license
-text. Their original metadata is retained; notice completeness must be reviewed before wider
-distribution. This generated inventory is not a completed licensing audit.
+The unmodified Microsoft.Windows.SDK.NET.dll and WinRT.Runtime.dll are bundled from
+Microsoft.Windows.SDK.NET.Ref 10.0.26100.57. Microsoft lists these files as redistributable
+with a WinRT-calling program at https://learn.microsoft.com/en-us/legal/windows-sdk/redist .
+The separate end-user conditions appear in END-USER-TERMS.txt; PolyForm does not govern them.
+This generated inventory records the reviewed sources and any remaining notice-text gaps; it
+is not a general legal opinion.
 
-Packages needing that notice-text review: $($needsNoticeReview -join ', ')
+Packages still needing notice-text review: $(if ($needsNoticeReview.Count) { $needsNoticeReview -join ', ' } else { 'none' })
 "@
     [IO.File]::WriteAllText((Join-Path $packageRoot 'PACKAGE-THIRD-PARTY-NOTICES.md'), $noticeText, [Text.UTF8Encoding]::new($false))
     $provenance = [ordered]@{

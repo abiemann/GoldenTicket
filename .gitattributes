@@ -3,3 +3,6 @@
 /src/GoldenTicket.Vision/Calibration/*.gray binary
 # Accepted manifests use CRLF; preserve their hashes while retaining whitespace checks.
 /assets/models/**/manifest.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+
+# The pinned upstream notice hashes are computed from these LF snapshots.
+/licenses/upstream/** text eol=lf
